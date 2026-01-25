@@ -1,0 +1,446 @@
+# Changelog
+
+All notable changes to the Grok CLI project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [0.1.2] - 2026-01-13
+
+### Added
+
+- **Automatic Tool Execution**: Grok can now execute file operations automatically during conversations!
+  - Integrated tool calling support into interactive and single-query chat modes
+  - Grok can create files and directories directly without manual copy-pasting
+  - Supported tools:
+    - `write_file` - Create or overwrite files with content
+    - `read_file` - Read file contents
+    - `replace` - Find and replace text in files
+    - `list_directory` - List directory contents
+    - `glob_search` - Find files matching glob patterns
+    - `save_memory` - Save facts to long-term memory
+    - `run_shell_command` - Execute shell commands (cargo, git, etc.)
+  - Automatic PowerShell syntax conversion: bash-style `&&` converted to `;` on Windows
+  - Automatic parent directory creation: creates `.grok/` and other nested directories automatically
+  - Security-restricted to current directory and subdirectories
+  - Visual feedback with ✓ confirmation for each operation
+  - Example: Ask "Create a new Rust project structure" and files are created automatically
+  - Comprehensive documentation in `docs/FILE_OPERATIONS.md` (402 lines)
+  - Works seamlessly with session persistence and context discovery
+
+- **Chat Session Logging**: Comprehensive conversation logging system
+  - Automatic logging of all chat sessions (ACP and interactive modes)
+  - Dual format output: JSON (machine-readable) and TXT (human-readable)
+  - Unique session IDs with timestamps for easy retrieval
+  - Full metadata tracking (timestamps, roles, optional data)
+  - Automatic log rotation based on size limits
+  - Network-resilient with proper error handling for Starlink drops
+  - Configuration via environment variables:
+    - `GROK_CHAT_LOGGING_ENABLED` - Enable/disable logging (default: true)
+    - `GROK_CHAT_LOG_DIR` - Custom log directory
+    - `GROK_CHAT_LOG_MAX_SIZE_MB` - Max file size before rotation
+    - `GROK_CHAT_LOG_ROTATION_COUNT` - Number of files to keep
+    - `GROK_CHAT_LOG_INCLUDE_SYSTEM` - Include system messages
+  - Default location: `~/.grok/logs/chat_sessions/`
+  
+- **Chat History Commands**: New `grok history` command suite
+  - `grok history list` - List all saved chat sessions with previews
+  - `grok history view <session-id>` - View complete conversation transcript
+  - `grok history search "query"` - Search through all sessions with highlighting
+  - `grok history clear --confirm` - Clear all chat history
+  - Rich terminal formatting with colored output
+  - Session metadata display (start time, duration, message count)
+  - Context-aware search results with line previews
+
+- **Documentation**: New comprehensive chat logging guide
+  - `docs/CHAT_LOGGING.md` - Complete feature documentation (415 lines)
+  - Configuration examples and environment variable reference
+  - Usage examples and troubleshooting guide
+  - Privacy and security best practices
+  - API reference for programmatic access
+  - Updated `CONFIGURATION.md` with chat logging settings
+
+### Changed
+- **ACP Module Visibility**: Made `security` and `tools` modules public for use in chat commands
+  - Enables tool execution in regular chat mode (not just ACP/Zed integration)
+  - Maintains security policies across all modes
+
+- **Rust 2024 Edition Upgrade**: Updated from Rust 2021 to Rust 2024 edition
+  - Improved safety requirements for environment variable operations
+  - Updated all unsafe operations to comply with edition 2024 standards
+  - All tests passing with new edition requirements
+
+- **Chat Command Enhancement**: Enhanced chat commands to support tool calling
+  - Added tool definitions to API requests
+  - Integrated tool call response parsing and execution
+  - Improved error handling for tool operations
+
+- **Shell Command Compatibility**: Fixed PowerShell command chaining issues
+  - Automatic conversion of bash-style `&&` to PowerShell `;` separator
+  - Enables natural command syntax across all platforms
+  - Example: `cargo new project && git init` works on Windows now
+
+- **File Operations Enhancement**: Fixed directory creation for nested paths
+  - Parent directories now created before path resolution
+  - Fixes "file not found" errors when writing to `.grok/context.md` and similar nested paths
+  - Added `working_directory()` getter to SecurityPolicy for proper path handling
+
+- **Dependency Updates**: Updated all major dependencies to latest versions
+  - `tokio` updated to 1.49.0 (from 1.40.0) - Async runtime improvements
+  - `reqwest` locked to 0.13.1 with `native-tls-vendored` for Windows compatibility
+  - `clap` updated to 4.5.54 (from 4.5.20) - CLI parsing improvements
+  - `toml` updated to 0.9.11 (from 0.9.8) - TOML parsing updates
+  - `anyhow` updated to 1.0.100 - Error handling improvements
+  - `uuid` updated to 1.19.0 - UUID generation updates
+  - `chrono` updated to 0.4.42 - Date/time handling improvements
+  - `thiserror` updated to 2.0.17 - Error derive macro improvements
+  - All dependencies tested and working with Rust 2024 edition
+
+- **TLS Backend Configuration**: Optimized for Windows 11 development
+  - Using `native-tls-vendored` instead of `rustls` for reqwest 0.13.1
+  - Avoids CMake/NASM build dependencies on Windows
+  - Uses native Windows SChannel API for TLS
+  - Faster build times (~30s vs ~60s with rustls)
+  - Automatic Windows certificate store integration
+  - Reliable network operations for Starlink connectivity
+  - See `docs/TLS_BACKEND_WINDOWS.md` for detailed TLS backend options
+
+- **Security: Replaced Unmaintained Dependencies**
+  - Replaced `dotenv` (unmaintained) with `dotenvy` (maintained)
+  - Replaced `atty` (unmaintained) with `std::io::IsTerminal` (stdlib)
+  - Removed `term_size` (unmaintained) - using `terminal_size` instead
+  - TLS implementation using Windows-native SChannel (native-tls-vendored)
+  - All security advisories resolved
+  - Zero vulnerabilities in dependency tree
+
+### Documentation
+- Added `docs/TLS_BACKEND_WINDOWS.md` - Comprehensive TLS backend configuration guide
+- Added `TLS_UPDATE_SUMMARY.md` - Quick reference for TLS backend changes
+- Documented native-tls vs rustls trade-offs for Windows development
+- Included instructions for switching to rustls if pure Rust TLS is required
+
+### Added
+- **Shell Command Permission System**: Comprehensive security for `!` commands
+  - Interactive approval prompts with allow/deny/always options
+  - Session-level allowlist (temporary permissions)
+  - Persistent allowlist saved to `~/.grok/shell_policy.json`
+  - Automatic blocklist for dangerous commands (rm, shutdown, format, etc.)
+  - Command root extraction for intelligent permission management
+  - Approval modes: Default (prompt) and YOLO (always allow)
+  - Configuration via `GROK_SHELL_APPROVAL_MODE` environment variable
+  - Inspired by Gemini CLI's security model
+
+- **Shell Command Execution**: Local command execution in interactive mode
+  - Execute shell commands with `!` prefix (e.g., `!ls`, `!git status`)
+  - Cross-platform support (Windows cmd, Unix sh)
+  - Real-time stdout/stderr output
+  - Exit code reporting for failed commands
+  - Commands never sent to AI - executed locally only
+  - Integrated with permission system for safety
+
+- **Configuration Consolidation**: Unified `.env`-based configuration
+  - Migrated from mixed TOML/env to pure `.env` files
+  - Hierarchical loading: project `.grok/.env` → system `~/.grok/.env` → defaults
+  - 50+ environment variables for all settings
+  - Clear configuration priority rules
+  - Project-specific overrides in `.grok/.env`
+  - System-wide settings in `~/.grok/.env`
+  - Removed redundant TOML config files
+
+- **Hierarchical Configuration System**: Multi-tier config loading (Task 12)
+  - Project-level: `.grok/.env` in project root
+  - System-level: `~/.grok/.env` in home directory
+  - Built-in defaults with proper fallback
+  - Configuration source tracking and display
+  - Proper field-level merging with serde defaults
+  - Environment variable overrides (highest priority)
+
+- **Session Persistence**: Implemented full session save/load functionality
+  - Added `/save <name>` command to save current conversation session
+  - Added `/load <name>` command to load a previously saved session
+  - Added `/list` command to show all saved sessions
+  - Sessions stored as JSON in `~/.grok/sessions/`
+  - Full conversation history and context preserved across sessions
+
+- **Context File Integration**: Automatic project context loading
+  - Detects and loads project context files on startup (GEMINI.md, .grok/context.md, .ai/context.md, CONTEXT.md)
+  - Context automatically injected into system prompt to ground the agent
+  - Support for multiple context file locations with priority order
+  - File size validation (5 MB max) and error handling
+  - Visual feedback when context is loaded
+
+- **Extension Loading System**: Complete extension framework implementation
+  - Extension discovery from `~/.grok/extensions/` directory
+  - Extension manifest parsing (`extension.json`)
+  - Hook-based extension API with `before_tool` and `after_tool` hooks
+  - Extension Manager and Hook Manager for lifecycle management
+  - Configuration-based extension enabling/disabling
+
+- **Comprehensive Documentation**:
+  - `SECURITY.md` - Shell command security guide (460+ lines)
+  - `INTERACTIVE.md` - Interactive mode complete guide (400+ lines)
+  - `QUICKSTART.md` - Quick start guide (378+ lines)
+  - `CONFIGURATION.md` - Configuration guide (458+ lines)
+  - Updated all existing documentation with new features
+  - Support for extension dependencies
+  - Example logging-hook extension included
+
+- **Hierarchical Configuration Loading**: Three-tier configuration priority system
+  - Project-local settings (`.grok/config.toml` in project root)
+  - System-level settings (`~/.grok/config.toml` or `%APPDATA%\.grok`)
+  - Built-in defaults
+  - Automatic project root detection (walks up directory tree)
+  - Config merging with proper priority: project → system → defaults
+  - Environment variable overrides still take highest priority
+  - Supports per-project customization while maintaining global preferences
+
+- **Enhanced Context Rules Discovery**: Multi-editor context file support
+  - Expanded context file discovery to include editor-specific files:
+    - `.zed/rules` (Zed editor)
+    - `.gemini.md` (Gemini CLI)
+    - `.claude.md` (Claude AI)
+    - `.cursor/rules` (Cursor editor)
+    - `AI_RULES.md` (generic)
+  - Support for loading and merging multiple context files
+  - Visual feedback shows all loaded context sources
+  - Annotated context with source file information
+  - Compatible with existing GEMINI.md and other formats
+
+### Changed
+- Enhanced interactive session startup with context loading feedback
+- Improved session info display to show loaded context files
+- CLI now uses hierarchical config loading by default
+- Context loading supports merging multiple files with source annotations
+- Added comprehensive extension system documentation (docs/extensions.md)
+
+### Technical Details
+- Added `Config::load_hierarchical()` for cascading configuration
+- Added `Config::find_project_config()` to walk directory tree
+- Added `Config::merge_configs()` for proper config priority merging
+- Enhanced `src/utils/context.rs` with multi-file support:
+  - `load_and_merge_project_context()` for merging multiple files
+  - `get_all_context_file_paths()` to list all available contexts
+- Added `src/hooks/loader.rs` for extension loading and management
+- Extended `Config` with `ExtensionsConfig` structure
+- Session persistence uses Serde serialization with proper error handling
+- Network resilience built into context loading (Starlink-aware)
+
+### Documentation
+- Added comprehensive extension system documentation (docs/extensions.md)
+- Created example extension with full README (examples/extensions/logging-hook/)
+- Created progress report (docs/PROGRESS_REPORT.md)
+- Created quick reference guide (docs/QUICK_REFERENCE.md)
+- Documented context file integration in code comments
+- Added task tracking updates in .zed/tasks.json
+
+## [0.1.1] - 2024-01-XX
+
+### Fixed
+- **Critical**: Resolved "failed to deserialize response" error in Zed editor integration (TWO ROOT CAUSES)
+  
+  **Issue 1: Clap Argument Definitions**
+  - Added missing `#[arg(...)]` attributes to all Clap command-line argument definitions
+  - Fixed `ConfigAction::Init` force flag parsing
+  - Fixed `AcpAction::Server` port and host argument parsing
+  - Fixed `AcpAction::Test` address argument parsing
+  - Fixed `CodeAction` boolean flags and optional parameters
+  - Fixed `SettingsAction` optional parameters
+  
+  **Issue 2: Protocol Serialization Mismatch**
+  - Fixed protocol version serialization (was returning "2024-04-15" instead of echoing client's version)
+  - Added camelCase field names for JSON-RPC protocol (protocolVersion, agentCapabilities, etc.)
+  - Added custom serializer to output protocol version as integer when numeric
+  - Fixed protocol version to echo back client's version instead of hardcoding
+  - Added flexible protocol version parser to handle both integer and string formats
+  - Updated all ACP protocol structs to use camelCase for Zed compatibility
+
+- All commands now work correctly with proper flag and option parsing
+- ACP protocol now fully compatible with Zed editor's JSON-RPC expectations
+
+### Added
+- Comprehensive Zed integration documentation (ZED_INTEGRATION.md)
+- Technical fix documentation (FIXES.md)
+- Quick fix guide (QUICKFIX_ZED.md)
+- Complete project summary (SUMMARY.md)
+- This CHANGELOG file
+
+### Changed
+- Updated README.md with fix notification and improved Zed integration section
+- Improved ACP server command with default host value (127.0.0.1)
+- Enhanced error messages and help text for all commands
+
+### Documentation
+- Added complete Zed editor setup guide with STDIO and Server mode instructions
+- Added troubleshooting section with common issues and solutions
+- Added quick reference guide for all commands
+- Updated README with links to all new documentation
+
+## [0.1.0] - 2024-01-XX
+
+### Added
+- Initial release of Grok CLI
+- Beautiful interactive terminal interface inspired by Gemini CLI
+- Adaptive ASCII art logo with multiple size variants
+- Rich interactive mode with context-aware prompts
+- Chat completion with Grok AI (grok-2-latest, grok-2, grok-1)
+- Code operations (explain, review, generate, fix)
+- Agent Client Protocol (ACP) support for Zed editor integration
+- Configuration management system with TOML config files
+- Settings management with interactive browser
+- Health monitoring and diagnostics
+- Network resilience features with Starlink optimizations
+- Colored output with professional color scheme
+- Progress indicators and status displays
+- Session management and conversation history
+- Temperature and token control
+- Multi-language code support
+- Security policy engine for shell command execution
+- MCP (Model Context Protocol) integration
+- Web search and fetch capabilities
+- File search with glob patterns
+- Content search with ripgrep integration
+- Persistent memory system
+- Comprehensive error handling and retry logic
+- Windows, Linux, and macOS support
+
+### Features
+
+#### Core Functionality
+- Interactive chat sessions with context tracking
+- Single-shot queries for quick answers
+- System prompts for specialized behavior
+- Streaming responses with real-time display
+- Token usage monitoring
+- Session saving and restoration
+
+#### Code Intelligence
+- Code explanation with language detection
+- Code review with focus areas (security, performance, style)
+- Code generation from natural language
+- Code fixing with issue descriptions
+- Multi-file analysis support
+
+#### Developer Tools
+- ACP server mode for editor integration
+- ACP STDIO mode for subprocess communication
+- Configuration initialization and validation
+- API key management
+- Network connectivity testing
+- Health checks (API, config, network)
+
+#### Network Features
+- Starlink satellite internet optimizations
+- Smart retry logic with exponential backoff
+- Connection drop detection and recovery
+- Configurable timeouts and retry limits
+- Network health monitoring
+
+#### UI/UX
+- Adaptive terminal width detection
+- Unicode support with fallback to ASCII
+- Colored output with theme support
+- Progress bars for long operations
+- Banner and tips system
+- Status indicators
+- Error formatting with context
+
+#### Configuration
+- TOML-based configuration system
+- Environment variable support
+- Per-user config files
+- Config validation
+- Interactive settings editor
+- Import/export capabilities
+
+### Fixed
+- **ACP Protocol Serialization**: Fixed `SessionUpdate` enum tag from `sessionUpdate` to `type`
+  - Corrected JSON output to match ACP specification
+  - All 68 tests now passing
+
+### Technical Details
+- Built with Rust 2024 edition
+- Async runtime with Tokio
+- HTTP client with reqwest (rustls-tls)
+- CLI parsing with Clap 4.x
+- Comprehensive test suite (68 tests passing)
+- Structured logging with tracing
+- JSON serialization with serde
+- Terminal UI with ratatui and crossterm
+- File operations with walkdir and glob
+- Regex search with ripgrep integration
+- Secure random with rand
+- Date/time handling with chrono
+
+### Dependencies
+- Rust 1.70 or later
+- X/Grok API key from x.ai
+- Internet connection (with resilience for Starlink)
+
+### Installation
+- Source build with Cargo
+- Windows, Linux, and macOS support
+- Optional PATH configuration
+
+### Known Issues
+- None at this time
+
+### Security
+- API keys stored securely in config or environment
+- Shell command execution requires trusted directory approval
+- Localhost-only binding for ACP server by default
+- Policy engine for tool execution control
+
+---
+
+## Release Notes
+
+### Version 0.1.1
+This is a critical bug fix release that resolves Zed editor integration issues. The "failed to deserialize response" error was caused by two separate issues:
+
+1. **Command-line parsing**: Missing Clap attributes causing argument parsing failures
+2. **Protocol serialization**: Field name and type mismatches between grok-cli and Zed's expectations
+
+Both issues have been completely resolved. All users experiencing integration errors should upgrade immediately. The fixes are backward compatible with no breaking changes to existing functionality.
+
+### Version 0.1.0
+This is the initial public release of Grok CLI, featuring a complete implementation of the Agent Client Protocol for Zed editor integration, beautiful terminal UI, and comprehensive AI capabilities powered by X/Grok API.
+
+---
+
+## Upgrade Guide
+
+### From 0.1.0 to 0.1.1
+
+1. Pull latest changes from repository
+2. Rebuild: `cargo clean && cargo build --release`
+3. No configuration changes required
+4. Test with: `grok config init --force`
+5. Verify Zed integration: `grok acp capabilities`
+
+No breaking changes - all existing configurations remain compatible.
+
+---
+
+## Contributing
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
+- How to report issues
+- How to submit pull requests
+- Code style guidelines
+- Testing requirements
+
+---
+
+## Links
+
+- **Repository**: https://github.com/microtech/grok-cli
+- **Issues**: https://github.com/microtech/grok-cli/issues
+- **Discussions**: https://github.com/microtech/grok-cli/discussions
+- **Author**: John McConnell (john.microtech@gmail.com)
+- **License**: MIT
+
+---
+
+**Maintained by**: John McConnell  
+**Project Start**: 2024  
+**Current Version**: 0.1.1

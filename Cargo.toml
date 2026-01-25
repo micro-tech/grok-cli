@@ -1,0 +1,86 @@
+[package]
+name = "grok-cli"
+version = "0.1.2"
+edition = "2024"
+authors = ["john mcconnell john.microtech@gmail.com"]
+description = "A CLI tool for interacting with Grok AI via X API"
+license = "MIT"
+repository = "https://github.com/microtech/grok-cli"
+keywords = ["cli", "ai", "grok", "x-api"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "grok"
+path = "src/main.rs"
+
+[lints.rust]
+dead_code = "allow"
+unused_imports = "allow"
+unused_variables = "allow"
+
+
+[dependencies]
+# HTTP client with timeout support for network drops
+reqwest = { version = "0.13.1", features = ["json", "native-tls-vendored", "http2"], default-features = false }
+# Async runtime
+tokio = { version = "1.49.0", features = ["full"] }
+# JSON handling
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# CLI parsing
+clap = { version = "4.5", features = ["derive", "env"] }
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+# Environment variable loading
+dotenvy = "0.15"
+# Configuration
+config = "0.15"
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Terminal colors and formatting
+colored = "3.1.1"
+# Progress indicators
+indicatif = "0.18"
+# File I/O and paths
+dirs = "6.0"
+# UUID generation
+uuid = { version = "1.19.0", features = ["v4"] }
+# Base64 encoding
+base64 = "0.22"
+# Terminal utilities (using terminal_size instead)
+# Random number generation for retry backoff
+rand = "0.9"
+# Date and time handling for sessions
+chrono = { version = "0.4", features = ["serde"] }
+# Terminal size detection
+terminal_size = "0.4"
+# TOML configuration parsing
+toml = "0.9"
+# Terminal detection
+is-terminal = "0.4"
+ratatui = "0.30"
+crossterm = "0.29"
+glob = "0.3"
+walkdir = "2"
+regex = "1"
+urlencoding = "2"
+clap-markdown = "0.1"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
+[dev-dependencies]
+tempfile = "3.24.0"
+mockito = "1.7"
+tokio-test = "0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+debug = true

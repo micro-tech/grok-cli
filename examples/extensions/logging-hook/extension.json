@@ -1,0 +1,22 @@
+{
+  "name": "logging-hook",
+  "version": "1.0.0",
+  "description": "A sample extension that logs tool invocations for debugging and monitoring",
+  "author": "john mcconnell <john.microtech@gmail.com>",
+  "extension_type": "hook",
+  "hooks": [
+    {
+      "name": "tool-logger",
+      "hook_type": "both",
+      "script": null,
+      "config": {
+        "log_level": "debug",
+        "include_args": true,
+        "include_results": true,
+        "max_result_length": 500
+      }
+    }
+  ],
+  "dependencies": [],
+  "enabled": true
+}
