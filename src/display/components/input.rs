@@ -22,6 +22,7 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
     let mut cursor_pos = 0;
     let mut suggestion_index: Option<usize> = None;
     let mut scroll_offset = 0;
+    let mut horizontal_scroll = 0; // For scrolling long input text
     let mut stdout = stdout();
 
     // Box drawing characters
@@ -79,12 +80,31 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
         stdout.execute(MoveToColumn(0))?;
 
         // Middle Line (Prompt + Input)
+        // Calculate available space for input text
+        let available_width = box_width
+            .saturating_sub(4) // 2 for borders + 2 for spaces around content
+            .saturating_sub(prompt_width);
+
+        // Calculate horizontal scroll to keep cursor visible
+        if cursor_pos < horizontal_scroll {
+            horizontal_scroll = cursor_pos;
+        } else if cursor_pos >= horizontal_scroll + available_width {
+            horizontal_scroll = cursor_pos.saturating_sub(available_width) + 1;
+        }
+
+        // Get the visible portion of the buffer
+        let visible_buffer: String = buffer
+            .chars()
+            .skip(horizontal_scroll)
+            .take(available_width)
+            .collect();
+
         stdout.execute(Print(format!("{} ", box_vertical)))?;
         stdout.execute(Print(prompt))?;
-        stdout.execute(Print(&buffer))?;
+        stdout.execute(Print(&visible_buffer))?;
 
         // Fill remaining space with spaces
-        let current_inner_len = 1 + prompt_width + buffer.len(); // " " + prompt + buffer
+        let current_inner_len = 1 + prompt_width + visible_buffer.len(); // " " + prompt + visible_buffer
         let remaining_space = box_width
             .saturating_sub(2)
             .saturating_sub(current_inner_len);
@@ -199,8 +219,9 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
         // Start row was Top Line.
         // Middle Line is start_row + 1.
         let cursor_row = start_row + 1;
-        // Col: "│ " (2 chars) + prompt_width + cursor_pos
-        let cursor_col = 2 + prompt_width + cursor_pos;
+        // Col: "│ " (2 chars) + prompt_width + (cursor_pos - horizontal_scroll)
+        let visible_cursor_pos = cursor_pos.saturating_sub(horizontal_scroll);
+        let cursor_col = 2 + prompt_width + visible_cursor_pos;
 
         stdout.execute(MoveTo(cursor_col as u16, cursor_row))?;
         stdout.flush()?;

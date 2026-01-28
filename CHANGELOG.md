@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Input cursor positioning**: Fixed cursor appearing outside the input box when typing long text
+  - Implemented horizontal scrolling for input text that exceeds box width
+  - Cursor now stays properly positioned within the visible box area
+  - Text automatically scrolls as you type beyond the visible area
+  - Works correctly on window resize
+
 ### Changed
 
 - **Migrated to `grok_api` crate**: Replaced local API implementation with published `grok_api = "0.1.0"` crate from crates.io
