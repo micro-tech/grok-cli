@@ -15,8 +15,8 @@ path = "src/main.rs"
 
 [lints.rust]
 dead_code = "allow"
-unused_imports = "allow"
-unused_variables = "allow"
+#unused_imports = "allow"
+#unused_variables = "allow"
 
 
 [dependencies]
@@ -46,7 +46,7 @@ indicatif = "0.18"
 # File I/O and paths
 dirs = "6.0"
 # UUID generation
-uuid = { version = "1.19.0", features = ["v4"] }
+uuid = { version = "1.20.0", features = ["v4"] }
 # Base64 encoding
 base64 = "0.22"
 # Terminal utilities (using terminal_size instead)
