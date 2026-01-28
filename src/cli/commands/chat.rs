@@ -12,8 +12,7 @@ use std::process::Command;
 
 use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
-use crate::api::ToolCall;
-use crate::api::grok::GrokClient;
+use crate::{ToolCall, GrokClient};
 use crate::cli::{create_spinner, format_grok_response, print_error, print_info, print_success};
 use crate::config::RateLimitConfig;
 

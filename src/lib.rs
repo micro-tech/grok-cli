@@ -6,13 +6,22 @@
 use clap::Subcommand;
 
 pub mod acp;
-pub mod api;
 pub mod cli;
 pub mod config;
 pub mod display;
+pub mod grok_client_ext;
 pub mod hooks;
 pub mod mcp;
 pub mod utils;
+
+// Re-export grok_api types for use throughout the crate
+pub use grok_api::{
+    ChatResponse, Message, ToolCall, FunctionCall, Choice, Usage,
+    Error as GrokApiError,
+};
+
+// Re-export the extended GrokClient
+pub use grok_client_ext::GrokClient;
 
 #[derive(Subcommand, Clone, Debug)]
 pub enum CodeAction {
@@ -157,8 +166,7 @@ pub enum HistoryAction {
 }
 
 // Re-export commonly used types and functions
-pub use api::grok::GrokClient;
-pub use config::{Config, ConfigSource};
+pub use config::{Config, ConfigSource, RateLimitConfig};
 pub use display::{
     ascii_art::{get_logo_for_width, print_grok_logo},
     banner::{BannerConfig, BannerType, print_banner, print_welcome_banner},

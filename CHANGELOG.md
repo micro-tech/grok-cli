@@ -5,6 +5,17 @@ All notable changes to the Grok CLI project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **Migrated to `grok_api` crate**: Replaced local API implementation with published `grok_api = "0.1.0"` crate from crates.io
+  - Removed local `src/api` module
+  - Created `grok_client_ext` compatibility wrapper to maintain existing API surface
+  - All existing functionality preserved with minimal changes
+  - Benefits: Better maintenance, version management, and reusability across projects
+  - All 78 tests passing successfully
+
 ## [0.1.2] - 2026-01-13
 
 ### Added

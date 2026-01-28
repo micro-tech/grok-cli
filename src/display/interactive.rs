@@ -12,7 +12,7 @@ use tokio::time::{Duration, sleep};
 
 use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
-use crate::api::grok::GrokClient;
+use crate::GrokClient;
 use crate::config::Config;
 use crate::display::{
     BannerConfig, clear_current_line, print_directory_recommendation, print_grok_logo,
@@ -1118,7 +1118,7 @@ async fn send_to_grok(
 
 /// Execute a tool call in interactive mode
 fn execute_tool_call_interactive(
-    tool_call: &crate::api::ToolCall,
+    tool_call: &crate::ToolCall,
     security: &SecurityPolicy,
 ) -> Result<()> {
     use anyhow::anyhow;

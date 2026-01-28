@@ -8,7 +8,7 @@ use colored::*;
 use std::fs;
 use std::path::Path;
 
-use crate::api::grok::GrokClient;
+use crate::GrokClient;
 use crate::cli::{
     create_spinner, format_code, print_error, print_info, print_success, print_warning,
 };

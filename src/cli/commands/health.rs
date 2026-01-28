@@ -7,7 +7,7 @@ use anyhow::{Result, anyhow};
 use colored::*;
 use std::time::{Duration, Instant};
 
-use crate::api::grok::GrokClient;
+use crate::GrokClient;
 use crate::cli::{create_spinner, print_error, print_info, print_success, print_warning};
 use crate::config::Config;
 use crate::utils::network::{detect_starlink_connection, test_connectivity};

@@ -11,7 +11,7 @@ use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
-use crate::api::grok::GrokClient;
+use crate::GrokClient;
 use crate::config::Config;
 use crate::hooks::HookManager;
 
