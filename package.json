@@ -1,5 +1,5 @@
 {
-  "name": "grok-cli",
+  "name": "grok-cli-acp",
   "version": "0.1.2",
   "description": "grok-cli in rust with acp access",
   "keywords": [
@@ -18,7 +18,7 @@
   },
   "license": "ISC",
   "author": "john mcconnell",
-  "type": "rust",
+  "type": "commonjs",
   "main": "H:\\GitHub\\grok-cli\\target\\release\\groke.exe",
   "directories": {
     "doc": "docs",
@@ -26,5 +26,8 @@
   },
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "grok-cli-acp": "^0.1.2"
   }
 }
