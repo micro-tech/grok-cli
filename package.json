@@ -1,0 +1,30 @@
+{
+  "name": "grok-cli",
+  "version": "0.1.2",
+  "description": "grok-cli in rust with acp access",
+  "keywords": [
+    "Xai",
+    "grok",
+    "Zed",
+    "ACP"
+  ],
+  "homepage": "https://github.com/micro-tech/grok-cli#readme",
+  "bugs": {
+    "url": "https://github.com/micro-tech/grok-cli/issues"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/micro-tech/grok-cli.git"
+  },
+  "license": "ISC",
+  "author": "john mcconnell",
+  "type": "rust",
+  "main": "H:\\GitHub\\grok-cli\\target\\release\\groke.exe",
+  "directories": {
+    "doc": "docs",
+    "example": "examples"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
+}
