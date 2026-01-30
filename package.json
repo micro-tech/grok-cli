@@ -1,33 +1,48 @@
 {
   "name": "grok-cli-acp",
   "version": "0.1.2",
-  "description": "grok-cli in rust with acp access",
+  "description": "A CLI tool for interacting with Grok AI via X API - Rust binary wrapper",
   "keywords": [
-    "Xai",
+    "cli",
+    "ai",
     "grok",
-    "Zed",
-    "ACP"
+    "x-api",
+    "xai",
+    "zed",
+    "acp"
   ],
-  "homepage": "https://github.com/micro-tech/grok-cli#readme",
+  "homepage": "https://github.com/microtech/grok-cli#readme",
   "bugs": {
-    "url": "https://github.com/micro-tech/grok-cli/issues"
+    "url": "https://github.com/microtech/grok-cli/issues"
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/micro-tech/grok-cli.git"
+    "url": "git+https://github.com/microtech/grok-cli.git"
   },
   "license": "ISC",
-  "author": "john mcconnell",
-  "type": "commonjs",
-  "main": "H:\\GitHub\\grok-cli\\target\\release\\groke.exe",
-  "directories": {
-    "doc": "docs",
-    "example": "examples"
+  "author": "john mcconnell <john.microtech@gmail.com>",
+  "bin": {
+    "grok": "./bin/grok.js"
   },
+  "files": [
+    "bin/",
+    "install.js",
+    "README.md"
+  ],
   "scripts": {
+    "postinstall": "node install.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
-  "dependencies": {
-    "grok-cli-acp": "^0.1.2"
-  }
+  "engines": {
+    "node": ">=14.0.0"
+  },
+  "os": [
+    "linux",
+    "darwin",
+    "win32"
+  ],
+  "cpu": [
+    "x64",
+    "arm64"
+  ]
 }
