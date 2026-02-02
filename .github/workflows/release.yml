@@ -3,7 +3,7 @@ name: Build Cross-Platform Binaries
 on:
   push:
     tags:
-      - "v*"
+      - "v0.1.2"
   workflow_dispatch:
 
 jobs:
