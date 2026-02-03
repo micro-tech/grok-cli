@@ -4,7 +4,7 @@
 //! context files (like GEMINI.md, .grok/context.md, etc.) that help ground
 //! the AI agent in project conventions and guidelines.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -25,6 +25,14 @@ const CONTEXT_FILE_NAMES: &[&str] = &[
 /// Maximum context file size to load (5 MB)
 const MAX_CONTEXT_SIZE: u64 = 5 * 1024 * 1024;
 
+/// Standard context file names to search for in the global configuration directory
+const GLOBAL_CONTEXT_FILE_NAMES: &[&str] = &["context.md", "CONTEXT.md"];
+
+/// Get the global context directory (e.g., ~/.grok)
+fn get_global_context_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".grok"))
+}
+
 /// Load project context from standard context files
 ///
 /// Searches for context files in the project root directory in the following order:
@@ -43,43 +51,64 @@ const MAX_CONTEXT_SIZE: u64 = 5 * 1024 * 1024;
 pub fn load_project_context<P: AsRef<Path>>(project_root: P) -> Result<Option<String>> {
     let project_root = project_root.as_ref();
 
-    if !project_root.exists() || !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project root does not exist or is not a directory: {:?}",
-            project_root
-        ));
-    }
+    // 1. Check project directory
+    if project_root.exists() && project_root.is_dir() {
+        for file_name in CONTEXT_FILE_NAMES {
+            let file_path = project_root.join(file_name);
 
-    for file_name in CONTEXT_FILE_NAMES {
-        let file_path = project_root.join(file_name);
-
-        if file_path.exists() && file_path.is_file() {
-            // Check file size before reading
-            let metadata = fs::metadata(&file_path)?;
-            if metadata.len() > MAX_CONTEXT_SIZE {
-                eprintln!(
-                    "Warning: Context file {} is too large ({} bytes), skipping",
-                    file_path.display(),
-                    metadata.len()
-                );
-                continue;
-            }
-
-            match fs::read_to_string(&file_path) {
-                Ok(content) => {
-                    if content.trim().is_empty() {
-                        // Skip empty files and continue searching
-                        continue;
-                    }
-                    return Ok(Some(content));
-                }
-                Err(e) => {
+            if file_path.exists() && file_path.is_file() {
+                // Check file size before reading
+                let metadata = fs::metadata(&file_path)?;
+                if metadata.len() > MAX_CONTEXT_SIZE {
                     eprintln!(
-                        "Warning: Failed to read context file {}: {}",
+                        "Warning: Context file {} is too large ({} bytes), skipping",
                         file_path.display(),
-                        e
+                        metadata.len()
                     );
                     continue;
+                }
+
+                match fs::read_to_string(&file_path) {
+                    Ok(content) => {
+                        if content.trim().is_empty() {
+                            // Skip empty files and continue searching
+                            continue;
+                        }
+                        return Ok(Some(content));
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Failed to read context file {}: {}",
+                            file_path.display(),
+                            e
+                        );
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Check global directory
+    if let Some(global_dir) = get_global_context_dir() {
+        if global_dir.exists() && global_dir.is_dir() {
+            for file_name in GLOBAL_CONTEXT_FILE_NAMES {
+                let file_path = global_dir.join(file_name);
+
+                if file_path.exists() && file_path.is_file() {
+                    let metadata = fs::metadata(&file_path)?;
+                    if metadata.len() > MAX_CONTEXT_SIZE {
+                        continue;
+                    }
+
+                    match fs::read_to_string(&file_path) {
+                        Ok(content) => {
+                            if !content.trim().is_empty() {
+                                return Ok(Some(content));
+                            }
+                        }
+                        Err(_) => continue,
+                    }
                 }
             }
         }
@@ -99,46 +128,72 @@ pub fn load_project_context<P: AsRef<Path>>(project_root: P) -> Result<Option<St
 /// Returns a merged context string, or None if no files are found.
 pub fn load_and_merge_project_context<P: AsRef<Path>>(project_root: P) -> Result<Option<String>> {
     let project_root = project_root.as_ref();
-
-    if !project_root.exists() || !project_root.is_dir() {
-        return Err(anyhow!(
-            "Project root does not exist or is not a directory: {:?}",
-            project_root
-        ));
-    }
-
     let mut merged_content = Vec::new();
 
-    for file_name in CONTEXT_FILE_NAMES {
-        let file_path = project_root.join(file_name);
+    // 1. Load from project directory
+    if project_root.exists() && project_root.is_dir() {
+        for file_name in CONTEXT_FILE_NAMES {
+            let file_path = project_root.join(file_name);
 
-        if file_path.exists() && file_path.is_file() {
-            // Check file size before reading
-            let metadata = fs::metadata(&file_path)?;
-            if metadata.len() > MAX_CONTEXT_SIZE {
-                eprintln!(
-                    "Warning: Context file {} is too large ({} bytes), skipping",
-                    file_path.display(),
-                    metadata.len()
-                );
-                continue;
-            }
-
-            match fs::read_to_string(&file_path) {
-                Ok(content) => {
-                    if !content.trim().is_empty() {
-                        // Add source annotation
-                        let annotated = format!("## From: {}\n\n{}\n", file_name, content.trim());
-                        merged_content.push(annotated);
-                    }
-                }
-                Err(e) => {
+            if file_path.exists() && file_path.is_file() {
+                // Check file size before reading
+                let metadata = fs::metadata(&file_path)?;
+                if metadata.len() > MAX_CONTEXT_SIZE {
                     eprintln!(
-                        "Warning: Failed to read context file {}: {}",
+                        "Warning: Context file {} is too large ({} bytes), skipping",
                         file_path.display(),
-                        e
+                        metadata.len()
                     );
                     continue;
+                }
+
+                match fs::read_to_string(&file_path) {
+                    Ok(content) => {
+                        if !content.trim().is_empty() {
+                            // Add source annotation
+                            let annotated =
+                                format!("## From: {}\n\n{}\n", file_name, content.trim());
+                            merged_content.push(annotated);
+                        }
+                    }
+                    Err(e) => {
+                        eprintln!(
+                            "Warning: Failed to read context file {}: {}",
+                            file_path.display(),
+                            e
+                        );
+                        continue;
+                    }
+                }
+            }
+        }
+    }
+
+    // 2. Load from global directory
+    if let Some(global_dir) = get_global_context_dir() {
+        if global_dir.exists() && global_dir.is_dir() {
+            for file_name in GLOBAL_CONTEXT_FILE_NAMES {
+                let file_path = global_dir.join(file_name);
+
+                if file_path.exists() && file_path.is_file() {
+                    let metadata = fs::metadata(&file_path)?;
+                    if metadata.len() > MAX_CONTEXT_SIZE {
+                        continue;
+                    }
+
+                    match fs::read_to_string(&file_path) {
+                        Ok(content) => {
+                            if !content.trim().is_empty() {
+                                let annotated = format!(
+                                    "## From: Global {}\n\n{}\n",
+                                    file_name,
+                                    content.trim()
+                                );
+                                merged_content.push(annotated);
+                            }
+                        }
+                        Err(_) => continue,
+                    }
                 }
             }
         }
@@ -153,20 +208,30 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(project_root: P) -> Result
 
 /// Get all available context file paths in the project
 ///
-/// Returns a vector of paths to all existing context files.
+/// Returns a vector of paths to all existing context files (project and global).
 pub fn get_all_context_file_paths<P: AsRef<Path>>(project_root: P) -> Vec<PathBuf> {
     let project_root = project_root.as_ref();
-
-    if !project_root.exists() || !project_root.is_dir() {
-        return Vec::new();
-    }
-
     let mut paths = Vec::new();
 
-    for file_name in CONTEXT_FILE_NAMES {
-        let file_path = project_root.join(file_name);
-        if file_path.exists() && file_path.is_file() {
-            paths.push(file_path);
+    // 1. Check project directory
+    if project_root.exists() && project_root.is_dir() {
+        for file_name in CONTEXT_FILE_NAMES {
+            let file_path = project_root.join(file_name);
+            if file_path.exists() && file_path.is_file() {
+                paths.push(file_path);
+            }
+        }
+    }
+
+    // 2. Check global directory
+    if let Some(global_dir) = get_global_context_dir() {
+        if global_dir.exists() && global_dir.is_dir() {
+            for file_name in GLOBAL_CONTEXT_FILE_NAMES {
+                let file_path = global_dir.join(file_name);
+                if file_path.exists() && file_path.is_file() {
+                    paths.push(file_path);
+                }
+            }
         }
     }
 
@@ -179,14 +244,25 @@ pub fn get_all_context_file_paths<P: AsRef<Path>>(project_root: P) -> Vec<PathBu
 pub fn get_context_file_path<P: AsRef<Path>>(project_root: P) -> Option<PathBuf> {
     let project_root = project_root.as_ref();
 
-    if !project_root.exists() || !project_root.is_dir() {
-        return None;
+    // 1. Check project directory
+    if project_root.exists() && project_root.is_dir() {
+        for file_name in CONTEXT_FILE_NAMES {
+            let file_path = project_root.join(file_name);
+            if file_path.exists() && file_path.is_file() {
+                return Some(file_path);
+            }
+        }
     }
 
-    for file_name in CONTEXT_FILE_NAMES {
-        let file_path = project_root.join(file_name);
-        if file_path.exists() && file_path.is_file() {
-            return Some(file_path);
+    // 2. Check global directory
+    if let Some(global_dir) = get_global_context_dir() {
+        if global_dir.exists() && global_dir.is_dir() {
+            for file_name in GLOBAL_CONTEXT_FILE_NAMES {
+                let file_path = global_dir.join(file_name);
+                if file_path.exists() && file_path.is_file() {
+                    return Some(file_path);
+                }
+            }
         }
     }
 

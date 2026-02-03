@@ -92,8 +92,39 @@ fn install_windows() {
     println!("{}", "Setting up configuration...".cyan());
     setup_config();
 
+    // 8. Setup Global Context
+    println!("{}", "Setting up global context...".cyan());
+    setup_context(&root_dir);
+
     println!("\n{}", "Installation Complete!".green().bold());
     println!("Please restart your terminal to use the 'grok' command.");
+}
+
+#[cfg(windows)]
+fn setup_context(root_dir: &Path) {
+    if let Some(home_dir) = dirs::home_dir() {
+        let grok_dir = home_dir.join(".grok");
+        if !grok_dir.exists() {
+            if let Err(e) = fs::create_dir_all(&grok_dir) {
+                eprintln!("Failed to create .grok directory: {}", e);
+                return;
+            }
+        }
+
+        let source_context = root_dir.join("context.md");
+        let target_context = grok_dir.join("context.md");
+
+        if source_context.exists() {
+            match fs::copy(&source_context, &target_context) {
+                Ok(_) => println!("Global context installed to {}", target_context.display()),
+                Err(e) => eprintln!("Failed to install global context: {}", e),
+            }
+        } else {
+            println!("No context.md found in project root, skipping global context setup.");
+        }
+    } else {
+        eprintln!("Failed to locate home directory for context setup.");
+    }
 }
 
 #[cfg(windows)]
