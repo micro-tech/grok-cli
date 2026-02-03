@@ -20,16 +20,20 @@ const CONTEXT_FILE_NAMES: &[&str] = &[
     ".gemini/context.md",
     ".cursor/rules",
     "AI_RULES.md",
+    ".grok/memory.md",
 ];
 
 /// Maximum context file size to load (5 MB)
 const MAX_CONTEXT_SIZE: u64 = 5 * 1024 * 1024;
 
 /// Standard context file names to search for in the global configuration directory
-const GLOBAL_CONTEXT_FILE_NAMES: &[&str] = &["context.md", "CONTEXT.md"];
+const GLOBAL_CONTEXT_FILE_NAMES: &[&str] = &["context.md", "CONTEXT.md", "memory.md"];
 
 /// Get the global context directory (e.g., ~/.grok)
 fn get_global_context_dir() -> Option<PathBuf> {
+    if let Ok(path) = std::env::var("GROK_GLOBAL_CONTEXT_DIR") {
+        return Some(PathBuf::from(path));
+    }
     dirs::home_dir().map(|home| home.join(".grok"))
 }
 
@@ -376,27 +380,57 @@ mod tests {
     #[test]
     fn test_load_project_context_no_file() {
         let temp_dir = tempdir().unwrap();
+        // Override global context dir to ensure it doesn't pick up real files
+        unsafe {
+            std::env::set_var(
+                "GROK_GLOBAL_CONTEXT_DIR",
+                temp_dir.path().join("non_existent"),
+            )
+        };
+
         let result = load_project_context(temp_dir.path()).unwrap();
+
+        unsafe { std::env::remove_var("GROK_GLOBAL_CONTEXT_DIR") };
         assert!(result.is_none());
     }
 
     #[test]
     fn test_load_project_context_empty_file() {
         let temp_dir = tempdir().unwrap();
+        // Override global context dir
+        unsafe {
+            std::env::set_var(
+                "GROK_GLOBAL_CONTEXT_DIR",
+                temp_dir.path().join("non_existent"),
+            )
+        };
+
         let gemini_file = temp_dir.path().join("GEMINI.md");
         fs::write(&gemini_file, "   \n\n  ").unwrap();
 
         let result = load_project_context(temp_dir.path()).unwrap();
+
+        unsafe { std::env::remove_var("GROK_GLOBAL_CONTEXT_DIR") };
         assert!(result.is_none());
     }
 
     #[test]
     fn test_get_context_file_path() {
         let temp_dir = tempdir().unwrap();
+        // Override global context dir
+        unsafe {
+            std::env::set_var(
+                "GROK_GLOBAL_CONTEXT_DIR",
+                temp_dir.path().join("non_existent"),
+            )
+        };
+
         let gemini_file = temp_dir.path().join("GEMINI.md");
         fs::write(&gemini_file, "test").unwrap();
 
         let result = get_context_file_path(temp_dir.path());
+
+        unsafe { std::env::remove_var("GROK_GLOBAL_CONTEXT_DIR") };
         assert!(result.is_some());
         assert_eq!(result.unwrap(), gemini_file);
     }
@@ -452,6 +486,13 @@ mod tests {
     #[test]
     fn test_get_all_context_file_paths() {
         let temp_dir = tempdir().unwrap();
+        // Override global context dir
+        unsafe {
+            std::env::set_var(
+                "GROK_GLOBAL_CONTEXT_DIR",
+                temp_dir.path().join("non_existent"),
+            )
+        };
 
         // Create multiple context files
         fs::write(temp_dir.path().join("GEMINI.md"), "test1").unwrap();
@@ -461,6 +502,8 @@ mod tests {
         fs::write(zed_dir.join("rules"), "test2").unwrap();
 
         let paths = get_all_context_file_paths(temp_dir.path());
+
+        unsafe { std::env::remove_var("GROK_GLOBAL_CONTEXT_DIR") };
         assert_eq!(paths.len(), 2);
     }
 }
