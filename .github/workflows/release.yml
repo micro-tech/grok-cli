@@ -1,5 +1,8 @@
 name: Build Cross-Platform Binaries
 
+permissions:
+  contents: write
+
 on:
   push:
     tags:
