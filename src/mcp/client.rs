@@ -1,5 +1,5 @@
-use anyhow::{anyhow, Result};
-use serde_json::{json, Value};
+use anyhow::{Result, anyhow};
+use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::process::Stdio;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -148,11 +148,12 @@ impl McpClient {
         let response = self.read_response(connection).await?;
 
         // Parse response
-        if let Some(result) = response.get("result")
-            && let Some(tools_val) = result.get("tools") {
+        if let Some(result) = response.get("result") {
+            if let Some(tools_val) = result.get("tools") {
                 let tools: Vec<Tool> = serde_json::from_value(tools_val.clone())?;
                 return Ok(tools);
             }
+        }
 
         Ok(Vec::new())
     }

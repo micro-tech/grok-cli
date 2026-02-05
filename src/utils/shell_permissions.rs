@@ -7,7 +7,7 @@
 //! - Session-level allowlist ("Always allow")
 //! - Persistent policy storage
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::*;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
@@ -16,8 +16,7 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 
 /// Approval mode for shell commands
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 pub enum ApprovalMode {
     /// Ask for confirmation (default)
     #[default]
@@ -25,7 +24,6 @@ pub enum ApprovalMode {
     /// Always allow without asking (DANGEROUS!)
     Yolo,
 }
-
 
 /// Permission decision for a command
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -73,10 +71,11 @@ impl ShellPermissions {
         };
 
         // Load persistent allowlist from disk
-        if let Some(path) = &permissions.policy_path
-            && let Ok(policy) = Self::load_policy(path) {
+        if let Some(path) = &permissions.policy_path {
+            if let Ok(policy) = Self::load_policy(path) {
                 permissions.persistent_allowlist = policy.allowed_commands;
             }
+        }
 
         permissions
     }

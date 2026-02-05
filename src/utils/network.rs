@@ -4,7 +4,7 @@
 //! instability common with satellite internet connections like Starlink,
 //! including connection drops, timeouts, and recovery strategies.
 
-use anyhow::{anyhow, Error};
+use anyhow::{Error, anyhow};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
@@ -141,11 +141,12 @@ pub async fn detect_starlink_connection() -> bool {
     // This is a heuristic approach
 
     // Check if we can resolve starlink.com (indicates possible Starlink connection)
-    if let Ok(addrs) = tokio::net::lookup_host("starlink.com:80").await
-        && addrs.count() > 0 {
+    if let Ok(addrs) = tokio::net::lookup_host("starlink.com:80").await {
+        if addrs.count() > 0 {
             info!("Starlink domain resolution successful - possible Starlink connection");
             return true;
         }
+    }
 
     // Additional heuristics could be added here:
     // - Check for specific IP ranges

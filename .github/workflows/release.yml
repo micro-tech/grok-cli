@@ -23,18 +23,18 @@ jobs:
         uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@nightly
 
       - name: Build binary only
-        run: cargo build --bin grok-cli --release --verbose
+        run: cargo build --bin grok --release --verbose
 
       - name: Rename Binary (Unix)
         if: matrix.os != 'windows-latest'
-        run: mv target/release/grok-cli target/release/grok-cli-${{ matrix.os }}
+        run: mv target/release/grok target/release/grok-cli-${{ matrix.os }}
 
       - name: Rename Binary (Windows)
         if: matrix.os == 'windows-latest'
-        run: mv target/release/grok-cli.exe target/release/grok-cli-${{ matrix.os }}.exe
+        run: mv target/release/grok.exe target/release/grok-cli-${{ matrix.os }}.exe
 
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
