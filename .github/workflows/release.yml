@@ -5,9 +5,6 @@ permissions:
 
 on:
   push:
-    branches:
-      - main
-      - fix
     tags:
       - "v*"
   workflow_dispatch:
@@ -19,14 +16,28 @@ jobs:
 
     strategy:
       matrix:
-        os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
+            artifact_name: grok-cli-linux-x86_64
+            binary_name: grok
+          - os: macos-latest
+            target: x86_64-apple-darwin
+            artifact_name: grok-cli-macos-x86_64
+            binary_name: grok
+          - os: windows-latest
+            target: x86_64-pc-windows-msvc
+            artifact_name: grok-cli-windows-x86_64
+            binary_name: grok.exe
 
     steps:
       - name: Checkout
         uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@nightly
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
 
       - name: Install dependencies (Ubuntu only)
         if: matrix.os == 'ubuntu-latest'
@@ -34,22 +45,48 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y libssl-dev pkg-config
 
-      - name: Build binary only
+      - name: Build binary
         run: cargo build --bin grok --release --verbose
 
-      - name: Rename Binary (Unix)
+      - name: Create release directory
+        shell: bash
+        run: mkdir -p release
+
+      - name: Copy binary to release directory (Unix)
         if: matrix.os != 'windows-latest'
-        run: mv target/release/grok target/release/grok-cli-${{ matrix.os }}
+        run: |
+          cp target/release/${{ matrix.binary_name }} release/
+          chmod +x release/${{ matrix.binary_name }}
 
-      - name: Rename Binary (Windows)
+      - name: Copy binary to release directory (Windows)
         if: matrix.os == 'windows-latest'
-        run: mv target/release/grok.exe target/release/grok-cli-${{ matrix.os }}.exe
+        run: copy target\release\${{ matrix.binary_name }} release\
 
-      - name: Upload Artifact
+      - name: Copy README and LICENSE to release directory
+        shell: bash
+        run: |
+          cp README.md release/ 2>/dev/null || echo "README.md not found, skipping"
+          cp LICENSE release/ 2>/dev/null || echo "LICENSE not found, skipping"
+
+      - name: Create ZIP archive (Unix)
+        if: matrix.os != 'windows-latest'
+        run: |
+          cd release
+          zip -r ../${{ matrix.artifact_name }}.zip .
+          cd ..
+
+      - name: Create ZIP archive (Windows)
+        if: matrix.os == 'windows-latest'
+        shell: pwsh
+        run: |
+          Compress-Archive -Path release\* -DestinationPath ${{ matrix.artifact_name }}.zip
+
+      - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: grok-cli-${{ matrix.os }}
-          path: target/release/grok-cli-${{ matrix.os }}*
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.artifact_name }}.zip
+          retention-days: 1
 
   release:
     name: Create GitHub Release
@@ -58,12 +95,75 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
 
     steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
 
+      - name: Display structure of downloaded files
+        run: ls -R artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find artifacts -name "*.zip" -exec cp {} release-assets/ \;
+          ls -lh release-assets/
+
+      - name: Generate release notes
+        id: release_notes
+        run: |
+          VERSION=${GITHUB_REF#refs/tags/}
+          echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+
+          cat > release-notes.md << 'EOF'
+          ## 🚀 Release $VERSION
+
+          ### 📦 Downloads
+
+          Choose the appropriate package for your operating system:
+
+          - **Windows**: `grok-cli-windows-x86_64.zip`
+          - **macOS**: `grok-cli-macos-x86_64.zip`
+          - **Linux**: `grok-cli-linux-x86_64.zip`
+
+          ### 📥 Installation
+
+          1. Download the ZIP file for your platform
+          2. Extract the archive
+          3. Run the `grok` (or `grok.exe` on Windows) binary
+
+          ### ✨ What's New
+
+          See [CHANGELOG.md](https://github.com/microtech/grok-cli/blob/main/CHANGELOG.md) for detailed changes.
+
+          ### 🐛 Bug Reports
+
+          Report issues at: https://github.com/microtech/grok-cli/issues
+
+          ---
+
+          **Author:** John McConnell (john.microtech@gmail.com)
+          **Support:** https://buymeacoffee.com/micro.tech
+          EOF
+
+          sed "s/\$VERSION/$VERSION/g" release-notes.md > final-release-notes.md
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: artifacts/**/*
+          files: release-assets/*.zip
+          body_path: final-release-notes.md
+          draft: false
+          prerelease: false
+          fail_on_unmatched_files: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Release Assets Summary
+        run: |
+          echo "## Release Assets Created:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          ls -lh release-assets/*.zip | awk '{print "- " $9 " (" $5 ")"}' >> $GITHUB_STEP_SUMMARY
