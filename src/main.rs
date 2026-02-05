@@ -6,6 +6,9 @@ use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 use grok_cli::cli;
 use grok_cli::utils::chat_logger;
 
+// Binary-only modules for terminal I/O
+mod terminal;
+
 #[tokio::main]
 async fn main() -> Result<()> {
     // Load environment variables from .env file

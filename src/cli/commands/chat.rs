@@ -2,6 +2,11 @@
 //!
 //! Handles interactive and non-interactive chat sessions with Grok AI
 
+// Allow deprecated warnings in this module since these I/O functions
+// are deprecated and will be refactored in Phase 2. The deprecation markers
+// remain for external users and documentation purposes.
+#![allow(deprecated)]
+
 use anyhow::{Result, anyhow};
 use colored::*;
 use serde_json::{Value, json};
@@ -12,9 +17,9 @@ use std::process::Command;
 
 use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
-use crate::{ToolCall, GrokClient};
 use crate::cli::{create_spinner, format_grok_response, print_error, print_info, print_success};
 use crate::config::RateLimitConfig;
+use crate::{GrokClient, ToolCall};
 
 pub struct ChatOptions<'a> {
     pub message: Vec<String>,

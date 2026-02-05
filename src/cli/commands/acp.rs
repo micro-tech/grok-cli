@@ -4,6 +4,11 @@
 //! the ACP server for Zed editor integration, testing connections, and managing
 //! ACP capabilities.
 
+// Allow deprecated warnings in this module since these I/O functions
+// are deprecated and will be refactored in Phase 2. The deprecation markers
+// remain for external users and documentation purposes.
+#![allow(deprecated)]
+
 use anyhow::{Result, anyhow};
 use colored::*;
 use serde_json::{Value, json};

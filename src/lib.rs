@@ -2,6 +2,35 @@
 //!
 //! This library provides the core functionality for the Grok CLI,
 //! including API integration, configuration management, and display utilities.
+//!
+//! # Architecture Notes
+//!
+//! ## Library vs Binary Separation
+//!
+//! This crate contains both library and binary code. According to Rust best practices,
+//! libraries should NOT contain:
+//! - Terminal I/O operations (println!, eprintln!, print!, etc.)
+//! - Progress bars (indicatif)
+//! - Terminal UI (ratatui, crossterm)
+//! - Direct runtime dependencies (#[tokio::main])
+//! - Code that exits the process
+//!
+//! ## Current State
+//!
+//! The following modules currently violate library/binary separation:
+//! - `cli::mod` - Contains I/O helper functions (marked deprecated)
+//! - `cli::commands::*` - Command handlers print directly to stdout/stderr
+//! - `display` - Some functions perform direct I/O
+//!
+//! ## Migration Path
+//!
+//! 1. ✅ Created `src/terminal/` module for binary-only I/O (not exposed in lib.rs)
+//! 2. ⏳ TODO: Refactor command handlers to return Result<DisplayData> instead of printing
+//! 3. ⏳ TODO: Move `cli::app` and command dispatch to binary crate
+//! 4. ⏳ TODO: Make all `display` functions pure (return String, no I/O)
+//!
+//! For now, I/O functions are marked with `#[deprecated]` to indicate they should
+//! be moved to the binary crate in a future refactor.
 
 use clap::Subcommand;
 
@@ -16,8 +45,7 @@ pub mod utils;
 
 // Re-export grok_api types for use throughout the crate
 pub use grok_api::{
-    ChatResponse, Message, ToolCall, FunctionCall, Choice, Usage,
-    Error as GrokApiError,
+    ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, ToolCall, Usage,
 };
 
 // Re-export the extended GrokClient

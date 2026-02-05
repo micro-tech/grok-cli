@@ -1,14 +1,19 @@
+// Allow deprecated warnings in this module since these I/O functions
+// are deprecated and will be refactored in Phase 2. The deprecation markers
+// remain for external users and documentation purposes.
+#![allow(deprecated)]
+
 //! Config command handler for grok-cli
 //!
 //! Handles configuration management operations including showing, setting,
 //! getting, initializing, and validating configuration settings.
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::*;
 
+use crate::ConfigAction;
 use crate::cli::{confirm, print_error, print_info, print_success, print_warning};
 use crate::config::Config;
-use crate::ConfigAction;
 
 /// Handle configuration-related commands
 pub async fn handle_config_action(action: ConfigAction, config: &Config) -> Result<()> {
@@ -279,9 +284,10 @@ async fn validate_config() -> Result<()> {
             if config.acp.enabled {
                 print_info("ACP (Zed integration) is enabled");
                 if let Some(port) = config.acp.default_port
-                    && port < 1024 {
-                        warnings.push(format!("ACP port {} may require elevated privileges", port));
-                    }
+                    && port < 1024
+                {
+                    warnings.push(format!("ACP port {} may require elevated privileges", port));
+                }
             }
 
             // Display warnings and suggestions

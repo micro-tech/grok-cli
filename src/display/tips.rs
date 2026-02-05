@@ -3,6 +3,7 @@
 //! Handles display of helpful tips and getting started information
 
 use colored::*;
+use rand::Rng;
 use rand::prelude::IndexedMutRandom;
 use rand::seq::SliceRandom;
 
@@ -165,11 +166,22 @@ pub fn print_troubleshooting_tips(config: &TipConfig) {
 }
 
 /// Get random tips from a collection
-fn get_random_tips<'a>(tips: &'a [&'a str], count: usize) -> Vec<&'a str> {
+pub fn get_random_tips<'a>(tips: &'a [&'a str], count: usize) -> Vec<&'a str> {
     let mut rng = rand::rng();
     let mut selected_tips: Vec<&str> = tips.to_vec();
     selected_tips.shuffle(&mut rng);
     selected_tips.into_iter().take(count).collect()
+}
+
+/// Get a single random tip from a collection
+pub fn get_random_tip<'a>(tips: &'a [&'a str]) -> Option<&'a str> {
+    if tips.is_empty() {
+        None
+    } else {
+        let mut rng = rand::rng();
+        let index = rng.random_range(0..tips.len());
+        Some(tips[index])
+    }
 }
 
 /// Print a tip of the day

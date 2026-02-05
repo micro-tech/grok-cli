@@ -1,7 +1,16 @@
-//! CLI command handlers and utilities for grok-cli
+//! CLI utilities for grok-cli
 //!
-//! This module contains all the command-line interface logic, including
-//! argument parsing, command dispatch, and user interaction utilities.
+//! This module contains formatting functions and legacy I/O helpers.
+//!
+//! # Architecture Note
+//! The I/O functions below are deprecated and should be moved to the binary crate.
+//! They are kept here temporarily for backwards compatibility.
+//! TODO: Refactor command handlers to use the terminal module in src/main.rs
+
+// Allow deprecated warnings in this module since we know these functions
+// are deprecated and will be refactored in Phase 2. The deprecation markers
+// remain for external users.
+#![allow(deprecated)]
 
 pub mod app;
 pub mod commands;
@@ -11,7 +20,16 @@ use colored::*;
 use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, Write};
 
+// ============================================================================
+// DEPRECATED I/O FUNCTIONS - TODO: Move to binary crate
+// ============================================================================
+
 /// Create a progress spinner with the given message
+///
+/// # Deprecated
+/// This function performs I/O and should not be in the library.
+/// Use the terminal module in the binary crate instead.
+#[deprecated(note = "Move to binary crate - performs I/O")]
 pub fn create_spinner(message: &str) -> ProgressBar {
     let pb = ProgressBar::new_spinner();
     pb.set_style(
@@ -26,26 +44,46 @@ pub fn create_spinner(message: &str) -> ProgressBar {
 }
 
 /// Print a success message with green color
+///
+/// # Deprecated
+/// This function performs I/O and should not be in the library.
+#[deprecated(note = "Move to binary crate - performs I/O")]
 pub fn print_success(message: &str) {
     println!("{} {}", "✓".green(), message);
 }
 
 /// Print an error message with red color
+///
+/// # Deprecated
+/// This function performs I/O and should not be in the library.
+#[deprecated(note = "Move to binary crate - performs I/O")]
 pub fn print_error(message: &str) {
     eprintln!("{} {}", "✗".red(), message);
 }
 
 /// Print a warning message with yellow color
+///
+/// # Deprecated
+/// This function performs I/O and should not be in the library.
+#[deprecated(note = "Move to binary crate - performs I/O")]
 pub fn print_warning(message: &str) {
     println!("{} {}", "⚠".yellow(), message);
 }
 
 /// Print an info message with blue color
+///
+/// # Deprecated
+/// This function performs I/O and should not be in the library.
+#[deprecated(note = "Move to binary crate - performs I/O")]
 pub fn print_info(message: &str) {
     println!("{} {}", "ℹ".blue(), message);
 }
 
 /// Prompt user for confirmation
+///
+/// # Deprecated
+/// This function performs I/O and should not be in the library.
+#[deprecated(note = "Move to binary crate - performs I/O")]
 pub fn confirm(message: &str) -> Result<bool> {
     print!("{} {} [y/N]: ", "?".cyan(), message);
     io::stdout().flush()?;
@@ -56,7 +94,22 @@ pub fn confirm(message: &str) -> Result<bool> {
     Ok(input.trim().to_lowercase() == "y" || input.trim().to_lowercase() == "yes")
 }
 
-/// Format code with syntax highlighting (simplified version)
+/// Get terminal width, defaulting to 80 if unable to determine
+///
+/// # Deprecated
+/// This function performs I/O and should not be in the library.
+#[deprecated(note = "Move to binary crate - performs I/O")]
+pub fn get_terminal_width() -> usize {
+    terminal_size::terminal_size()
+        .map(|(terminal_size::Width(w), _)| w as usize)
+        .unwrap_or(80)
+}
+
+// ============================================================================
+// PURE FORMATTING FUNCTIONS - These are OK in library
+// ============================================================================
+
+/// Format code with syntax highlighting markers (simplified version)
 pub fn format_code(code: &str, language: Option<&str>) -> String {
     // For now, just return the code as-is with some basic formatting
     // In a full implementation, you'd use a syntax highlighter like syntect
@@ -73,7 +126,7 @@ pub fn format_grok_response(response: &str, show_thinking: bool) -> String {
     let mut formatted = String::new();
 
     if show_thinking {
-        formatted.push_str(&format!("{}\n", "🤔 Grok's response:".cyan()));
+        formatted.push_str("🤔 Grok's response:\n");
     }
 
     formatted.push_str("┌─────────────────────────────────────────────────────┐\n");
@@ -96,17 +149,14 @@ pub fn truncate_text(text: &str, max_width: usize) -> String {
     }
 }
 
-/// Get terminal width, defaulting to 80 if unable to determine
-pub fn get_terminal_width() -> usize {
-    terminal_size::terminal_size()
-        .map(|(terminal_size::Width(w), _)| w as usize)
-        .unwrap_or(80)
-}
-
-/// Format a table with headers and rows
-pub fn format_table(headers: &[&str], rows: &[Vec<String>]) -> String {
+/// Format a table with headers and rows (returns String, does not print)
+/// Uses provided terminal width or defaults to 80
+pub fn format_table_with_width(
+    headers: &[&str],
+    rows: &[Vec<String>],
+    terminal_width: usize,
+) -> String {
     let mut table = String::new();
-    let terminal_width = get_terminal_width();
     let col_width = (terminal_width - headers.len() - 1) / headers.len();
 
     // Header
@@ -163,4 +213,37 @@ pub fn format_table(headers: &[&str], rows: &[Vec<String>]) -> String {
     table.push_str("┘\n");
 
     table
+}
+
+/// Format a table with headers and rows (auto-detects terminal width)
+///
+/// # Deprecated
+/// This function calls get_terminal_width() which performs I/O.
+#[deprecated(note = "Use format_table_with_width instead")]
+pub fn format_table(headers: &[&str], rows: &[Vec<String>]) -> String {
+    let terminal_width = get_terminal_width();
+    format_table_with_width(headers, rows, terminal_width)
+}
+
+/// Format a list with bullet points
+pub fn format_list(items: &[String]) -> String {
+    items
+        .iter()
+        .map(|item| format!("  • {}", item))
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+/// Format a key-value pair
+pub fn format_key_value(key: &str, value: &str) -> String {
+    format!("{}: {}", key, value)
+}
+
+/// Format multiple key-value pairs as a list
+pub fn format_key_value_list(pairs: &[(&str, &str)]) -> String {
+    pairs
+        .iter()
+        .map(|(key, value)| format!("  {}: {}", key, value))
+        .collect::<Vec<_>>()
+        .join("\n")
 }

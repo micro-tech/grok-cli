@@ -2,6 +2,11 @@
 //!
 //! This module provides commands to view, search, and manage chat session logs.
 
+// Allow deprecated warnings in this module since these I/O functions
+// are deprecated and will be refactored in Phase 2. The deprecation markers
+// remain for external users and documentation purposes.
+#![allow(deprecated)]
+
 use anyhow::{Context, Result};
 use colored::*;
 use std::path::PathBuf;

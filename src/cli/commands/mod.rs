@@ -2,6 +2,9 @@
 //!
 //! This module contains all the command handler implementations for the various
 //! CLI commands supported by grok-cli.
+//!
+//! Note: Individual command modules use deprecated I/O functions that will be
+//! refactored in Phase 2. They have #![allow(deprecated)] to suppress warnings.
 
 pub mod acp;
 pub mod chat;

@@ -3,13 +3,18 @@
 //! Provides an interactive settings interface similar to Gemini CLI's `/settings` command.
 //! Allows users to browse and modify configuration settings in categories.
 
-use anyhow::{anyhow, Result};
+// Allow deprecated warnings in this module since these I/O functions
+// are deprecated and will be refactored in Phase 2. The deprecation markers
+// remain for external users and documentation purposes.
+#![allow(deprecated)]
+
+use anyhow::{Result, anyhow};
 use colored::*;
 use std::io::{self, Write};
 
+use crate::SettingsAction;
 use crate::cli::{confirm, print_error, print_info, print_success, print_warning};
 use crate::config::Config;
-use crate::SettingsAction;
 
 /// Setting definition for interactive display
 #[derive(Debug, Clone)]

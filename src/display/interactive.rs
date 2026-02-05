@@ -3,6 +3,11 @@
 //! Provides a Gemini CLI-like interactive experience with persistent sessions,
 //! input prompts, and real-time status display
 
+// Allow deprecated warnings in this module since these I/O functions
+// are deprecated and will be refactored in Phase 2. The deprecation markers
+// remain for external users and documentation purposes.
+#![allow(deprecated)]
+
 use anyhow::Result;
 use colored::*;
 use std::env;
@@ -10,9 +15,9 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use tokio::time::{Duration, sleep};
 
+use crate::GrokClient;
 use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
-use crate::GrokClient;
 use crate::config::Config;
 use crate::display::{
     BannerConfig, clear_current_line, print_directory_recommendation, print_grok_logo,
