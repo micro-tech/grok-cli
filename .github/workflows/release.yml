@@ -6,7 +6,7 @@ permissions:
 on:
   push:
     tags:
-      - "v0.1.3"
+      - "v*"
   workflow_dispatch:
 
 jobs:
@@ -28,12 +28,20 @@ jobs:
       - name: Build Release
         run: cargo build --release
 
+      - name: Rename Binary (Unix)
+        if: matrix.os != 'windows-latest'
+        run: mv target/release/grok-cli target/release/grok-cli-${{ matrix.os }}
+
+      - name: Rename Binary (Windows)
+        if: matrix.os == 'windows-latest'
+        run: mv target/release/grok-cli.exe target/release/grok-cli-${{ matrix.os }}.exe
+
       - name: Upload Artifact
         uses: actions/upload-artifact@v4
         with:
           name: grok-cli-${{ matrix.os }}
           path: |
-            target/release/grok-cli${{ matrix.os == 'windows-latest' && '.exe' || '' }}
+            target/release/grok-cli-${{ matrix.os }}*
 
   release:
     name: Create GitHub Release
