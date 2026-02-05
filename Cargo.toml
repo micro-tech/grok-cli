@@ -21,7 +21,7 @@ unused_variables = "allow"
 
 [dependencies]
 # Grok API client library
-grok_api = "0.1.0"
+grok_api = "=0.1.0"
 # HTTP client with timeout support for network drops
 reqwest = { version = "0.13.1", features = ["json", "native-tls-vendored", "http2"], default-features = false }
 # Async runtime

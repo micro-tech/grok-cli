@@ -14,6 +14,7 @@ use tracing::{debug, info};
 use crate::GrokClient;
 use crate::config::Config;
 use crate::hooks::HookManager;
+use crate::{content_to_string, extract_text_content};
 
 pub mod protocol;
 pub mod security;
@@ -388,7 +389,7 @@ impl GrokAcpAgent {
 
             if let Some(tool_calls) = &response_msg.tool_calls {
                 if tool_calls.is_empty() {
-                    return Ok(response_msg.content.unwrap_or_default());
+                    return Ok(content_to_string(response_msg.content.as_ref()));
                 }
 
                 for tool_call in tool_calls {
@@ -498,7 +499,7 @@ impl GrokAcpAgent {
                 // Continue loop to get next response from model
             } else {
                 // No tool calls, return content
-                let final_content = response_msg.content.unwrap_or_default();
+                let final_content = content_to_string(response_msg.content.as_ref());
                 debug!(
                     "Chat completion for session {}: {} -> {}",
                     session_id.0, message, final_content
@@ -647,7 +648,7 @@ impl GrokAcpAgent {
             response.content.clone().unwrap_or_default()
         );
 
-        Ok(response.content.unwrap_or_default())
+        Ok(content_to_string(response.content.as_ref()))
     }
 
     /// Get agent capabilities

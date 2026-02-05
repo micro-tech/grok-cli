@@ -51,6 +51,24 @@ pub use grok_api::{
 // Re-export the extended GrokClient
 pub use grok_client_ext::GrokClient;
 
+/// Helper function to extract text content from String
+/// Kept for backwards compatibility with refactored code
+pub fn extract_text_content(content: &str) -> String {
+    content.to_string()
+}
+
+/// Helper function to convert Option<String> to String
+/// Kept for backwards compatibility with refactored code
+pub fn content_to_string(content: Option<&String>) -> String {
+    content.cloned().unwrap_or_default()
+}
+
+/// Helper function to create text content
+/// Kept for backwards compatibility with refactored code
+pub fn text_content(text: impl Into<String>) -> String {
+    text.into()
+}
+
 #[derive(Subcommand, Clone, Debug)]
 pub enum CodeAction {
     /// Explain code functionality

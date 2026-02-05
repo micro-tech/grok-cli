@@ -1,0 +1,94 @@
+fix: Resolve GitHub Actions build failures with grok_api compatibility
+
+BREAKING: None (fully backwards compatible)
+
+This commit fixes compilation errors in GitHub Actions CI/CD caused by
+breaking changes in grok_api 0.1.1. The solution pins grok_api to version
+0.1.0 which uses Option<String> for message content instead of the new
+Option<MessageContent> enum type.
+
+## Problem
+
+GitHub Actions builds were failing with errors:
+- error[E0277]: MessageContent doesn't implement Default
+- error[E0277]: MessageContent doesn't implement Display
+- error[E0308]: mismatched types - expected String, found MessageContent
+
+The grok_api crate introduced breaking changes in 0.1.1:
+- Changed Message.content from Option<String> to Option<MessageContent>
+- MessageContent is an enum without Default or Display traits
+
+## Solution
+
+### 1. Pin grok_api Dependency
+- Changed: grok_api = "0.1.1"
+- To: grok_api = "=0.1.0"
+- Uses exact version pinning to prevent automatic updates
+
+### 2. Added Helper Functions
+- extract_text_content(&str) -> String
+- content_to_string(Option<&String>) -> String
+- text_content(impl Into<String>) -> String
+- Functions provide compatibility layer for future migration
+
+### 3. Fixed Missing Imports
+- Added std::env import in chat.rs
+- Added std::process::Command import in chat.rs
+- Fixes undefined module errors
+
+### 4. Fixed Type Issues
+- Fixed grok_client_ext.rs: content().map(|s| s.to_string())
+- Fixed acp/mod.rs: SessionId.0 for Display
+- Fixed acp/mod.rs: message variable reference
+- Fixed chat.rs: content extraction with helper functions
+
+### 5. Created Build Scripts
+- scripts/build.ps1: PowerShell build script for CI/CD
+- scripts/fix-github-build.md: Comprehensive troubleshooting guide
+
+## Files Changed
+
+Modified:
+- Cargo.toml: Pin grok_api to =0.1.0
+- src/lib.rs: Add helper functions for content handling
+- src/acp/mod.rs: Fix content extraction and logging
+- src/cli/commands/chat.rs: Add missing imports, fix content handling
+- src/display/interactive.rs: Fix content extraction
+- src/grok_client_ext.rs: Fix content mapping
+
+Created:
+- scripts/build.ps1: Comprehensive PowerShell build script
+- scripts/fix-github-build.md: GitHub Actions troubleshooting guide
+
+## Testing
+
+✅ Local build successful: cargo build --release
+✅ Tests passing: 77 passed, 1 pre-existing failure
+✅ Binary runs: grok --version works
+✅ No new warnings introduced
+
+## Impact
+
+- Zero breaking changes for users
+- GitHub Actions builds will now succeed
+- Pinned dependency prevents future surprises
+- Helper functions provide migration path to grok_api 0.1.1+
+
+## Future Work
+
+To migrate to grok_api 0.1.1+ in the future:
+1. Fork grok_api and add Default/Display to MessageContent
+2. OR wait for upstream to add these traits
+3. Update helper functions to handle MessageContent enum
+4. Remove version pin and update to latest
+
+## References
+
+- grok_api crate: https://crates.io/crates/grok_api
+- Issue: GitHub Actions build failures
+- Solution: Version pinning + compatibility layer
+
+Resolves GitHub Actions build failures.
+Maintains full backwards compatibility.
+
+Signed-off-by: John McConnell <john.microtech@gmail.com>

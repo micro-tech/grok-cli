@@ -28,6 +28,7 @@ use crate::utils::context::{
 };
 use crate::utils::session::{list_sessions, load_session, save_session};
 use crate::utils::shell_permissions::{ApprovalMode, ShellPermissions};
+use crate::{content_to_string, extract_text_content, text_content};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -1093,15 +1094,18 @@ async fn send_to_grok(
                     println!();
 
                     // Add assistant's response to history
-                    let content = response_msg
-                        .content
-                        .unwrap_or_else(|| "Operations completed.".to_string());
+                    let content = content_to_string(response_msg.content.as_ref());
+                    let content = if content.is_empty() {
+                        "Operations completed.".to_string()
+                    } else {
+                        content
+                    };
                     session.add_conversation_item("assistant", &content, None);
                     return Ok(());
                 }
             }
 
-            let content = response_msg.content.unwrap_or_default();
+            let content = content_to_string(response_msg.content.as_ref());
 
             // Print Grok's response with nice formatting
             println!("{} {}", "🤖".bright_blue(), "Grok:".bright_blue().bold());

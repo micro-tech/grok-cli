@@ -13,13 +13,15 @@ use serde_json::{Value, json};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
+use std::path::Path;
 use std::process::Command;
+use std::time::Duration;
 
 use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
 use crate::cli::{create_spinner, format_grok_response, print_error, print_info, print_success};
 use crate::config::RateLimitConfig;
-use crate::{GrokClient, ToolCall};
+use crate::{GrokClient, ToolCall, content_to_string, extract_text_content};
 
 pub struct ChatOptions<'a> {
     pub message: Vec<String>,
@@ -117,7 +119,8 @@ async fn handle_single_chat(
             print_success("Response received!");
             println!();
             if let Some(content) = response.content {
-                println!("{}", format_grok_response(&content, true));
+                let text = extract_text_content(&content);
+                println!("{}", format_grok_response(&text, true));
             }
         }
         Err(e) => {
@@ -399,7 +402,7 @@ async fn handle_interactive_chat(
                     }
                 }
 
-                let response = response_msg.content.unwrap_or_default();
+                let response = content_to_string(response_msg.content.as_ref());
 
                 // Add assistant response to history
                 conversation_history.push(json!({
