@@ -25,8 +25,8 @@ jobs:
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Build Release
-        run: cargo build --release
+      - name: Build binary only
+        run: cargo build --bin grok-cli --release --verbose
 
       - name: Rename Binary (Unix)
         if: matrix.os != 'windows-latest'
@@ -40,8 +40,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: grok-cli-${{ matrix.os }}
-          path: |
-            target/release/grok-cli-${{ matrix.os }}*
+          path: target/release/grok-cli-${{ matrix.os }}*
 
   release:
     name: Create GitHub Release
