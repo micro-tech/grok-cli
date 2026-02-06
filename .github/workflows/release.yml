@@ -104,13 +104,28 @@ jobs:
           path: artifacts
 
       - name: Display structure of downloaded files
-        run: ls -R artifacts
+        run: |
+          echo "=== Artifacts directory structure ==="
+          ls -R artifacts
+          echo ""
+          echo "=== Finding ZIP files ==="
+          find artifacts -name "*.zip" -type f
 
       - name: Prepare release assets
         run: |
           mkdir -p release-assets
-          find artifacts -name "*.zip" -exec cp {} release-assets/ \;
+          # Each artifact is in its own subdirectory, so we need to find the zips
+          find artifacts -name "*.zip" -type f -exec cp {} release-assets/ \;
+          echo "=== Release assets prepared ==="
           ls -lh release-assets/
+          echo ""
+          echo "=== File count check ==="
+          file_count=$(ls -1 release-assets/*.zip 2>/dev/null | wc -l)
+          echo "Found $file_count ZIP files"
+          if [ "$file_count" -eq 0 ]; then
+            echo "ERROR: No ZIP files found!"
+            exit 1
+          fi
 
       - name: Generate release notes
         id: release_notes
