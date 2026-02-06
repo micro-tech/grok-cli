@@ -158,9 +158,19 @@ pub async fn start_interactive_mode(
     interactive_config: InteractiveConfig,
 ) -> Result<()> {
     // Load project context if available
-    let project_context = load_project_context_for_session(
+    let mut project_context = load_project_context_for_session(
         &env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
     );
+
+    // Load skills context
+    if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
+        if let Ok(skills_context) = crate::skills::get_skills_context(&skills_dir) {
+            if !skills_context.is_empty() {
+                let ctx = project_context.get_or_insert_with(String::new);
+                ctx.push_str(&skills_context);
+            }
+        }
+    }
 
     let mut session = InteractiveSession::new(model.to_string(), project_context);
     let client = GrokClient::new(api_key)?;
@@ -281,6 +291,21 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
                         .unwrap_or("unknown")
                         .dimmed()
                 );
+            }
+        }
+    }
+
+    // Show loaded skills
+    if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
+        if let Ok(skills) = crate::skills::list_skills(&skills_dir) {
+            if !skills.is_empty() {
+                println!(
+                    "  Skills: {}",
+                    format!("{} loaded", skills.len()).bright_green()
+                );
+                for skill in skills {
+                    println!("    - {}", skill.config.name.dimmed());
+                }
             }
         }
     }

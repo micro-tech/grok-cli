@@ -41,6 +41,7 @@ pub mod display;
 pub mod grok_client_ext;
 pub mod hooks;
 pub mod mcp;
+pub mod skills;
 pub mod utils;
 
 // Re-export grok_api types for use throughout the crate

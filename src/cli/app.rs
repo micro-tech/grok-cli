@@ -119,6 +119,12 @@ pub enum Commands {
         #[arg(long)]
         all: bool,
     },
+
+    /// Manage agent skills
+    Skills {
+        #[command(subcommand)]
+        action: crate::cli::commands::skills::SkillsCommand,
+    },
 }
 
 /// Main application entry point
@@ -290,6 +296,9 @@ pub async fn run() -> Result<()> {
                 config.timeout_secs,
             )
             .await?;
+        }
+        Some(Commands::Skills { action }) => {
+            crate::cli::commands::skills::handle_skills_command(action.clone()).await?;
         }
         None => {
             // Default to interactive mode

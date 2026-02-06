@@ -13,5 +13,6 @@ pub mod config;
 pub mod health;
 pub mod history;
 pub mod settings;
+pub mod skills;
 
 // Re-export all command handlers
