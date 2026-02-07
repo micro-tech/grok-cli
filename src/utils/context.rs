@@ -336,10 +336,11 @@ This file provides context for AI assistants working on this project.
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fs;
+    use serial_test::serial;
     use tempfile::tempdir;
 
     #[test]
+    #[serial]
     fn test_load_project_context_gemini_md() {
         let temp_dir = tempdir().unwrap();
         let gemini_file = temp_dir.path().join("GEMINI.md");
@@ -351,6 +352,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_load_project_context_grok_dir() {
         let temp_dir = tempdir().unwrap();
         let grok_dir = temp_dir.path().join(".grok");
@@ -364,6 +366,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_load_project_context_priority() {
         let temp_dir = tempdir().unwrap();
 
@@ -378,6 +381,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_load_project_context_no_file() {
         let temp_dir = tempdir().unwrap();
         // Override global context dir to ensure it doesn't pick up real files
@@ -395,6 +399,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_load_project_context_empty_file() {
         let temp_dir = tempdir().unwrap();
         // Override global context dir
@@ -415,6 +420,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_context_file_path() {
         let temp_dir = tempdir().unwrap();
         // Override global context dir
@@ -436,6 +442,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_format_context_for_prompt() {
         let context = "Test context content";
         let formatted = format_context_for_prompt(context);
@@ -444,6 +451,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_validate_context() {
         assert!(validate_context("Valid content").is_ok());
         assert!(validate_context("").is_err());
@@ -451,6 +459,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_create_default_template() {
         let template = create_default_context_template();
         assert!(template.contains("# Project Context"));
@@ -458,6 +467,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_load_and_merge_multiple_contexts() {
         let temp_dir = tempdir().unwrap();
 
@@ -484,6 +494,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_all_context_file_paths() {
         let temp_dir = tempdir().unwrap();
         // Override global context dir

@@ -78,6 +78,7 @@ winreg = "0.55"
 tempfile = "3.24.0"
 mockito = "1.7"
 tokio-test = "0.4"
+serial_test = "3.0"
 
 [profile.release]
 lto = true

@@ -7,6 +7,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Skills System Enhancements - Progressive Disclosure**: Implemented on-demand skill activation
+  - Added `active_skills` field to `InteractiveSession` for session-level skill state management
+  - Skills are no longer loaded into context at startup (reduces token usage)
+  - New interactive commands:
+    - `/skills` - List all available skills with activation status
+    - `/activate <skill>` - Activate a skill for the current session
+    - `/deactivate <skill>` - Deactivate an active skill
+  - Active skills automatically included in system prompt for each message
+  - Skills show in session info with count: "Skills: X available, Y active"
+  - Added autocomplete suggestions for skill commands
+  - Example skills provided in `examples/skills/`:
+    - `rust-expert` - Expert Rust development guidance
+    - `cli-design` - CLI design and UX best practices
+  - Allows users to control which skills are active, reducing context size and improving performance
+
 ### Fixed
 
 - **Input cursor positioning**: Fixed cursor appearing outside the input box when typing long text
@@ -16,6 +33,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Works correctly on window resize
 
 ### Changed
+
+- **Test Race Conditions**: Fixed failing tests in `utils::context` module
+  - Added `serial_test = "3.0"` dependency to dev-dependencies
+  - Applied `#[serial]` attribute to tests that manipulate global environment variables
+  - All 78 tests now passing reliably without race conditions
 
 - **Migrated to `grok_api` crate**: Replaced local API implementation with published `grok_api = "0.1.0"` crate from crates.io
   - Removed local `src/api` module

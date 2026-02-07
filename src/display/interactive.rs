@@ -44,6 +44,9 @@ pub struct InteractiveSession {
     pub current_directory: PathBuf,
     pub show_context_usage: bool,
     pub total_tokens_used: u32,
+    /// List of currently active skill names
+    #[serde(default)]
+    pub active_skills: Vec<String>,
 }
 
 /// Conversation item in the session
@@ -98,6 +101,7 @@ impl InteractiveSession {
             model,
             temperature: 0.7,
             max_tokens: 4096,
+            active_skills: Vec::new(),
             system_prompt,
             conversation_history: Vec::new(),
             current_directory,
@@ -158,19 +162,12 @@ pub async fn start_interactive_mode(
     interactive_config: InteractiveConfig,
 ) -> Result<()> {
     // Load project context if available
-    let mut project_context = load_project_context_for_session(
+    let project_context = load_project_context_for_session(
         &env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
     );
 
-    // Load skills context
-    if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
-        if let Ok(skills_context) = crate::skills::get_skills_context(&skills_dir) {
-            if !skills_context.is_empty() {
-                let ctx = project_context.get_or_insert_with(String::new);
-                ctx.push_str(&skills_context);
-            }
-        }
-    }
+    // Note: Skills are now loaded on-demand based on active_skills list
+    // rather than loading all skills at startup
 
     let mut session = InteractiveSession::new(model.to_string(), project_context);
     let client = GrokClient::new(api_key)?;
@@ -295,16 +292,24 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
         }
     }
 
-    // Show loaded skills
+    // Show available and active skills
     if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
         if let Ok(skills) = crate::skills::list_skills(&skills_dir) {
-            if !skills.is_empty() {
+            let total = skills.len();
+            let active = session.active_skills.len();
+            if total > 0 {
                 println!(
-                    "  Skills: {}",
-                    format!("{} loaded", skills.len()).bright_green()
+                    "  Skills: {} available, {} active",
+                    format!("{}", total).bright_blue(),
+                    format!("{}", active).bright_green()
                 );
-                for skill in skills {
-                    println!("    - {}", skill.config.name.dimmed());
+                if active > 0 {
+                    let skill_names: Vec<String> = session
+                        .active_skills
+                        .iter()
+                        .map(|s| s.bright_yellow().to_string())
+                        .collect();
+                    println!("    Active: {}", skill_names.join(", "));
                 }
             }
         }
@@ -472,6 +477,18 @@ async fn run_interactive_loop(
         Suggestion {
             text: "/config".to_string(),
             description: "Show configuration info".to_string(),
+        },
+        Suggestion {
+            text: "/skills".to_string(),
+            description: "List available skills".to_string(),
+        },
+        Suggestion {
+            text: "/activate".to_string(),
+            description: "Activate a skill".to_string(),
+        },
+        Suggestion {
+            text: "/deactivate".to_string(),
+            description: "Deactivate a skill".to_string(),
         },
         Suggestion {
             text: "!ls".to_string(),
@@ -811,6 +828,28 @@ async fn handle_special_commands(
             }
             Ok(Some(true))
         }
+        "skills" => {
+            print_available_skills(session);
+            Ok(Some(true))
+        }
+        "activate" => {
+            if parts.len() < 2 {
+                println!("{} Usage: /activate <skill-name>", "⚠".bright_yellow());
+            } else {
+                let skill_name = parts[1];
+                activate_skill(session, skill_name)?;
+            }
+            Ok(Some(true))
+        }
+        "deactivate" => {
+            if parts.len() < 2 {
+                println!("{} Usage: /deactivate <skill-name>", "⚠".bright_yellow());
+            } else {
+                let skill_name = parts[1];
+                deactivate_skill(session, skill_name)?;
+            }
+            Ok(Some(true))
+        }
         _ => {
             println!("{} Unknown command: /{}", "⚠".bright_yellow(), parts[0]);
             println!("Type /help for available commands");
@@ -844,6 +883,9 @@ fn print_interactive_help() {
         ("/save [name]", "Save current session"),
         ("/load [name]", "Load a saved session"),
         ("/list", "List saved sessions"),
+        ("/skills", "List available skills and their status"),
+        ("/activate <skill>", "Activate a skill for this session"),
+        ("/deactivate <skill>", "Deactivate an active skill"),
     ];
 
     for (command, description) in commands {
@@ -1058,10 +1100,25 @@ async fn send_to_grok(
     // Prepare messages for API
     let mut messages = vec![];
 
+    // Build system prompt with active skills context
+    let mut system_content = String::new();
+
     if let Some(system) = &session.system_prompt {
+        system_content.push_str(system);
+    }
+
+    // Add active skills context if any skills are active
+    if let Some(skills_context) = get_active_skills_context(session) {
+        if !system_content.is_empty() {
+            system_content.push_str("\n\n");
+        }
+        system_content.push_str(&skills_context);
+    }
+
+    if !system_content.is_empty() {
         messages.push(json!({
             "role": "system",
-            "content": system
+            "content": system_content
         }));
     }
 
@@ -1253,6 +1310,119 @@ fn is_home_directory(current_dir: &PathBuf) -> bool {
     } else {
         false
     }
+}
+
+/// Print available skills and their activation status
+fn print_available_skills(session: &InteractiveSession) {
+    if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
+        match crate::skills::list_skills(&skills_dir) {
+            Ok(skills) => {
+                if skills.is_empty() {
+                    println!("{} No skills available", "ℹ".bright_blue());
+                    println!("  Create a skill with: grok skills new <name>");
+                } else {
+                    println!("{}", "Available Skills:".bright_cyan().bold());
+                    println!();
+                    for skill in skills {
+                        let is_active = session.active_skills.contains(&skill.config.name);
+                        let status = if is_active {
+                            "✓ ACTIVE".bright_green()
+                        } else {
+                            "○ inactive".dimmed()
+                        };
+                        println!(
+                            "  [{}] {} - {}",
+                            status,
+                            skill.config.name.bright_yellow(),
+                            skill.config.description.dimmed()
+                        );
+                    }
+                    println!();
+                    println!(
+                        "  Use {} to enable a skill",
+                        "/activate <skill-name>".bright_cyan()
+                    );
+                }
+            }
+            Err(e) => {
+                println!("{} Failed to list skills: {}", "✗".bright_red(), e);
+            }
+        }
+    } else {
+        println!("{} Skills directory not found", "⚠".bright_yellow());
+    }
+}
+
+/// Activate a skill for the current session
+fn activate_skill(session: &mut InteractiveSession, skill_name: &str) -> Result<()> {
+    // Check if already active
+    if session.active_skills.contains(&skill_name.to_string()) {
+        println!(
+            "{} Skill '{}' is already active",
+            "ℹ".bright_blue(),
+            skill_name.bright_yellow()
+        );
+        return Ok(());
+    }
+
+    // Verify skill exists
+    if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
+        if let Some(_skill) = crate::skills::find_skill(skill_name, &skills_dir) {
+            session.active_skills.push(skill_name.to_string());
+            println!(
+                "{} Skill '{}' activated",
+                "✓".bright_green(),
+                skill_name.bright_yellow()
+            );
+            println!("  The skill's instructions will be included in the next message");
+        } else {
+            println!("{} Skill '{}' not found", "✗".bright_red(), skill_name);
+            println!("  Use {} to see available skills", "/skills".bright_cyan());
+        }
+    } else {
+        println!("{} Skills directory not found", "⚠".bright_yellow());
+    }
+
+    Ok(())
+}
+
+/// Deactivate a skill for the current session
+fn deactivate_skill(session: &mut InteractiveSession, skill_name: &str) -> Result<()> {
+    if let Some(pos) = session.active_skills.iter().position(|s| s == skill_name) {
+        session.active_skills.remove(pos);
+        println!(
+            "{} Skill '{}' deactivated",
+            "✓".bright_green(),
+            skill_name.bright_yellow()
+        );
+    } else {
+        println!("{} Skill '{}' is not active", "ℹ".bright_blue(), skill_name);
+    }
+
+    Ok(())
+}
+
+/// Get the context string for currently active skills
+fn get_active_skills_context(session: &InteractiveSession) -> Option<String> {
+    if session.active_skills.is_empty() {
+        return None;
+    }
+
+    let skills_dir = crate::skills::get_default_skills_dir()?;
+    let mut context =
+        String::from("\n\n## Active Skills\n\nThe following skills are currently active:\n\n");
+
+    for skill_name in &session.active_skills {
+        if let Some(skill) = crate::skills::find_skill(skill_name, &skills_dir) {
+            context.push_str(&format!("### Skill: {}\n", skill.config.name));
+            context.push_str(&format!("Description: {}\n", skill.config.description));
+            context.push_str("\nInstructions:\n");
+            context.push_str(&skill.instructions);
+            context.push_str("\n\n---\n\n");
+        }
+    }
+
+    Some(context)
 }
 
 #[cfg(test)]
