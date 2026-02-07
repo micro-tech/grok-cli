@@ -214,6 +214,11 @@ fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<
                 println!("    {}", line);
             }
         }
+        "web_search" => {
+            println!("  {} Web search is not configured", "⚠".yellow());
+            println!("     Set GOOGLE_API_KEY and GOOGLE_CX environment variables");
+            println!("     See: grok-cli/Doc/WEB_TOOLS_SETUP.md for setup instructions");
+        }
         _ => {
             println!("  {} Unsupported tool: {}", "⚠".yellow(), name);
         }

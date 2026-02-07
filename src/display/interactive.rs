@@ -1295,6 +1295,11 @@ fn execute_tool_call_interactive(
                 println!("    {}", line);
             }
         }
+        "web_search" => {
+            println!("  {} Web search is not configured", "⚠".yellow());
+            println!("     Set GOOGLE_API_KEY and GOOGLE_CX environment variables");
+            println!("     See: Doc/WEB_TOOLS_SETUP.md for setup instructions");
+        }
         _ => {
             println!("  {} Unsupported tool: {}", "⚠".yellow(), name);
         }
