@@ -316,12 +316,34 @@ pub fn run_shell_command(command: &str, security: &SecurityPolicy) -> Result<Str
     }
 }
 
+/// Check if web search is properly configured
+pub fn is_web_search_configured() -> bool {
+    std::env::var("GOOGLE_API_KEY").is_ok() && std::env::var("GOOGLE_CX").is_ok()
+}
+
 /// Perform a web search using Google Custom Search API
 pub async fn web_search(query: &str) -> Result<String> {
-    let api_key = std::env::var("GOOGLE_API_KEY")
-        .map_err(|_| anyhow!("GOOGLE_API_KEY environment variable not set"))?;
-    let cx = std::env::var("GOOGLE_CX")
-        .map_err(|_| anyhow!("GOOGLE_CX environment variable not set"))?;
+    let api_key = std::env::var("GOOGLE_API_KEY").map_err(|_| {
+        anyhow!(
+            "GOOGLE_API_KEY environment variable not set.\n\
+            To use web search:\n\
+            1. Get a Google API key: https://console.cloud.google.com/apis/credentials\n\
+            2. Create a Custom Search Engine: https://cse.google.com/cse/\n\
+            3. Set environment variables:\n\
+               export GOOGLE_API_KEY=your_api_key\n\
+               export GOOGLE_CX=your_search_engine_id"
+        )
+    })?;
+    let cx = std::env::var("GOOGLE_CX").map_err(|_| {
+        anyhow!(
+            "GOOGLE_CX environment variable not set.\n\
+            To use web search:\n\
+            1. Create a Custom Search Engine: https://cse.google.com/cse/\n\
+            2. Get the Search Engine ID from the control panel\n\
+            3. Set environment variable:\n\
+               export GOOGLE_CX=your_search_engine_id"
+        )
+    })?;
 
     let url = format!(
         "https://www.googleapis.com/customsearch/v1?key={}&cx={}&q={}",
@@ -367,15 +389,35 @@ pub async fn web_search(query: &str) -> Result<String> {
 
 /// Fetch content from a URL
 pub async fn web_fetch(url: &str) -> Result<String> {
-    let client = reqwest::Client::new();
+    let client = reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .build()?;
+
     let response = client
         .get(url)
         .header("User-Agent", "grok-cli/0.1.0")
         .send()
-        .await?;
+        .await
+        .map_err(|e| {
+            anyhow!(
+                "Failed to fetch URL '{}': {}\n\
+            This could be due to:\n\
+            - Network connectivity issues\n\
+            - Invalid URL\n\
+            - Server not responding\n\
+            - Firewall/proxy blocking the request",
+                url,
+                e
+            )
+        })?;
 
     if !response.status().is_success() {
-        return Err(anyhow!("Failed to fetch URL: {}", response.status()));
+        return Err(anyhow!(
+            "Failed to fetch URL '{}': HTTP {}\n\
+            The server returned an error status code.",
+            url,
+            response.status()
+        ));
     }
 
     let text = response.text().await?;
@@ -585,10 +627,34 @@ pub fn get_tool_definitions() -> Vec<Value> {
     ]
 }
 
+/// Get only the tool definitions that are properly configured and available
+pub fn get_available_tool_definitions() -> Vec<Value> {
+    let all_tools = get_tool_definitions();
+
+    // Filter out web_search if not configured
+    all_tools
+        .into_iter()
+        .filter(|tool| {
+            if let Some(name) = tool
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+            {
+                // Filter out web_search if credentials not configured
+                if name == "web_search" && !is_web_search_configured() {
+                    return false;
+                }
+            }
+            true
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::acp::security::SecurityPolicy;
+    use serial_test::serial;
     use std::fs;
     use tempfile::TempDir;
 
@@ -693,5 +759,104 @@ mod tests {
         let tools = get_tool_definitions();
         assert!(tools.iter().any(|t| t["function"]["name"] == "replace"));
         assert!(tools.iter().any(|t| t["function"]["name"] == "save_memory"));
+        assert!(tools.iter().any(|t| t["function"]["name"] == "web_search"));
+        assert!(tools.iter().any(|t| t["function"]["name"] == "web_fetch"));
+    }
+
+    #[tokio::test]
+    #[serial]
+    async fn test_web_search_missing_api_key() {
+        unsafe {
+            // Ensure API keys are not set for this test
+            std::env::remove_var("GOOGLE_API_KEY");
+            std::env::remove_var("GOOGLE_CX");
+        }
+
+        let result = web_search("test query").await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("GOOGLE_API_KEY") || error_msg.contains("not set"));
+    }
+
+    #[tokio::test]
+    async fn test_web_fetch_invalid_url() {
+        let result = web_fetch("not-a-valid-url").await;
+        assert!(result.is_err());
+        let error_msg = result.unwrap_err().to_string();
+        assert!(error_msg.contains("Failed to fetch") || error_msg.contains("invalid"));
+    }
+
+    #[tokio::test]
+    async fn test_web_fetch_timeout() {
+        // Test with a URL that will timeout (non-routable IP)
+        let result = web_fetch("http://10.255.255.1").await;
+        assert!(result.is_err());
+    }
+
+    #[test]
+    #[serial]
+    fn test_is_web_search_configured() {
+        // Save current state
+        let api_key = std::env::var("GOOGLE_API_KEY").ok();
+        let cx = std::env::var("GOOGLE_CX").ok();
+
+        unsafe {
+            // Test not configured
+            std::env::remove_var("GOOGLE_API_KEY");
+            std::env::remove_var("GOOGLE_CX");
+            assert!(!is_web_search_configured());
+
+            // Test partially configured
+            std::env::set_var("GOOGLE_API_KEY", "test_key");
+            assert!(!is_web_search_configured());
+
+            // Test fully configured
+            std::env::set_var("GOOGLE_CX", "test_cx");
+            assert!(is_web_search_configured());
+
+            // Restore state
+            std::env::remove_var("GOOGLE_API_KEY");
+            std::env::remove_var("GOOGLE_CX");
+            if let Some(key) = api_key {
+                std::env::set_var("GOOGLE_API_KEY", key);
+            }
+            if let Some(cx_val) = cx {
+                std::env::set_var("GOOGLE_CX", cx_val);
+            }
+        }
+    }
+
+    #[test]
+    #[serial]
+    fn test_get_available_tool_definitions() {
+        // Save current state
+        let api_key = std::env::var("GOOGLE_API_KEY").ok();
+        let cx = std::env::var("GOOGLE_CX").ok();
+
+        unsafe {
+            // Test without web search configured
+            std::env::remove_var("GOOGLE_API_KEY");
+            std::env::remove_var("GOOGLE_CX");
+
+            let tools = get_available_tool_definitions();
+            let has_web_search = tools.iter().any(|t| {
+                t.get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str())
+                    == Some("web_search")
+            });
+            assert!(
+                !has_web_search,
+                "web_search should be filtered out when not configured"
+            );
+
+            // Restore state
+            if let Some(key) = api_key {
+                std::env::set_var("GOOGLE_API_KEY", key);
+            }
+            if let Some(cx_val) = cx {
+                std::env::set_var("GOOGLE_CX", cx_val);
+            }
+        }
     }
 }

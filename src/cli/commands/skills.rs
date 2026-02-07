@@ -18,6 +18,11 @@ pub enum SkillsCommand {
         /// Name of the new skill
         name: String,
     },
+    /// Validate a skill for security issues
+    Validate {
+        /// Name of the skill to validate
+        name: String,
+    },
 }
 
 pub async fn handle_skills_command(command: SkillsCommand) -> Result<()> {
@@ -92,6 +97,61 @@ Write your skill instructions here.
                 name.green(),
                 skill_path.display()
             );
+        }
+        SkillsCommand::Validate { name } => {
+            let skills = list_skills(&skills_dir)?;
+            if let Some(skill) = skills.into_iter().find(|s| s.config.name == name) {
+                println!(
+                    "{}",
+                    format!("Validating skill: {}", name).bright_cyan().bold()
+                );
+                println!();
+
+                let validator = crate::skills::SkillSecurityValidator::new();
+                let result = validator.validate_skill(&skill.path)?;
+
+                match result {
+                    crate::skills::ValidationLevel::Safe => {
+                        println!("{} {}", "✅".bright_green(), "SAFE".bright_green().bold());
+                        println!("No security issues detected.");
+                    }
+                    crate::skills::ValidationLevel::Warning(warnings) => {
+                        println!(
+                            "{} {}",
+                            "⚠".bright_yellow(),
+                            "WARNING".bright_yellow().bold()
+                        );
+                        println!("Minor issues detected:");
+                        for warning in warnings {
+                            println!("  • {}", warning.yellow());
+                        }
+                    }
+                    crate::skills::ValidationLevel::Suspicious(issues) => {
+                        println!(
+                            "{} {}",
+                            "🔶".bright_yellow(),
+                            "SUSPICIOUS".bright_yellow().bold()
+                        );
+                        println!("Potentially dangerous patterns detected:");
+                        for issue in issues {
+                            println!("  • {}", issue.yellow());
+                        }
+                        println!();
+                        println!("{}", "Review carefully before activating.".bright_yellow());
+                    }
+                    crate::skills::ValidationLevel::Dangerous(issues) => {
+                        println!("{} {}", "🛑".bright_red(), "DANGEROUS".bright_red().bold());
+                        println!("BLOCKED - Malicious patterns detected:");
+                        for issue in issues {
+                            println!("  • {}", issue.red());
+                        }
+                        println!();
+                        println!("{}", "DO NOT USE THIS SKILL.".bright_red().bold());
+                    }
+                }
+            } else {
+                println!("{} Skill '{}' not found.", "✗".bright_red(), name);
+            }
         }
     }
     Ok(())

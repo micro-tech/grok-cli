@@ -90,7 +90,7 @@ async fn handle_single_chat(
     }));
 
     // Add tool definitions
-    let tools = tools::get_tool_definitions();
+    let tools = tools::get_available_tool_definitions();
 
     let result = client
         .chat_completion_with_history(&messages, temperature, max_tokens, model, Some(tools))
@@ -258,7 +258,7 @@ async fn handle_interactive_chat(
     security.add_trusted_directory(&env::current_dir()?);
 
     // Get tool definitions for function calling
-    let tools = tools::get_tool_definitions();
+    let tools = tools::get_available_tool_definitions();
 
     loop {
         // Prompt for input

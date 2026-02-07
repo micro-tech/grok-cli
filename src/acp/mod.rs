@@ -362,7 +362,7 @@ impl GrokAcpAgent {
             .map(|t| t as u32)
             .unwrap_or(session.config.max_tokens);
 
-        let tool_defs = tools::get_tool_definitions();
+        let tool_defs = tools::get_available_tool_definitions();
         let mut loop_count = 0;
         let max_loops = 10;
 

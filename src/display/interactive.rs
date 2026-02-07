@@ -1139,7 +1139,7 @@ async fn send_to_grok(
     }
 
     // Get tool definitions for function calling
-    let tools = tools::get_tool_definitions();
+    let tools = tools::get_available_tool_definitions();
 
     // Set up security policy with current directory as trusted
     let mut security = SecurityPolicy::new();
@@ -1367,14 +1367,77 @@ fn activate_skill(session: &mut InteractiveSession, skill_name: &str) -> Result<
 
     // Verify skill exists
     if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
-        if let Some(_skill) = crate::skills::find_skill(skill_name, &skills_dir) {
-            session.active_skills.push(skill_name.to_string());
-            println!(
-                "{} Skill '{}' activated",
-                "✓".bright_green(),
-                skill_name.bright_yellow()
-            );
-            println!("  The skill's instructions will be included in the next message");
+        if let Some(skill) = crate::skills::find_skill(skill_name, &skills_dir) {
+            // Validate skill security before activating
+            let validator = crate::skills::SkillSecurityValidator::new();
+            match validator.validate_skill(&skill.path) {
+                Ok(crate::skills::ValidationLevel::Safe) => {
+                    // Safe - activate immediately
+                    session.active_skills.push(skill_name.to_string());
+                    println!(
+                        "{} Skill '{}' activated",
+                        "✓".bright_green(),
+                        skill_name.bright_yellow()
+                    );
+                    println!("  The skill's instructions will be included in the next message");
+                }
+                Ok(crate::skills::ValidationLevel::Warning(warnings)) => {
+                    // Warnings - activate but show warnings
+                    session.active_skills.push(skill_name.to_string());
+                    println!(
+                        "{} Skill '{}' activated with warnings",
+                        "⚠".bright_yellow(),
+                        skill_name.bright_yellow()
+                    );
+                    for warning in warnings {
+                        println!("  • {}", warning.dimmed());
+                    }
+                }
+                Ok(crate::skills::ValidationLevel::Suspicious(issues)) => {
+                    // Suspicious - require confirmation
+                    println!(
+                        "{} Skill '{}' has suspicious patterns:",
+                        "⚠".bright_yellow(),
+                        skill_name.bright_yellow()
+                    );
+                    for issue in &issues {
+                        println!("  • {}", issue.yellow());
+                    }
+                    println!();
+                    println!(
+                        "{}",
+                        "This skill may be unsafe. Review carefully before use.".yellow()
+                    );
+                    println!(
+                        "Use {} to see full security report",
+                        format!("grok skills validate {}", skill_name).bright_cyan()
+                    );
+
+                    // For now, block suspicious skills in interactive mode for safety
+                    println!("{}", "Skill activation blocked for your safety.".red());
+                }
+                Ok(crate::skills::ValidationLevel::Dangerous(issues)) => {
+                    // Dangerous - block activation
+                    println!(
+                        "{} Skill '{}' is DANGEROUS and has been blocked:",
+                        "🛑".bright_red(),
+                        skill_name.bright_red()
+                    );
+                    for issue in &issues {
+                        println!("  • {}", issue.red());
+                    }
+                    println!();
+                    println!(
+                        "{}",
+                        "DO NOT USE THIS SKILL. It contains malicious patterns."
+                            .bright_red()
+                            .bold()
+                    );
+                }
+                Err(e) => {
+                    println!("{} Failed to validate skill: {}", "✗".bright_red(), e);
+                }
+            }
         } else {
             println!("{} Skill '{}' not found", "✗".bright_red(), skill_name);
             println!("  Use {} to see available skills", "/skills".bright_cyan());

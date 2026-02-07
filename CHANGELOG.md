@@ -24,6 +24,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `cli-design` - CLI design and UX best practices
   - Allows users to control which skills are active, reducing context size and improving performance
 
+- **Skill Security Validation System**: Comprehensive security framework to protect against malicious skills
+  - Created `skills::security` module with pattern-based threat detection
+  - Added `SkillSecurityValidator` with 4 validation levels: Safe, Warning, Suspicious, Dangerous
+  - Automatic validation when activating skills in interactive mode
+  - New CLI command: `grok skills validate <name>` for security scanning
+  - Detects 15+ dangerous patterns: command injection, data exfiltration, prompt injection
+  - Detects 8+ suspicious patterns: file operations, network access, shell commands
+  - Blocks DANGEROUS and SUSPICIOUS skills by default for user safety
+  - Validates SKILL.md content, scripts/, and references/ directories
+  - Detects encoded content (base64, hex) that may hide malicious payloads
+  - Comprehensive security documentation in `Doc/SKILL_SECURITY.md` (562 lines)
+  - Inspired by recent CVE-2025-53109 & CVE-2025-53110 (Claude Desktop RCE vulnerabilities)
+  - Added 5 security validation tests
+  - Total tests: 88 (up from 83)
+
+- **Web Tools Error Handling**: Enhanced error handling and configuration checking for web tools
+  - Added `is_web_search_configured()` to check if Google API credentials are set
+  - Added `get_available_tool_definitions()` to filter out unconfigured tools
+  - Web search tool now shows helpful setup instructions when API keys are missing
+  - Web fetch tool includes detailed error messages for network issues
+  - Added timeout (30s) to web fetch requests to prevent hanging
+  - Unconfigured web tools are automatically filtered from tool list
+  - Added 5 new tests for web tool error handling and configuration checking
+  - Total tests: 83 (up from 78)
+
 ### Fixed
 
 - **Input cursor positioning**: Fixed cursor appearing outside the input box when typing long text
@@ -31,6 +56,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Cursor now stays properly positioned within the visible box area
   - Text automatically scrolls as you type beyond the visible area
   - Works correctly on window resize
+
+- **Web Tools Failure in Command Line Mode**: Fixed web search/fetch tools failing without helpful error messages
+  - Tools now provide clear setup instructions when API keys are missing
+  - Better error messages explain network failures and how to resolve them
+  - Unconfigured web tools no longer appear in available tools list
+  - Added comprehensive test coverage for web tool error scenarios
 
 ### Changed
 
