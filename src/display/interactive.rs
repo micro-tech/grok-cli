@@ -1166,7 +1166,7 @@ async fn send_to_grok(
                     println!();
 
                     for tool_call in tool_calls {
-                        if let Err(e) = execute_tool_call_interactive(tool_call, &security) {
+                        if let Err(e) = execute_tool_call_interactive(tool_call, &security).await {
                             eprintln!("  {} Tool execution failed: {}", "✗".red(), e);
                         }
                     }
@@ -1208,7 +1208,7 @@ async fn send_to_grok(
 }
 
 /// Execute a tool call in interactive mode
-fn execute_tool_call_interactive(
+async fn execute_tool_call_interactive(
     tool_call: &crate::ToolCall,
     security: &SecurityPolicy,
 ) -> Result<()> {
@@ -1296,9 +1296,31 @@ fn execute_tool_call_interactive(
             }
         }
         "web_search" => {
-            println!("  {} Web search is not configured", "⚠".yellow());
-            println!("     Set GOOGLE_API_KEY and GOOGLE_CX environment variables");
-            println!("     See: Doc/WEB_TOOLS_SETUP.md for setup instructions");
+            let query = args["query"]
+                .as_str()
+                .ok_or_else(|| anyhow!("Missing query"))?;
+            println!("  {} Searching for: {}", "🔍".cyan(), query);
+            match tools::web_search(query).await {
+                Ok(results) => {
+                    println!("  {} Search results:", "✓".green());
+                    println!("{}", results);
+                }
+                Err(e) => {
+                    println!("  {} Search failed: {}", "✗".red(), e);
+                }
+            }
+        }
+        "web_fetch" => {
+            let url = args["url"].as_str().ok_or_else(|| anyhow!("Missing url"))?;
+            println!("  {} Fetching: {}", "🔍".cyan(), url);
+            match tools::web_fetch(url).await {
+                Ok(content) => {
+                    println!("  {} Fetched {} bytes", "✓".green(), content.len());
+                }
+                Err(e) => {
+                    println!("  {} Fetch failed: {}", "✗".red(), e);
+                }
+            }
         }
         _ => {
             println!("  {} Unsupported tool: {}", "⚠".yellow(), name);

@@ -108,7 +108,7 @@ async fn handle_single_chat(
                     security.add_trusted_directory(&env::current_dir()?);
 
                     for tool_call in tool_calls {
-                        execute_tool_call(tool_call, &security)?;
+                        execute_tool_call(tool_call, &security).await?;
                     }
                     print_success("All operations completed!");
                     return Ok(());
@@ -132,7 +132,7 @@ async fn handle_single_chat(
     Ok(())
 }
 
-fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<()> {
+async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<()> {
     let name = &tool_call.function.name;
     let args: Value = serde_json::from_str(&tool_call.function.arguments)?;
 
@@ -215,9 +215,31 @@ fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<
             }
         }
         "web_search" => {
-            println!("  {} Web search is not configured", "⚠".yellow());
-            println!("     Set GOOGLE_API_KEY and GOOGLE_CX environment variables");
-            println!("     See: grok-cli/Doc/WEB_TOOLS_SETUP.md for setup instructions");
+            let query = args["query"]
+                .as_str()
+                .ok_or_else(|| anyhow!("Missing query"))?;
+            println!("  {} Searching for: {}", "🔍".cyan(), query);
+            match tools::web_search(query).await {
+                Ok(results) => {
+                    println!("  {} Search results:", "✓".green());
+                    println!("{}", results);
+                }
+                Err(e) => {
+                    println!("  {} Search failed: {}", "✗".red(), e);
+                }
+            }
+        }
+        "web_fetch" => {
+            let url = args["url"].as_str().ok_or_else(|| anyhow!("Missing url"))?;
+            println!("  {} Fetching: {}", "🔍".cyan(), url);
+            match tools::web_fetch(url).await {
+                Ok(content) => {
+                    println!("  {} Fetched {} bytes", "✓".green(), content.len());
+                }
+                Err(e) => {
+                    println!("  {} Fetch failed: {}", "✗".red(), e);
+                }
+            }
         }
         _ => {
             println!("  {} Unsupported tool: {}", "⚠".yellow(), name);
@@ -391,7 +413,7 @@ async fn handle_interactive_chat(
                         println!("{}", "Grok is executing operations...".blue().dimmed());
 
                         for tool_call in tool_calls {
-                            if let Err(e) = execute_tool_call(tool_call, &security) {
+                            if let Err(e) = execute_tool_call(tool_call, &security).await {
                                 print_error(&format!("Tool execution failed: {}", e));
                             }
                         }

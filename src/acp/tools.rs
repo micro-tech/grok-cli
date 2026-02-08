@@ -318,7 +318,28 @@ pub fn run_shell_command(command: &str, security: &SecurityPolicy) -> Result<Str
 
 /// Check if web search is properly configured
 pub fn is_web_search_configured() -> bool {
-    std::env::var("GOOGLE_API_KEY").is_ok() && std::env::var("GOOGLE_CX").is_ok()
+    let api_key = std::env::var("GOOGLE_API_KEY");
+    let cx = std::env::var("GOOGLE_CX");
+
+    if api_key.is_err() || cx.is_err() {
+        return false;
+    }
+
+    // Additional validation: GOOGLE_CX should NOT look like an API key
+    // API keys typically start with "AIza", while CX IDs are different format
+    if let Ok(cx_val) = &cx {
+        // If CX looks like an API key, it's probably misconfigured
+        if cx_val.starts_with("AIza") {
+            eprintln!("⚠️  WARNING: GOOGLE_CX appears to be an API key, not a Search Engine ID!");
+            eprintln!(
+                "   GOOGLE_CX should be your Custom Search Engine ID (e.g., '017576662512468239146:omuauf_lfve')"
+            );
+            eprintln!("   Get it from: https://cse.google.com/cse/");
+            return false;
+        }
+    }
+
+    true
 }
 
 /// Perform a web search using Google Custom Search API
@@ -356,7 +377,19 @@ pub async fn web_search(query: &str) -> Result<String> {
     let response = client.get(&url).send().await?;
 
     if !response.status().is_success() {
-        return Err(anyhow!("Search request failed: {}", response.status()));
+        let status = response.status();
+        return Err(anyhow!(
+            "Search request failed: {}\n\
+            \n\
+            Common causes:\n\
+            - Custom Search API not enabled: https://console.cloud.google.com/apis/library/customsearch.googleapis.com\n\
+            - Billing not enabled (required even for free tier)\n\
+            - Invalid GOOGLE_CX (should be Search Engine ID, not API key)\n\
+            - API key restrictions blocking the request\n\
+            \n\
+            Verify your setup at: https://console.cloud.google.com/",
+            status
+        ));
     }
 
     let json: Value = response.json().await?;
