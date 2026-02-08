@@ -76,23 +76,36 @@ fn install_windows() {
         fs::create_dir_all(&install_dir).expect("Failed to create installation directory");
     }
 
-    // 4. Copy binary
+    // 4. Remove old binary if it exists
+    if target_exe.exists() {
+        println!("Removing old installation...");
+        if let Err(e) = fs::remove_file(&target_exe) {
+            eprintln!("{} {}", "Failed to remove old binary:".red(), e);
+            eprintln!(
+                "{}",
+                "Please make sure 'grok.exe' is not currently running.".yellow()
+            );
+            std::process::exit(1);
+        }
+    }
+
+    // 5. Copy binary
     println!("Copying binary to {}", target_exe.display());
     fs::copy(&source_exe, &target_exe).expect("Failed to copy binary");
 
-    // 5. Update PATH
+    // 6. Update PATH
     println!("{}", "Updating PATH environment variable...".cyan());
     update_path(&install_dir);
 
-    // 6. Create Start Menu Shortcut
+    // 7. Create Start Menu Shortcut
     println!("{}", "Creating Start Menu shortcut...".cyan());
     create_shortcut(&target_exe);
 
-    // 7. Setup Configuration
+    // 8. Setup Configuration
     println!("{}", "Setting up configuration...".cyan());
     setup_config();
 
-    // 8. Setup Global Context
+    // 9. Setup Global Context
     println!("{}", "Setting up global context...".cyan());
     setup_context(&root_dir);
 
