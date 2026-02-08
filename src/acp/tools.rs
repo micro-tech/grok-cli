@@ -378,8 +378,13 @@ pub async fn web_search(query: &str) -> Result<String> {
 
     if !response.status().is_success() {
         let status = response.status();
+        let error_body = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Could not read error body".to_string());
         return Err(anyhow!(
             "Search request failed: {}\n\
+            Error details: {}\n\
             \n\
             Common causes:\n\
             - Custom Search API not enabled: https://console.cloud.google.com/apis/library/customsearch.googleapis.com\n\
@@ -388,7 +393,8 @@ pub async fn web_search(query: &str) -> Result<String> {
             - API key restrictions blocking the request\n\
             \n\
             Verify your setup at: https://console.cloud.google.com/",
-            status
+            status,
+            error_body
         ));
     }
 
