@@ -117,3 +117,4 @@ node_modules/
 # DynamoDB Local files
 .dynamodb/
 report.md
+src/bin/home_server.md

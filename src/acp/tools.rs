@@ -342,29 +342,35 @@ pub fn is_web_search_configured() -> bool {
     true
 }
 
-/// Perform a web search using Google Custom Search API
+/// Perform a web search using Google Custom Search API or fallback to DuckDuckGo
 pub async fn web_search(query: &str) -> Result<String> {
-    let api_key = std::env::var("GOOGLE_API_KEY").map_err(|_| {
-        anyhow!(
-            "GOOGLE_API_KEY environment variable not set.\n\
-            To use web search:\n\
-            1. Get a Google API key: https://console.cloud.google.com/apis/credentials\n\
-            2. Create a Custom Search Engine: https://cse.google.com/cse/\n\
-            3. Set environment variables:\n\
-               export GOOGLE_API_KEY=your_api_key\n\
-               export GOOGLE_CX=your_search_engine_id"
-        )
-    })?;
-    let cx = std::env::var("GOOGLE_CX").map_err(|_| {
-        anyhow!(
-            "GOOGLE_CX environment variable not set.\n\
-            To use web search:\n\
-            1. Create a Custom Search Engine: https://cse.google.com/cse/\n\
-            2. Get the Search Engine ID from the control panel\n\
-            3. Set environment variable:\n\
-               export GOOGLE_CX=your_search_engine_id"
-        )
-    })?;
+    // Check if Google is configured
+    let has_google = std::env::var("GOOGLE_API_KEY").is_ok() && std::env::var("GOOGLE_CX").is_ok();
+
+    if has_google {
+        match google_search(query).await {
+            Ok(res) => return Ok(res),
+            Err(e) => {
+                // If permission denied (403) or not configured, fallback to DDG
+                let err_str = e.to_string();
+                if err_str.contains("403")
+                    || err_str.contains("Forbidden")
+                    || err_str.contains("PERMISSION_DENIED")
+                {
+                    // Fallback to DuckDuckGo
+                } else {
+                    return Err(e);
+                }
+            }
+        }
+    }
+
+    duckduckgo_search(query).await
+}
+
+async fn google_search(query: &str) -> Result<String> {
+    let api_key = std::env::var("GOOGLE_API_KEY")?;
+    let cx = std::env::var("GOOGLE_CX")?;
 
     let url = format!(
         "https://www.googleapis.com/customsearch/v1?key={}&cx={}&q={}",
@@ -424,6 +430,73 @@ pub async fn web_search(query: &str) -> Result<String> {
     } else {
         Ok(results.join("\n---\n"))
     }
+}
+
+async fn duckduckgo_search(query: &str) -> Result<String> {
+    let client = reqwest::Client::builder()
+        .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.36")
+        .build()?;
+
+    let url = format!(
+        "https://html.duckduckgo.com/html/?q={}",
+        urlencoding::encode(query)
+    );
+
+    let response = client.get(&url).send().await?;
+
+    if !response.status().is_success() {
+        return Err(anyhow!(
+            "DuckDuckGo search failed with status: {}",
+            response.status()
+        ));
+    }
+
+    let html = response.text().await?;
+
+    // Regex to extract results (Title, Link, Snippet)
+    // Matches: <div class="result ..."> ... <a class="result__a" href="LINK">TITLE</a> ... <a class="result__snippet" ...>SNIPPET</a>
+    // We use a more permissive regex to handle potential HTML variations
+    let re = Regex::new(r#"(?s)class="result__body".*?class="result__a" href="([^"]+)">(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</a>"#).unwrap();
+
+    let mut results = Vec::new();
+    for cap in re.captures_iter(&html).take(10) {
+        let link = urlencoding::decode(&cap[1])
+            .unwrap_or_else(|_| std::borrow::Cow::Borrowed(&cap[1]))
+            .to_string();
+        let title = strip_tags(&cap[2]);
+        let snippet = strip_tags(&cap[3]);
+
+        results.push(format!(
+            "Title: {}\nLink: {}\nSnippet: {}\n",
+            title, link, snippet
+        ));
+    }
+
+    if results.is_empty() {
+        // Fallback: Try finding just links with result__a if snippet parsing fails
+        let re_simple = Regex::new(r#"class="result__a" href="([^"]+)">(.*?)</a>"#).unwrap();
+        for cap in re_simple.captures_iter(&html).take(10) {
+            let link = urlencoding::decode(&cap[1])
+                .unwrap_or_else(|_| std::borrow::Cow::Borrowed(&cap[1]))
+                .to_string();
+            let title = strip_tags(&cap[2]);
+            results.push(format!("Title: {}\nLink: {}\n", title, link));
+        }
+    }
+
+    if results.is_empty() {
+        Ok("No results found via DuckDuckGo.".to_string())
+    } else {
+        Ok(format!(
+            "(Source: DuckDuckGo)\n\n{}",
+            results.join("\n---\n")
+        ))
+    }
+}
+
+fn strip_tags(s: &str) -> String {
+    let re = Regex::new(r"<[^>]*>").unwrap();
+    re.replace_all(s, "").trim().to_string()
 }
 
 /// Fetch content from a URL
