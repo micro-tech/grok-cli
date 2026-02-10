@@ -27,6 +27,52 @@ pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
     fs::read_to_string(&resolved_path).map_err(|e| anyhow!("Failed to read file: {}", e))
 }
 
+/// Read multiple files at once
+pub fn read_multiple_files(paths: Vec<String>, security: &SecurityPolicy) -> Result<String> {
+    let mut results = Vec::new();
+    for path in paths {
+        match read_file(&path, security) {
+            Ok(content) => {
+                results.push(format!("--- File: {} ---\n{}\n", path, content));
+            }
+            Err(e) => {
+                results.push(format!("--- File: {} ---\nError: {}\n", path, e));
+            }
+        }
+    }
+    Ok(results.join("\n"))
+}
+
+/// List code definitions (functions, structs, etc.) in a file
+pub fn list_code_definitions(path: &str, security: &SecurityPolicy) -> Result<String> {
+    let content = read_file(path, security)?;
+
+    // Regex for common definitions in Rust, JS, TS, Python, Go, C++
+    // Matches lines starting with keywords like fn, struct, class, def, func, etc.
+    // Also handles pub, async, export, etc.
+    // This is a heuristic for high-level structure.
+    let re = Regex::new(r"(?m)^[\t ]*(pub|async|unsafe|static|export|default|class|def|fn|func|struct|enum|trait|impl|interface|type|const|let|var)\b").map_err(|e| anyhow!("Invalid regex: {}", e))?;
+
+    let mut results = Vec::new();
+    for (i, line) in content.lines().enumerate() {
+        if re.is_match(line) {
+            // Trim content to keep it concise but readable
+            let trimmed = line.trim();
+            // Skip comments if strictly starting with them (simple check)
+            if !trimmed.starts_with("//") && !trimmed.starts_with("/*") && !trimmed.starts_with("*")
+            {
+                results.push(format!("{}: {}", i + 1, trimmed));
+            }
+        }
+    }
+
+    if results.is_empty() {
+        Ok("No definitions found matching common patterns.".to_string())
+    } else {
+        Ok(results.join("\n"))
+    }
+}
+
 /// Write content to file
 pub fn write_file(path: &str, content: &str, security: &SecurityPolicy) -> Result<String> {
     // Convert to absolute path first (without canonicalizing yet)
