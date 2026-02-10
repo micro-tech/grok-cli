@@ -204,6 +204,7 @@ Here is a comprehensive list of all available settings, grouped by category:
 | `acp.default_port` | Default ACP server port | `None` | Number |
 | `acp.protocol_version` | ACP protocol version | `"1.0"` | String |
 | `acp.dev_mode` | Enable development mode | `false` | Boolean |
+| `acp.max_tool_loop_iterations` | Maximum tool calling iterations (prevents infinite loops) | `25` | Number |
 
 ### Network Settings
 
@@ -263,6 +264,7 @@ compression_threshold = 0.2
 enabled = true
 bind_host = "127.0.0.1"
 protocol_version = "1.0"
+max_tool_loop_iterations = 25  # Maximum tool calling iterations (default: 25)
 
 [network]
 starlink_optimizations = true

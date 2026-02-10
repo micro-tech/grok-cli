@@ -9,6 +9,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Configurable Tool Loop Iterations**: Added `max_tool_loop_iterations` setting to prevent infinite loops
+  - New configuration option: `acp.max_tool_loop_iterations` (default: 25, previously hardcoded to 10)
+  - Configurable via environment variable: `GROK_ACP_MAX_TOOL_LOOP_ITERATIONS`
+  - Configurable via config file: `config.toml` under `[acp]` section
+  - Increased default from 10 to 25 iterations to handle more complex multi-step tasks
+  - Improved error message now shows the limit and suggests solutions
+  - Helps users resolve "Max tool loop iterations reached" errors
+  - Documented in TOOLS.md, CONFIGURATION.md, settings.md, and README.md
+  - Recommended values: 25 (default), 50 (complex tasks), 100+ (very complex operations)
+
 - **Skills System Enhancements - Progressive Disclosure**: Implemented on-demand skill activation
   - Added `active_skills` field to `InteractiveSession` for session-level skill state management
   - Skills are no longer loaded into context at startup (reduces token usage)

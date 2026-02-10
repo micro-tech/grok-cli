@@ -1,0 +1,139 @@
+# Grok CLI Configuration Example
+# Copy this to ~/.config/grok-cli/config.toml and customize as needed
+
+# API Configuration
+api_key = "xai-your-api-key-here"
+default_model = "grok-2-latest"
+default_temperature = 0.7
+default_max_tokens = 4096
+timeout_secs = 60
+max_retries = 3
+
+# ACP (Agent Client Protocol) Configuration
+[acp]
+enabled = true
+bind_host = "127.0.0.1"
+protocol_version = "1.0"
+dev_mode = false
+
+# Maximum tool loop iterations (prevents infinite loops)
+# Increase this value for complex multi-step tasks
+# Default: 25 (was previously hardcoded to 10)
+# Recommended values:
+#   - 25: Default, handles most tasks
+#   - 50: Complex multi-step operations
+#   - 100+: Very complex tasks with many tool calls
+max_tool_loop_iterations = 25
+
+# Network Configuration (Optimized for Starlink)
+[network]
+starlink_optimizations = true
+base_retry_delay = 2
+max_retry_delay = 60
+health_monitoring = true
+connect_timeout = 30
+read_timeout = 60
+
+# UI Configuration
+[ui]
+colors = true
+progress_bars = true
+verbose_errors = false
+terminal_width = 80
+unicode = true
+theme = "default"
+hide_tips = false
+hide_banner = false
+show_model_info_in_chat = true
+
+[ui.footer]
+hide_cwd = false
+hide_sandbox_status = false
+hide_model_info = false
+
+# General Configuration
+[general]
+preview_features = false
+vim_mode = false
+disable_auto_update = false
+retry_fetch_errors = true
+
+[general.session_retention]
+enabled = true
+max_age = 86400  # 24 hours in seconds
+max_count = 100
+min_retention = 10
+
+# Output Configuration
+[output]
+format = "text"
+
+# Model Configuration
+[model]
+name = "grok-2-latest"
+max_session_turns = 50
+summarize_tool_output = true
+compression_threshold = 0.8
+
+# Context Configuration
+[context]
+file_name = "context.md"
+import_format = "markdown"
+discovery_max_dirs = 10
+
+[context.file_filtering]
+respect_git_ignore = true
+respect_grok_ignore = true
+enable_recursive_file_search = true
+
+# Tools Configuration
+[tools]
+auto_accept = false
+use_ripgrep = true
+enable_tool_output_truncation = true
+truncate_tool_output_threshold = 1000
+enable_hooks = false
+
+[tools.shell]
+enable_interactive_shell = false
+show_color = true
+inactivity_timeout = 300
+
+# Security Configuration
+[security]
+disable_yolo_mode = false
+enable_permanent_tool_approval = false
+shell_approval_mode = "prompt"
+
+[security.folder_trust]
+enabled = true
+
+[security.environment_variable_redaction]
+enabled = true
+allowed = []
+blocked = []
+
+# Experimental Features
+[experimental]
+enable_agents = false
+extension_management = false
+
+[experimental.extensions]
+enabled = false
+allow_config_extensions = false
+
+# Logging Configuration
+[logging]
+level = "info"
+file_logging = false
+max_file_size_mb = 10
+rotation_count = 5
+
+# Telemetry Configuration
+[telemetry]
+enabled = false
+
+# Rate Limits
+[rate_limits]
+max_tokens_per_minute = 100000
+max_requests_per_minute = 60

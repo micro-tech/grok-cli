@@ -364,11 +364,15 @@ impl GrokAcpAgent {
 
         let tool_defs = tools::get_available_tool_definitions();
         let mut loop_count = 0;
-        let max_loops = 10;
+        let max_loops = self.config.acp.max_tool_loop_iterations;
 
         loop {
             if loop_count >= max_loops {
-                return Err(anyhow!("Max tool loop iterations reached"));
+                return Err(anyhow!(
+                    "Max tool loop iterations reached ({} iterations). \
+                    Consider increasing 'acp.max_tool_loop_iterations' in config or breaking task into smaller steps.",
+                    max_loops
+                ));
             }
             loop_count += 1;
 

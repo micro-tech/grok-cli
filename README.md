@@ -418,6 +418,28 @@ grok config init --force
 
 See [FIXES.md](FIXES.md) for complete details about this fix.
 
+**"Max tool loop iterations reached" Error**
+
+This error occurs when the AI repeatedly calls tools without completing the task. Solutions:
+
+```bash
+# Increase the limit in your config file (~/.config/grok-cli/config.toml)
+grok config set acp.max_tool_loop_iterations 50
+
+# Or set via environment variable
+export GROK_ACP_MAX_TOOL_LOOP_ITERATIONS=50
+
+# Then retry your command
+```
+
+Tips to avoid this error:
+- Break complex tasks into smaller, focused steps
+- Provide clearer, more specific instructions
+- Check if the task is too complex for a single request
+- Default limit is 25 iterations (configurable)
+
+See [MAX_TOOL_LOOP_ITERATIONS.md](Doc/MAX_TOOL_LOOP_ITERATIONS.md) for comprehensive configuration guide and [TOOLS.md](Doc/docs/TOOLS.md) for more details.
+
 **API Key Problems**
 ```bash
 # Verify key is set

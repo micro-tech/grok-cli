@@ -1,0 +1,4 @@
+[mcp.servers.github]
+type = "stdio"
+command = "H:\\GitHub\\grok-cli\\target\\debug\\github_mcp.exe"
+args = []

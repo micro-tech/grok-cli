@@ -143,6 +143,12 @@ pub struct AcpConfig {
 
     /// Enable development features
     pub dev_mode: bool,
+
+    /// Maximum number of tool loop iterations before timeout
+    /// This prevents infinite loops when the AI repeatedly calls tools
+    /// Default: 25 (increase for complex multi-step tasks)
+    #[serde(default = "default_max_tool_loop_iterations")]
+    pub max_tool_loop_iterations: u32,
 }
 
 /// Network configuration optimized for satellite connections
@@ -644,6 +650,10 @@ fn default_rotation_count() -> u32 {
     5
 }
 
+fn default_max_tool_loop_iterations() -> u32 {
+    25
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -680,6 +690,7 @@ impl Default for AcpConfig {
             bind_host: "127.0.0.1".to_string(),
             protocol_version: "1.0".to_string(),
             dev_mode: false,
+            max_tool_loop_iterations: default_max_tool_loop_iterations(),
         }
     }
 }
@@ -1420,6 +1431,12 @@ impl Config {
 
         if let Ok(val) = std::env::var("GROK_ACP_DEV_MODE") {
             self.acp.dev_mode = val.parse::<bool>().unwrap_or(false);
+        }
+
+        if let Ok(iterations) = std::env::var("GROK_ACP_MAX_TOOL_LOOP_ITERATIONS") {
+            if let Ok(iterations_val) = iterations.parse::<u32>() {
+                self.acp.max_tool_loop_iterations = iterations_val;
+            }
         }
 
         // Telemetry configuration

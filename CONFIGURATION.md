@@ -238,7 +238,25 @@ GROK_ACP_PROTOCOL_VERSION=1.0
 
 # Enable development mode
 GROK_ACP_DEV_MODE=false
+
+# Maximum tool loop iterations (prevents infinite loops)
+# Increase this for complex multi-step tasks
+# Default: 25
+GROK_ACP_MAX_TOOL_LOOP_ITERATIONS=25
 ```
+
+**Note about Max Tool Loop Iterations:**
+- This setting prevents infinite loops when the AI repeatedly calls tools
+- If you encounter "Max tool loop iterations reached" errors:
+  - Increase this value for complex tasks (e.g., 50 or higher)
+  - Break your task into smaller, more focused steps
+  - Check if the AI is stuck calling the same tool repeatedly
+- The default of 25 iterations should handle most tasks
+- You can also set this in your `config.toml` file:
+  ```toml
+  [acp]
+  max_tool_loop_iterations = 50
+  ```
 
 ### Telemetry Configuration
 

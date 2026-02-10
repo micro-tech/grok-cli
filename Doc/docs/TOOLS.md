@@ -380,9 +380,22 @@ Configure security settings in your config file:
 - Check network connectivity for web operations
 
 ### "Max tool loop iterations reached"
-- The tool execution loop has a limit of 10 iterations
-- This prevents infinite loops
-- Break complex tasks into smaller steps
+- The tool execution loop has a configurable limit (default: 25 iterations)
+- This prevents infinite loops when the AI repeatedly calls tools
+- To increase the limit, add to your config file (`~/.config/grok-cli/config.toml`):
+  ```toml
+  [acp]
+  max_tool_loop_iterations = 50  # Increase as needed
+  ```
+- Best practices to avoid this error:
+  - Break complex tasks into smaller, more focused steps
+  - Provide clearer instructions to reduce ambiguity
+  - Check if the AI is stuck in a loop (calling the same tool repeatedly)
+  - For multi-step operations, consider doing them in separate commands
+- If you consistently hit this limit, it may indicate:
+  - The task is too complex for a single request
+  - The AI needs more specific guidance
+  - There's a bug causing repetitive tool calls
 
 ## Examples
 
