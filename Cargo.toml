@@ -1,6 +1,6 @@
 [package]
 name = "grok-cli"
-version = "0.1.3"
+version = "0.1.4"
 edition = "2024"
 authors = ["john mcconnell john.microtech@gmail.com"]
 description = "A CLI tool for interacting with Grok AI via X API"
@@ -27,7 +27,7 @@ unused_variables = "allow"
 # Grok API client library
 grok_api = "=0.1.0"
 # HTTP client with timeout support for network drops
-reqwest = { version = "0.13.1", features = ["json", "native-tls-vendored", "http2"], default-features = false }
+reqwest = { version = "0.13.2", features = ["json", "native-tls-vendored", "http2"], default-features = false }
 # Async runtime
 tokio = { version = "1.49.0", features = ["full"] }
 # JSON handling
@@ -79,10 +79,10 @@ serde_yaml = "0.9.34"
 winreg = "0.55"
 
 [dev-dependencies]
-tempfile = "3.24.0"
+tempfile = "3.25.0"
 mockito = "1.7"
 tokio-test = "0.4"
-serial_test = "3.0"
+serial_test = "3.3.1"
 
 [profile.release]
 lto = true
