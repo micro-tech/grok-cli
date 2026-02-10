@@ -25,6 +25,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Installer Enhancements**: Comprehensive installation package with complete documentation and examples
+  - Added documentation installation: 12 documentation files now included
+  - Added example skills: rust-expert and cli-design skills with complete implementations
+  - Added LICENSE file to installation for legal compliance
+  - Added config.example.toml with all 139 settings documented
+  - Added MAX_TOOL_LOOP_ITERATIONS.md: 346-line comprehensive error resolution guide
+  - Created install_additional_files() function for documentation/examples installation
+  - Created copy_dir_recursive() helper for recursive directory copying
+  - Enhanced post-install feedback showing documentation paths
+  - Installation now includes: TOOLS.md, settings.md, ZED_INTEGRATION.md, WEB_TOOLS_SETUP.md
+  - Installation now includes: SKILLS_QUICK_START.md, SKILL_SECURITY.md, SKILL_SPECIFICATION.md
+  - Complete installation package increased from ~12 MB to ~15 MB (25% increase for full docs)
+  - Created INSTALLER_REQUIREMENTS.md (562 lines) - detailed requirements specification
+  - Created INSTALLER_CHECKLIST.md (315 lines) - comprehensive verification checklist
+  - Created INSTALLER_SUMMARY.md (422 lines) - status and improvements documentation
+  - Installation directory structure now includes docs/, examples/, and LICENSE
+  - Users now have offline access to all documentation and examples
+
 - **Configurable Tool Loop Iterations**: Added `max_tool_loop_iterations` setting to prevent infinite loops
   - New configuration option: `acp.max_tool_loop_iterations` (default: 25, previously hardcoded to 10)
   - Configurable via environment variable: `GROK_ACP_MAX_TOOL_LOOP_ITERATIONS`

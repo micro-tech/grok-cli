@@ -242,7 +242,7 @@ GROK_ACP_DEV_MODE=false
 # Maximum tool loop iterations (prevents infinite loops)
 # Increase this for complex multi-step tasks
 # Default: 25
-GROK_ACP_MAX_TOOL_LOOP_ITERATIONS=25
+GROK_ACP_MAX_TOOL_LOOP_ITERATIONS=100
 ```
 
 **Note about Max Tool Loop Iterations:**

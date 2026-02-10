@@ -93,24 +93,41 @@ fn install_windows() {
     println!("Copying binary to {}", target_exe.display());
     fs::copy(&source_exe, &target_exe).expect("Failed to copy binary");
 
-    // 6. Update PATH
+    // 6. Copy additional files (LICENSE, docs, examples)
+    println!("{}", "Installing documentation and examples...".cyan());
+    install_additional_files(&root_dir, &install_dir);
+
+    // 7. Update PATH
     println!("{}", "Updating PATH environment variable...".cyan());
     update_path(&install_dir);
 
-    // 7. Create Start Menu Shortcut
+    // 8. Create Start Menu Shortcut
     println!("{}", "Creating Start Menu shortcut...".cyan());
     create_shortcut(&target_exe);
 
-    // 8. Setup Configuration
+    // 9. Setup Configuration
     println!("{}", "Setting up configuration...".cyan());
-    setup_config();
+    setup_config(&root_dir);
 
-    // 9. Setup Global Context
+    // 10. Setup Global Context
     println!("{}", "Setting up global context...".cyan());
     setup_context(&root_dir);
 
     println!("\n{}", "Installation Complete!".green().bold());
     println!("Please restart your terminal to use the 'grok' command.");
+    println!(
+        "\nDocumentation installed to: {}",
+        install_dir.parent().unwrap().join("docs").display()
+    );
+    println!(
+        "View README: {}",
+        install_dir
+            .parent()
+            .unwrap()
+            .join("docs")
+            .join("README.md")
+            .display()
+    );
 }
 
 #[cfg(windows)]
@@ -141,7 +158,7 @@ fn setup_context(root_dir: &Path) {
 }
 
 #[cfg(windows)]
-fn setup_config() {
+fn setup_config(root_dir: &Path) {
     let config_dir = dirs::config_dir()
         .expect("Failed to get config directory")
         .join("grok-cli");
@@ -151,6 +168,20 @@ fn setup_config() {
     {
         eprintln!("Failed to create config directory: {}", e);
         return;
+    }
+
+    // Copy example config if it exists
+    let example_config_src = root_dir.join("config.example.toml");
+    let example_config_dst = config_dir.join("config.example.toml");
+    if example_config_src.exists() {
+        if let Err(e) = fs::copy(&example_config_src, &example_config_dst) {
+            eprintln!("Failed to copy example config: {}", e);
+        } else {
+            println!(
+                "Example config installed to {}",
+                example_config_dst.display()
+            );
+        }
     }
 
     let config_file = config_dir.join("config.toml");
@@ -177,6 +208,10 @@ api_key = "{}"
 
 # Default Model
 default_model = "grok-3"
+
+# ACP Configuration
+[acp]
+max_tool_loop_iterations = 25
 
 # Network Configuration
 [network]
@@ -258,4 +293,98 @@ fn create_shortcut(target_exe: &Path) {
     } else {
         eprintln!("{}", "Failed to create Start Menu shortcut.".yellow());
     }
+}
+
+#[cfg(windows)]
+fn install_additional_files(root_dir: &Path, install_dir: &Path) {
+    let base_install_dir = install_dir
+        .parent()
+        .expect("Failed to get parent directory");
+
+    // Install LICENSE
+    let license_src = root_dir.join("LICENSE");
+    let license_dst = base_install_dir.join("LICENSE");
+    if license_src.exists() {
+        if let Err(e) = fs::copy(&license_src, &license_dst) {
+            eprintln!("Failed to copy LICENSE: {}", e);
+        }
+    }
+
+    // Create docs directory
+    let docs_dir = base_install_dir.join("docs");
+    if let Err(e) = fs::create_dir_all(&docs_dir) {
+        eprintln!("Failed to create docs directory: {}", e);
+        return;
+    }
+
+    // Install core documentation files
+    let core_docs = vec![
+        ("README.md", "README.md"),
+        ("CONFIGURATION.md", "CONFIGURATION.md"),
+        ("CHANGELOG.md", "CHANGELOG.md"),
+        (
+            "Doc/MAX_TOOL_LOOP_ITERATIONS.md",
+            "MAX_TOOL_LOOP_ITERATIONS.md",
+        ),
+    ];
+
+    for (src_path, dst_name) in core_docs {
+        let src = root_dir.join(src_path);
+        let dst = docs_dir.join(dst_name);
+        if src.exists() {
+            if let Err(e) = fs::copy(&src, &dst) {
+                eprintln!("Failed to copy {}: {}", src_path, e);
+            }
+        }
+    }
+
+    // Install Doc/docs/ files
+    let doc_docs_dir = root_dir.join("Doc").join("docs");
+    if doc_docs_dir.exists() {
+        if let Ok(entries) = fs::read_dir(&doc_docs_dir) {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() {
+                    if let Some(ext) = path.extension() {
+                        if ext == "md" {
+                            if let Some(filename) = path.file_name() {
+                                let dst = docs_dir.join(filename);
+                                if let Err(e) = fs::copy(&path, &dst) {
+                                    eprintln!("Failed to copy {}: {}", path.display(), e);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // Install example skills
+    let skills_src = root_dir.join("examples").join("skills");
+    let skills_dst = base_install_dir.join("examples").join("skills");
+    if skills_src.exists() {
+        if let Err(e) = copy_dir_recursive(&skills_src, &skills_dst) {
+            eprintln!("Failed to copy example skills: {}", e);
+        }
+    }
+
+    println!("Documentation and examples installed successfully.");
+}
+
+#[cfg(windows)]
+fn copy_dir_recursive(src: &Path, dst: &Path) -> io::Result<()> {
+    fs::create_dir_all(dst)?;
+    for entry in fs::read_dir(src)? {
+        let entry = entry?;
+        let path = entry.path();
+        let dest_path = dst.join(entry.file_name());
+
+        if path.is_dir() {
+            copy_dir_recursive(&path, &dest_path)?;
+        } else {
+            fs::copy(&path, &dest_path)?;
+        }
+    }
+    Ok(())
 }
