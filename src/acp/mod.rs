@@ -475,6 +475,23 @@ impl GrokAcpAgent {
                             let url = args["url"].as_str().ok_or(anyhow!("Missing url"))?;
                             tools::web_fetch(url).await
                         }
+                        "read_multiple_files" => {
+                            let paths_value =
+                                args["paths"].as_array().ok_or(anyhow!("Missing paths"))?;
+                            let paths: Result<Vec<String>> = paths_value
+                                .iter()
+                                .map(|v| {
+                                    v.as_str()
+                                        .ok_or(anyhow!("Invalid path"))
+                                        .map(|s| s.to_string())
+                                })
+                                .collect();
+                            tools::read_multiple_files(paths?, &self.security.get_policy())
+                        }
+                        "list_code_definitions" => {
+                            let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                            tools::list_code_definitions(path, &self.security.get_policy())
+                        }
                         _ => Err(anyhow!("Unknown tool: {}", function_name)),
                     };
 

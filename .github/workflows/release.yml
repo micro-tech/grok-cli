@@ -60,7 +60,7 @@ jobs:
 
       - name: Copy binary to release directory (Windows)
         if: matrix.os == 'windows-latest'
-        run: copy target\release\${{ matrix.binary_name }} release\
+        run: Copy-Item -Path "target\release\${{ matrix.binary_name }}" -Destination "release\"
 
       - name: Copy README and LICENSE to release directory
         shell: bash
@@ -169,7 +169,8 @@ jobs:
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: release-assets/*.zip
+          files: |
+            release-assets/*.zip
           body_path: final-release-notes.md
           draft: false
           prerelease: false

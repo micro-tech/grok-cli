@@ -507,6 +507,43 @@ pub fn get_tool_definitions() -> Vec<Value> {
         json!({
             "type": "function",
             "function": {
+                "name": "read_multiple_files",
+                "description": "Read the content of multiple files",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "paths": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            },
+                            "description": "The paths to the files to read"
+                        }
+                    },
+                    "required": ["paths"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "list_code_definitions",
+                "description": "List code definitions (functions, structs, classes) in a file",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "path": {
+                            "type": "string",
+                            "description": "The path to the file to analyze"
+                        }
+                    },
+                    "required": ["path"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
                 "name": "write_file",
                 "description": "Write content to a file",
                 "parameters": {
@@ -733,6 +770,66 @@ mod tests {
         let list_result = list_directory(temp_dir.path().to_str().unwrap(), &security);
         assert!(list_result.is_ok());
         assert!(list_result.unwrap().contains("test.txt"));
+    }
+
+    #[test]
+    fn test_read_multiple_files() {
+        let temp_dir = TempDir::new().unwrap();
+        let file1 = temp_dir.path().join("file1.txt");
+        let file2 = temp_dir.path().join("file2.txt");
+        fs::write(&file1, "Content 1").unwrap();
+        fs::write(&file2, "Content 2").unwrap();
+
+        let mut security = SecurityPolicy::new();
+        security.add_trusted_directory(temp_dir.path());
+
+        let paths = vec![
+            file1.to_str().unwrap().to_string(),
+            file2.to_str().unwrap().to_string(),
+        ];
+
+        let result = read_multiple_files(paths, &security);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.contains("--- File:"));
+        assert!(output.contains("Content 1"));
+        assert!(output.contains("Content 2"));
+    }
+
+    #[test]
+    fn test_list_code_definitions() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test_code.rs");
+        let code = r#"
+            struct MyStruct {
+                field: i32,
+            }
+
+            impl MyStruct {
+                pub fn new() -> Self {
+                    Self { field: 0 }
+                }
+            }
+
+            fn main() {
+                println!("Hello");
+            }
+        "#;
+        fs::write(&file_path, code).unwrap();
+
+        let mut security = SecurityPolicy::new();
+        security.add_trusted_directory(temp_dir.path());
+
+        let result = list_code_definitions(file_path.to_str().unwrap(), &security);
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.contains("struct MyStruct"));
+        assert!(output.contains("impl MyStruct"));
+        assert!(output.contains("pub fn new"));
+        assert!(output.contains("fn main"));
+        // Should not contain body lines
+        assert!(!output.contains("field: i32"));
+        assert!(!output.contains("println!"));
     }
 
     #[test]

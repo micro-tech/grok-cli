@@ -41,6 +41,25 @@ Grok will use: read_file("src/main.rs")
 
 ---
 
+#### `read_multiple_files`
+**Description:** Read the content of multiple files at once. Efficient for gathering context.
+
+**Signature:** `read_multiple_files(paths: string[])`
+
+**Parameters:**
+- `paths` (string[], required): Array of file paths to read
+
+**Example Usage:**
+```
+Grok will use: read_multiple_files(["src/main.rs", "src/lib.rs", "Cargo.toml"])
+```
+
+**Returns:** Combined content of all files with headers
+
+**Security:** Respects security policy and trusted directories
+
+---
+
 #### `write_file`
 **Description:** Write content to a file
 
@@ -157,6 +176,28 @@ Grok will use: search_file_content("src/", "fn main")
 - `TODO|FIXME` - Find TODO or FIXME comments
 - `struct \w+` - Find struct definitions
 - `pub async fn` - Find public async functions
+
+---
+
+#### `list_code_definitions`
+**Description:** List code definitions (functions, structs, classes) in a file without reading the entire content.
+
+**Signature:** `list_code_definitions(path: string)`
+
+**Parameters:**
+- `path` (string, required): The file to analyze
+
+**Example Usage:**
+```
+Grok will use: list_code_definitions("src/complex_module.rs")
+```
+
+**Returns:** List of definitions with line numbers (e.g., "10: pub fn new()", "25: struct Config")
+
+**Security:** Respects security policy and trusted directories
+
+**Supported Languages:**
+- Rust, JavaScript, TypeScript, Python, Go, C++, etc. (heuristic based)
 
 ---
 
