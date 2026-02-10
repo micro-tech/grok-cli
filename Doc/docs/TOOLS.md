@@ -192,7 +192,7 @@ Grok will use: run_shell_command("cargo test")
 ---
 
 #### `web_search`
-**Description:** Search the web using Google Custom Search API
+**Description:** Search the web using DuckDuckGo
 
 **Signature:** `web_search(query: string)`
 
@@ -207,14 +207,7 @@ Grok will use: web_search("Rust async programming best practices")
 **Returns:** Search results with titles, URLs, and snippets
 
 **Requirements:**
-- Requires Google Custom Search API key
-- Configure in `.env` file
-
-**Configuration:**
-```env
-GOOGLE_API_KEY=your_api_key_here
-GOOGLE_CSE_ID=your_search_engine_id_here
-```
+- None (DuckDuckGo does not require an API key)
 
 ---
 
@@ -324,10 +317,9 @@ Configure security settings in your config file:
 4. **Use timeouts** - Long-running commands may timeout
 
 ### For Web Operations
-1. **Configure API keys** - Set up `.env` file for web search
-2. **Handle failures** - Network operations can fail, especially on Starlink
-3. **Cache results** - Avoid repeated fetches of the same data
-4. **Respect rate limits** - Don't abuse web APIs
+1. **Handle failures** - Network operations can fail, especially on Starlink
+2. **Cache results** - Avoid repeated fetches of the same data
+3. **Respect rate limits** - Don't abuse web APIs
 
 ## Troubleshooting
 
@@ -407,10 +399,6 @@ When using Grok with Zed via ACP:
 ```env
 # Required for API access
 GROK_API_KEY=your_grok_api_key_here
-
-# Optional for web search
-GOOGLE_API_KEY=your_google_api_key_here
-GOOGLE_CSE_ID=your_search_engine_id_here
 ```
 
 ### Config File (`~/.config/grok-cli/config.json`)

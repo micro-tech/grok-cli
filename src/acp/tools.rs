@@ -318,118 +318,13 @@ pub fn run_shell_command(command: &str, security: &SecurityPolicy) -> Result<Str
 
 /// Check if web search is properly configured
 pub fn is_web_search_configured() -> bool {
-    let api_key = std::env::var("GOOGLE_API_KEY");
-    let cx = std::env::var("GOOGLE_CX");
-
-    if api_key.is_err() || cx.is_err() {
-        return false;
-    }
-
-    // Additional validation: GOOGLE_CX should NOT look like an API key
-    // API keys typically start with "AIza", while CX IDs are different format
-    if let Ok(cx_val) = &cx {
-        // If CX looks like an API key, it's probably misconfigured
-        if cx_val.starts_with("AIza") {
-            eprintln!("⚠️  WARNING: GOOGLE_CX appears to be an API key, not a Search Engine ID!");
-            eprintln!(
-                "   GOOGLE_CX should be your Custom Search Engine ID (e.g., '017576662512468239146:omuauf_lfve')"
-            );
-            eprintln!("   Get it from: https://cse.google.com/cse/");
-            return false;
-        }
-    }
-
+    // DuckDuckGo is always available without configuration
     true
 }
 
-/// Perform a web search using Google Custom Search API or fallback to DuckDuckGo
+/// Perform a web search using DuckDuckGo
 pub async fn web_search(query: &str) -> Result<String> {
-    // Check if Google is configured
-    let has_google = std::env::var("GOOGLE_API_KEY").is_ok() && std::env::var("GOOGLE_CX").is_ok();
-
-    if has_google {
-        match google_search(query).await {
-            Ok(res) => return Ok(res),
-            Err(e) => {
-                // If permission denied (403) or not configured, fallback to DDG
-                let err_str = e.to_string();
-                if err_str.contains("403")
-                    || err_str.contains("Forbidden")
-                    || err_str.contains("PERMISSION_DENIED")
-                {
-                    // Fallback to DuckDuckGo
-                } else {
-                    return Err(e);
-                }
-            }
-        }
-    }
-
     duckduckgo_search(query).await
-}
-
-async fn google_search(query: &str) -> Result<String> {
-    let api_key = std::env::var("GOOGLE_API_KEY")?;
-    let cx = std::env::var("GOOGLE_CX")?;
-
-    let url = format!(
-        "https://www.googleapis.com/customsearch/v1?key={}&cx={}&q={}",
-        api_key,
-        cx,
-        urlencoding::encode(query)
-    );
-
-    let client = reqwest::Client::new();
-    let response = client.get(&url).send().await?;
-
-    if !response.status().is_success() {
-        let status = response.status();
-        let error_body = response
-            .text()
-            .await
-            .unwrap_or_else(|_| "Could not read error body".to_string());
-        return Err(anyhow!(
-            "Search request failed: {}\n\
-            Error details: {}\n\
-            \n\
-            Common causes:\n\
-            - Custom Search API not enabled: https://console.cloud.google.com/apis/library/customsearch.googleapis.com\n\
-            - Billing not enabled (required even for free tier)\n\
-            - Invalid GOOGLE_CX (should be Search Engine ID, not API key)\n\
-            - API key restrictions blocking the request\n\
-            \n\
-            Verify your setup at: https://console.cloud.google.com/",
-            status,
-            error_body
-        ));
-    }
-
-    let json: Value = response.json().await?;
-
-    let mut results = Vec::new();
-    if let Some(items) = json.get("items").and_then(|i| i.as_array()) {
-        for item in items {
-            let title = item
-                .get("title")
-                .and_then(|t| t.as_str())
-                .unwrap_or("No title");
-            let link = item
-                .get("link")
-                .and_then(|l| l.as_str())
-                .unwrap_or("No link");
-            let snippet = item.get("snippet").and_then(|s| s.as_str()).unwrap_or("");
-            results.push(format!(
-                "Title: {}\nLink: {}\nSnippet: {}\n",
-                title, link, snippet
-            ));
-        }
-    }
-
-    if results.is_empty() {
-        Ok("No results found".to_string())
-    } else {
-        Ok(results.join("\n---\n"))
-    }
 }
 
 async fn duckduckgo_search(query: &str) -> Result<String> {
@@ -706,7 +601,7 @@ pub fn get_tool_definitions() -> Vec<Value> {
             "type": "function",
             "function": {
                 "name": "web_search",
-                "description": "Search the web using Google Custom Search",
+                "description": "Search the web using DuckDuckGo",
                 "parameters": {
                     "type": "object",
                     "properties": {
@@ -877,17 +772,23 @@ mod tests {
 
     #[tokio::test]
     #[serial]
-    async fn test_web_search_missing_api_key() {
+    async fn test_web_search_works_without_keys() {
         unsafe {
             // Ensure API keys are not set for this test
             std::env::remove_var("GOOGLE_API_KEY");
             std::env::remove_var("GOOGLE_CX");
         }
 
+        // We can't easily test actual network calls to DDG in CI/unit tests without mocking,
+        // but we can verify it doesn't fail with "missing keys".
+        // For now, we just check that calling it doesn't return the specific config error.
+        // A real network call might fail due to network, so we check the error message if it fails.
         let result = web_search("test query").await;
-        assert!(result.is_err());
-        let error_msg = result.unwrap_err().to_string();
-        assert!(error_msg.contains("GOOGLE_API_KEY") || error_msg.contains("not set"));
+        if let Err(e) = result {
+            let error_msg = e.to_string();
+            assert!(!error_msg.contains("GOOGLE_API_KEY"));
+            assert!(!error_msg.contains("not set"));
+        }
     }
 
     #[tokio::test]
@@ -908,34 +809,8 @@ mod tests {
     #[test]
     #[serial]
     fn test_is_web_search_configured() {
-        // Save current state
-        let api_key = std::env::var("GOOGLE_API_KEY").ok();
-        let cx = std::env::var("GOOGLE_CX").ok();
-
-        unsafe {
-            // Test not configured
-            std::env::remove_var("GOOGLE_API_KEY");
-            std::env::remove_var("GOOGLE_CX");
-            assert!(!is_web_search_configured());
-
-            // Test partially configured
-            std::env::set_var("GOOGLE_API_KEY", "test_key");
-            assert!(!is_web_search_configured());
-
-            // Test fully configured
-            std::env::set_var("GOOGLE_CX", "test_cx");
-            assert!(is_web_search_configured());
-
-            // Restore state
-            std::env::remove_var("GOOGLE_API_KEY");
-            std::env::remove_var("GOOGLE_CX");
-            if let Some(key) = api_key {
-                std::env::set_var("GOOGLE_API_KEY", key);
-            }
-            if let Some(cx_val) = cx {
-                std::env::set_var("GOOGLE_CX", cx_val);
-            }
-        }
+        // Should always be true now
+        assert!(is_web_search_configured());
     }
 
     #[test]
@@ -958,8 +833,8 @@ mod tests {
                     == Some("web_search")
             });
             assert!(
-                !has_web_search,
-                "web_search should be filtered out when not configured"
+                has_web_search,
+                "web_search should be available even without configuration"
             );
 
             // Restore state
