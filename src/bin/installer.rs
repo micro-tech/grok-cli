@@ -40,6 +40,9 @@ fn main() {
 fn install_windows() {
     let root_dir = find_project_root().expect("Failed to find project root (Cargo.toml not found)");
 
+    // 0. Check for old Cargo installation
+    check_and_remove_old_cargo_install();
+
     // 1. Build the release binary
     println!("{}", "Building release binary...".cyan());
     let status = Command::new("cargo")
@@ -128,6 +131,67 @@ fn install_windows() {
             .join("README.md")
             .display()
     );
+}
+
+#[cfg(windows)]
+fn check_and_remove_old_cargo_install() {
+    if let Some(home_dir) = dirs::home_dir() {
+        let cargo_grok = home_dir.join(".cargo").join("bin").join("grok.exe");
+
+        if cargo_grok.exists() {
+            println!("\n{}", "Old Cargo installation detected!".yellow().bold());
+            println!("Found old version at: {}", cargo_grok.display());
+
+            // Try to get version
+            if let Ok(output) = Command::new(&cargo_grok).arg("--version").output() {
+                if let Ok(version) = String::from_utf8(output.stdout) {
+                    println!("Old version: {}", version.trim());
+                }
+            }
+
+            print!(
+                "\n{}",
+                "Do you want to remove the old installation? (yes/no): ".yellow()
+            );
+            io::stdout().flush().unwrap();
+
+            let mut response = String::new();
+            io::stdin().read_line(&mut response).unwrap();
+
+            if response.trim().eq_ignore_ascii_case("yes") {
+                match fs::remove_file(&cargo_grok) {
+                    Ok(_) => {
+                        println!(
+                            "{}",
+                            "✓ Old Cargo installation removed successfully!".green()
+                        );
+                        println!(
+                            "{}",
+                            "  You may need to restart your terminal after installation.".cyan()
+                        );
+                    }
+                    Err(e) => {
+                        eprintln!("{}", "Failed to remove old installation:".red());
+                        eprintln!("  {}", e);
+                        eprintln!(
+                            "{}",
+                            "  Please close all running grok instances and try again.".yellow()
+                        );
+                        eprintln!("{}", "  Or manually delete: ".yellow());
+                        eprintln!("  {}", cargo_grok.display());
+                    }
+                }
+            } else {
+                println!(
+                    "{}",
+                    "Skipping removal. You may have version conflicts.".yellow()
+                );
+                println!("{}", "  To remove later, delete: ".cyan());
+                println!("  {}", cargo_grok.display());
+            }
+            println!();
+        }
+    }
 }
 
 #[cfg(windows)]

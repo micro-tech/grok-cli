@@ -143,6 +143,24 @@ cd grok-cli
 cargo build --release
 ```
 
+### Windows Installation (Recommended)
+
+```powershell
+# Navigate to project directory
+cd grok-cli
+
+# Run the installer
+cargo run --bin installer
+
+# Follow prompts to install to %LOCALAPPDATA%\grok-cli\bin
+# Installer will:
+# - Build release binary
+# - Install to AppData\Local\grok-cli\bin
+# - Update PATH automatically
+# - Detect and remove old Cargo installations
+# - Copy documentation and examples
+```
+
 ### Initialize Configuration
 
 ```bash
@@ -160,6 +178,36 @@ export GROK_API_KEY="your-api-key-here"
 # or
 export X_API_KEY="your-api-key-here"
 ```
+
+### ⚠️ Troubleshooting Installation
+
+If you experience issues after installation:
+
+**Problem: Wrong version showing after install**
+```powershell
+# Check which version is running
+(Get-Command grok).Path
+grok --version
+
+# If showing old version (0.1.3), remove old Cargo installation
+.\scripts\cleanup_old_install.ps1
+# OR
+.\scripts\cleanup_old_install.bat
+
+# Restart PowerShell
+```
+
+**Problem: Configuration not being used**
+```powershell
+# Verify you're in the project directory
+cd H:\GitHub\grok-cli
+
+# Check configuration loading
+grok config show
+# Should show: "Using project-local configuration from: H:\GitHub\grok-cli\.grok\.env"
+```
+
+See [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for comprehensive troubleshooting guide.
 
 ## 🎯 Quick Start
 

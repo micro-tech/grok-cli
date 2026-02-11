@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Troubleshooting Documentation**: Created comprehensive TROUBLESHOOTING.md guide
+  - Version conflict resolution (multiple installations)
+  - Configuration hierarchy explanation and debugging
+  - Network issue handling (Starlink compatibility)
+  - Installation troubleshooting
+  - Common error messages and solutions
+  - Quick reference commands
+  - Configuration priority diagram
+
+- **Version Conflict Detection**: Installer now detects and removes old Cargo installations
+  - Automatic detection of old `~/.cargo/bin/grok.exe` during installation
+  - Interactive prompt to remove conflicting versions
+  - Prevents version mismatch issues (e.g., PowerShell showing 0.1.3 while 0.1.4 is installed)
+  - Enhanced user feedback about version conflicts
+
+- **Cleanup Scripts**: Added scripts for removing old installations
+  - PowerShell script: `scripts/cleanup_old_install.ps1`
+    - Detects both Cargo and AppData installations
+    - Shows version information for each
+    - Interactive removal with confirmation
+    - Verifies correct version after cleanup
+  - Batch script: `scripts/cleanup_old_install.bat`
+    - Windows-native alternative to PowerShell
+    - Same functionality in batch format
+    - Works without PowerShell execution policy issues
+
 ### Fixed
 
 - **MCP Implementation Recovery (2025-02-10)**: Verified and restored MCP functionality after system crash
