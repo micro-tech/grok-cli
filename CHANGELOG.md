@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Context Discovery Enhancement**: Context files now walk up directory tree to find project root
+  - Context discovery now matches configuration discovery behavior
+  - Works from any subdirectory within a project
+  - Automatically finds project root by detecting `.git`, `Cargo.toml`, `package.json`, or `.grok/`
+  - No longer requires running grok from project root for context loading
+  - Applies to all context file types: `.zed/rules`, `.grok/context.md`, `GEMINI.md`, etc.
+  - Created PROJECT_CONTEXT_GUIDE.md (560 lines) - comprehensive guide to context and config discovery
+
 - **Troubleshooting Documentation**: Created comprehensive TROUBLESHOOTING.md guide
   - Version conflict resolution (multiple installations)
   - Configuration hierarchy explanation and debugging

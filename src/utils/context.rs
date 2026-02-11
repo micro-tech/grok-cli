@@ -5,6 +5,7 @@
 //! the AI agent in project conventions and guidelines.
 
 use anyhow::{Result, anyhow};
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -37,9 +38,37 @@ fn get_global_context_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".grok"))
 }
 
+/// Find project root by walking up directory tree
+///
+/// Searches for project markers like .git, Cargo.toml, package.json, or .grok directory
+fn find_project_root<P: AsRef<Path>>(start_dir: P) -> Result<PathBuf> {
+    let mut current_dir = start_dir.as_ref().to_path_buf();
+
+    loop {
+        // Check for project root markers
+        let has_project_marker = current_dir.join(".git").exists()
+            || current_dir.join("Cargo.toml").exists()
+            || current_dir.join("package.json").exists()
+            || current_dir.join(".grok").exists();
+
+        if has_project_marker {
+            return Ok(current_dir);
+        }
+
+        // Move to parent directory
+        if let Some(parent) = current_dir.parent() {
+            current_dir = parent.to_path_buf();
+        } else {
+            // Reached filesystem root, return original directory
+            return Ok(start_dir.as_ref().to_path_buf());
+        }
+    }
+}
+
 /// Load project context from standard context files
 ///
-/// Searches for context files in the project root directory in the following order:
+/// Walks up the directory tree to find the project root, then searches for context files
+/// in the following order:
 /// 1. GEMINI.md
 /// 2. .gemini.md
 /// 3. .claude.md
@@ -52,8 +81,9 @@ fn get_global_context_dir() -> Option<PathBuf> {
 /// 10. AI_RULES.md
 ///
 /// Returns the content of the first file found, or None if no context file exists.
-pub fn load_project_context<P: AsRef<Path>>(project_root: P) -> Result<Option<String>> {
-    let project_root = project_root.as_ref();
+pub fn load_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Option<String>> {
+    // Find project root by walking up directory tree
+    let project_root = find_project_root(start_dir)?;
 
     // 1. Check project directory
     if project_root.exists() && project_root.is_dir() {
@@ -130,8 +160,9 @@ pub fn load_project_context<P: AsRef<Path>>(project_root: P) -> Result<Option<St
 /// .zed/rules and .gemini.md).
 ///
 /// Returns a merged context string, or None if no files are found.
-pub fn load_and_merge_project_context<P: AsRef<Path>>(project_root: P) -> Result<Option<String>> {
-    let project_root = project_root.as_ref();
+pub fn load_and_merge_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Option<String>> {
+    // Find project root by walking up directory tree
+    let project_root = find_project_root(start_dir)?;
     let mut merged_content = Vec::new();
 
     // 1. Load from project directory
@@ -213,16 +244,21 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(project_root: P) -> Result
 /// Get all available context file paths in the project
 ///
 /// Returns a vector of paths to all existing context files (project and global).
-pub fn get_all_context_file_paths<P: AsRef<Path>>(project_root: P) -> Vec<PathBuf> {
-    let project_root = project_root.as_ref();
-    let mut paths = Vec::new();
+/// Returns a Vec of all found context file paths
+pub fn get_all_context_file_paths<P: AsRef<Path>>(start_dir: P) -> Vec<PathBuf> {
+    // Find project root by walking up directory tree
+    let project_root = match find_project_root(start_dir) {
+        Ok(root) => root,
+        Err(_) => return Vec::new(),
+    };
+    let mut found_paths = Vec::new();
 
-    // 1. Check project directory
+    // Check project directory
     if project_root.exists() && project_root.is_dir() {
         for file_name in CONTEXT_FILE_NAMES {
             let file_path = project_root.join(file_name);
             if file_path.exists() && file_path.is_file() {
-                paths.push(file_path);
+                found_paths.push(file_path);
             }
         }
     }
@@ -233,22 +269,27 @@ pub fn get_all_context_file_paths<P: AsRef<Path>>(project_root: P) -> Vec<PathBu
             for file_name in GLOBAL_CONTEXT_FILE_NAMES {
                 let file_path = global_dir.join(file_name);
                 if file_path.exists() && file_path.is_file() {
-                    paths.push(file_path);
+                    found_paths.push(file_path);
                 }
             }
         }
     }
 
-    paths
+    found_paths
 }
 
 /// Get the path of the context file if it exists
 ///
 /// Returns the path to the first available context file, or None if no file exists.
-pub fn get_context_file_path<P: AsRef<Path>>(project_root: P) -> Option<PathBuf> {
-    let project_root = project_root.as_ref();
+/// Get the path of the first context file found
+pub fn get_context_file_path<P: AsRef<Path>>(start_dir: P) -> Option<PathBuf> {
+    // Find project root by walking up directory tree
+    let project_root = match find_project_root(start_dir) {
+        Ok(root) => root,
+        Err(_) => return None,
+    };
 
-    // 1. Check project directory
+    // Check project directory
     if project_root.exists() && project_root.is_dir() {
         for file_name in CONTEXT_FILE_NAMES {
             let file_path = project_root.join(file_name);
