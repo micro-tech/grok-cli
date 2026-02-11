@@ -48,38 +48,38 @@ jobs:
       - name: Build binary
         run: cargo build --bin grok --release --verbose
 
-      - name: Create release directory
+      - name: Prepare Artifacts
         shell: bash
-        run: mkdir -p release
-
-      - name: Copy binary to release directory (Unix)
-        if: matrix.os != 'windows-latest'
         run: |
+          mkdir -p release
+
+          # Copy binary
+          echo "Copying binary..."
           cp target/release/${{ matrix.binary_name }} release/
-          chmod +x release/${{ matrix.binary_name }}
 
-      - name: Copy binary to release directory (Windows)
-        if: matrix.os == 'windows-latest'
-        run: Copy-Item -Path "target\release\${{ matrix.binary_name }}" -Destination "release\"
+          # Unix: chmod
+          if [ "${{ matrix.os }}" != "windows-latest" ]; then
+            chmod +x release/${{ matrix.binary_name }}
+          fi
 
-      - name: Copy README and LICENSE to release directory
-        shell: bash
-        run: |
-          cp README.md release/ 2>/dev/null || echo "README.md not found, skipping"
-          cp LICENSE release/ 2>/dev/null || echo "LICENSE not found, skipping"
+          # Copy docs
+          echo "Copying documentation..."
+          cp README.md release/ || echo "README missing"
+          cp LICENSE release/ || echo "LICENSE missing"
 
-      - name: Create ZIP archive (Unix)
-        if: matrix.os != 'windows-latest'
-        run: |
+          # Create Archive
+          echo "Creating archive..."
           cd release
-          zip -r ../${{ matrix.artifact_name }}.zip .
+          if [ "${{ matrix.os }}" == "windows-latest" ]; then
+            # Use 7z on Windows for reliability
+            7z a ../${{ matrix.artifact_name }}.zip *
+          else
+            zip -r ../${{ matrix.artifact_name }}.zip .
+          fi
           cd ..
 
-      - name: Create ZIP archive (Windows)
-        if: matrix.os == 'windows-latest'
-        shell: pwsh
-        run: |
-          Compress-Archive -Path release\* -DestinationPath ${{ matrix.artifact_name }}.zip
+          echo "Verifying archive creation:"
+          ls -lh ${{ matrix.artifact_name }}.zip
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -166,11 +166,15 @@ jobs:
 
           sed "s/\$VERSION/$VERSION/g" release-notes.md > final-release-notes.md
 
+      - name: Verify release assets
+        run: |
+          echo "Verifying assets before upload..."
+          ls -lh release-assets/
+
       - name: Create Release
         uses: softprops/action-gh-release@v2
         with:
-          files: |
-            release-assets/*.zip
+          files: release-assets/*.zip
           body_path: final-release-notes.md
           draft: false
           prerelease: false
