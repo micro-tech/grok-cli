@@ -116,7 +116,7 @@ pub struct ToolDefinition {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            model: "grok-3".to_string(),
+            model: "grok-4-1-fast-reasoning".to_string(),
             temperature: 0.5, // Lower temperature for more deterministic coding output
             max_tokens: 4096,
             system_prompt: Some(
@@ -738,7 +738,7 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-        assert_eq!(config.model, "grok-3");
+        assert_eq!(config.model, "grok-4-1-fast-reasoning");
         assert_eq!(config.temperature, 0.5);
         assert_eq!(config.max_tokens, 4096);
         assert!(config.system_prompt.is_some());

@@ -3,8 +3,8 @@
 //! This binary demonstrates the ASCII art, banners, and visual elements
 //! without requiring API keys or interactive input.
 
-use crate::banner::print_banner;
 use crate::banner::BannerType;
+use crate::banner::print_banner;
 use colored::*;
 use std::env;
 
@@ -140,7 +140,11 @@ fn main() {
         "🔑".bright_yellow(),
         "✓ Configured".bright_green()
     );
-    println!("  {} Model: {}", "🤖".bright_blue(), "grok-3".bright_cyan());
+    println!(
+        "  {} Model: {}",
+        "🤖".bright_blue(),
+        "grok-4-1-fast-reasoning".bright_cyan()
+    );
     println!(
         "  {} Network: {}",
         "🌐".bright_green(),

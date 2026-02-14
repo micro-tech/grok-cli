@@ -271,7 +271,7 @@ fn setup_config(root_dir: &Path) {
 api_key = "{}"
 
 # Default Model
-default_model = "grok-3"
+default_model = "grok-4-1-fast-reasoning"
 
 # ACP Configuration
 [acp]

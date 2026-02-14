@@ -3367,15 +3367,15 @@ mod tests {
 
     #[test]
     fn test_session_creation() {
-        let session = InteractiveSession::new("grok-3".to_string(), None);
-        assert_eq!(session.model, "grok-3");
+        let session = InteractiveSession::new("grok-4-1-fast-reasoning".to_string(), None);
+        assert_eq!(session.model, "grok-4-1-fast-reasoning");
         assert!(session.conversation_history.is_empty());
         assert_eq!(session.total_tokens_used, 0);
     }
 
     #[test]
     fn test_add_conversation_item() {
-        let mut session = InteractiveSession::new("grok-3".to_string(), None);
+        let mut session = InteractiveSession::new("grok-4-1-fast-reasoning".to_string(), None);
         session.add_conversation_item("user", "Hello", Some(10));
 
         assert_eq!(session.conversation_history.len(), 1);
@@ -4702,15 +4702,15 @@ mod tests {
 
     #[test]
     fn test_session_creation() {
-        let session = InteractiveSession::new("grok-3".to_string(), None);
-        assert_eq!(session.model, "grok-3");
+        let session = InteractiveSession::new("grok-4-1-fast-reasoning".to_string(), None);
+        assert_eq!(session.model, "grok-4-1-fast-reasoning");
         assert!(session.conversation_history.is_empty());
         assert_eq!(session.total_tokens_used, 0);
     }
 
     #[test]
     fn test_add_conversation_item() {
-        let mut session = InteractiveSession::new("grok-3".to_string(), None);
+        let mut session = InteractiveSession::new("grok-4-1-fast-reasoning".to_string(), None);
         session.add_conversation_item("user", "Hello", Some(10));
 
         assert_eq!(session.conversation_history.len(), 1);

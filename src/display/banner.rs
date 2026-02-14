@@ -40,10 +40,16 @@ impl Default for BannerConfig {
     }
 }
 
-/// Print a bordered banner with content
-pub fn print_banner(title: &str, content: &[&str], banner_type: BannerType, width: Option<u16>) {
+/// Format a bordered banner with content (pure function)
+pub fn format_banner(
+    title: &str,
+    content: &[&str],
+    banner_type: BannerType,
+    width: Option<u16>,
+) -> String {
     let term_width = width.unwrap_or(crate::display::get_terminal_size().0);
     let banner_width = std::cmp::min(term_width - 4, 80); // Leave margin and cap at 80
+    let mut output = String::new();
 
     let (border_color, title_color, content_color) = match banner_type {
         BannerType::Welcome => (Color::Cyan, Color::BrightCyan, Color::White),
@@ -54,55 +60,62 @@ pub fn print_banner(title: &str, content: &[&str], banner_type: BannerType, widt
     };
 
     // Top border
-    println!(
-        "{}",
+    output.push_str(&format!(
+        "{}\n",
         format!("┌{}┐", "─".repeat(banner_width as usize - 2)).color(border_color)
-    );
+    ));
 
     // Title
     if !title.is_empty() {
         let title_line = format_banner_line(title, banner_width, true);
-        println!(
-            "{}{}{}",
+        output.push_str(&format!(
+            "{}{}{}\n",
             "│".color(border_color),
             title_line.color(title_color).bold(),
             "│".color(border_color)
-        );
+        ));
 
         // Separator after title
-        println!(
-            "{}",
+        output.push_str(&format!(
+            "{}\n",
             format!("├{}┤", "─".repeat(banner_width as usize - 2)).color(border_color)
-        );
+        ));
     }
 
     // Content lines
     for line in content {
         if line.trim().is_empty() {
             // Empty line
-            println!(
-                "{}{}{}",
+            output.push_str(&format!(
+                "{}{}{}\n",
                 "│".color(border_color),
                 " ".repeat(banner_width as usize - 2),
                 "│".color(border_color)
-            );
+            ));
         } else {
             let content_line = format_banner_line(line, banner_width, false);
-            println!(
-                "{}{}{}",
+            output.push_str(&format!(
+                "{}{}{}\n",
                 "│".color(border_color),
                 content_line.color(content_color),
                 "│".color(border_color)
-            );
+            ));
         }
     }
 
     // Bottom border
-    println!(
-        "{}",
+    output.push_str(&format!(
+        "{}\n",
         format!("└{}┘", "─".repeat(banner_width as usize - 2)).color(border_color)
-    );
-    println!(); // Extra line after banner
+    ));
+
+    output
+}
+
+/// Print a bordered banner with content
+#[deprecated(note = "Use format_banner and println! instead")]
+pub fn print_banner(title: &str, content: &[&str], banner_type: BannerType, width: Option<u16>) {
+    println!("{}", format_banner(title, content, banner_type, width));
 }
 
 /// Format a line to fit within banner width with proper padding
@@ -133,23 +146,27 @@ fn format_banner_line(text: &str, width: u16, center: bool) -> String {
     }
 }
 
-/// Print welcome banner with logo and tips
-pub fn print_welcome_banner(config: &BannerConfig) {
+/// Format welcome banner with logo and tips (pure function)
+pub fn format_welcome_banner(config: &BannerConfig) -> String {
     if !config.show_banner {
-        return;
+        return String::new();
     }
 
     let (width, _) = crate::display::get_terminal_size();
+    let mut output = String::new();
 
-    // Print logo first
-    crate::display::print_grok_logo(width);
+    // Logo
+    output.push_str(&crate::display::ascii_art::format_grok_logo(width));
 
-    // Print version
+    // Version
     let version = env!("CARGO_PKG_VERSION");
     let version_text = format!("v{}", version);
     let padding = (width as usize - version_text.len()) / 2;
-    println!("{}{}", " ".repeat(padding), version_text.dimmed());
-    println!();
+    output.push_str(&format!(
+        "{}{}\n\n",
+        " ".repeat(padding),
+        version_text.dimmed()
+    ));
 
     // Welcome message
     if config.show_tips {
@@ -160,14 +177,31 @@ pub fn print_welcome_banner(config: &BannerConfig) {
             "3. /help for more information.",
         ];
 
-        print_banner("", &content, BannerType::Welcome, config.width);
+        output.push_str(&format_banner(
+            "",
+            &content,
+            BannerType::Welcome,
+            config.width,
+        ));
     }
+
+    output
 }
 
-/// Print update notification banner
-pub fn print_update_banner(current_version: &str, latest_version: &str, config: &BannerConfig) {
+/// Print welcome banner with logo and tips
+#[deprecated(note = "Use format_welcome_banner and println! instead")]
+pub fn print_welcome_banner(config: &BannerConfig) {
+    print!("{}", format_welcome_banner(config));
+}
+
+/// Format update notification banner (pure function)
+pub fn format_update_banner(
+    current_version: &str,
+    latest_version: &str,
+    config: &BannerConfig,
+) -> String {
     if !config.show_updates {
-        return;
+        return String::new();
     }
 
     let update_message = format!(
@@ -179,22 +213,37 @@ pub fn print_update_banner(current_version: &str, latest_version: &str, config: 
         "Please run: cargo install --git https://github.com/microtech/grok-cli",
     ];
 
-    print_banner(
+    format_banner(
         "Update Available",
         &content,
         BannerType::Update,
         config.width,
+    )
+}
+
+/// Print update notification banner
+#[deprecated(note = "Use format_update_banner and println! instead")]
+pub fn print_update_banner(current_version: &str, latest_version: &str, config: &BannerConfig) {
+    print!(
+        "{}",
+        format_update_banner(current_version, latest_version, config)
     );
 }
 
-/// Print warning banner
-pub fn print_warning_banner(title: &str, message: &str, config: &BannerConfig) {
+/// Format warning banner (pure function)
+pub fn format_warning_banner(title: &str, message: &str, config: &BannerConfig) -> String {
     let content = vec![message];
-    print_banner(title, &content, BannerType::Warning, config.width);
+    format_banner(title, &content, BannerType::Warning, config.width)
 }
 
-/// Print directory recommendation banner
-pub fn print_directory_recommendation(current_dir: &str, config: &BannerConfig) {
+/// Print warning banner
+#[deprecated(note = "Use format_warning_banner and println! instead")]
+pub fn print_warning_banner(title: &str, message: &str, config: &BannerConfig) {
+    print!("{}", format_warning_banner(title, message, config));
+}
+
+/// Format directory recommendation banner (pure function)
+pub fn format_directory_recommendation(current_dir: &str, config: &BannerConfig) -> String {
     let home_message = "You are running Grok CLI in your home directory.".to_string();
     let current_dir_message = format!("Current directory: {}", current_dir);
     let content = vec![
@@ -204,18 +253,30 @@ pub fn print_directory_recommendation(current_dir: &str, config: &BannerConfig) 
         &current_dir_message,
     ];
 
-    print_banner(
+    format_banner(
         "Directory Recommendation",
         &content,
         BannerType::Info,
         config.width,
-    );
+    )
+}
+
+/// Print directory recommendation banner
+#[deprecated(note = "Use format_directory_recommendation and println! instead")]
+pub fn print_directory_recommendation(current_dir: &str, config: &BannerConfig) {
+    print!("{}", format_directory_recommendation(current_dir, config));
+}
+
+/// Format error banner (pure function)
+pub fn format_error_banner(title: &str, error: &str) -> String {
+    let content = vec![error];
+    format_banner(title, &content, BannerType::Error, None)
 }
 
 /// Print error banner
+#[deprecated(note = "Use format_error_banner and println! instead")]
 pub fn print_error_banner(title: &str, error: &str) {
-    let content = vec![error];
-    print_banner(title, &content, BannerType::Error, None);
+    print!("{}", format_error_banner(title, error));
 }
 
 /// Print a simple status line (like the bottom status bar in Gemini CLI)

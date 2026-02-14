@@ -133,7 +133,8 @@ GROK_VERBOSE=false
 1. **API Key**: You must set `GROK_API_KEY` or `X_API_KEY`. For security, consider storing this in your system-wide `~/.grok/.env` instead of the project-level file.
 
 2. **Model Selection**: The `GROK_MODEL=grok-code-fast-1` setting is optimized for coding tasks. Other options:
-   - `grok-3` - Most capable, slower
+   - `grok-4-1-fast-reasoning` - Latest fast reasoning model (cheaper & more up-to-date, recommended default)
+   - `grok-3` - Previous flagship model
    - `grok-code-fast-1` - Fast, optimized for code
    - `grok-2` - Balanced performance
 

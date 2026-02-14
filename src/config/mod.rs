@@ -377,7 +377,7 @@ fn default_theme() -> String {
 }
 
 fn default_model() -> String {
-    "grok-3".to_string()
+    "grok-4-1-fast-reasoning".to_string()
 }
 
 fn default_temperature() -> f32 {
@@ -1021,6 +1021,7 @@ impl Config {
     /// 2. System-level: ~/.grok/.env (or %APPDATA%\.grok\.env on Windows)
     /// 3. Built-in defaults
     /// 4. Environment variables (highest priority, applied last)
+    /// Load configuration with hierarchical priority: project → system → defaults
     ///
     /// Settings from higher priority sources override lower priority sources.
     pub async fn load_hierarchical() -> Result<Self> {
@@ -1033,6 +1034,24 @@ impl Config {
         let mut loaded_system: Option<PathBuf> = None;
         let mut loaded_project: Option<PathBuf> = None;
 
+        // Try loading system-level config.toml first
+        let system_config_path = Self::default_config_path()?;
+        if system_config_path.exists() {
+            debug!("Loading system config.toml from: {:?}", system_config_path);
+            match Self::load_config_from_path(&system_config_path).await {
+                Ok(system_config) => {
+                    config = Self::merge_configs(config, system_config);
+                    loaded_system = Some(system_config_path.clone());
+                    debug!("✓ Loaded system config.toml from: {:?}", system_config_path);
+                }
+                Err(e) => {
+                    warn!("Failed to load system config.toml: {}", e);
+                }
+            }
+        } else {
+            debug!("No system config.toml found at: {:?}", system_config_path);
+        }
+
         // Try system-level .env
         let system_env_path = Self::get_system_env_path()?;
         if system_env_path.exists() {
@@ -1040,11 +1059,43 @@ impl Config {
             if let Err(e) = Self::load_env_file(&system_env_path) {
                 warn!("Failed to load system .env: {}", e);
             } else {
-                loaded_system = Some(system_env_path.clone());
+                if loaded_system.is_none() {
+                    loaded_system = Some(system_env_path.clone());
+                }
                 debug!("✓ Loaded system .env from: {:?}", system_env_path);
             }
         } else {
             debug!("No system .env found at: {:?}", system_env_path);
+        }
+
+        // Try project-local config.toml
+        match Self::find_project_config() {
+            Ok(project_config_path) => {
+                debug!(
+                    "Loading project config.toml from: {:?}",
+                    project_config_path
+                );
+                match Self::load_config_from_path(&project_config_path).await {
+                    Ok(project_config) => {
+                        config = Self::merge_configs(config, project_config);
+                        loaded_project = Some(project_config_path.clone());
+                        info!(
+                            "Using project-local config.toml from: {:?}",
+                            project_config_path
+                        );
+                        debug!(
+                            "✓ Loaded project config.toml from: {:?}",
+                            project_config_path
+                        );
+                    }
+                    Err(e) => {
+                        warn!("Failed to load project config.toml: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                debug!("No project config.toml found in directory tree: {}", e);
+            }
         }
 
         // Try project-local .env
@@ -1054,7 +1105,9 @@ impl Config {
                 if let Err(e) = Self::load_env_file(&project_env_path) {
                     warn!("Failed to load project .env: {}", e);
                 } else {
-                    loaded_project = Some(project_env_path.clone());
+                    if loaded_project.is_none() {
+                        loaded_project = Some(project_env_path.clone());
+                    }
                     info!(
                         "Using project-local configuration from: {:?}",
                         project_env_path

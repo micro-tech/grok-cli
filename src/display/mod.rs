@@ -50,41 +50,6 @@ pub fn clear_screen() {
     io::stdout().flush().unwrap_or(());
 }
 
-/// Print a separator line
-///
-/// # Deprecated
-/// This function performs I/O and should not be in the library.
-#[deprecated(note = "Move to binary crate - performs I/O")]
-pub fn print_separator(width: u16, color: Option<Color>) {
-    let line = "─".repeat(width as usize);
-    if let Some(c) = color {
-        println!("{}", line.color(c));
-    } else {
-        println!("{}", line.dimmed());
-    }
-}
-
-/// Print centered text
-///
-/// # Deprecated
-/// This function performs I/O and should not be in the library.
-#[deprecated(note = "Move to binary crate - performs I/O")]
-pub fn print_centered(text: &str, width: u16, color: Option<Color>) {
-    let text_len = text.len();
-    let padding = if width as usize > text_len {
-        (width as usize - text_len) / 2
-    } else {
-        0
-    };
-
-    let centered = format!("{}{}", " ".repeat(padding), text);
-    if let Some(c) = color {
-        println!("{}", centered.color(c));
-    } else {
-        println!("{}", centered);
-    }
-}
-
 /// Format a separator line (pure function, returns String)
 pub fn format_separator(width: u16) -> String {
     "─".repeat(width as usize)

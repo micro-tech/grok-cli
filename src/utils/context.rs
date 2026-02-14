@@ -384,6 +384,7 @@ mod tests {
     #[serial]
     fn test_load_project_context_gemini_md() {
         let temp_dir = tempdir().unwrap();
+        fs::File::create(temp_dir.path().join("Cargo.toml")).unwrap();
         let gemini_file = temp_dir.path().join("GEMINI.md");
         fs::write(&gemini_file, "# Test Project\nThis is a test context.").unwrap();
 
@@ -410,6 +411,7 @@ mod tests {
     #[serial]
     fn test_load_project_context_priority() {
         let temp_dir = tempdir().unwrap();
+        fs::File::create(temp_dir.path().join("Cargo.toml")).unwrap();
 
         // Create multiple context files
         fs::write(temp_dir.path().join("GEMINI.md"), "GEMINI content").unwrap();
@@ -425,6 +427,7 @@ mod tests {
     #[serial]
     fn test_load_project_context_no_file() {
         let temp_dir = tempdir().unwrap();
+        fs::File::create(temp_dir.path().join("Cargo.toml")).unwrap();
         // Override global context dir to ensure it doesn't pick up real files
         unsafe {
             std::env::set_var(
@@ -443,6 +446,7 @@ mod tests {
     #[serial]
     fn test_load_project_context_empty_file() {
         let temp_dir = tempdir().unwrap();
+        fs::File::create(temp_dir.path().join("Cargo.toml")).unwrap();
         // Override global context dir
         unsafe {
             std::env::set_var(
@@ -464,6 +468,7 @@ mod tests {
     #[serial]
     fn test_get_context_file_path() {
         let temp_dir = tempdir().unwrap();
+        fs::File::create(temp_dir.path().join("Cargo.toml")).unwrap();
         // Override global context dir
         unsafe {
             std::env::set_var(
@@ -511,6 +516,7 @@ mod tests {
     #[serial]
     fn test_load_and_merge_multiple_contexts() {
         let temp_dir = tempdir().unwrap();
+        fs::File::create(temp_dir.path().join("Cargo.toml")).unwrap();
 
         // Create multiple context files
         fs::write(
