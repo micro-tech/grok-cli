@@ -20,8 +20,8 @@ use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
 use crate::config::Config;
 use crate::display::{
-    BannerConfig, clear_current_line, print_directory_recommendation, print_grok_logo,
-    print_welcome_banner,
+    BannerConfig, clear_current_line, format_directory_recommendation, format_grok_logo,
+    format_welcome_banner,
 };
 use crate::utils::context::{
     format_context_for_prompt, get_all_context_file_paths, load_and_merge_project_context,
@@ -180,9 +180,12 @@ pub async fn start_interactive_mode(
     // Check if running in home directory
     if interactive_config.check_directory && is_home_directory(&session.current_directory) {
         let banner_config = BannerConfig::default();
-        print_directory_recommendation(
-            &session.current_directory.display().to_string(),
-            &banner_config,
+        println!(
+            "{}",
+            format_directory_recommendation(
+                &session.current_directory.display().to_string(),
+                &banner_config,
+            )
         );
     }
 
@@ -223,7 +226,7 @@ async fn display_startup_screen(
     crate::display::clear_screen();
 
     if config.show_banner && !config.show_tips {
-        print_grok_logo(width);
+        println!("{}", format_grok_logo(width));
         sleep(Duration::from_millis(500)).await;
     }
 
@@ -234,7 +237,7 @@ async fn display_startup_screen(
             show_updates: true,
             width: Some(width),
         };
-        print_welcome_banner(&banner_config);
+        println!("{}", format_welcome_banner(&banner_config));
     }
 
     // Show current session info
@@ -697,7 +700,7 @@ async fn handle_special_commands(
             crate::display::clear_screen();
             if interactive_config.show_banner {
                 let (width, _) = crate::display::get_terminal_size();
-                print_grok_logo(width);
+                println!("{}", format_grok_logo(width));
             }
             Ok(Some(true))
         }

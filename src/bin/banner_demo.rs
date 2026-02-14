@@ -3,8 +3,6 @@
 //! This binary demonstrates the ASCII art, banners, and visual elements
 //! without requiring API keys or interactive input.
 
-use crate::banner::BannerType;
-use crate::banner::print_banner;
 use colored::*;
 use std::env;
 
@@ -29,7 +27,7 @@ fn main() {
 
     // Demo 1: ASCII Art Logo
     println!("{}", "1. ASCII Art Logo (Adaptive)".bright_blue().bold());
-    print_grok_logo(width);
+    println!("{}", format_grok_logo(width));
     println!();
 
     // Demo 2: Welcome Banner
@@ -40,7 +38,7 @@ fn main() {
         show_updates: true,
         width: Some(width),
     };
-    print_welcome_banner(&banner_config);
+    println!("{}", format_welcome_banner(&banner_config));
 
     // Demo 3: Different Banner Types
     println!("{}", "3. Banner Variations".bright_magenta().bold());
@@ -51,11 +49,14 @@ fn main() {
         "It shows helpful system messages",
         "Like configuration status or tips",
     ];
-    print_banner(
-        "System Information",
-        &info_content,
-        BannerType::Info,
-        Some(width),
+    println!(
+        "{}",
+        format_banner(
+            "System Information",
+            &info_content,
+            BannerType::Info,
+            Some(width),
+        )
     );
 
     // Directory recommendation (simulated)
@@ -69,9 +70,12 @@ fn main() {
         })
         .unwrap_or(false)
     {
-        print_directory_recommendation(
-            &env::current_dir().unwrap().display().to_string(),
-            &banner_config,
+        println!(
+            "{}",
+            format_directory_recommendation(
+                &env::current_dir().unwrap().display().to_string(),
+                &banner_config,
+            )
         );
     }
 
@@ -126,7 +130,7 @@ fn main() {
 
     for (test_width, description) in sizes {
         println!("{}: {}", "Testing".dimmed(), description);
-        print_grok_logo(test_width);
+        println!("{}", format_grok_logo(test_width));
         println!("{}", "─".repeat(40).dimmed());
         println!();
     }
@@ -185,11 +189,14 @@ fn main() {
     ];
 
     let feature_banner_content: Vec<&str> = features.to_vec();
-    print_banner(
-        "Enhanced Features",
-        &feature_banner_content,
-        BannerType::Welcome,
-        Some(width),
+    println!(
+        "{}",
+        format_banner(
+            "Enhanced Features",
+            &feature_banner_content,
+            BannerType::Welcome,
+            Some(width),
+        )
     );
 
     // Conclusion

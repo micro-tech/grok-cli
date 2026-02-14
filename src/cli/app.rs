@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use tracing::{error, info};
 
 use crate::config::{Config, ConfigSource};
-use crate::display::banner::{BannerConfig, print_welcome_banner};
+use crate::display::banner::{BannerConfig, format_welcome_banner};
 use crate::display::interactive::{InteractiveConfig, PromptStyle, start_interactive_mode};
 use crate::utils::auth::{require_api_key, resolve_api_key};
 use crate::utils::network::test_connectivity;
@@ -171,7 +171,7 @@ pub async fn run() -> Result<()> {
             show_updates: true,
             width: None,
         };
-        print_welcome_banner(&banner_config);
+        println!("{}", format_welcome_banner(&banner_config));
     };
 
     match &cli.command {

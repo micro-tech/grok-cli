@@ -214,8 +214,13 @@ pub enum HistoryAction {
 
 // Re-export commonly used types and functions
 pub use config::{Config, ConfigSource, RateLimitConfig};
+#[allow(deprecated)]
 pub use display::{
-    ascii_art::{get_logo_for_width, print_grok_logo},
-    banner::{BannerConfig, BannerType, print_banner, print_welcome_banner},
+    ascii_art::print_grok_logo,
+    banner::{print_banner, print_welcome_banner},
+};
+pub use display::{
+    ascii_art::{format_grok_logo, get_logo_for_width},
+    banner::{BannerConfig, BannerType, format_banner, format_welcome_banner},
     get_terminal_size,
 };
