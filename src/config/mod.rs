@@ -21,6 +21,7 @@ pub struct Config {
     pub config_source: Option<ConfigSource>,
 
     /// X API key for Grok access
+    #[serde(skip)]
     pub api_key: Option<String>,
 
     /// Default model to use
@@ -2238,7 +2239,10 @@ mod tests {
         let mut config = Config::default();
 
         // Test getting values
-        assert_eq!(config.get_value("default_model").unwrap(), "grok-4-1-fast-reasoning");
+        assert_eq!(
+            config.get_value("default_model").unwrap(),
+            "grok-4-1-fast-reasoning"
+        );
         assert_eq!(config.get_value("ui.colors").unwrap(), "true");
 
         // Test setting values

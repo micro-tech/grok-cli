@@ -25,6 +25,7 @@ use crate::acp::protocol::{
     PromptResponse, ProtocolVersion, SessionId, SessionNotification, SessionUpdate, StopReason,
     TextContent,
 };
+use crate::acp::tools;
 use crate::acp::{GrokAcpAgent, SessionConfig};
 use crate::cli::{create_spinner, print_error, print_info, print_success, print_warning};
 use crate::config::Config;
@@ -318,7 +319,7 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
         .or_else(|| std::env::var("CODER_AGENT_WORKSPACE_PATH").ok())
         .or_else(|| std::env::var("WORKSPACE_ROOT").ok());
 
-    // If workspace root is provided, update trusted directories
+    // If workspace root is provided, update trusted directories and read the directory
     if let Some(workspace_path) = &workspace_root {
         use std::path::PathBuf;
         let path = PathBuf::from(workspace_path);
@@ -327,7 +328,31 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
                 "Adding workspace root to trusted directories: {:?}",
                 canonical_path
             );
-            agent.security.add_trusted_directory(canonical_path);
+            agent.security.add_trusted_directory(canonical_path.clone());
+
+            // Automatically read the workspace directory contents
+            match tools::list_directory(
+                canonical_path.to_str().unwrap_or(workspace_path),
+                &agent.security.get_policy(),
+            ) {
+                Ok(dir_contents) => {
+                    info!(
+                        "Workspace directory contents loaded: {} entries",
+                        dir_contents.lines().count()
+                    );
+                    // Log the directory structure for the session
+                    if let Err(e) = chat_logger::log_system(format!(
+                        "Workspace root: {}\nDirectory contents:\n{}",
+                        canonical_path.display(),
+                        dir_contents
+                    )) {
+                        warn!("Failed to log workspace directory contents: {}", e);
+                    }
+                }
+                Err(e) => {
+                    warn!("Failed to read workspace directory: {}", e);
+                }
+            }
         } else {
             warn!("Failed to canonicalize workspace path: {}", workspace_path);
         }

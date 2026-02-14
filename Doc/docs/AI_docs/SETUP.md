@@ -140,8 +140,11 @@ cp .env.example .env
 # Show current configuration
 ./target/release/grok config show
 
-# Set API key
+# Set API key (stores in .env file for security)
 ./target/release/grok config set api_key "your_api_key_here"
+
+# Or manually create .env file:
+# echo "GROK_API_KEY=your_api_key_here" > ~/.config/grok-cli/.env
 
 # Enable Starlink optimizations
 ./target/release/grok config set network.starlink_optimizations true
@@ -244,7 +247,7 @@ export GROK_API_KEY="your_api_key"
 
 ## 📝 Next Steps
 
-1. **Add your X API key** to `.env` or configuration ✅ DONE & TESTED
+1. **Add your X API key** to `.env` file (NOT config.toml) ✅ DONE & TESTED
 2. **Test the basic functionality** with the health check ✅ DONE & WORKING
 3. **Try chat and code operations** once API key is configured ✅ DONE & WORKING PERFECTLY
 4. **Set up Zed integration** if using Zed editor (ACP server ready)

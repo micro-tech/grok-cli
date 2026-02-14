@@ -2,8 +2,11 @@
 # Copy this to ~/.config/grok-cli/config.toml and customize as needed
 
 # API Configuration
-api_key = "xai-your-api-key-here"
-default_model = "grok-4-1-fast-reasoning"
+# NOTE: Do NOT store your API key in this file!
+# Instead, create a .env file in ~/.config/grok-cli/ with:
+#   GROK_API_KEY=xai-your-api-key-here
+# Or set the environment variable GROK_API_KEY or X_API_KEY
+default_model = "grok-code-fast-1"
 default_temperature = 0.7
 default_max_tokens = 4096
 timeout_secs = 60

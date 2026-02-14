@@ -133,7 +133,10 @@ pub async fn handle_health_check(
             checks_passed += 1;
         } else {
             print_warning("No API key configured");
-            warnings.push("Set API key with: grok config set api_key YOUR_API_KEY".to_string());
+            warnings.push(
+                "Set API key with: grok config set api_key YOUR_API_KEY (stores in .env)"
+                    .to_string(),
+            );
         }
 
         total_checks += 1;

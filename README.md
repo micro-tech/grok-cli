@@ -166,18 +166,29 @@ cargo run --bin installer
 ```bash
 # Create default configuration
 grok config init
-
-# Set your API key
-grok config set api_key "your-api-key-here"
 ```
 
-Or use environment variable:
+#### Set your API key (Choose one method):
+
+**Recommended: Use .env file**
+```bash
+# Create .env file in config directory
+# Windows:
+echo GROK_API_KEY=your-api-key-here > %APPDATA%\.grok\.env
+
+# Linux/Mac:
+echo "GROK_API_KEY=your-api-key-here" > ~/.config/grok-cli/.env
+```
+
+**Alternative: Environment variable**
 ```bash
 # Add to your shell profile (.bashrc, .zshrc, etc.)
 export GROK_API_KEY="your-api-key-here"
 # or
 export X_API_KEY="your-api-key-here"
 ```
+
+> **⚠️ Security Note:** Never commit `.env` files with API keys to version control! They are automatically excluded via `.gitignore`.
 
 ### ⚠️ Troubleshooting Installation
 

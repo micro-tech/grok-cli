@@ -234,9 +234,11 @@ fn setup_config(root_dir: &Path) {
         return;
     }
 
-    // Copy example config if it exists
+    let config_file = config_dir.join("config.toml");
     let example_config_src = root_dir.join("config.example.toml");
     let example_config_dst = config_dir.join("config.example.toml");
+
+    // Always copy example config for reference
     if example_config_src.exists() {
         if let Err(e) = fs::copy(&example_config_src, &example_config_dst) {
             eprintln!("Failed to copy example config: {}", e);
@@ -248,51 +250,67 @@ fn setup_config(root_dir: &Path) {
         }
     }
 
-    let config_file = config_dir.join("config.toml");
     if !config_file.exists() {
-        println!("Configuration file not found at: {}", config_file.display());
-        print!("Do you want to set up your Grok API Key now? [Y/n]: ");
+        println!("\n{}", "Setting up configuration...".cyan());
+        println!("Configuration will be saved to: {}", config_file.display());
+
+        // Copy example config as the default config.toml
+        if example_config_src.exists() {
+            if let Err(e) = fs::copy(&example_config_src, &config_file) {
+                eprintln!("Failed to create default config: {}", e);
+                return;
+            }
+            println!("Default configuration created from example config.");
+        } else {
+            eprintln!("Warning: config.example.toml not found in project root!");
+            return;
+        }
+
+        // Prompt for API key
+        print!("\nDo you want to set up your Grok API Key now? [Y/n]: ");
         io::stdout().flush().unwrap_or_default();
 
         let mut input = String::new();
         if io::stdin().read_line(&mut input).is_ok() {
             let input = input.trim().to_lowercase();
             if input != "n" && input != "no" {
-                print!("Enter your X API Key: ");
+                print!("Enter your X API Key (starts with 'xai-'): ");
                 io::stdout().flush().unwrap_or_default();
                 let mut key = String::new();
                 if io::stdin().read_line(&mut key).is_ok() {
                     let key = key.trim();
                     if !key.is_empty() {
-                        let config_content = format!(
-                            r#"# Grok CLI Configuration
+                        // Create .env file with the API key
+                        let env_file = config_dir.join(".env");
+                        let env_content = format!("GROK_API_KEY={}\n", key);
 
-# X API Key
-api_key = "{}"
-
-# Default Model
-default_model = "grok-4-1-fast-reasoning"
-
-# ACP Configuration
-[acp]
-max_tool_loop_iterations = 25
-
-# Network Configuration
-[network]
-starlink_optimizations = true
-health_monitoring = true
-"#,
-                            key
-                        );
-                        if let Err(e) = fs::write(&config_file, config_content) {
-                            eprintln!("Failed to write config file: {}", e);
-                        } else {
-                            println!("Configuration saved to {}", config_file.display());
+                        match fs::write(&env_file, env_content) {
+                            Ok(_) => {
+                                println!("{}", "✓ API key configured successfully!".green());
+                                println!("API key saved to: {}", env_file.display());
+                                println!("\n{}", "Note: The .env file contains sensitive data and is excluded from version control.".yellow());
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to create .env file: {}", e);
+                                println!("\nYou can manually create a .env file at:");
+                                println!("  {}", env_file.display());
+                                println!("And add: GROK_API_KEY={}", key);
+                            }
                         }
                     } else {
                         println!("Skipping API key setup (empty key provided).");
+                        println!("You can manually create a .env file later at:");
+                        let env_file = config_dir.join(".env");
+                        println!("  {}", env_file.display());
+                        println!("And add: GROK_API_KEY=your-api-key-here");
                     }
                 }
+            } else {
+                println!("Skipping API key setup.");
+                println!("You can manually create a .env file later at:");
+                let env_file = config_dir.join(".env");
+                println!("  {}", env_file.display());
+                println!("And add: GROK_API_KEY=your-api-key-here");
             }
         }
     } else {

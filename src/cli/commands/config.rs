@@ -153,6 +153,80 @@ async fn show_config(config: &Config) -> Result<()> {
 
 /// Set a configuration value
 async fn set_config_value(key: &str, value: &str) -> Result<()> {
+    // Special handling for API key - store in .env file, not config.toml
+    if key == "api_key" {
+        use std::fs;
+        use std::path::PathBuf;
+
+        print_info("Setting API key in .env file (not config.toml for security)...");
+
+        // Determine the config directory
+        let config_dir = if let Some(dir) = dirs::config_dir() {
+            dir.join("grok-cli")
+        } else {
+            return Err(anyhow!("Could not determine config directory"));
+        };
+
+        // Ensure config directory exists
+        if !config_dir.exists() {
+            fs::create_dir_all(&config_dir)
+                .map_err(|e| anyhow!("Failed to create config directory: {}", e))?;
+        }
+
+        let env_file = config_dir.join(".env");
+
+        // Read existing .env file or create new content
+        let mut env_content = if env_file.exists() {
+            fs::read_to_string(&env_file).map_err(|e| anyhow!("Failed to read .env file: {}", e))?
+        } else {
+            String::new()
+        };
+
+        // Check if GROK_API_KEY already exists in file
+        let key_exists = env_content.lines().any(|line| {
+            line.trim().starts_with("GROK_API_KEY=") || line.trim().starts_with("X_API_KEY=")
+        });
+
+        if key_exists {
+            // Replace existing key
+            let lines: Vec<String> = env_content
+                .lines()
+                .map(|line| {
+                    let trimmed = line.trim();
+                    if trimmed.starts_with("GROK_API_KEY=") || trimmed.starts_with("X_API_KEY=") {
+                        format!("GROK_API_KEY={}", value)
+                    } else {
+                        line.to_string()
+                    }
+                })
+                .collect();
+            env_content = lines.join("\n");
+            if !env_content.ends_with('\n') {
+                env_content.push('\n');
+            }
+        } else {
+            // Append new key
+            if !env_content.is_empty() && !env_content.ends_with('\n') {
+                env_content.push('\n');
+            }
+            env_content.push_str(&format!("GROK_API_KEY={}\n", value));
+        }
+
+        // Write updated .env file
+        fs::write(&env_file, env_content)
+            .map_err(|e| anyhow!("Failed to write .env file: {}", e))?;
+
+        print_success(&format!("API key saved to: {}", env_file.display()));
+        println!(
+            "\n{}",
+            "Note: The .env file contains sensitive data and is excluded from version control."
+                .yellow()
+        );
+        println!("The API key will be loaded automatically when you run grok commands.");
+
+        return Ok(());
+    }
+
     print_info(&format!(
         "Setting configuration: {} = {}",
         key.cyan(),
@@ -237,7 +311,7 @@ async fn init_config(force: bool) -> Result<()> {
             print_info("Next steps:");
             println!(
                 "  1. Set your X API key: {}",
-                "grok config set api_key YOUR_API_KEY".yellow()
+                "grok config set api_key YOUR_API_KEY (stores in .env)".yellow()
             );
             println!("  2. Verify configuration: {}", "grok config show".yellow());
             println!("  3. Test connection: {}", "grok health --api".yellow());
@@ -268,8 +342,10 @@ async fn validate_config() -> Result<()> {
             // Check API key
             if config.api_key.is_none() {
                 warnings.push("No API key configured".to_string());
-                suggestions
-                    .push("Set your X API key with: grok config set api_key YOUR_KEY".to_string());
+                suggestions.push(
+                    "Set your X API key with: grok config set api_key YOUR_KEY (stores in .env)"
+                        .to_string(),
+                );
             }
 
             // Check network settings for Starlink

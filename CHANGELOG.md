@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **ACP Workspace Initialization**: Automatically reads workspace directory when ACP session starts
+  - When started in ACP mode with workspace root, grok-cli now automatically reads the top-level directory
+  - Directory contents are logged to the session for immediate context awareness
+  - AI agent has project structure information from the first interaction
+  - Uses existing security policy to ensure only trusted directories are accessed
+  - Non-breaking: directory reading failure logs warning but doesn't prevent session initialization
+  - Improves initial AI responses by providing project context upfront
+
 - **Context Discovery Enhancement**: Context files now walk up directory tree to find project root
   - Context discovery now matches configuration discovery behavior
   - Works from any subdirectory within a project
