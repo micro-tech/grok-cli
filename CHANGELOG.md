@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Native performance on M1/M2/M3 Macs without Rosetta translation
   - Improved build matrix in CI/CD pipeline for cross-platform compilation
 
+### Fixed
+
+- **Configuration Loading**: Fixed `config.toml` not being loaded in hierarchical mode
+  - `Config::load_hierarchical()` now loads both `config.toml` and `.env` files
+  - System config now properly loaded from `%APPDATA%\grok-cli\config.toml` on Windows
+  - Project config now properly loaded from `.grok/config.toml` in project directories
+  - Previously only `.env` files were loaded, causing config.toml settings to be ignored
+  - Configuration source now correctly displayed in interactive mode session info
+  - Added comprehensive loading order: defaults → system config → system env → project config → project env → environment variables
+  - Created `fix_config_syntax.ps1` script to fix common TOML syntax errors (e.g., numbers with commas)
+  - All user-configured settings (including `max_tool_loop_iterations`) now load correctly
+
 ### Added
 
 - **Context Discovery Enhancement**: Context files now walk up directory tree to find project root

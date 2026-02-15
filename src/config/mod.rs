@@ -1017,8 +1017,10 @@ impl Config {
     /// Load configuration with hierarchical priority: project → system → defaults
     ///
     /// Priority order:
-    /// 1. Project-local: .grok/.env in current directory or parent
-    /// 2. System-level: ~/.grok/.env (or %APPDATA%\.grok\.env on Windows)
+    /// 1. Project-local: .grok/config.toml and .grok/.env in current directory or parent
+    /// 2. System-level: config.toml and .env from system config directory
+    ///    - Windows: %APPDATA%\grok-cli\config.toml and ~/.grok/.env
+    ///    - Unix/Mac: ~/.config/grok-cli/config.toml and ~/.grok/.env
     /// 3. Built-in defaults
     /// 4. Environment variables (highest priority, applied last)
     ///
@@ -1030,8 +1032,28 @@ impl Config {
         let mut config = Config::default();
         debug!("✓ Loaded built-in defaults");
 
-        let mut loaded_system: Option<PathBuf> = None;
-        let mut loaded_project: Option<PathBuf> = None;
+        let mut loaded_system_config: Option<PathBuf> = None;
+        let mut loaded_system_env: Option<PathBuf> = None;
+        let mut loaded_project_config: Option<PathBuf> = None;
+        let mut loaded_project_env: Option<PathBuf> = None;
+
+        // Try system-level config.toml
+        let system_config_path = Self::default_config_path()?;
+        if system_config_path.exists() {
+            debug!("Loading system config.toml from: {:?}", system_config_path);
+            match Self::load_config_from_path(&system_config_path).await {
+                Ok(system_config) => {
+                    config = Self::merge_configs(config, system_config);
+                    loaded_system_config = Some(system_config_path.clone());
+                    info!("✓ Loaded system config.toml from: {:?}", system_config_path);
+                }
+                Err(e) => {
+                    warn!("Failed to load system config.toml: {}", e);
+                }
+            }
+        } else {
+            debug!("No system config.toml found at: {:?}", system_config_path);
+        }
 
         // Try system-level .env
         let system_env_path = Self::get_system_env_path()?;
@@ -1040,11 +1062,37 @@ impl Config {
             if let Err(e) = Self::load_env_file(&system_env_path) {
                 warn!("Failed to load system .env: {}", e);
             } else {
-                loaded_system = Some(system_env_path.clone());
+                loaded_system_env = Some(system_env_path.clone());
                 debug!("✓ Loaded system .env from: {:?}", system_env_path);
             }
         } else {
             debug!("No system .env found at: {:?}", system_env_path);
+        }
+
+        // Try project-local config.toml
+        match Self::find_project_config() {
+            Ok(project_config_path) => {
+                debug!(
+                    "Loading project config.toml from: {:?}",
+                    project_config_path
+                );
+                match Self::load_config_from_path(&project_config_path).await {
+                    Ok(project_config) => {
+                        config = Self::merge_configs(config, project_config);
+                        loaded_project_config = Some(project_config_path.clone());
+                        info!(
+                            "✓ Loaded project config.toml from: {:?}",
+                            project_config_path
+                        );
+                    }
+                    Err(e) => {
+                        warn!("Failed to load project config.toml: {}", e);
+                    }
+                }
+            }
+            Err(e) => {
+                debug!("No project config.toml found in directory tree: {}", e);
+            }
         }
 
         // Try project-local .env
@@ -1054,7 +1102,7 @@ impl Config {
                 if let Err(e) = Self::load_env_file(&project_env_path) {
                     warn!("Failed to load project .env: {}", e);
                 } else {
-                    loaded_project = Some(project_env_path.clone());
+                    loaded_project_env = Some(project_env_path.clone());
                     info!(
                         "Using project-local configuration from: {:?}",
                         project_env_path
@@ -1068,10 +1116,13 @@ impl Config {
         }
 
         // Set config source based on what was loaded
-        config.config_source = Some(if loaded_project.is_some() || loaded_system.is_some() {
+        let system_path = loaded_system_config.or(loaded_system_env);
+        let project_path = loaded_project_config.or(loaded_project_env);
+
+        config.config_source = Some(if project_path.is_some() || system_path.is_some() {
             ConfigSource::Hierarchical {
-                project: loaded_project,
-                system: loaded_system,
+                project: project_path,
+                system: system_path,
             }
         } else {
             ConfigSource::Default
@@ -1180,9 +1231,11 @@ impl Config {
 
     /// Merge two configs, with override taking precedence over base
     fn merge_configs(base: Config, override_config: Config) -> Config {
-        // Simple override: all values from override_config replace base values
-        // This is the correct behavior for hierarchical configs where
-        // project config should fully override system config
+        // Merge configs by taking non-default values from override_config
+        // and keeping base values where override_config has defaults
+
+        // For simplicity, we'll use a field-by-field approach
+        // In a production system, you might use a macro or trait for this
 
         let mut merged = base;
 
