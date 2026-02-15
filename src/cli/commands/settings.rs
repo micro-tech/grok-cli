@@ -841,7 +841,7 @@ pub fn get_all_settings(config: &Config) -> Vec<SettingDefinition> {
             description: "Default maximum tokens per response".to_string(),
             category: "Model".to_string(),
             setting_type: SettingType::Number,
-            default_value: "4096".to_string(),
+            default_value: "256000".to_string(),
             requires_restart: false,
             current_value: config.default_max_tokens.to_string(),
         },

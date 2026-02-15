@@ -146,7 +146,7 @@ Here is a comprehensive list of all available settings, grouped by category:
 |---------|-------------|---------|------|
 | `default_model` | Default Grok model to use | `"grok-3"` | String |
 | `default_temperature` | Default temperature for responses (0.0-2.0) | `0.7` | Number |
-| `default_max_tokens` | Default maximum tokens per response | `4096` | Number |
+| `default_max_tokens` | Default maximum tokens per response | `256000` | Number |
 | `model.max_session_turns` | Maximum conversation turns (-1 = unlimited) | `-1` | Number |
 | `model.compression_threshold` | Context compression threshold (0.1-1.0) | `0.2` | Number |
 | `model.skip_next_speaker_check` | Skip next speaker validation | `true` | Boolean |
@@ -234,7 +234,7 @@ Here's an example of what your `.env` file might look like:
 api_key = "your-x-api-key-here"
 default_model = "grok-3"
 default_temperature = 0.7
-default_max_tokens = 4096
+default_max_tokens = 256000
 timeout_secs = 30
 max_retries = 3
 

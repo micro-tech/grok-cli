@@ -386,7 +386,7 @@ fn default_temperature() -> f32 {
 }
 
 fn default_max_tokens() -> u32 {
-    4096
+    256000
 }
 
 fn default_timeout_secs() -> u64 {
@@ -662,7 +662,7 @@ impl Default for Config {
             api_key: None,
             default_model: default_model(),
             default_temperature: 0.7,
-            default_max_tokens: 4096,
+            default_max_tokens: 256000,
             timeout_secs: 30,
             max_retries: 3,
             general: GeneralConfig::default(),
