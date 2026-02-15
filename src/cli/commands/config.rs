@@ -68,6 +68,10 @@ async fn show_config(config: &Config) -> Result<()> {
         "✗ Disabled".dimmed()
     };
     println!("  Dev Mode: {}", dev_mode);
+    println!(
+        "  Max Tool Loop Iterations: {}",
+        config.acp.max_tool_loop_iterations
+    );
     println!();
 
     // Network Configuration

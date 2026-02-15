@@ -49,5 +49,6 @@ if ($LASTEXITCODE -eq 0)
     Write-Host "⚠ There may still be issues with the config:" -ForegroundColor Yellow
     Write-Host $verification -ForegroundColor Red
     Write-Host "`nYou can restore the backup with:" -ForegroundColor Yellow
-    Write-Host "  Copy-Item '$backupPath' '$configPath' -Force" -ForegroundColor White
+    $restoreCmd = "Copy-Item '$backupPath' '$configPath' -Force"
+    Write-Host "  $restoreCmd" -ForegroundColor White
 }
