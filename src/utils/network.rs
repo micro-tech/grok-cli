@@ -21,6 +21,10 @@ const STARLINK_ERROR_PATTERNS: &[&str] = &[
     "temporary failure in name resolution",
     "network is down",
     "host is unreachable",
+    "service unavailable",
+    "service temporarily unavailable",
+    "the model did not respond",
+    "currently unavailable",
 ];
 
 /// HTTP status codes that commonly occur during satellite network issues
@@ -102,6 +106,8 @@ pub fn analyze_network_error(error: &Error) -> NetworkDropInfo {
     if error_string.contains("connection reset")
         || error_string.contains("broken pipe")
         || error_string.contains("network unreachable")
+        || (error_string.contains("service") && error_string.contains("unavailable"))
+        || error_string.contains("model did not respond")
     {
         confidence = DropConfidence::High;
         suggested_action = SuggestedAction::WaitAndRetry(Duration::from_secs(5));
@@ -270,6 +276,12 @@ mod tests {
         assert!(detect_network_drop(&anyhow!("Connection reset by peer")));
         assert!(detect_network_drop(&anyhow!("Network unreachable")));
         assert!(detect_network_drop(&anyhow!("HTTP 502 Bad Gateway")));
+        assert!(detect_network_drop(&anyhow!(
+            "Service temporarily unavailable"
+        )));
+        assert!(detect_network_drop(&anyhow!(
+            "The model did not respond to this request"
+        )));
         assert!(!detect_network_drop(&anyhow!("Invalid API key")));
         assert!(!detect_network_drop(&anyhow!("JSON parsing error")));
     }
@@ -285,6 +297,12 @@ mod tests {
         let analysis = analyze_network_error(&timeout_error);
         assert!(analysis.is_drop);
         assert_eq!(analysis.confidence, DropConfidence::Medium);
+
+        let service_error =
+            anyhow!("Service temporarily unavailable. The model did not respond to this request.");
+        let analysis = analyze_network_error(&service_error);
+        assert!(analysis.is_drop);
+        assert_eq!(analysis.confidence, DropConfidence::High);
     }
 
     #[test]
