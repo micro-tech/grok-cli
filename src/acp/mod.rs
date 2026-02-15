@@ -9,10 +9,11 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::{debug, error, info, warn};
 
 use crate::GrokClient;
 use crate::config::Config;
+use crate::grok_client_ext::MessageWithFinishReason;
 use crate::hooks::HookManager;
 use crate::{content_to_string, extract_text_content};
 
@@ -333,6 +334,10 @@ impl GrokAcpAgent {
         message: &str,
         options: Option<Value>,
     ) -> Result<String> {
+        let start_time = std::time::Instant::now();
+        info!("🚀 Starting chat completion for session: {}", session_id.0);
+        info!("📝 User message: {} chars", message.len());
+
         let mut sessions = self.sessions.write().await;
         let session = sessions
             .get_mut(&session_id.0)
@@ -346,6 +351,8 @@ impl GrokAcpAgent {
             "role": "user",
             "content": message
         }));
+
+        info!("📚 Session history: {} messages", session.messages.len());
 
         // Extract options
         let temperature = options
@@ -363,11 +370,18 @@ impl GrokAcpAgent {
             .unwrap_or(session.config.max_tokens);
 
         let tool_defs = tools::get_available_tool_definitions();
+        info!("🔧 Available tools: {}", tool_defs.len());
+
         let mut loop_count = 0;
         let max_loops = self.config.acp.max_tool_loop_iterations;
 
         loop {
             if loop_count >= max_loops {
+                let elapsed = start_time.elapsed();
+                error!(
+                    "❌ Max tool loop iterations reached ({} iterations) after {:?}",
+                    max_loops, elapsed
+                );
                 return Err(anyhow!(
                     "Max tool loop iterations reached ({} iterations). \
                     Consider increasing 'acp.max_tool_loop_iterations' in config or breaking task into smaller steps.",
@@ -376,8 +390,17 @@ impl GrokAcpAgent {
             }
             loop_count += 1;
 
+            let loop_start = std::time::Instant::now();
+            info!("🔄 Tool loop iteration {}/{}", loop_count, max_loops);
+
             // Make request to Grok
-            let response_msg = self
+            info!(
+                "📡 Calling Grok API (model: {}, temp: {}, max_tokens: {})...",
+                session.config.model, temperature, max_tokens
+            );
+            let api_call_start = std::time::Instant::now();
+
+            let response_with_finish = self
                 .grok_client
                 .chat_completion_with_history(
                     &session.messages,
@@ -388,145 +411,196 @@ impl GrokAcpAgent {
                 )
                 .await?;
 
+            let api_duration = api_call_start.elapsed();
+            info!("✅ Grok API responded in {:?}", api_duration);
+
+            let response_msg = response_with_finish.message;
+            let finish_reason = response_with_finish.finish_reason.as_deref();
+
+            info!("📋 Finish reason: {:?}", finish_reason);
+
             // Add assistant response to history
             session.messages.push(serde_json::to_value(&response_msg)?);
 
-            if let Some(tool_calls) = &response_msg.tool_calls {
-                if tool_calls.is_empty() {
-                    return Ok(content_to_string(response_msg.content.as_ref()));
-                }
-
-                for tool_call in tool_calls {
-                    let function_name = &tool_call.function.name;
-                    let arguments = &tool_call.function.arguments;
-                    let args: Value = serde_json::from_str(arguments).map_err(|e| {
-                        anyhow!("Invalid tool arguments for {}: {}", function_name, e)
-                    })?;
-
-                    debug!("Executing tool: {} with args: {}", function_name, arguments);
-
-                    // Execute before_tool hooks
-                    {
-                        let hooks = self.hook_manager.read().await;
-                        if !hooks.execute_before_tool(function_name, &args)? {
-                            session.messages.push(json!({
-                                "role": "tool",
-                                "tool_call_id": tool_call.id,
-                                "content": "Tool execution blocked by hook."
-                            }));
-                            continue;
-                        }
-                    }
-
-                    let result = match function_name.as_str() {
-                        "read_file" => {
-                            let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                            tools::read_file(path, &self.security.get_policy())
-                        }
-                        "write_file" => {
-                            let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                            let content =
-                                args["content"].as_str().ok_or(anyhow!("Missing content"))?;
-                            tools::write_file(path, content, &self.security.get_policy())
-                        }
-                        "list_directory" => {
-                            let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                            tools::list_directory(path, &self.security.get_policy())
-                        }
-                        "glob_search" => {
-                            let pattern =
-                                args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                            tools::glob_search(pattern, &self.security.get_policy())
-                        }
-                        "search_file_content" => {
-                            let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                            let pattern =
-                                args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                            tools::search_file_content(path, pattern, &self.security.get_policy())
-                        }
-                        "run_shell_command" => {
-                            let command =
-                                args["command"].as_str().ok_or(anyhow!("Missing command"))?;
-                            tools::run_shell_command(command, &self.security.get_policy())
-                        }
-                        "replace" => {
-                            let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                            let old_string = args["old_string"]
-                                .as_str()
-                                .ok_or(anyhow!("Missing old_string"))?;
-                            let new_string = args["new_string"]
-                                .as_str()
-                                .ok_or(anyhow!("Missing new_string"))?;
-                            let expected_replacements =
-                                args["expected_replacements"].as_u64().map(|n| n as u32);
-                            tools::replace(
-                                path,
-                                old_string,
-                                new_string,
-                                expected_replacements,
-                                &self.security.get_policy(),
-                            )
-                        }
-                        "save_memory" => {
-                            let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
-                            tools::save_memory(fact)
-                        }
-                        "web_search" => {
-                            let query = args["query"].as_str().ok_or(anyhow!("Missing query"))?;
-                            tools::web_search(query).await
-                        }
-                        "web_fetch" => {
-                            let url = args["url"].as_str().ok_or(anyhow!("Missing url"))?;
-                            tools::web_fetch(url).await
-                        }
-                        "read_multiple_files" => {
-                            let paths_value =
-                                args["paths"].as_array().ok_or(anyhow!("Missing paths"))?;
-                            let paths: Result<Vec<String>> = paths_value
-                                .iter()
-                                .map(|v| {
-                                    v.as_str()
-                                        .ok_or(anyhow!("Invalid path"))
-                                        .map(|s| s.to_string())
-                                })
-                                .collect();
-                            tools::read_multiple_files(paths?, &self.security.get_policy())
-                        }
-                        "list_code_definitions" => {
-                            let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                            tools::list_code_definitions(path, &self.security.get_policy())
-                        }
-                        _ => Err(anyhow!("Unknown tool: {}", function_name)),
-                    };
-
-                    let content = match result {
-                        Ok(s) => s,
-                        Err(e) => format!("Error executing tool {}: {}", function_name, e),
-                    };
-
-                    // Execute after_tool hooks
-                    {
-                        let hooks = self.hook_manager.read().await;
-                        hooks.execute_after_tool(function_name, &args, &content)?;
-                    }
-
-                    // Add tool result to history
-                    session.messages.push(json!({
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": content
-                    }));
-                }
-                // Continue loop to get next response from model
-            } else {
-                // No tool calls, return content
-                let final_content = content_to_string(response_msg.content.as_ref());
-                debug!(
-                    "Chat completion for session {}: {} -> {}",
-                    session_id.0, message, final_content
+            // Check finish_reason - if "stop", we're done regardless of tool_calls
+            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
+                let elapsed = start_time.elapsed();
+                let response_text = content_to_string(response_msg.content.as_ref());
+                info!(
+                    "✅ Model signaled completion (finish_reason: {:?}) in {:?} ({} loops, {} chars)",
+                    finish_reason,
+                    elapsed,
+                    loop_count,
+                    response_text.len()
                 );
-                return Ok(final_content);
+                return Ok(response_text);
             }
+
+            // Check if we have tool calls to process
+            let has_tool_calls = response_msg
+                .tool_calls
+                .as_ref()
+                .map(|tc| !tc.is_empty())
+                .unwrap_or(false);
+
+            if !has_tool_calls {
+                // No tool calls and no explicit stop - return content
+                let elapsed = start_time.elapsed();
+                let response_text = content_to_string(response_msg.content.as_ref());
+                info!(
+                    "✨ Chat completion finished in {:?} ({} loops, {} chars)",
+                    elapsed,
+                    loop_count,
+                    response_text.len()
+                );
+                return Ok(response_text);
+            }
+
+            // We have tool calls to process
+            let tool_calls = response_msg.tool_calls.as_ref().unwrap();
+            info!("🛠️  Processing {} tool calls", tool_calls.len());
+
+            for (tool_idx, tool_call) in tool_calls.iter().enumerate() {
+                let tool_start = std::time::Instant::now();
+                info!(
+                    "🔨 Tool {}/{}: {}",
+                    tool_idx + 1,
+                    tool_calls.len(),
+                    tool_call.function.name
+                );
+                let function_name = &tool_call.function.name;
+                let arguments = &tool_call.function.arguments;
+                let args: Value = serde_json::from_str(arguments).map_err(|e| {
+                    error!("❌ Invalid tool arguments for {}: {}", function_name, e);
+                    anyhow!("Invalid tool arguments for {}: {}", function_name, e)
+                })?;
+
+                debug!("📋 Tool args: {}", arguments);
+
+                // Execute before_tool hooks
+                {
+                    let hooks = self.hook_manager.read().await;
+                    if !hooks.execute_before_tool(function_name, &args)? {
+                        session.messages.push(json!({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": "Tool execution blocked by hook."
+                        }));
+                        continue;
+                    }
+                }
+
+                let result = match function_name.as_str() {
+                    "read_file" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        tools::read_file(path, &self.security.get_policy())
+                    }
+                    "write_file" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
+                        tools::write_file(path, content, &self.security.get_policy())
+                    }
+                    "list_directory" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        tools::list_directory(path, &self.security.get_policy())
+                    }
+                    "glob_search" => {
+                        let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
+                        tools::glob_search(pattern, &self.security.get_policy())
+                    }
+                    "search_file_content" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
+                        tools::search_file_content(path, pattern, &self.security.get_policy())
+                    }
+                    "run_shell_command" => {
+                        let command = args["command"].as_str().ok_or(anyhow!("Missing command"))?;
+                        tools::run_shell_command(command, &self.security.get_policy())
+                    }
+                    "replace" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        let old_string = args["old_string"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing old_string"))?;
+                        let new_string = args["new_string"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing new_string"))?;
+                        let expected_replacements =
+                            args["expected_replacements"].as_u64().map(|n| n as u32);
+                        tools::replace(
+                            path,
+                            old_string,
+                            new_string,
+                            expected_replacements,
+                            &self.security.get_policy(),
+                        )
+                    }
+                    "save_memory" => {
+                        let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
+                        tools::save_memory(fact)
+                    }
+                    "web_search" => {
+                        let query = args["query"].as_str().ok_or(anyhow!("Missing query"))?;
+                        tools::web_search(query).await
+                    }
+                    "web_fetch" => {
+                        let url = args["url"].as_str().ok_or(anyhow!("Missing url"))?;
+                        tools::web_fetch(url).await
+                    }
+                    "read_multiple_files" => {
+                        let paths_value =
+                            args["paths"].as_array().ok_or(anyhow!("Missing paths"))?;
+                        let paths: Result<Vec<String>> = paths_value
+                            .iter()
+                            .map(|v| {
+                                v.as_str()
+                                    .ok_or(anyhow!("Invalid path"))
+                                    .map(|s| s.to_string())
+                            })
+                            .collect();
+                        tools::read_multiple_files(paths?, &self.security.get_policy())
+                    }
+                    "list_code_definitions" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        tools::list_code_definitions(path, &self.security.get_policy())
+                    }
+                    _ => Err(anyhow!("Unknown tool: {}", function_name)),
+                };
+
+                let content = match result {
+                    Ok(s) => {
+                        let tool_duration = tool_start.elapsed();
+                        info!(
+                            "✅ Tool completed in {:?} ({} bytes)",
+                            tool_duration,
+                            s.len()
+                        );
+                        s
+                    }
+                    Err(e) => {
+                        let tool_duration = tool_start.elapsed();
+                        warn!("⚠️  Tool failed in {:?}: {}", tool_duration, e);
+                        format!("Error executing tool {}: {}", function_name, e)
+                    }
+                };
+
+                // Execute after_tool hooks
+                {
+                    let hooks = self.hook_manager.read().await;
+                    hooks.execute_after_tool(function_name, &args, &content)?;
+                }
+
+                // Add tool result to history
+                session.messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": content
+                }));
+            }
+
+            let loop_duration = loop_start.elapsed();
+            info!("🔄 Loop iteration completed in {:?}", loop_duration);
+            // Continue loop to get next response from model with tool results
         }
     }
 
@@ -651,7 +725,7 @@ impl GrokAcpAgent {
             .get(&session_id.0)
             .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
 
-        let response = self
+        let response_with_finish = self
             .grok_client
             .chat_completion_with_history(
                 &messages,
@@ -661,6 +735,8 @@ impl GrokAcpAgent {
                 None,
             )
             .await?;
+
+        let response = response_with_finish.message;
 
         debug!(
             "Code operation for session {}: {} -> {}",

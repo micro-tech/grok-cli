@@ -49,8 +49,8 @@ pub use grok_api::{
     ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, ToolCall, Usage,
 };
 
-// Re-export the extended GrokClient
-pub use grok_client_ext::GrokClient;
+// Re-export the extended GrokClient and types
+pub use grok_client_ext::{GrokClient, MessageWithFinishReason};
 
 /// Helper function to extract text content from String
 /// Kept for backwards compatibility with refactored code

@@ -99,7 +99,8 @@ async fn handle_single_chat(
     spinner.finish_and_clear();
 
     match result {
-        Ok(response) => {
+        Ok(response_with_finish) => {
+            let response = response_with_finish.message;
             // Handle tool calls if present
             if let Some(tool_calls) = &response.tool_calls {
                 if !tool_calls.is_empty() {
@@ -395,7 +396,7 @@ async fn handle_interactive_chat(
                 let spinner = create_spinner("Grok is thinking...");
 
                 // Get response with timeout and retries (including tool definitions)
-                let response_msg = client
+                let response_with_finish = client
                     .chat_completion_with_history(
                         &conversation_history,
                         temperature,
@@ -404,6 +405,8 @@ async fn handle_interactive_chat(
                         Some(tools.clone()),
                     )
                     .await?;
+
+                let response_msg = response_with_finish.message;
 
                 spinner.finish_and_clear();
 

@@ -4,7 +4,7 @@
 //! to maintain API compatibility with the previous local implementation.
 
 use anyhow::Result;
-use grok_api::{ChatMessage, ChatResponse as GrokApiChatResponse, Message};
+use grok_api::{ChatMessage, ChatResponse as GrokApiChatResponse, Choice, Message};
 use serde_json::Value;
 
 use crate::config::RateLimitConfig;
@@ -78,6 +78,7 @@ impl GrokClient {
     }
 
     /// Send chat completion with conversation history and optional tools
+    /// Returns (Message, finish_reason)
     pub async fn chat_completion_with_history(
         &self,
         messages: &[Value],
@@ -85,7 +86,7 @@ impl GrokClient {
         max_tokens: u32,
         model: &str,
         tools: Option<Vec<Value>>,
-    ) -> Result<Message> {
+    ) -> Result<MessageWithFinishReason> {
         // Convert JSON messages to ChatMessage format
         let chat_messages: Vec<ChatMessage> = messages
             .iter()
@@ -119,8 +120,8 @@ impl GrokClient {
 
         let response = request.send().await?;
 
-        // Convert the response to the Message format
-        convert_response_to_message(response)
+        // Convert the response to the Message format with finish_reason
+        convert_response_to_message_with_finish_reason(response)
     }
 
     /// Test the connection to the Grok API
@@ -139,16 +140,32 @@ impl GrokClient {
     }
 }
 
-/// Convert ChatResponse to Message format for compatibility
-fn convert_response_to_message(response: GrokApiChatResponse) -> Result<Message> {
-    // Get the message from the first choice
-    if let Some(message) = response.message() {
-        Ok(message.clone())
+/// Message with finish_reason for proper loop control
+#[derive(Debug, Clone)]
+pub struct MessageWithFinishReason {
+    pub message: Message,
+    pub finish_reason: Option<String>,
+}
+
+/// Convert ChatResponse to Message format with finish_reason
+fn convert_response_to_message_with_finish_reason(
+    response: GrokApiChatResponse,
+) -> Result<MessageWithFinishReason> {
+    // Get the first choice
+    if let Some(choice) = response.choices.first() {
+        Ok(MessageWithFinishReason {
+            message: choice.message.clone(),
+            finish_reason: choice.finish_reason.clone(),
+        })
     } else {
-        Ok(Message {
-            role: "assistant".to_string(),
-            content: response.content().map(|s| s.to_string()),
-            tool_calls: None,
+        // Fallback if no choices
+        Ok(MessageWithFinishReason {
+            message: Message {
+                role: "assistant".to_string(),
+                content: response.content().map(|s| s.to_string()),
+                tool_calls: None,
+            },
+            finish_reason: Some("stop".to_string()),
         })
     }
 }

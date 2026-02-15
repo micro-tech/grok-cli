@@ -1156,7 +1156,8 @@ async fn send_to_grok(
         )
         .await
     {
-        Ok(response_msg) => {
+        Ok(response_with_finish) => {
+            let response_msg = response_with_finish.message;
             clear_current_line();
 
             // Handle tool calls if present

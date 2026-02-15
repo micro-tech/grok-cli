@@ -24,6 +24,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- **CRITICAL: Tool Loop Exit Condition**: Fixed ACP requests not exiting properly, causing 40+ minute timeouts
+  - **Bug #1**: Empty tool_calls array `Some([])` was not detected, causing infinite loops
+  - **Bug #2**: `finish_reason` field from API was being ignored - the model was saying "I'm done" but we kept looping!
+  - Now properly checks `finish_reason: "stop"` to exit immediately when model signals completion
+  - Added `MessageWithFinishReason` wrapper to preserve finish_reason from API responses
+  - Tool loop now exits in 1-5 iterations for most requests instead of hitting max iterations
+  - Enhanced logging shows finish_reason in debug output: `📋 Finish reason: Some("stop")`
+  - All chat completion callers updated to handle finish_reason properly
+  - Impact: Requests that took 40 minutes now complete in seconds
+  - Confidence: VERY HIGH - this was the root cause of excessive looping
+
 - **Configuration Loading**: Fixed `config.toml` not being loaded in hierarchical mode
   - `Config::load_hierarchical()` now loads both `config.toml` and `.env` files
   - System config now properly loaded from `%APPDATA%\grok-cli\config.toml` on Windows
