@@ -7,6 +7,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2025-02-10
+
+### Added
+
+- **Apple Silicon Support**: Added native ARM64 (aarch64) build for macOS
+  - New release artifact: `grok-cli-macos-aarch64.zip` for Apple Silicon Macs
+  - Updated GitHub Actions workflow to build for `aarch64-apple-darwin` target
+  - All 4 platforms now supported:
+    - `grok-cli-windows-x86_64.zip` (Windows x64)
+    - `grok-cli-macos-x86_64.zip` (macOS Intel)
+    - `grok-cli-macos-aarch64.zip` (macOS Apple Silicon) ← **NEW**
+    - `grok-cli-linux-x86_64.zip` (Linux x64)
+  - Native performance on M1/M2/M3 Macs without Rosetta translation
+  - Improved build matrix in CI/CD pipeline for cross-platform compilation
+
 ### Added
 
 - **Context Discovery Enhancement**: Context files now walk up directory tree to find project root
