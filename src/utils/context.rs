@@ -384,6 +384,8 @@ mod tests {
     #[serial]
     fn test_load_project_context_gemini_md() {
         let temp_dir = tempdir().unwrap();
+        // Create a project marker to prevent walking up to actual project root
+        fs::create_dir(temp_dir.path().join(".git")).unwrap();
         let gemini_file = temp_dir.path().join("GEMINI.md");
         fs::write(&gemini_file, "# Test Project\nThis is a test context.").unwrap();
 
@@ -396,6 +398,7 @@ mod tests {
     #[serial]
     fn test_load_project_context_grok_dir() {
         let temp_dir = tempdir().unwrap();
+        // Create .grok dir which also serves as a project marker
         let grok_dir = temp_dir.path().join(".grok");
         fs::create_dir(&grok_dir).unwrap();
         let context_file = grok_dir.join("context.md");
@@ -410,6 +413,8 @@ mod tests {
     #[serial]
     fn test_load_project_context_priority() {
         let temp_dir = tempdir().unwrap();
+        // Create a project marker to prevent walking up to actual project root
+        fs::create_dir(temp_dir.path().join(".git")).unwrap();
 
         // Create multiple context files
         fs::write(temp_dir.path().join("GEMINI.md"), "GEMINI content").unwrap();
@@ -425,6 +430,8 @@ mod tests {
     #[serial]
     fn test_load_project_context_no_file() {
         let temp_dir = tempdir().unwrap();
+        // Create a project marker to prevent walking up to actual project root
+        fs::create_dir(temp_dir.path().join(".git")).unwrap();
         // Override global context dir to ensure it doesn't pick up real files
         unsafe {
             std::env::set_var(
@@ -443,6 +450,8 @@ mod tests {
     #[serial]
     fn test_load_project_context_empty_file() {
         let temp_dir = tempdir().unwrap();
+        // Create a project marker to prevent walking up to actual project root
+        fs::create_dir(temp_dir.path().join(".git")).unwrap();
         // Override global context dir
         unsafe {
             std::env::set_var(
@@ -464,6 +473,8 @@ mod tests {
     #[serial]
     fn test_get_context_file_path() {
         let temp_dir = tempdir().unwrap();
+        // Create a project marker to prevent walking up to actual project root
+        fs::create_dir(temp_dir.path().join(".git")).unwrap();
         // Override global context dir
         unsafe {
             std::env::set_var(
@@ -511,6 +522,8 @@ mod tests {
     #[serial]
     fn test_load_and_merge_multiple_contexts() {
         let temp_dir = tempdir().unwrap();
+        // Create a project marker to prevent walking up to actual project root
+        fs::create_dir(temp_dir.path().join(".git")).unwrap();
 
         // Create multiple context files
         fs::write(
@@ -538,6 +551,8 @@ mod tests {
     #[serial]
     fn test_get_all_context_file_paths() {
         let temp_dir = tempdir().unwrap();
+        // Create a project marker to prevent walking up to actual project root
+        fs::create_dir(temp_dir.path().join(".git")).unwrap();
         // Override global context dir
         unsafe {
             std::env::set_var(
