@@ -118,3 +118,6 @@ node_modules/
 .dynamodb/
 report.md
 src/bin/home_server.md
+
+#AI file
+Doc/docs
