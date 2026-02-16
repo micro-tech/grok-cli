@@ -7,6 +7,42 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Tool Loop Debugging Tools**: Added comprehensive diagnostic and troubleshooting tools for ACP tool loops
+  - New PowerShell script `analyze_tool_loops.ps1` to analyze debug logs and identify loop patterns
+  - New bash script `test_tool_loop_debug.sh` for reproducing and debugging tool loop issues
+  - New documentation `Doc/TROUBLESHOOTING_TOOL_LOOPS.md` with detailed guide for diagnosing and fixing tool loops
+  - Analyzer detects repeated tool calls, finish reason patterns, and provides actionable recommendations
+  - Added comprehensive MCP server configuration examples to `config.example.toml` with proper syntax and documentation
+  - New PowerShell script `update_system_config.ps1` to safely add MCP section to system config
+  - New documentation `Doc/SYSTEM_CONFIG_NOTES.md` explaining system config settings and tool loop iteration limits
+  - Test script creates controlled scenarios to verify tool loop behavior
+  - Comprehensive examples of good vs bad prompts to prevent tool loops
+
+### Fixed
+
+- **Configuration Syntax**: Fixed `.grok/config.toml` missing required `env` field for MCP servers
+  - MCP server configurations now include `env = {}` field (required even if empty)
+  - Prevents TOML parse errors that could cause configuration loading failures
+  - Updated project config template with proper MCP server structure
+  - Added comprehensive MCP server examples to `config.example.toml` with commented templates
+
+### Documentation
+
+- Added comprehensive troubleshooting guide for tool loop issues
+  - Explains normal vs abnormal tool loop behavior (1-10 iterations is normal)
+  - Documents common causes: configuration issues, vague prompts, AI confusion
+  - Provides diagnostic tools and solutions for each issue type
+  - Includes prompt engineering best practices to prevent loops
+  - Clarifies when to increase `max_tool_loop_iterations` (rarely needed)
+  - **Key insight**: The limit is a safety mechanism - increasing it doesn't fix loop problems
+- Added system configuration notes documentation
+  - Explains configuration hierarchy and priority order
+  - Documents how system config interacts with project config
+  - Provides recommendations for setting `max_tool_loop_iterations` based on use case
+  - Includes instructions for safely updating system config without breaking existing setup
+
 ## [0.1.4] - 2025-02-10
 
 ### Added

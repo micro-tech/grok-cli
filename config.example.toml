@@ -137,3 +137,24 @@ enabled = false
 [rate_limits]
 max_tokens_per_minute = 100000
 max_requests_per_minute = 60
+
+# MCP (Model Context Protocol) Servers Configuration
+# Configure external MCP servers for extended functionality
+# Uncomment and customize the examples below to enable MCP servers
+
+# Example: GitHub MCP Server
+# [mcp.servers.github]
+# type = "stdio"
+# command = "path/to/github_mcp.exe"
+# args = []
+# env = {}  # Required field - environment variables for the MCP server
+
+# Example: Custom MCP Server with environment variables
+# [mcp.servers.custom]
+# type = "stdio"
+# command = "/usr/local/bin/custom-mcp-server"
+# args = ["--verbose", "--config", "/path/to/config"]
+# env = { LOG_LEVEL = "debug", API_KEY = "your-key-here" }
+
+# Note: The 'env' field is REQUIRED for each MCP server, even if empty ({})
+# This prevents TOML parsing errors during configuration loading
