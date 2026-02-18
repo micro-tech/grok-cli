@@ -742,7 +742,7 @@ impl GrokAcpAgent {
             "Code operation for session {}: {} -> {}",
             session_id.0,
             message,
-            response.content.clone().unwrap_or_default()
+            content_to_string(response.content.as_ref())
         );
 
         Ok(content_to_string(response.content.as_ref()))

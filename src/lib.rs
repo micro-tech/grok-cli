@@ -46,7 +46,8 @@ pub mod utils;
 
 // Re-export grok_api types for use throughout the crate
 pub use grok_api::{
-    ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, ToolCall, Usage,
+    ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, MessageContent, ToolCall,
+    Usage,
 };
 
 // Re-export the extended GrokClient and types
@@ -54,20 +55,23 @@ pub use grok_client_ext::{GrokClient, MessageWithFinishReason};
 
 /// Helper function to extract text content from String
 /// Kept for backwards compatibility with refactored code
-pub fn extract_text_content(content: &str) -> String {
-    content.to_string()
+pub fn extract_text_content(content: &MessageContent) -> String {
+    match content {
+        MessageContent::Text(s) => s.clone(),
+        _ => String::new(),
+    }
 }
 
 /// Helper function to convert Option<String> to String
 /// Kept for backwards compatibility with refactored code
-pub fn content_to_string(content: Option<&String>) -> String {
-    content.cloned().unwrap_or_default()
+pub fn content_to_string(content: Option<&MessageContent>) -> String {
+    content.map(|c| extract_text_content(c)).unwrap_or_default()
 }
 
 /// Helper function to create text content
 /// Kept for backwards compatibility with refactored code
-pub fn text_content(text: impl Into<String>) -> String {
-    text.into()
+pub fn text_content(text: impl Into<String>) -> MessageContent {
+    MessageContent::Text(text.into())
 }
 
 #[derive(Subcommand, Clone, Debug)]

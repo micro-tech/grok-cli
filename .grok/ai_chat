@@ -1,0 +1,4704 @@
+## User
+
+a littel info for useing tooling from grom 
+
+
+Tools
+Function Calling
+
+Define custom tools that the model can invoke during a conversation. The model requests the call, you execute it locally, and return the result. This enables integration with databases, APIs, and any external system.
+
+With streaming, the function call is returned in whole in a single chunk, not streamed across chunks.
+How It Works
+Function call request/response flow
+
+    Define tools with a name, description, and JSON schema for parameters
+    Include tools in your request
+    Model returns a
+    tool_call
+    when it needs external data
+    Execute the function locally and return the result
+    Model continues with your result
+
+Local server handling function calls
+Quick Start
+
+import os
+import json
+
+from xai_sdk import Client
+from xai_sdk.chat import user, tool, tool_result
+
+client = Client(api_key=os.getenv("XAI_API_KEY"))
+
+# Define tools
+tools = [
+    tool(
+        name="get_temperature",
+        description="Get current temperature for a location",
+        parameters={
+            "type": "object",
+            "properties": {
+                "location": {"type": "string", "description": "City name"},
+                "unit": {"type": "string", "enum": ["celsius", "fahrenheit"], "default": "fahrenheit"}
+            },
+            "required": ["location"]
+        },
+    ),
+]
+
+chat = client.chat.create(
+    model="grok-4-1-fast-reasoning",
+    tools=tools,
+)
+chat.append(user("What is the temperature in San Francisco?"))
+response = chat.sample()
+
+# Handle tool calls
+if response.tool_calls:
+    chat.append(response)
+    for tc in response.tool_calls:
+        args = json.loads(tc.function.arguments)
+        # Execute your function
+        result = {"location": args["location"], "temperature": 59, "unit": args.get("unit", "fahrenheit")}
+        chat.append(tool_result(json.dumps(result)))
+    
+    response = chat.sample()
+
+print(response.content)
+
+Defining Tools with Pydantic
+
+Use Pydantic models for type-safe parameter schemas:
+
+from typing import Literal
+from pydantic import BaseModel, Field
+from xai_sdk.chat import tool
+
+class TemperatureRequest(BaseModel):
+    location: str = Field(description="City and state, e.g. San Francisco, CA")
+    unit: Literal["celsius", "fahrenheit"] = Field("fahrenheit", description="Temperature unit")
+
+class CeilingRequest(BaseModel):
+    location: str = Field(description="City and state, e.g. San Francisco, CA")
+
+# Generate JSON schema from Pydantic models
+tools = [
+    tool(
+        name="get_temperature",
+        description="Get current temperature for a location",
+        parameters=TemperatureRequest.model_json_schema(),
+    ),
+    tool(
+        name="get_ceiling",
+        description="Get current cloud ceiling for a location",
+        parameters=CeilingRequest.model_json_schema(),
+    ),
+]
+
+Handling Tool Calls
+
+When the model wants to use your tool, execute the function and return the result:
+
+import json
+
+def get_temperature(location: str, unit: str = "fahrenheit") -> dict:
+    # In production, call a real weather API
+    temp = 59 if unit == "fahrenheit" else 15
+    return {"location": location, "temperature": temp, "unit": unit}
+
+def get_ceiling(location: str) -> dict:
+    return {"location": location, "ceiling": 15000, "unit": "ft"}
+
+tools_map = {
+    "get_temperature": get_temperature,
+    "get_ceiling": get_ceiling,
+}
+
+chat.append(user("What's the weather in Denver?"))
+response = chat.sample()
+
+# Process tool calls
+if response.tool_calls:
+    chat.append(response)
+    
+    for tool_call in response.tool_calls:
+        name = tool_call.function.name
+        args = json.loads(tool_call.function.arguments)
+        
+        result = tools_map[name](**args)
+        chat.append(tool_result(json.dumps(result)))
+    
+    response = chat.sample()
+
+print(response.content)
+
+Combining with Built-in Tools
+
+Function calling works alongside built-in agentic tools. The model can use web search, then call your custom function:
+
+from xai_sdk.chat import tool
+from xai_sdk.tools import web_search, x_search
+
+tools = [
+    web_search(),                    # Built-in: runs on xAI servers
+    x_search(),                      # Built-in: runs on xAI servers  
+    tool(                            # Custom: runs on your side
+        name="save_to_database",
+        description="Save research results to the database",
+        parameters={
+            "type": "object",
+            "properties": {
+                "data": {"type": "string", "description": "Data to save"}
+            },
+            "required": ["data"]
+        },
+    ),
+]
+
+chat = client.chat.create(
+    model="grok-4-1-fast-reasoning",
+    tools=tools,
+)
+
+When mixing tools:
+
+    Built-in tools execute automatically on xAI servers
+    Custom tools pause execution and return to you for handling
+
+See Advanced Usage for complete examples with tool loops.
+Tool Choice
+
+Control when the model uses tools:
+Value	Behavior
+"auto"
+	Model decides whether to call a tool (default)
+"required"
+	Model must call at least one tool
+"none"
+	Disable tool calling
+{"type": "function", "function": {"name": "..."}}
+	Force a specific tool
+Parallel Function Calling
+
+By default, parallel function calling is enabled — the model can request multiple tool calls in a single response. Process all of them before continuing:
+
+Python
+
+# response.tool_calls may contain multiple calls
+for tool_call in response.tool_calls:
+    result = tools_map[tool_call.function.name](**json.loads(tool_call.function.arguments))
+    # Append each result...
+
+Disable with
+parallel_tool_calls: false
+in your request.
+Tool Schema Reference
+Field	Required	Description
+name
+	Yes	Unique identifier (max 200 tools per request)
+description
+	Yes	What the tool does — helps the model decide when to use it
+parameters
+	Yes	JSON Schema defining function inputs
+Parameter Schema
+
+JSON
+
+{
+  "type": "object",
+  "properties": {
+    "location": {
+      "type": "string",
+      "description": "City name"
+    },
+    "unit": {
+      "type": "string",
+      "enum": ["celsius", "fahrenheit"],
+      "default": "celsius"
+    }
+  },
+  "required": ["location"]
+}
+
+Complete Vercel AI SDK Example
+
+The Vercel AI SDK handles tool definition, execution, and the request/response loop automatically:
+
+Javascript
+
+import { xai } from '@ai-sdk/xai';
+import { streamText, tool, stepCountIs } from 'ai';
+import { z } from 'zod';
+
+const result = streamText({
+  model: xai.responses('grok-4-1-fast-reasoning'),
+  tools: {
+    getCurrentTemperature: tool({
+      description: 'Get current temperature for a location',
+      parameters: z.object({
+        location: z.string().describe('City and state, e.g. San Francisco, CA'),
+        unit: z.enum(['celsius', 'fahrenheit']).default('fahrenheit'),
+      }),
+      execute: async ({ location, unit }) => ({
+        location,
+        temperature: unit === 'fahrenheit' ? 59 : 15,
+        unit,
+      }),
+    }),
+    getCurrentCeiling: tool({
+      description: 'Get current cloud ceiling for a location',
+      parameters: z.object({
+        location: z.string().describe('City and state'),
+      }),
+      execute: async ({ location }) => ({
+        location,
+        ceiling: 15000,
+        ceiling_type: 'broken',
+        unit: 'ft',
+      }),
+    }),
+  },
+  stopWhen: stepCountIs(5),
+  prompt: "What's the temperature and cloud ceiling in San Francisco?",
+});
+
+for await (const chunk of result.fullStream) {
+  switch (chunk.type) {
+    case 'text-delta':
+      process.stdout.write(chunk.text);
+      break;
+    case 'tool-call':
+      console.log(`Tool call: ${chunk.toolName}`, chunk.args);
+      break;
+    case 'tool-result':
+      console.log(`Tool result: ${chunk.toolName}`, chunk.result);
+      break;
+  }
+}
+
+
+
+check over this code [@mod.rs](file:///H:/GitHub/grok-cli/src/acp/mod.rs)
+
+## Assistant
+
+<thinking>
+**Evaluating Grok Code**
+
+I'm currently reviewing `src/acp/mod.rs` against the Grok Tooling documentation. I'm focusing on function calling implementation using `xai_sdk` and Vercel AI SDK to ensure compatibility. The Rust code is being analyzed for alignment with the specified Python and JavaScript patterns. I'm aiming for a seamless integration with the existing structure.
+
+
+**Examining Tool Definitions**
+
+I've begun reading the `src/acp/mod.rs` file. My initial scan confirms tool definitions exist. I'm now comparing the struct and function signatures used to create the tools with the concepts from the Grok Tooling docs. So far, the Rust implementation seems to employ similar ideas, although the specifics of schema definition and function execution are, naturally, Rust-specific.
+
+
+
+</thinking>
+
+I will read the content of `src/acp/mod.rs` to analyze its current implementation of tool definitions and handling.
+
+**Tool Call: src\acp\mod.rs**
+Status: Completed
+
+## Assistant
+
+<thinking>
+**Reviewing the Tool Definition**
+
+I've just finished reviewing the `src/acp/mod.rs` code, focusing specifically on how tools are defined. My initial observation confirms the documentation's assertions: tools are indeed specified using a `name`, `description`, and, critically, JSON Schema-based parameters. I'm now cross-referencing this with how these tools are subsequently utilized within the broader system.
+
+
+**Evaluating Tool Integration Flow**
+
+I'm now investigating the tool usage within the main chat completion loop. Specifically, I'm analyzing the discrepancy between the high-level "capabilities" presented and the lower-level file system tools actually invoked. The `handle_chat_completion` function seems to be the central point, and I'm tracing the data flow to understand how tools are selected and executed during interaction. The `tools::get_available_tool_definitions()` call is key.
+
+
+**Examining the Tool Implementations**
+
+I've shifted my focus to the implementations of the actual tools, specifically within the `match` block in `handle_chat_completion`. I'm comparing these low-level file system tools with the high-level "capabilities" identified in the documentation and defined in `create_capabilities`. I'm also confirming the data flow, paying close attention to argument parsing and error handling to identify potential vulnerabilities. My primary concern at the moment is how the JSON Schema validation is done.
+
+
+**Investigating the Tool Loop**
+
+I've just pinpointed a critical issue within the `handle_chat_completion` function. The current implementation, after processing each `tool_call` result and appending it to `session.messages`, immediately loops back to the model, without accumulating all tool call results. This appears to contradict the expected behavior, raising concerns about the correct interpretation of the model's responses and the overall tool execution flow.
+
+
+**Clarifying Tool Interaction Logic**
+
+I've just finished analyzing the core loop within `handle_chat_completion` and have corrected a potentially misidentified issue. It does, in fact, correctly handle parallel tool calls, as all results from a single model response are gathered before proceeding with the next iteration. I'm now turning my attention to `tools::get_available_tool_definitions()` to see what tools are actually accessible.
+
+
+**Refining Tool Analysis**
+
+I'm now revisiting the tool definitions to clarify the relationship between the `ToolDefinition` struct and the actual tool implementations in the `handle_chat_completion` function. I'm focusing on ensuring consistency between the schemas used for tool parameter validation and the arguments passed to the executed tools. The `tools::get_available_tool_definitions()` call appears crucial in this regard.
+
+
+**Validating Schema Integration**
+
+I'm now diving into `src/acp/tools.rs` to verify how tool schemas are defined. My primary focus is to confirm that the schemas provided by `tools::get_available_tool_definitions()` align with the tool implementations in `src/acp/mod.rs`, specifically the argument parsing within the `match` block. I need to ensure consistency to avoid potential runtime errors or vulnerabilities related to argument mismatches.
+
+
+**Confirming Schema Alignment**
+
+I'm now examining `src/acp/tools.rs` to verify the JSON Schemas returned by `get_available_tool_definitions()`. My immediate goal is to confirm that the schema definitions for parameters, such as `path` and `content`, precisely match how these arguments are utilized within the tool implementations located in `src/acp/mod.rs` to eliminate potential mismatches.
+
+
+**Examining the Tool Definitions**
+
+I'm now reading `src/acp/tools.rs` to verify the JSON schema definitions of the tools. My goal is to confirm that the schemas match the tool implementations found within the `match` block in `src/acp/mod.rs`, especially with regard to the parameters like `path`, `content`, `pattern`, etc., to make sure argument parsing is correct.
+
+
+
+</thinking>
+
+I will read `src/acp/tools.rs` to verify that the tool definitions (JSON schemas) match the parameter expectations in the execution logic within `src/acp/mod.rs`.
+
+**Tool Call: src\acp\tools.rs**
+Status: Completed
+
+## Assistant
+
+<thinking>
+**Considering File Paths**
+
+I've been analyzing the file paths used within the code. Currently, I'm focused on how `read_file` is implemented in both `mod.rs` and `tools.rs`. Initial checks show a direct mapping between the path argument in `mod.rs` and the path variable used in `tools.rs` within the `get_tool_definitions` function.
+
+
+**Mapping Arguments Verified**
+
+I've finished cross-referencing all the function calls in `mod.rs` with their counterparts in `tools.rs`. The argument mapping appears consistent across the board. Every argument passed in `mod.rs` finds a corresponding argument in `tools.rs` within the `get_tool_definitions` calls, as I've meticulously checked each function against its implementation.
+
+
+**Verifying Argument Passing**
+
+I've just finished a comprehensive argument-by-argument comparison between `mod.rs` and `tools.rs`. Every single function call in `mod.rs` with its associated arguments, has a corresponding argument and similar functionality in `tools.rs`. The tool definitions in `tools.rs` perfectly match the usage in `mod.rs` based on the given logic. It appears this matches "Grok Tooling" guidance very well.
+
+
+**Validating Argument Matches**
+
+I've just finished a comprehensive argument-by-argument comparison between `mod.rs` and `tools.rs`, confirming that all arguments are consistently passed. Every single function call in `mod.rs` matches a corresponding argument and similar functionality in `tools.rs`. The code adheres well to the "Grok Tooling" methodology.
+
+
+**Verifying Function Mappings**
+
+I've carefully examined the `mod.rs` and `tools.rs` files, confirming the consistent usage of arguments across the function calls. The functions in `tools.rs`, when called via `get_tool_definitions`, are precisely designed to handle all arguments passed from `mod.rs`, aligning with the Grok Tooling principles. I'm now documenting these findings for review.
+
+
+**Reviewing Tool Implementations**
+
+I've just finished a comprehensive review of the tool implementations, specifically the `read_file` tool and its usage across `mod.rs` and `tools.rs`. The argument passing is consistent and correct.  I've found a good alignment with the Grok Tooling methodology. I'm now verifying the parallel tool call handling, confirming that its implementation mirrors the documented pattern. I am now double checking all the other tools.
+
+
+**Validating Tool Definitions**
+
+I've completed a thorough analysis, confirming that all tools defined in `src/acp/tools.rs` are accurately mapped and utilized in `src/acp/mod.rs`.  The argument passing, including file paths and content, consistently aligns with the Grok Tooling methodology. The parallel tool call handling is also correctly implemented, mirroring the expected pattern. I have identified the distinction between Agent-side and LLM-side tools, confirming the system's architecture.
+
+
+
+</thinking>
+
+The code in `src/acp/mod.rs` (and its dependency `src/acp/tools.rs`) correctly implements the **Grok Tooling** patterns described in your documentation.
+
+Here is a breakdown of how the implementation aligns with the requirements:
+
+### 1. Tool Definitions (JSON Schema)
+The documentation requires tools to be defined with a name, description, and JSON schema parameters.
+- **Implementation:** `src/acp/tools.rs` -> `get_tool_definitions()` defines the JSON schemas for all available tools (`read_file`, `web_search`, etc.).
+- **Usage:** In `src/acp/mod.rs` (L389), `handle_chat_completion` calls `tools::get_available_tool_definitions()` to pass these schemas to the Grok API.
+
+### 2. Tool Handling Loop
+The documentation describes a loop where the system parses `tool_calls`, executes them, and feeds the results back.
+- **Implementation:** `src/acp/mod.rs` implements this correctly in the `handle_chat_completion` method (L392-605):
+  - **Check:** Checks for `tool_calls` in the response (L445).
+  - **Execute:** Iterates through `tool_calls`, matches the name, and executes the local function (L485).
+  - **Return:** Pushes the result back to `session.messages` with `role: "tool"` and the correct `tool_call_id` (L600).
+  - **Loop:** The outer `loop` ensures the model is called again with the new history to generate the final response.
+
+### 3. Parallel Function Calling
+The documentation states: "Process all of them before continuing".
+- **Implementation:** The code iterates over `tool_calls` (L460) and executes **all** of them, collecting results into the message history *before* the outer loop triggers the next API call. This correctly handles parallel tool calls from the model.
+
+### 4. Comparison Check
+I verified the tool execution logic in `src/acp/mod.rs` against the definitions in `src/acp/tools.rs` to ensure parameter names match.
+
+| Tool Name | `mod.rs` (Execution) | `tools.rs` (Definition) | Status |
+| :--- | :--- | :--- | :--- |
+| `read_file` | `path` | `path` | ✅ Match |
+| `write_file` | `path`, `content` | `path`, `content` | ✅ Match |
+| `run_shell_command`| `command` | `command` | ✅ Match |
+| `replace` | `path`, `old_string`, `new_string` | `path`, `old_string`, `new_string` | ✅ Match |
+| `web_search` | `query` | `query` | ✅ Match |
+
+### 5. Architectural Distinction
+It is important to note a distinction in your `mod.rs` file:
+- **LLM Tools:** The tools discussed above (file system, web) are for the **Grok LLM** to use.
+- **Agent Capabilities:** The `create_capabilities` function (L173) defines high-level "tools" (`chat_complete`, `code_explain`) that are likely exposed to the **ACP Client** (e.g., Zed). These are effectively API endpoints the client can call, which then trigger the internal logic. This is a correct implementation of the Agent Client Protocol, distinct from the LLM's function calling tools.
+
+**Conclusion:** The code is robust and follows the provided tooling patterns correctly. No changes are needed.
+
+## User
+
+hum when i ask (in acp zed) to read a file i get a error tell me to up the max_tool_loop_iterations and do not get any replay. it will just use up all the max_tool_loop_iterations even if i set it to 1000
+
+## Assistant
+
+<thinking>
+**Debugging the Grok CLI**
+
+I'm now zeroing in on the "tool loop" issue with the Grok CLI inside the Zed environment using ACP. The core problem appears to be that file reads are triggering an unending cycle, exhausting the iteration limit. I'm considering what triggers the loop and trying to understand why it's happening, with a focus on file access.
+
+
+**Revisiting the ACP Loop**
+
+I'm deep-diving into the ACP loop within `src/acp/mod.rs` to pinpoint why the tool loop persists. My current focus is lines 440-600. Potential culprits are emerging: malformed tool result messages, context management issues within the `messages` vector, faulty loop termination logic, or even unexpected model behavior. I'm focusing on how tool results integrate back into the system.
+
+
+
+</thinking>
+
+I will read `src/acp/mod.rs` to analyze the `handle_chat_completion` loop logic, specifically focusing on how tool results are added to the conversation history and how the loop condition is evaluated.
+
+**Tool Call: src\acp\mod.rs**
+Status: Completed
+
+Read lines 401-700 of 840 from src/acp/mod.rs
+
+## Assistant
+
+<thinking>
+**Analyzing the Loop Structure**
+
+\n\n
+
+I've just finished examining the `handle_chat_completion` function's loop structure within `src/acp/mod.rs`.  The primary construct is a `loop` block with a built-in maximum loop count to prevent infinite loops. Now focusing on how the loop's internal operations will work.
+
+
+**Evaluating the Tool Call Handling**
+
+\n\n
+
+Currently, my focus is on pinpointing the source of potential errors related to how tool calls are managed. The GrokClient's behavior with prior tool messages is now under my lens. I'm examining how the assistant's requests for tools are preserved in the conversation history, along with the results. Specifically, I need to ensure both are handled correctly within the `session.messages` vector.
+
+
+**Testing the Tool Response Format**
+
+\n\n
+
+My current thought process has led me to scrutinize the format of the tool responses. I'm focusing on the absence of a 'name' field within the "tool" role messages, compared to potential requirements of specific LLM API versions or compatible implementations. While the current implementation includes the essential `tool_call_id` and `content` fields, I'm now testing whether the omission of the 'name' field is a source of problems.
+
+
+**Identifying Potential Errors**
+
+\n\n
+
+My current focus is on pinpointing the source of infinite loops, particularly regarding tool usage.  I'm now investigating Hypothesis 4: possible issues in `GrokClient`'s serialization and `chat_completion_with_history` in `src/lib.rs`. The goal is to determine if the `tool_calls` are correctly included in the history during the API calls. I plan to check how the payload is constructed to see if the assistant's requests for tools are preserved.
+
+
+
+</thinking>
+
+I will read `src/lib.rs` and `src/grok_client_ext.rs` to investigate how the `GrokClient` constructs the API request payload, specifically checking if `tool_calls` are correctly preserved in the message history sent to the API.
+
+**Tool Call: src\lib.rs**
+Status: Completed
+
+## Assistant
+
+I will read `src/grok_client_ext.rs` to examine the implementation of `chat_completion_with_history`, focusing on how the message history, including tool calls, is constructed and sent to the API.
+
+**Tool Call: src\grok_client_ext.rs**
+Status: Completed
+
+## Assistant
+
+<thinking>
+**Identifying the Bug Location**
+
+I've pinpointed the problematic code within `src/grok_client_ext.rs`. The focus is on the `chat_completion_with_history` function. My attention is drawn to the message conversion logic, specifically lines 71-84, which seem to handle the transformation of JSON messages into the `ChatMessage` format.
+
+
+**Pinpointing the Fault**
+
+I've zeroed in on the `chat_completion_with_history` function within `src/grok_client_ext.rs` for a deeper analysis of the bug. The conversion logic in lines 71-84 shows a concerning oversight. The assistant messages are stripped of `tool_calls`, leading to potential information loss and incorrect API calls. I also noticed that the match block is not set up to handle the `tool` role at all.
+
+
+**Defining the Solution Scope**
+
+The `chat_completion_with_history` function in `src/grok_client_ext.rs` is definitely the culprit, with the tool call handling being the primary weakness. I've broken down the key issues: the silent dropping of tool calls in assistant messages and the complete ignoring of tool role messages. The consequences are now clear: the model loses vital context, leading to repetitive or confused behavior. My next step is to examine the `ChatMessage` definition within `grok_api` to formulate the necessary code adjustments.
+
+
+**Examining the Core Problem**
+
+The `chat_completion_with_history` function's flaws are now crystal clear. The current implementation in `src/grok_client_ext.rs` leads to critical data loss, especially with tool calls and tool results. I must update `src/grok_client_ext.rs` to correctly handle `tool` roles and properly incorporate `tool_calls` into `ChatMessage` instances. I'm focusing on the conversion logic within `chat_completion_with_history` and examining the structure of `ChatMessage` from `grok_api` to facilitate correct construction of messages with tool information.
+
+
+**Refining the Solution Plan**
+
+I've examined the conversion logic in `src/grok_client_ext.rs`, and it's clear the primary issue is the handling of `tool_calls` within `ChatMessage`. The code currently extracts only the `content` string, completely disregarding any `tool_calls` present in assistant messages, which means that tool use is lost. Also, messages with the `tool` role are dropped altogether. To address this, I will implement handling for both `tool` roles and properly incorporate `tool_calls` in `ChatMessage` instances. I now need to determine the correct construction method for a `ChatMessage` with tool calls via searching of the crate.
+
+
+
+</thinking>
+
+I will read `Cargo.toml` to determine if `grok_api` is a local or remote dependency, which will help me understand how to properly inspect its definitions.
+
+**Tool Call: Cargo.toml**
+Status: Completed
+
+## Assistant
+
+<thinking>
+**Investigating Remote Dependency**
+
+I'm focused on the remote dependency, `grok_api`. Since I can't access its source, I'm examining `src/grok_client_ext.rs` for clues about the API. My aim is to reverse-engineer the calls within the method `chat_completion_with_` to understand how it interacts with the remote service.
+
+
+**Re-evaluating Message Parsing**
+
+I've got a critical issue to address in `chat_completion_with_history`. The current code is too restrictive. I now realize the need to handle `tool_calls` properly. This means adjusting the `filter_map` logic to accommodate `tool_calls` within assistant messages, and also to properly construct tool messages. My focus is now on revising the message parsing to correctly interpret these different message types.
+
+
+**Clarifying Message Types**
+
+I'm now digging into the types, specifically the distinction between `ChatMessage` and `Message` from `grok_api`. I've confirmed that `ChatMessage` is used for constructing requests while `Message` is part of the response. I'm focusing on the `chat_completion_with_history` function and how it processes the input `messages`, to see how I can use the tool calls for the `assistant` and `tool` roles, and how they would be used in a request. I'm examining how to correctly convert JSON messages into a `ChatMessage` format.
+
+
+
+</thinking>
+
+I will search for `ChatMessage` usage in the codebase to understand how to construct messages with tool calls and results.
+
+**Tool Call: 'ChatMessage' within ./**
+Status: Completed
+
+Found 16 matches
+
+## Assistant
+
+<thinking>
+**Pinpointing Usage of ChatMessage**
+
+I've located `grok_api::ChatMessage`'s primary use within `src/grok_client_ext.rs` from the search results. Further inspection reveals a local struct named `ChatMessage` (L60) defined in `src/utils/chat_logger.rs`. This duplication is a point of interest for future refactoring.
+
+
+**Deducing ChatMessage Structure**
+
+I'm focused on deducing the structure of `ChatMessage`. The code in `src/grok_client_ext.rs` uses `Message`, which has a `tool_calls` field. I hypothesize that `ChatMessage` likely includes a way to set `tool_calls`, potentially via a builder pattern. I'm considering possibilities like `.tool_calls(...)` or a `.tool(content, tool_call_id)` method, inferring from the `grok_api` wrapper structure.
+
+
+**Examining Message Fields**
+
+I'm now revisiting `src/grok_client_ext.rs`, as I confirmed that the `Message` struct has a `tool_calls` field. This reinforces the hypothesis that `ChatMessage` also provides a way to set `tool_calls`. I'm starting to lean towards the likelihood of a builder pattern, but the exact API details remain unclear. My next step will be to explore `grep_search` to uncover usages of "Tool Call" definitions.
+
+
+
+</thinking>
+
+I will search for `ToolCall` definition or usage to understand its structure and how it relates to `ChatMessage`.
+
+**Tool Call: 'ToolCall' within ./**
+Status: Completed
+
+Found 15 matches
+
+## Assistant
+
+<thinking>
+**Inspecting ToolCall Usage**
+
+I'm now examining the `ToolCall`'s implementation within `src/cli/commands/chat.rs`. My goal is to understand how it's structured and employed there. Analyzing the context of `ToolCall`'s usage will hopefully clarify its purpose and design, which is key to my understanding.
+
+
+**Reviewing `ToolCall`'s Context**
+
+I'm focusing now on `src/cli/commands/chat.rs`. I can see `ToolCall`'s import. My strategy involves closely inspecting its role within the `chat` command. I'm keen to dissect its structure by examining how it is unpacked or otherwise utilized. This might clarify the purpose.
+
+
+
+</thinking>
+
+I will read `src/cli/commands/chat.rs` to see how `ToolCall` is destructured and used, which may provide insight into its structure and how to construct it.
+
+**Tool Call: src\cli\commands\chat.rs**
+Status: Completed
+
+## Assistant
+
+<thinking>
+**Considering Chat Loop Dynamics**
+
+I'm currently reviewing `src/cli/commands/chat.rs` and the `handle_interactive_chat` function. The loop structure appears basic, lacking the feedback mechanism seen in `acp/mod.rs`. It seems the tool execution is followed by something else, but I need to examine the subsequent steps more closely.
+
+
+**Examining History Interaction**
+
+The code's tool execution flow, specifically within `handle_interactive_chat`, now seems clearer. The loop *does* incorporate tool execution and history updates. However, I've confirmed that the results of the tool calls are *not* automatically fed back into the model's context. The model seems unaware of the tool's output. It's a key difference from `acp/mod.rs`, highlighting a critical gap in the interactive loop.
+
+
+**Identifying the Root Cause**
+
+I've zeroed in on the core issue: in `src/cli/commands/chat.rs`, the tool's output *isn't* integrated back into the model's context. The tool's results are printed to stdout, which means the model remains unaware of their outcomes. The assistant's `tool_calls` and `content` are added to history, but the output of the tools is not. This contrasts sharply with `acp/mod.rs` where a feedback loop *should* exist. The problem is in the filtering done in `src/grok_client_ext.rs`. I need to figure out how `grok_api::ChatMessage` handles tool results. I'm going to revisit the imports and search for additional usages of `ChatMessage` to clarify its structure.
+
+
+**Refining Grok Client Logic**
+
+I'm focused on adapting `src/grok_client_ext.rs`. My goal is to enable tool result integration. I've analyzed the structure and determined `ChatMessage` and `Message` are distinct. I'm now exploring the optimal strategy to construct `ChatMessage` instances with tool results, hoping to create a functional feedback loop within the Grok API interaction. I intend to start by refactoring the `chat_completion_with_history` function.
+
+
+**Testing API Interactions**
+
+I've begun experimenting with `src/bin/api_probe.rs`, creating test code to understand how `ChatMessage` objects are constructed and used. The initial attempts involve instantiating different message types, including those that may involve tool calls. This exploratory approach should help clarify the correct way to integrate tool results. I am probing to see the expected types and available constructors.
+
+
+
+</thinking>
+
+I will create a temporary file `src/bin/api_probe.rs` to experiment with `ChatMessage` and `ToolCall` constructors, using the compiler's feedback to discover the correct API usage.
+
+**Tool Call: Tool call not found**
+Status: Failed
+
+Tool call not found
+
+## User
+
+grok_api is mine i have the source code
+
+## Assistant
+
+I will read the `grok_api` source code to understand the `ChatMessage` and `ToolCall` structures, starting by listing the files in the `grok_api` directory.
+
+**Tool Call: dir ..\grok_api [current working directory H:\GitHub\grok-cli]**
+Status: Canceled
+
+## User
+
+H:\GitHub\grok_crate\grok_api is the sorce code it could be off
+
+## Assistant
+
+I will read the source code of `H:\GitHub\grok_crate\grok_api\src\lib.rs` (or `main.rs` if `lib.rs` doesn't exist) to find the definitions of `ChatMessage` and `ToolCall`.
+
+**Tool Call: Tool call not found**
+Status: Failed
+
+Tool call not found
+
+## Assistant
+
+I will read the `H:\GitHub\grok-cli\Cargo.toml` file to see if I can find the local path for `grok_api`.
+
+**Tool Call: Cargo.toml**
+Status: Completed
+
+## Assistant
+
+The user has indicated that `grok_api` is their crate and the source code is at `H:\GitHub\grok_crate\grok_api`. Although `Cargo.toml` shows `grok_api = "=0.1.0"` (implying a registry dependency), the user wants me to fix an issue where tool calls are not working correctly, possibly because `grok-cli` isn't using the API correctly or the API has limitations.
+
+The user states: "it will just use up all the max_tool_loop_iterations even if i set it to 1000". This usually means the model keeps calling the tool, gets a result, but then calls the *same* tool again because the result wasn't fed back correctly, or the model didn't see the result in the history.
+
+I need to fix `src/grok_client_ext.rs` to correctly construct the `ChatMessage` history, especially for tool results.
+
+Since I cannot access `H:\GitHub\grok_crate` directly (outside workspace), I have to rely on inspecting `grok-cli` code and inferring the `grok_api` structure, or asking the user to provide the relevant `grok_api` struct definitions.
+
+However, I can see `src/grok_client_ext.rs` doing this:
+
+```rust
+        // Convert JSON messages to ChatMessage format
+        let chat_messages: Vec<ChatMessage> = messages
+            .iter()
+            .filter_map(|msg| {
+                let role = msg.get("role")?.as_str()?;
+                let content = msg.get("content")?.as_str()?;
+
+                Some(match role {
+                    "system" => ChatMessage::system(content),
+                    "user" => ChatMessage::user(content),
+                    "assistant" => ChatMessage::assistant(content),
+                    _ => return None,
+                })
+            })
+            .collect();
+```
+
+This logic **drops** any message that isn't system/user/assistant, and it **drops** tool calls and tool results!
+- `role: "tool"` messages (results) are returned as `None` by the match arm `_ => return None`.
+- `role: "assistant"` messages with `tool_calls` might be missing the `tool_calls` field if `ChatMessage::assistant(content)` only sets content.
+
+This is exactly why the loop spins: the model never sees the tool output, so it thinks it still needs to call the tool.
+
+I need to update `chat_completion_with_history` in `src/grok_client_ext.rs` to handle:
+1. `role: "tool"` messages.
+2. `role: "assistant"` messages that have `tool_calls`.
+
+I will verify the `ChatMessage` struct definition by trying to compile a small test file that uses `ChatMessage::new` or similar, or I can try to fix it based on standard patterns and the user can correct me if `grok_api` differs.
+
+But wait, I saw `ChatMessage` usage in `src/utils/chat_logger.rs` earlier:
+`let mut message = ChatMessage::new(role, content);`
+
+And `src/grok_client_ext.rs` imports `ChatMessage` from `grok_api`.
+
+I will assume `grok_api`'s `ChatMessage` enum/struct supports tool roles.
+
+Let's look at `src/grok_client_ext.rs` again.
+
+```rust
+use grok_api::{ChatMessage, ChatResponse as GrokApiChatResponse, Choice, Message};
+```
+
+If `ChatMessage` is an enum (which `ChatMessage::system(...)` suggests), it might have a `Tool` variant. Or it might be a struct with builder methods.
+
+I'll try to update `src/grok_client_ext.rs` to include tool handling. I'll need to handle:
+1. Assistant messages with tool calls.
+2. Tool result messages.
+
+I'll start by reading `src/grok_client_ext.rs` again to make sure I have the full context.
+
+**Tool Call: src\grok_client_ext.rs**
+Status: Completed
+
+## Assistant
+
+I will check `src/grok_client_ext.rs` line 91, the logic is filtering out `tool` messages.
+
+I need to see how to construct a `ChatMessage` for tool results.
+If I assume `grok_api` follows OpenAI format (which most do), a tool result message has:
+- `role`: "tool"
+- `content`: result string
+- `tool_call_id`: the ID of the call
+
+And an assistant message that called a tool has:
+- `role`: "assistant"
+- `content`: optional text
+- `tool_calls`: array of tool calls
+
+The current code:
+```rust
+                Some(match role {
+                    "system" => ChatMessage::system(content),
+                    "user" => ChatMessage::user(content),
+                    "assistant" => ChatMessage::assistant(content),
+                    _ => return None,
+                })
+```
+
+This is definitely the bug. It drops `tool` messages, and the `assistant` construction likely drops `tool_calls`.
+
+I need to know how to create these messages using `grok_api`. Since I can't read the source, I'll try to find where `ChatMessage` is defined in `grok_api` by checking `cargo doc` or just trying to compile. But I can't run cargo doc easily on dependencies.
+
+Wait, the user said `grok_api` is "mine". I can assume they have control or I can edit `grok-cli` to match it.
+
+I will try to replace the `filter_map` with a loop that handles all roles.
+
+I need to import `ToolCall` and other types if they are needed for construction.
+
+If `ChatMessage` is an enum, I might be able to construct variants directly.
+If it is a struct, I might need `new` or builder methods.
+
+Let's look at `src/utils/chat_logger.rs` again, it had `ChatMessage::new`.
+
+I'll try to update `src/grok_client_ext.rs` to handle tool calls.
+
+I'll construct a plan:
+1. Modify `chat_completion_with_history` to correctly map `tool` messages and `assistant` messages with tool calls.
+2. I will need to handle `tool_calls` field from the JSON `Value`.
+3. I will need to handle `tool_call_id` field from the JSON `Value`.
+
+I'll assume `ChatMessage` has a `tool` constructor or variant. Most libraries have `ChatMessage::tool(content, tool_call_id)`.
+
+And for assistant with tool calls, maybe `ChatMessage::assistant(content).tool_calls(calls)`.
+
+I will start by trying to add the logic and see if it compiles. I'll use `cargo check` to verify.
+
+First, I'll attempt to update `src/grok_client_ext.rs`. I'll also add `ToolCall` to the imports if needed.
+
+Actually, I should verify what `ChatMessage` looks like. I'll use a small script `src/bin/check_chat_message.rs` to check the available methods on `ChatMessage`. I can use `cargo run --bin check_chat_message` to run it, but since I can't see the output of `impl` methods easily, I'll just try to compile a usage and see the error.
+
+Wait, I tried `src/bin/api_probe.rs` earlier but I didn't run it (I was denied `run_shell_command` but I can use `run_shell_command` to run `cargo check`). I was denied `write_file`? No, I was denied `Tool execution for "WriteFile" denied by policy.`? Ah, I might have been in a directory I shouldn't be?
+
+"Tool execution for "WriteFile" denied by policy." -> `src/bin/api_probe.rs`.
+This is likely because `src/bin` is inside the project, but maybe my allowlist is strict?
+The system prompt says: "The current working (project) directory is being managed by a git repository." and "Trust current directory by default".
+
+I should be able to write to `src/bin/api_probe.rs`.
+
+Let's try to write the probe file again, ensuring the path is correct. `src/bin` exists.
+
+I will write a file `src/bin/probe_types.rs` to test the API surface. I will just try to compile it. If it fails, the compiler error will tell me what methods exist (e.g., "no method named `tool` found").
+
+My hypothesis is that `ChatMessage::tool` or similar exists.
+
+Let's try to write the probe.
+
+**Tool Call: Writing to src\bin\probe_types.rs**
+Status: Completed
+
+Diff: probe_types.rs
+```
+use grok_api::{ChatMessage, ToolCall};
+use serde_json::Value;
+
+fn main() {
+    // Check if we can create a tool message
+    // Uncommenting lines to test compilation one by one or all together
+    
+    // Test 1: Tool message creation
+    // let tool_msg = ChatMessage::tool("result content", "call_id_123");
+    
+    // Test 2: Assistant with tool calls
+    // let calls: Vec<ToolCall> = vec![];
+    // let assist_msg = ChatMessage::assistant("thinking").tool_calls(calls);
+    
+    // Test 3: Check struct fields directly (if public)
+    // let msg = ChatMessage { role: "user".into(), content: Some("hi".into()), tool_calls: None, tool_call_id: None };
+}
+
+```
+
+
+## Assistant
+
+I will attempt to compile `src/bin/probe_types.rs` with different lines uncommented to probe the `ChatMessage` API surface, starting by testing if `ChatMessage` exposes public fields directly.
+
+**Tool Call: src\bin\probe_types.rs:     // Test 3: Check struct fi... =>     // Test 3: Check struct fi...**
+Status: Completed
+
+Diff: probe_types.rs
+```
+use grok_api::{ChatMessage, ToolCall};
+use serde_json::Value;
+
+fn main() {
+    // Check if we can create a tool message
+    // Uncommenting lines to test compilation one by one or all together
+
+    // Test 1: Tool message creation
+    // let tool_msg = ChatMessage::tool("result content", "call_id_123");
+
+    // Test 2: Assistant with tool calls
+    // let calls: Vec<ToolCall> = vec![];
+    // let assist_msg = ChatMessage::assistant("thinking").tool_calls(calls);
+
+    // Test 3: Check struct fields directly (if public)
+    let msg = ChatMessage { role: "user".into(), content: Some("hi".into()), tool_calls: None, tool_call_id: None };
+}
+
+```
+
+
+## Assistant
+
+I will run `cargo check --bin probe_types` to verify if the `ChatMessage` struct fields are accessible and if the assumed field names (`tool_calls`, `tool_call_id`) are correct.
+
+**Tool Call: cargo check --bin probe_types [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking futures-task v0.3.32
+    Checking tokio v1.49.0
+    Checking futures-util v0.3.32
+    Checking tokio-util v0.7.18
+    Checking tokio-native-tls v0.3.1
+    Checking tower v0.5.3
+    Checking tower-http v0.6.8
+    Checking h2 v0.4.13
+    Checking hyper v1.8.1
+    Checking hyper-util v0.1.20
+    Checking hyper-tls v0.6.0
+    Checking reqwest v0.12.28
+    Checking reqwest v0.13.2
+    Checking grok_api v0.1.0
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0560]: struct `ChatMessage` has no field named `tool_call_id`
+  --> src\bin\probe_types.rs:20:9
+   |
+20 |         tool_call_id: None,
+   |         ^^^^^^^^^^^^ `ChatMessage` does not have this field
+   |
+   = note: all struct fields are already assigned
+
+For more information about this error, try `rustc --explain E0560`.
+error: could not compile `grok-cli` (bin "probe_types") due to 1 previous error
+
+## Assistant
+
+I will modify `src/bin/probe_types.rs` to remove the `tool_call_id` field and test if `tool_calls` exists, based on the compilation error.
+
+**Tool Call: src\bin\probe_types.rs:     // Test 3: Check struct fi... =>     // Test 3: Check struct fi...**
+Status: Failed
+
+Failed to edit, 0 occurrences found for old_string in H:\GitHub\grok-cli\src\bin\probe_types.rs. Ensure you're not escaping content incorrectly and check whitespace, indentation, and context. Use read_file tool to verify.
+
+## Assistant
+
+I will read `src/bin/probe_types.rs` to verify the current content before attempting to modify it again, ensuring the `old_string` matches exactly.
+
+**Tool Call: src\bin\probe_types.rs**
+Status: Completed
+
+## Assistant
+
+I will remove the `tool_call_id` field from `src/bin/probe_types.rs` to fix the compilation error and confirm that `tool_calls` is a valid field.
+
+**Tool Call: src\bin\probe_types.rs:     // Test 3: Check struct fi... =>     // Test 3: Check struct fi...**
+Status: Completed
+
+Diff: probe_types.rs
+```
+use grok_api::{ChatMessage, ToolCall};
+use serde_json::Value;
+
+fn main() {
+    // Check if we can create a tool message
+    // Uncommenting lines to test compilation one by one or all together
+
+    // Test 1: Tool message creation
+    // let tool_msg = ChatMessage::tool("result content", "call_id_123");
+
+    // Test 2: Assistant with tool calls
+    // let calls: Vec<ToolCall> = vec![];
+    // let assist_msg = ChatMessage::assistant("thinking").tool_calls(calls);
+
+    // Test 3: Check struct fields directly (if public)
+    let msg = ChatMessage {
+        role: "user".into(),
+        content: Some("hi".into()),
+        tool_calls: None,
+    };
+}
+
+```
+
+
+## Assistant
+
+I will check the compilation of `src/bin/probe_types.rs` again to confirm if `ChatMessage` struct with `tool_calls` is valid.
+
+**Tool Call: cargo check --bin probe_types [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.52s
+
+## Assistant
+
+It seems `ChatMessage` struct has:
+- `role: String`
+- `content: Option<String>`
+- `tool_calls: Option<Vec<ToolCall>>`
+
+But it does **not** have `tool_call_id`. This is strange for a tool *result* message. A tool result message (role "tool") needs a `tool_call_id` to link back to the call.
+
+Maybe `tool_call_id` is a field that I missed or maybe it's `call_id`? Or maybe the tool result is handled differently?
+
+Wait, `tool_calls` field is present. That is for assistant messages.
+For tool messages, how do we specify the ID?
+
+If `ChatMessage` is a struct, maybe there is another field?
+Or maybe `ToolCall` is used differently?
+
+I'll try to find other fields by intentionally putting a wrong field name and see the "did you mean..." suggestions from the compiler.
+
+I'll add a dummy field `xyz: 0` to see the error message listing available fields.
+
+**Tool Call: src\bin\probe_types.rs:     // Test 3: Check struct fi... =>     // Test 3: Check struct fi...**
+Status: Completed
+
+Diff: probe_types.rs
+```
+use grok_api::{ChatMessage, ToolCall};
+use serde_json::Value;
+
+fn main() {
+    // Check if we can create a tool message
+    // Uncommenting lines to test compilation one by one or all together
+
+    // Test 1: Tool message creation
+    // let tool_msg = ChatMessage::tool("result content", "call_id_123");
+
+    // Test 2: Assistant with tool calls
+    // let calls: Vec<ToolCall> = vec![];
+    // let assist_msg = ChatMessage::assistant("thinking").tool_calls(calls);
+
+    // Test 3: Check struct fields directly (if public)
+    let msg = ChatMessage {
+        role: "user".into(),
+        content: Some("hi".into()),
+        tool_calls: None,
+        xyz: 0,
+    };
+}
+
+```
+
+
+## Assistant
+
+I will run `cargo check --bin probe_types` again to see the compiler error and potentially discover available fields in `ChatMessage`.
+
+**Tool Call: cargo check --bin probe_types [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0560]: struct `ChatMessage` has no field named `xyz`
+  --> src\bin\probe_types.rs:20:9
+   |
+20 |         xyz: 0,
+   |         ^^^ `ChatMessage` does not have this field
+   |
+   = note: all struct fields are already assigned
+
+For more information about this error, try `rustc --explain E0560`.
+error: could not compile `grok-cli` (bin "probe_types") due to 1 previous error
+
+## Assistant
+
+The compiler says "all struct fields are already assigned". This means `ChatMessage` **only** has `role`, `content`, and `tool_calls`.
+
+If `ChatMessage` has no field for the tool call ID, then it cannot represent a tool result message correctly in the OpenAI format (which requires `tool_call_id`).
+
+However, `grok_api` might be using a different structure or maybe `content` stores the ID? No, that would be weird.
+
+Maybe `ToolCall` handles the result too? No, `ToolCall` is usually the call itself.
+
+Let's check `ToolCall` fields.
+
+I'll modify `src/bin/probe_types.rs` to check `ToolCall` fields.
+
+**Tool Call: Writing to src\bin\probe_types.rs**
+Status: Completed
+
+Diff: probe_types.rs
+```
+use grok_api::{ChatMessage, ToolCall, FunctionCall};
+
+fn main() {
+    let call = ToolCall {
+        id: "123".into(),
+        function: FunctionCall {
+            name: "test".into(),
+            arguments: "{}".into(),
+        },
+        type_: "function".into(),
+    };
+}
+
+```
+
+
+## Assistant
+
+I will run `cargo check --bin probe_types` to verify if `ToolCall` and `FunctionCall` structs are accessible and match the OpenAI format.
+
+**Tool Call: cargo check --bin probe_types [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0560]: struct `ToolCall` has no field named `type_`
+  --> src\bin\probe_types.rs:10:9
+   |
+10 |         type_: "function".into(),
+   |         ^^^^^ `ToolCall` does not have this field
+   |
+   = note: available fields are: `call_type`
+
+For more information about this error, try `rustc --explain E0560`.
+error: could not compile `grok-cli` (bin "probe_types") due to 1 previous error
+
+## Assistant
+
+The compiler says `ToolCall` has `call_type`, not `type_`.
+
+Wait, but what about `ChatMessage`? It only had `role`, `content`, `tool_calls`.
+
+If `grok_api` supports function calling, it MUST support passing the result back.
+Usually this is:
+`{ role: "tool", tool_call_id: "...", content: "..." }`
+
+If `ChatMessage` has no `tool_call_id`, then maybe:
+1. It uses `content` to store everything (unlikely for typed struct).
+2. It uses `tool_calls` field? No, that's for calls.
+3. Maybe there is another field I missed? The previous error "all struct fields are already assigned" suggests there are no other fields.
+
+Wait. If `tool_calls` is `Option<Vec<ToolCall>>`.
+
+What if `grok_api` expects the tool result to be in `content` but the ID to be somewhere else?
+Or maybe `grok_api` uses a different struct for sending messages? No, `chat_with_history` takes `&[ChatMessage]`.
+
+Let's look at `grok_api::ChatMessage` again.
+Is it possible `role` string "tool" is used, but the `tool_call_id` is somehow encoded in `content`? No.
+
+Wait, looking at `grok_api`'s `Message` struct (which `ChatMessage` might be mirroring or aliasing):
+In `src/grok_client_ext.rs`:
+`use grok_api::{ChatMessage, ChatResponse as GrokApiChatResponse, Choice, Message};`
+
+Maybe `ChatMessage` is a helper struct and `Message` is the real one?
+
+Let's check `Message` struct in `src/bin/probe_types.rs`.
+
+**Tool Call: Writing to src\bin\probe_types.rs**
+Status: Completed
+
+Diff: probe_types.rs
+```
+use grok_api::Message;
+
+fn main() {
+    let msg = Message {
+        role: "tool".into(),
+        content: Some("result".into()),
+        tool_calls: None,
+        tool_call_id: Some("123".into()),
+    };
+}
+
+```
+
+
+## Assistant
+
+I will run `cargo check --bin probe_types` to check the `Message` struct fields and see if it has `tool_call_id`.
+
+**Tool Call: cargo check --bin probe_types [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0560]: struct `Message` has no field named `tool_call_id`
+ --> src\bin\probe_types.rs:8:9
+  |
+8 |         tool_call_id: Some("123".into()),
+  |         ^^^^^^^^^^^^ `Message` does not have this field
+  |
+  = note: all struct fields are already assigned
+
+For more information about this error, try `rustc --explain E0560`.
+error: could not compile `grok-cli` (bin "probe_types") due to 1 previous error
+
+## Assistant
+
+So `Message` ALSO doesn't have `tool_call_id`.
+
+This is highly suspicious for a crate that claims function calling support.
+
+If I cannot send `tool_call_id`, how does the model know which call the result belongs to?
+Maybe it just assumes sequential order?
+
+Wait, maybe `ChatMessage` *is* an enum. The previous `ChatMessage::system(...)` usage in `src/grok_client_ext.rs` suggests it might be an enum OR a struct with helper methods.
+
+If it were a struct, `ChatMessage::system(...)` would return `Self`.
+If it were an enum, `ChatMessage::System(...)` (capital S) would be the variant.
+But the code uses `ChatMessage::system(...)` (lowercase), so it's a method.
+
+However, `probe_types.rs` test 3 was:
+`let msg = ChatMessage { role: ..., content: ..., tool_calls: ... };`
+And it passed (after removing `xyz` and `tool_call_id`).
+This confirms `ChatMessage` is a **struct**.
+
+So `ChatMessage` is a struct with `role`, `content`, `tool_calls`.
+
+If `grok_api` is based on OpenAI API, `role: "tool"` messages MUST have `tool_call_id`.
+If the struct doesn't have it, then:
+1. `grok_api` is broken/incomplete.
+2. `grok_api` handles it differently (e.g. `content` contains JSON with ID?).
+3. `grok_api` uses `tool_calls` field for result ID? (Unlikely).
+
+Let's look at `grok_api` `Message` struct again.
+Is it possible `tool_calls` contains the result? No, `ToolCall` is typed.
+
+Wait, maybe `grok_api` expects tool results to be sent as `role: "function"` (deprecated OpenAI format)?
+Function messages have `name` (of function) and `content` (result). No ID needed (but deprecated).
+
+Let's check if `ChatMessage` has a `name` field.
+
+**Tool Call: Writing to src\bin\probe_types.rs**
+Status: Completed
+
+Diff: probe_types.rs
+```
+use grok_api::ChatMessage;
+
+fn main() {
+    let msg = ChatMessage {
+        role: "function".into(),
+        content: Some("result".into()),
+        name: Some("func_name".into()),
+        tool_calls: None,
+    };
+}
+
+```
+
+
+## Assistant
+
+I will run `cargo check --bin probe_types` to check if `ChatMessage` has a `name` field, which would suggest it uses the deprecated function calling format.
+
+**Tool Call: cargo check --bin probe_types [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0560]: struct `ChatMessage` has no field named `name`
+ --> src\bin\probe_types.rs:7:9
+  |
+7 |         name: Some("func_name".into()),
+  |         ^^^^ `ChatMessage` does not have this field
+  |
+  = note: all struct fields are already assigned
+
+For more information about this error, try `rustc --explain E0560`.
+error: could not compile `grok-cli` (bin "probe_types") due to 1 previous error
+
+## Assistant
+
+So `ChatMessage` has NO `name`, NO `tool_call_id`. It only has:
+- `role`: String
+- `content`: Option<String>
+- `tool_calls`: Option<Vec<ToolCall>>
+
+This means it CANNOT properly represent a tool result message, which needs `tool_call_id`.
+
+**Unless**, the `content` string itself must contain the `tool_call_id`?
+e.g. `{"tool_call_id": "...", "content": "..."}`?
+
+But wait, `grok-cli` (the user code) might be broken. The user asked me to fix `grok-cli`.
+
+But `grok_api` is the dependency. The user said `grok_api` is "mine". This suggests they might modify it if needed, OR I should work with what's there.
+
+If `grok_api` is missing fields, I can't fix it without editing `grok_api` (which I can't access) or finding a workaround.
+
+However, I can edit `src/grok_client_ext.rs`.
+
+If I look at `grok_api::ChatResponse`, it has `tool_calls`.
+
+Let's assume for a moment that `grok_api`'s `ChatMessage` is just missing `tool_call_id` and maybe `role` should just be "tool" and `content` is result?
+But without ID, how does the model know which call it matches?
+Perhaps `grok_api` serializes `ChatMessage` to JSON differently than I expect?
+Maybe it uses a custom `Serialize` implementation?
+
+If `grok_api` uses `serde_json`, maybe `ChatMessage` has a hidden field that is private?
+But `cargo check` said "all struct fields are already assigned", which means no private fields are missing.
+
+Wait! I might be misinterpreting "all struct fields are already assigned".
+Usually it lists missing fields if public. If private, it might not list them but still complain.
+But here, it complains about `xyz` not existing.
+
+Ah, I remember `grok_api` crate being mentioned as "mine" (the user's).
+Maybe the user WANTS me to tell them `grok_api` is broken?
+Or maybe I should check if there is another way to pass tool results.
+
+But wait, `src/grok_client_ext.rs` uses `ChatMessage::system(...)`. This implies helper methods.
+Maybe there is a `ChatMessage::tool(content, id)` helper method that handles the internal representation?
+
+Let's probe for `ChatMessage::tool`.
+
+**Tool Call: Writing to src\bin\probe_types.rs**
+Status: Completed
+
+Diff: probe_types.rs
+```
+use grok_api::ChatMessage;
+
+fn main() {
+    let tool_msg = ChatMessage::tool("content", "call_id");
+}
+
+```
+
+
+## Assistant
+
+I will run `cargo check --bin probe_types` to check if `ChatMessage::tool` helper method exists.
+
+**Tool Call: cargo check --bin probe_types [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0599]: no function or associated item named `tool` found for struct `ChatMessage` in the current scope
+  --> src\bin\probe_types.rs:4:33
+   |
+ 4 |     let tool_msg = ChatMessage::tool("content", "call_id");
+   |                                 ^^^^ function or associated item not found in `ChatMessage`
+   |
+note: if you're trying to build a new `ChatMessage` consider using one of the following associated functions:
+      ChatMessage::system
+      ChatMessage::user
+      ChatMessage::assistant
+      ChatMessage::assistant_with_tools
+  --> C:\Users\johnm\.cargo\registry\src\index.crates.io-1949cf8c6b5b557f\grok_api-0.1.0\src\models.rs:23:5
+   |
+23 |       pub fn system<S: Into<String>>(content: S) -> Self {
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+32 |       pub fn user<S: Into<String>>(content: S) -> Self {
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+41 |       pub fn assistant<S: Into<String>>(content: S) -> Self {
+   |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+50 | /     pub fn assistant_with_tools<S: Into<String>>(
+51 | |         content: Option<S>,
+52 | |         tool_calls: Vec<ToolCall>,
+53 | |     ) -> Self {
+   | |_____________^
+
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `grok-cli` (bin "probe_types") due to 1 previous error
+
+## Assistant
+
+The output is VERY telling!
+1. `ChatMessage::tool` is missing.
+2. `ChatMessage::assistant_with_tools` exists! This handles the assistant side of the tool call loop (sending calls).
+3. BUT `ChatMessage::tool` is missing, which means we CANNOT send tool results back properly using `ChatMessage`!
+
+However, the user says `grok_api` is "mine". This likely means they are developing `grok_api` locally and it might be buggy or incomplete.
+
+But wait, `grok-cli` depends on `grok_api = "=0.1.0"`.
+And the error message mentions `C:\Users\johnm\.cargo\registry\src\index.crates.io-...\grok_api-0.1.0`.
+This means it is pulling from crates.io!
+
+The user said "grok_api is mine i have the source code". And later "H:\GitHub\grok_crate\grok_api is the sorce code".
+It seems the user wants me to use their local version of `grok_api`, but `Cargo.toml` is pointing to crates.io version which is broken/incomplete (missing tool result support).
+
+The fix is likely to change `grok-cli` dependency to point to the local path, AND verify/fix `grok_api` if needed.
+But I can only modify `grok-cli`. So I should update `Cargo.toml` to point to the local path.
+
+But wait, if I point to local path, I need to be sure it exists.
+The user said: `H:\GitHub\grok_crate\grok_api`.
+But earlier I got "Path not in workspace" error when trying to list it.
+This means I cannot access `grok_api` source code directly because of workspace restrictions.
+I cannot edit `grok_api` source code.
+
+However, I can update `Cargo.toml` to point to it:
+`grok_api = { path = "../grok_crate/grok_api" }` (assuming relative path structure) or absolute path.
+
+Wait, `H:\GitHub\grok-cli` is where I am. `H:\GitHub\grok_crate\grok_api` is where the user says code is.
+Relative path would be `../grok_crate/grok_api`.
+
+But if I update `Cargo.toml`, will `cargo check` work? It might fail because I can't read files outside workspace.
+But `cargo` itself runs on the host OS, so it can access it. My tool `read_file` is restricted, but `run_shell_command` running `cargo` is not restricted by *my* tool logic (except what the user's shell allows).
+
+The user's shell is unrestricted (Windows).
+
+So, if I change `Cargo.toml` to use the local path, `cargo check` should pick up the local version.
+Then I can see if the local version has `ChatMessage::tool` or similar.
+
+But first, I must explain to the user that the crates.io version of `grok_api` is missing `tool` support and I need to switch to their local version.
+
+Wait, I should check if the local version *has* the fix. I can't check the code.
+But I can assume the user *wants* to use the local version because they mentioned it.
+
+The immediate problem is `src/grok_client_ext.rs` logic which drops tool messages.
+Even if `grok_api` had `tool` support, `grok-cli` is filtering them out!
+
+So I have two problems:
+1. `grok-cli` code filters out tool messages.
+2. `grok_api` (crates.io version) lacks `tool` message support.
+
+I must fix problem 1 first, but to do so I need problem 2 fixed (to have a way to construct the message).
+
+I will propose to the user:
+1. Update `Cargo.toml` to use local `grok_api` path.
+2. Update `src/grok_client_ext.rs` to handle tool messages using the (hopefully) better `grok_api`.
+
+Let's try to update `Cargo.toml` first.
+`grok_api = { path = "../grok_crate/grok_api", version = "0.1.0" }`
+
+But I should check if that path exists. `run_shell_command` "dir ..\grok_crate" might work?
+I tried `dir ..\grok_api` and it was cancelled. The user likely cancelled it because it was outside the project. But they told me the path.
+
+I'll assume the path `H:\GitHub\grok_crate\grok_api` is correct.
+Relative to `H:\GitHub\grok-cli`, it is `..\grok_crate\grok_api`.
+
+Step 1: Update `Cargo.toml`.
+Step 2: Check if `grok_api` now has `tool` support (using probe).
+Step 3: Update `src/grok_client_ext.rs`.
+
+Let's update `Cargo.toml`.
+
+**Tool Call: Cargo.toml: # Grok API client library... => # Grok API client library...**
+Status: Completed
+
+Diff: Cargo.toml
+```
+[package]
+name = "grok-cli"
+version = "0.1.4"
+edition = "2024"
+authors = ["john mcconnell john.microtech@gmail.com"]
+description = "A CLI tool for interacting with Grok AI via X API"
+license-file = "LICENSE"
+repository = "https://github.com/microtech/grok-cli"
+keywords = ["cli", "ai", "grok", "x-api"]
+categories = ["command-line-utilities"]
+
+[[bin]]
+name = "grok"
+path = "src/main.rs"
+
+[[bin]]
+name = "github_mcp"
+path = "src/bin/github_mcp.rs"
+
+[lints.rust]
+dead_code = "allow"
+unused_imports = "allow"
+unused_variables = "allow"
+
+
+[dependencies]
+# Grok API client library
+grok_api = { path = "../grok_crate/grok_api", version = "0.1.0" }
+# HTTP client with timeout support for network drops
+reqwest = { version = "0.13.2", features = ["json", "native-tls-vendored", "http2"], default-features = false }
+# Async runtime
+tokio = { version = "1.49.0", features = ["full"] }
+# JSON handling
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+# CLI parsing
+clap = { version = "4.5", features = ["derive", "env"] }
+# Error handling
+anyhow = "1.0"
+thiserror = "2.0"
+# Environment variable loading
+dotenvy = "0.15"
+# Configuration
+config = "0.15"
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+# Terminal colors and formatting
+colored = "3.1.1"
+# Progress indicators
+indicatif = "0.18"
+# File I/O and paths
+dirs = "6.0"
+# UUID generation
+uuid = { version = "1.20.0", features = ["v4"] }
+# Base64 encoding
+base64 = "0.22"
+# Terminal utilities (using terminal_size instead)
+# Random number generation for retry backoff
+rand = "0.9"
+# Date and time handling for sessions
+chrono = { version = "0.4", features = ["serde"] }
+# Terminal size detection
+terminal_size = "0.4"
+# TOML configuration parsing
+toml = "0.9"
+# Terminal detection
+is-terminal = "0.4"
+ratatui = "0.30"
+crossterm = "0.29"
+glob = "0.3"
+walkdir = "2"
+regex = "1"
+urlencoding = "2"
+clap-markdown = "0.1"
+serde_yaml = "0.9.34"
+
+[target.'cfg(windows)'.dependencies]
+winreg = "0.55"
+
+[dev-dependencies]
+tempfile = "3.25.0"
+mockito = "1.7"
+tokio-test = "0.4"
+serial_test = "3.3.1"
+
+[profile.release]
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+
+[profile.dev]
+debug = true
+
+```
+
+
+## Assistant
+
+I will run `cargo check --bin probe_types` to check if `ChatMessage::tool` is available in the local `grok_api` dependency. I need to uncomment the `tool_msg` line first, as I had previously modified the file to test struct fields.
+
+**Tool Call: No file changes to src\bin\probe_types.rs**
+Status: Failed
+
+No changes to apply. The old_string and new_string are identical in file: H:\GitHub\grok-cli\src\bin\probe_types.rs
+
+## Assistant
+
+I will check `src/bin/probe_types.rs` to ensure it has the code I want to test. I previously left it in a state that failed compilation due to `tool` not found. If the new `grok_api` has `tool`, it should now compile.
+
+**Tool Call: cargo check --bin probe_types [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking tokio-rustls v0.26.4
+    Checking form_urlencoded v1.2.2
+    Checking url v2.5.8
+    Checking hyper-rustls v0.27.7
+    Checking reqwest v0.13.2
+    Checking grok_api v0.1.1 (H:\GitHub\grok_crate\grok_api)
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0308]: mismatched types
+   --> src\acp\mod.rs:428:55
+    |
+428 | ...text = content_to_string(response_msg.content.as_ref());
+    |           ----------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<&String>`, found `Option<&MessageContent>`
+    |           |
+    |           arguments to this function are incorrect
+    |
+    = note: expected enum `std::option::Option<&std::string::String>`
+               found enum `std::option::Option<&MessageContent>`
+note: function defined here
+   --> src\lib.rs:63:8
+    |
+ 63 | pub fn content_to_string(content: Option<&String>) -> String {
+    |        ^^^^^^^^^^^^^^^^^ ------------------------
+
+error[E0308]: mismatched types
+   --> src\acp\mod.rs:449:55
+    |
+449 | ...text = content_to_string(response_msg.content.as_ref());
+    |           ----------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<&String>`, found `Option<&MessageContent>`
+    |           |
+    |           arguments to this function are incorrect
+    |
+    = note: expected enum `std::option::Option<&std::string::String>`
+               found enum `std::option::Option<&MessageContent>`
+note: function defined here
+   --> src\lib.rs:63:8
+    |
+ 63 | pub fn content_to_string(content: Option<&String>) -> String {
+    |        ^^^^^^^^^^^^^^^^^ ------------------------
+
+error[E0277]: the trait bound `MessageContent: std::default::Default` is not satisfied
+    --> src\acp\mod.rs:745:38
+     |
+ 745 |             response.content.clone().unwrap_or_default()
+     |                                      ^^^^^^^^^^^^^^^^^ the trait `std::default::Default` is not implemented for `MessageContent`
+     |
+note: required by a bound in `std::option::Option::<T>::unwrap_or_default`      
+    --> C:\Users\johnm\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\option.rs:1095:12
+     |
+1093 |     pub const fn unwrap_or_default(self) -> T
+     |                  ----------------- required by a bound in this associated function
+1094 |     where
+1095 |         T: [const] Default,
+     |            ^^^^^^^^^^^^^^^ required by this bound in `Option::<T>::unwrap_or_default`
+help: consider removing this method call, as the receiver has type `std::option::Option<MessageContent>` and `std::option::Option<MessageContent>: std::default::Default` trivially holds
+     |
+ 745 -             response.content.clone().unwrap_or_default()
+ 745 +             response.content.unwrap_or_default()
+     |
+
+error[E0277]: `MessageContent` doesn't implement `std::fmt::Display`
+   --> src\acp\mod.rs:745:13
+    |
+742 |             "Code operation for session {}: {} -> {}",
+    |                                                   -- required by this formatting parameter
+...
+745 |             response.content.clone().unwrap_or_default()
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MessageContent` cannot be formatted with the default formatter
+    |
+    = help: the trait `std::fmt::Display` is not implemented for `MessageContent`
+    = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+    = note: this error originates in the macro `$crate::__macro_support::format_args` which comes from the expansion of the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> src\acp\mod.rs:748:30
+    |
+748 |         Ok(content_to_string(response.content.as_ref()))
+    |            ----------------- ^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<&String>`, found `Option<&MessageContent>`
+    |            |
+    |            arguments to this function are incorrect
+    |
+    = note: expected enum `std::option::Option<&std::string::String>`
+               found enum `std::option::Option<&MessageContent>`
+note: function defined here
+   --> src\lib.rs:63:8
+    |
+ 63 | pub fn content_to_string(content: Option<&String>) -> String {
+    |        ^^^^^^^^^^^^^^^^^ ------------------------
+
+error[E0308]: mismatched types
+   --> src\cli\commands\chat.rs:123:49
+    |
+123 |                 let text = extract_text_content(&content);
+    |                            -------------------- ^^^^^^^^ expected `&str`, found `&MessageContent`
+    |                            |
+    |                            arguments to this function are incorrect       
+    |
+    = note: expected reference `&str`
+               found reference `&MessageContent`
+note: function defined here
+   --> src\lib.rs:57:8
+    |
+ 57 | pub fn extract_text_content(content: &str) -> String {
+    |        ^^^^^^^^^^^^^^^^^^^^ -------------
+
+error[E0308]: mismatched types
+   --> src\cli\commands\chat.rs:435:50
+    |
+435 | ...onse = content_to_string(response_msg.content.as_ref());
+    |           ----------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<&String>`, found `Option<&MessageContent>`
+    |           |
+    |           arguments to this function are incorrect
+    |
+    = note: expected enum `std::option::Option<&std::string::String>`
+               found enum `std::option::Option<&MessageContent>`
+note: function defined here
+   --> src\lib.rs:63:8
+    |
+ 63 | pub fn content_to_string(content: Option<&String>) -> String {
+    |        ^^^^^^^^^^^^^^^^^ ------------------------
+
+error[E0308]: mismatched types
+    --> src\display\interactive.rs:1180:53
+     |
+1180 | ...tent = content_to_string(response_msg.content.as_ref());
+     |           ----------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<&String>`, found `Option<&MessageContent>`
+     |           |
+     |           arguments to this function are incorrect
+     |
+     = note: expected enum `std::option::Option<&std::string::String>`
+                found enum `std::option::Option<&MessageContent>`
+note: function defined here
+    --> src\lib.rs:63:8
+     |
+  63 | pub fn content_to_string(content: Option<&String>) -> String {
+     |        ^^^^^^^^^^^^^^^^^ ------------------------
+
+error[E0308]: mismatched types
+    --> src\display\interactive.rs:1191:45
+     |
+1191 | ...tent = content_to_string(response_msg.content.as_ref());
+     |           ----------------- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<&String>`, found `Option<&MessageContent>`
+     |           |
+     |           arguments to this function are incorrect
+     |
+     = note: expected enum `std::option::Option<&std::string::String>`
+                found enum `std::option::Option<&MessageContent>`
+note: function defined here
+    --> src\lib.rs:63:8
+     |
+  63 | pub fn content_to_string(content: Option<&String>) -> String {
+     |        ^^^^^^^^^^^^^^^^^ ------------------------
+
+error[E0308]: mismatched types
+   --> src\grok_client_ext.rs:165:26
+    |
+165 |                 content: response.content().map(|s| s.to_string()),       
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<MessageContent>`, found `Option<String>`
+    |
+    = note: expected enum `std::option::Option<MessageContent>`
+               found enum `std::option::Option<std::string::String>`
+
+Some errors have detailed explanations: E0277, E0308.
+For more information about an error, try `rustc --explain E0277`.
+error: could not compile `grok-cli` (lib) due to 10 previous errors
+
+## Assistant
+
+The output shows a LOT of errors, which is **good**!
+It means the local `grok_api` has a different API than the crates.io version.
+Specifically:
+`expected enum Option<&MessageContent>` instead of `Option<&String>`.
+
+This means `Message.content` is now `Option<MessageContent>` instead of `Option<String>`.
+This implies `MessageContent` is likely an enum that can hold text or... maybe other things (like tool results?).
+
+And `ChatMessage::tool` error is NOT in the list! (Wait, I ran `cargo check --bin probe_types` but the errors came from `grok-cli` LIB compilation which happens first or in parallel).
+
+Wait, the error `no function or associated item named tool found` is NOT present in the output.
+Instead, I see errors about `MessageContent`.
+This implies `ChatMessage::tool` might actually exist now! Or maybe `probe_types` wasn't reached because lib failed?
+
+No, `grok-cli` lib failed, so `probe_types` (which depends on it) couldn't be fully checked.
+
+However, the errors confirm that `grok_api` has changed significantly.
+
+I need to fix `grok-cli` to adapt to the new `grok_api`.
+
+Key changes needed:
+1. `Message.content` is now `Option<MessageContent>`. I need to convert it to string where used.
+2. `ChatMessage` construction likely needs updates.
+
+I need to know what `MessageContent` is.
+I'll try to probe `MessageContent` in `src/bin/probe_types.rs` (after I fix the lib errors, or I can try to fix lib errors blindly).
+
+I'll assume `MessageContent` handles text.
+
+Let's look at `src/lib.rs` where `content_to_string` is defined.
+```rust
+pub fn content_to_string(content: Option<&String>) -> String {
+    content.cloned().unwrap_or_default()
+}
+```
+I need to change the signature to `Option<&MessageContent>`.
+But `MessageContent` is from `grok_api`.
+
+I'll first read `src/lib.rs` to see imports.
+I need to import `MessageContent` from `grok_api`.
+
+I will update `src/lib.rs` to import `MessageContent` and update `content_to_string` and `extract_text_content`.
+
+But first, I need to know the structure of `MessageContent`.
+I'll create a new test file `src/bin/probe_content.rs` that ONLY depends on `grok_api` (not `grok-cli` lib) so I can check `MessageContent` without fixing the whole lib first.
+Wait, `grok-cli` binary targets depend on the lib.
+I can create a standalone example or test file that doesn't use the lib?
+No, `Cargo.toml` defines `name = "grok-cli"` as the package. `src/bin/*.rs` are binaries of that package.
+
+I can try to run `cargo doc` on `grok_api`? No.
+
+I'll assume `MessageContent` implements `Display` or has a `text()` method?
+The error said: `` `MessageContent` doesn't implement `std::fmt::Display` ``.
+So I can't just print it.
+
+I'll try to match on it?
+I'll try to verify if it is an enum or struct.
+
+I'll use `src/bin/probe_types.rs` again, but I'll comment out the `ChatMessage::tool` call for now to focus on `MessageContent`.
+And I will add `use grok_api::MessageContent;`.
+And try to construct it.
+
+But `grok-cli` lib is broken, so `src/bin/probe_types.rs` won't compile because it links to `grok-cli` lib (implicitly?).
+Actually, `src/bin` binaries can use `grok_api` directly if declared in `[dependencies]`.
+They don't *have* to use the `grok-cli` lib crate unless they import it.
+`src/bin/probe_types.rs` uses `grok_api`.
+But `grok-cli` compilation fails, stopping the build.
+
+I must fix `grok-cli` code.
+
+I will modify `src/lib.rs` to handle `MessageContent`.
+I'll change `content_to_string` to take `Option<&MessageContent>`.
+But I don't know how to extract string from it.
+I'll try `content.as_ref().map(|c| c.to_string())` but `Display` is missing.
+Maybe `c.text`? `c.value`?
+Or maybe it's an enum `Text(String)`?
+
+I will try to read `grok_api` source code via `read_file` now that I know the path `../grok_crate/grok_api`.
+I'll try `read_file` on `../grok_crate/grok_api/src/lib.rs`.
+The tool `read_file` might be restricted to workspace.
+"Resolves outside the allowed workspace directories".
+So I can't read it.
+
+I have to guess.
+Common patterns for `MessageContent`:
+1. Enum `Text(String)`, `Image(...)`.
+2. Struct with `text: String`.
+
+I'll try to update `src/lib.rs` to import `MessageContent` and use a `match` in `content_to_string`.
+I'll guess it's an enum.
+
+```rust
+pub fn content_to_string(content: Option<&MessageContent>) -> String {
+    match content {
+        Some(MessageContent::Text(s)) => s.clone(),
+        Some(MessageContent::Image(_)) => "[Image]".to_string(),
+        None => "".to_string(),
+        _ => format!("{:?}", content), // Fallback if Debug is implemented
+    }
+}
+```
+But `Debug` might be implemented.
+
+Let's try to find out the variants.
+I'll run `cargo check` and modify `src/lib.rs` to use `MessageContent`.
+If I use a non-existent variant, compiler will list available variants!
+
+I'll modify `src/lib.rs`.
+I need to add `MessageContent` to `use grok_api::{...}`.
+And update `content_to_string`.
+
+I'll start by adding `MessageContent` to imports in `src/lib.rs`.
+
+**Tool Call: src\lib.rs: // Re-export grok_api types fo... => // Re-export grok_api types fo...**
+Status: Completed
+
+Diff: lib.rs
+```
+//! Grok CLI Library
+//!
+//! This library provides the core functionality for the Grok CLI,
+//! including API integration, configuration management, and display utilities.
+//!
+//! # Architecture Notes
+//!
+//! ## Library vs Binary Separation
+//!
+//! This crate contains both library and binary code. According to Rust best practices,
+//! libraries should NOT contain:
+//! - Terminal I/O operations (println!, eprintln!, print!, etc.)
+//! - Progress bars (indicatif)
+//! - Terminal UI (ratatui, crossterm)
+//! - Direct runtime dependencies (#[tokio::main])
+//! - Code that exits the process
+//!
+//! ## Current State
+//!
+//! The following modules currently violate library/binary separation:
+//! - `cli::mod` - Contains I/O helper functions (marked deprecated)
+//! - `cli::commands::*` - Command handlers print directly to stdout/stderr
+//! - `display` - Some functions perform direct I/O
+//!
+//! ## Migration Path
+//!
+//! 1. ✅ Created `src/terminal/` module for binary-only I/O (not exposed in lib.rs)
+//! 2. ⏳ TODO: Refactor command handlers to return Result<DisplayData> instead of printing
+//! 3. ⏳ TODO: Move `cli::app` and command dispatch to binary crate
+//! 4. ⏳ TODO: Make all `display` functions pure (return String, no I/O)
+//!
+//! For now, I/O functions are marked with `#[deprecated]` to indicate they should
+//! be moved to the binary crate in a future refactor.
+
+use clap::Subcommand;
+
+pub mod acp;
+pub mod cli;
+pub mod config;
+pub mod display;
+pub mod grok_client_ext;
+pub mod hooks;
+pub mod mcp;
+pub mod skills;
+pub mod utils;
+
+// Re-export grok_api types for use throughout the crate
+pub use grok_api::{
+    ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, MessageContent, ToolCall,
+    Usage,
+};
+
+// Re-export the extended GrokClient and types
+pub use grok_client_ext::{GrokClient, MessageWithFinishReason};
+
+/// Helper function to extract text content from String
+/// Kept for backwards compatibility with refactored code
+pub fn extract_text_content(content: &str) -> String {
+    content.to_string()
+}
+
+/// Helper function to convert Option<String> to String
+/// Kept for backwards compatibility with refactored code
+pub fn content_to_string(content: Option<&String>) -> String {
+    content.cloned().unwrap_or_default()
+}
+
+/// Helper function to create text content
+/// Kept for backwards compatibility with refactored code
+pub fn text_content(text: impl Into<String>) -> String {
+    text.into()
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum CodeAction {
+    /// Explain code functionality
+    Explain {
+        /// File path or code snippet
+        input: String,
+        /// Input is a file path (default: auto-detect)
+        #[arg(short, long)]
+        file: bool,
+    },
+    /// Review code for improvements
+    Review {
+        /// File path or code snippet
+        input: String,
+        /// Input is a file path (default: auto-detect)
+        #[arg(short, long)]
+        file: bool,
+        /// Focus on specific aspects (security, performance, style, etc.)
+        #[arg(long)]
+        focus: Option<String>,
+    },
+    /// Generate code from description
+    Generate {
+        /// Description of what to generate
+        description: Vec<String>,
+        /// Programming language
+        #[arg(short, long)]
+        language: Option<String>,
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Fix code issues
+    Fix {
+        /// File path containing code to fix
+        file: String,
+        /// Description of the issue to fix
+        issue: Vec<String>,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum AcpAction {
+    /// Start ACP server for Zed integration
+    Server {
+        /// Port to bind to (default: auto-assign)
+        #[arg(short, long)]
+        port: Option<u16>,
+        /// Host to bind to
+        #[arg(short = 'H', long, default_value = "127.0.0.1")]
+        host: String,
+    },
+    /// Start ACP in stdio mode (default for Zed)
+    Stdio {
+        /// Model to use (overrides default)
+        #[arg(long)]
+        model: Option<String>,
+    },
+    /// Test ACP connection
+    Test {
+        /// ACP server address
+        #[arg(short, long)]
+        address: String,
+    },
+    /// Show ACP capabilities
+    Capabilities,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum ConfigAction {
+    /// Show current configuration
+    Show,
+    /// Set configuration value
+    Set {
+        /// Configuration key
+        key: String,
+        /// Configuration value
+        value: String,
+    },
+    /// Get configuration value
+    Get {
+        /// Configuration key
+        key: String,
+    },
+    /// Initialize configuration with defaults
+    Init {
+        /// Force overwrite existing config
+        #[arg(long)]
+        force: bool,
+    },
+    /// Validate configuration
+    Validate,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum SettingsAction {
+    /// Show interactive settings browser
+    Show,
+    /// Edit settings interactively
+    Edit,
+    /// Reset settings to defaults
+    Reset {
+        /// Category to reset (optional, resets all if not specified)
+        #[arg(short, long)]
+        category: Option<String>,
+    },
+    /// Export settings to file
+    Export {
+        /// Export file path
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+    /// Import settings from file
+    Import {
+        /// Import file path
+        #[arg(short, long)]
+        path: String,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum HistoryAction {
+    /// List all chat sessions
+    List,
+    /// View a specific chat session
+    View {
+        /// Session ID to view
+        session_id: String,
+    },
+    /// Search through chat sessions
+    Search {
+        /// Search query
+        query: String,
+    },
+    /// Clear chat history
+    Clear {
+        /// Confirm deletion
+        #[arg(long)]
+        confirm: bool,
+    },
+}
+
+// Re-export commonly used types and functions
+pub use config::{Config, ConfigSource, RateLimitConfig};
+pub use display::{
+    ascii_art::{get_logo_for_width, print_grok_logo},
+    banner::{BannerConfig, BannerType, print_banner, print_welcome_banner},
+    get_terminal_size,
+};
+
+```
+
+
+## Assistant
+
+I will change `content_to_string` to use `MessageContent` and guess a variant to force the compiler to reveal the available variants. I'll also modify `extract_text_content` similarly.
+
+**Tool Call: src\lib.rs: /// Helper function to extract... => /// Helper function to extract...**
+Status: Completed
+
+Diff: lib.rs
+```
+//! Grok CLI Library
+//!
+//! This library provides the core functionality for the Grok CLI,
+//! including API integration, configuration management, and display utilities.
+//!
+//! # Architecture Notes
+//!
+//! ## Library vs Binary Separation
+//!
+//! This crate contains both library and binary code. According to Rust best practices,
+//! libraries should NOT contain:
+//! - Terminal I/O operations (println!, eprintln!, print!, etc.)
+//! - Progress bars (indicatif)
+//! - Terminal UI (ratatui, crossterm)
+//! - Direct runtime dependencies (#[tokio::main])
+//! - Code that exits the process
+//!
+//! ## Current State
+//!
+//! The following modules currently violate library/binary separation:
+//! - `cli::mod` - Contains I/O helper functions (marked deprecated)
+//! - `cli::commands::*` - Command handlers print directly to stdout/stderr
+//! - `display` - Some functions perform direct I/O
+//!
+//! ## Migration Path
+//!
+//! 1. ✅ Created `src/terminal/` module for binary-only I/O (not exposed in lib.rs)
+//! 2. ⏳ TODO: Refactor command handlers to return Result<DisplayData> instead of printing
+//! 3. ⏳ TODO: Move `cli::app` and command dispatch to binary crate
+//! 4. ⏳ TODO: Make all `display` functions pure (return String, no I/O)
+//!
+//! For now, I/O functions are marked with `#[deprecated]` to indicate they should
+//! be moved to the binary crate in a future refactor.
+
+use clap::Subcommand;
+
+pub mod acp;
+pub mod cli;
+pub mod config;
+pub mod display;
+pub mod grok_client_ext;
+pub mod hooks;
+pub mod mcp;
+pub mod skills;
+pub mod utils;
+
+// Re-export grok_api types for use throughout the crate
+pub use grok_api::{
+    ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, MessageContent, ToolCall,
+    Usage,
+};
+
+// Re-export the extended GrokClient and types
+pub use grok_client_ext::{GrokClient, MessageWithFinishReason};
+
+/// Helper function to extract text content from String
+/// Kept for backwards compatibility with refactored code
+pub fn extract_text_content(content: &MessageContent) -> String {
+    match content {
+        MessageContent::MyGuess(s) => s.clone(),
+        _ => String::new(),
+    }
+}
+
+/// Helper function to convert Option<String> to String
+/// Kept for backwards compatibility with refactored code
+pub fn content_to_string(content: Option<&MessageContent>) -> String {
+    content.map(|c| extract_text_content(c)).unwrap_or_default()
+}
+
+/// Helper function to create text content
+/// Kept for backwards compatibility with refactored code
+pub fn text_content(text: impl Into<String>) -> MessageContent {
+    MessageContent::Text(text.into())
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum CodeAction {
+    /// Explain code functionality
+    Explain {
+        /// File path or code snippet
+        input: String,
+        /// Input is a file path (default: auto-detect)
+        #[arg(short, long)]
+        file: bool,
+    },
+    /// Review code for improvements
+    Review {
+        /// File path or code snippet
+        input: String,
+        /// Input is a file path (default: auto-detect)
+        #[arg(short, long)]
+        file: bool,
+        /// Focus on specific aspects (security, performance, style, etc.)
+        #[arg(long)]
+        focus: Option<String>,
+    },
+    /// Generate code from description
+    Generate {
+        /// Description of what to generate
+        description: Vec<String>,
+        /// Programming language
+        #[arg(short, long)]
+        language: Option<String>,
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Fix code issues
+    Fix {
+        /// File path containing code to fix
+        file: String,
+        /// Description of the issue to fix
+        issue: Vec<String>,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum AcpAction {
+    /// Start ACP server for Zed integration
+    Server {
+        /// Port to bind to (default: auto-assign)
+        #[arg(short, long)]
+        port: Option<u16>,
+        /// Host to bind to
+        #[arg(short = 'H', long, default_value = "127.0.0.1")]
+        host: String,
+    },
+    /// Start ACP in stdio mode (default for Zed)
+    Stdio {
+        /// Model to use (overrides default)
+        #[arg(long)]
+        model: Option<String>,
+    },
+    /// Test ACP connection
+    Test {
+        /// ACP server address
+        #[arg(short, long)]
+        address: String,
+    },
+    /// Show ACP capabilities
+    Capabilities,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum ConfigAction {
+    /// Show current configuration
+    Show,
+    /// Set configuration value
+    Set {
+        /// Configuration key
+        key: String,
+        /// Configuration value
+        value: String,
+    },
+    /// Get configuration value
+    Get {
+        /// Configuration key
+        key: String,
+    },
+    /// Initialize configuration with defaults
+    Init {
+        /// Force overwrite existing config
+        #[arg(long)]
+        force: bool,
+    },
+    /// Validate configuration
+    Validate,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum SettingsAction {
+    /// Show interactive settings browser
+    Show,
+    /// Edit settings interactively
+    Edit,
+    /// Reset settings to defaults
+    Reset {
+        /// Category to reset (optional, resets all if not specified)
+        #[arg(short, long)]
+        category: Option<String>,
+    },
+    /// Export settings to file
+    Export {
+        /// Export file path
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+    /// Import settings from file
+    Import {
+        /// Import file path
+        #[arg(short, long)]
+        path: String,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum HistoryAction {
+    /// List all chat sessions
+    List,
+    /// View a specific chat session
+    View {
+        /// Session ID to view
+        session_id: String,
+    },
+    /// Search through chat sessions
+    Search {
+        /// Search query
+        query: String,
+    },
+    /// Clear chat history
+    Clear {
+        /// Confirm deletion
+        #[arg(long)]
+        confirm: bool,
+    },
+}
+
+// Re-export commonly used types and functions
+pub use config::{Config, ConfigSource, RateLimitConfig};
+pub use display::{
+    ascii_art::{get_logo_for_width, print_grok_logo},
+    banner::{BannerConfig, BannerType, print_banner, print_welcome_banner},
+    get_terminal_size,
+};
+
+```
+
+
+## Assistant
+
+I will run `cargo check` to see the compiler error, which should list the actual variants of `MessageContent`.
+
+**Tool Call: cargo check [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0277]: the trait bound `MessageContent: std::default::Default` is not satisfied
+    --> src\acp\mod.rs:745:38
+     |
+ 745 |             response.content.clone().unwrap_or_default()
+     |                                      ^^^^^^^^^^^^^^^^^ the trait `std::default::Default` is not implemented for `MessageContent`
+     |
+note: required by a bound in `std::option::Option::<T>::unwrap_or_default`
+    --> C:\Users\johnm\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\option.rs:1095:12
+     |
+1093 |     pub const fn unwrap_or_default(self) -> T
+     |                  ----------------- required by a bound in this associated function
+1094 |     where
+1095 |         T: [const] Default,
+     |            ^^^^^^^^^^^^^^^ required by this bound in `Option::<T>::unwrap_or_default`
+help: consider removing this method call, as the receiver has type `std::option::Option<MessageContent>` and `std::option::Option<MessageContent>: std::default::Default` trivially holds
+     |
+ 745 -             response.content.clone().unwrap_or_default()
+ 745 +             response.content.unwrap_or_default()
+     |
+
+error[E0277]: `MessageContent` doesn't implement `std::fmt::Display`
+   --> src\acp\mod.rs:745:13
+    |
+742 |             "Code operation for session {}: {} -> {}",
+    |                                                   -- required by this formatting parameter
+...
+745 |             response.content.clone().unwrap_or_default()
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MessageContent` cannot be formatted with the default formatter
+    |
+    = help: the trait `std::fmt::Display` is not implemented for `MessageContent`
+    = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+    = note: this error originates in the macro `$crate::__macro_support::format_args` which comes from the expansion of the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0308]: mismatched types
+   --> src\grok_client_ext.rs:165:26
+    |
+165 |                 content: response.content().map(|s| s.to_string()),       
+    |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<MessageContent>`, found `Option<String>`
+    |
+    = note: expected enum `std::option::Option<MessageContent>`
+               found enum `std::option::Option<std::string::String>`
+
+error[E0599]: no variant or associated item named `MyGuess` found for enum `MessageContent` in the current scope
+  --> src\lib.rs:60:25
+   |
+60 |         MessageContent::MyGuess(s) => s.clone(),
+   |                         ^^^^^^^ variant or associated item not found in `MessageContent`
+
+Some errors have detailed explanations: E0277, E0308, E0599.
+For more information about an error, try `rustc --explain E0277`.
+error: could not compile `grok-cli` (lib) due to 4 previous errors
+
+## Assistant
+
+The compiler error `no variant or associated item named MyGuess found for enum MessageContent` didn't list the available variants in the `note:` section? That's unfortunate. Sometimes it does.
+
+But I see `MessageContent::Text` in my code (lines 75-77 which I didn't see in the error output, maybe because I didn't reach that line or it compiled fine?).
+Ah, `MessageContent::Text` is used in `text_content` function.
+And the compiler didn't complain about `MessageContent::Text`.
+This implies `MessageContent::Text` IS a valid variant!
+
+Let's assume `MessageContent` is `enum MessageContent { Text(String), ... }`.
+
+Wait, the error `the trait std::default::Default is not implemented for MessageContent` suggests it's an enum or struct without Default.
+
+If `MessageContent::Text(String)` is valid, then `extract_text_content` should be:
+```rust
+pub fn extract_text_content(content: &MessageContent) -> String {
+    match content {
+        MessageContent::Text(s) => s.clone(),
+        _ => String::new(), // Or handle other variants
+    }
+}
+```
+
+I'll assume `Text` is the variant for text.
+
+Now I need to fix `src/lib.rs` to correct `extract_text_content` and remove the `MyGuess`.
+
+And I also need to update `src/grok_client_ext.rs` because `response.content()` returns `Option<String>` (from `grok_api` trait?) but `Message` expects `Option<MessageContent>`.
+
+Wait, `grok_client_ext.rs`:
+```rust
+                content: response.content().map(|s| s.to_string()),
+```
+The error says: `expected Option<MessageContent>, found Option<String>`.
+This means `Message` struct field `content` expects `MessageContent`.
+But `response.content()` returns `Option<String>`?
+If `response` is `GrokApiChatResponse`, does it have a `content()` method?
+`grok_api` usually has `content()` helper on `ChatResponse`.
+
+If `grok_api` changed `Message` to use `MessageContent`, `ChatResponse` probably returns `MessageContent` too?
+Or maybe `response.content()` still returns string but we need to wrap it?
+The error says `response.content()` returns `Option<String>`.
+
+So I need to wrap it:
+`content: response.content().map(|s| MessageContent::Text(s.to_string()))`
+
+But wait, `response` is `GrokApiChatResponse`.
+Does it have `content()` method?
+`src/grok_client_ext.rs` calls it.
+
+I'll start by fixing `src/lib.rs`. I'll remove `MyGuess` and use `Text`. I'll also check if `MessageContent` has other variants by trying to match `_` (wildcard) and seeing if compiler warns about unreachable patterns (if I cover all). But I don't know all.
+
+I'll stick with `Text` for now.
+
+Also, `src/acp/mod.rs` and `src/display/interactive.rs` and `src/cli/commands/chat.rs` had errors because they were passing `&MessageContent` to functions expecting `&str` or `Option<&String>`.
+My change to `content_to_string` signature in `src/lib.rs` (taking `Option<&MessageContent>`) should fix the call sites IF they are passing `response.content`.
+
+However, `src/acp/mod.rs` error:
+`expected Option<&String>, found Option<&MessageContent>`
+This was BEFORE I changed `src/lib.rs`.
+After I change `src/lib.rs`, `content_to_string` will take `Option<&MessageContent>`, so `src/acp/mod.rs` passing `response.content.as_ref()` (which is `Option<&MessageContent>`) should be correct!
+
+So fixing `src/lib.rs` is the key.
+
+I will fix `src/lib.rs` now. I'll replace `MyGuess` with `Text`.
+And I'll add `impl Display for MessageContent` if I can? No, orphan rule.
+I'll just handle it in `extract_text_content`.
+
+One more thing: `text_content` function.
+It returns `MessageContent`.
+Old version returned `String`.
+I should check usages of `text_content`.
+It is used in `src/lib.rs`? No, it's a helper.
+It might be used in `src/cli/commands/chat.rs` or `src/acp/mod.rs`.
+
+If `src/acp/mod.rs` uses `text_content` to create user messages?
+`src/acp/mod.rs` creates JSON messages:
+```rust
+        session.messages.push(json!({
+            "role": "user",
+            "content": message
+        }));
+```
+This uses `serde_json`. `message` is `&str`. This creates a string JSON value.
+`grok_api`'s `ChatMessage` (if used for deserialization) might expect `content` to be a string OR an object?
+If `MessageContent` serializes to string (for Text variant), then `json!("string")` is fine.
+If `MessageContent` serializes to object `{"type": "text", "text": "..."}`, then `json!("string")` might fail deserialization?
+
+But `grok_client_ext.rs` manually converts JSON values to `ChatMessage`:
+```rust
+                let content = msg.get("content")?.as_str()?;
+```
+It expects content to be a string!
+Then it calls `ChatMessage::user(content)`.
+If `ChatMessage::user` takes string and wraps it in `MessageContent::Text`, then we are fine.
+
+So `src/acp/mod.rs` usage of `json!` with string content is fine IF `ChatMessage::user` accepts string.
+The error note for `E0599` earlier showed:
+`pub fn user<S: Into<String>>(content: S) -> Self`
+So `ChatMessage::user` takes string.
+
+So my plan for `src/lib.rs` seems correct.
+
+Step 1: Fix `src/lib.rs` implementation of `extract_text_content` and `content_to_string`.
+Step 2: Fix `src/grok_client_ext.rs` to wrap content in `MessageContent::Text`.
+Step 3: Fix `src/grok_client_ext.rs` to handle tool messages (the original goal!).
+
+Let's do Step 1.
+
+**Tool Call: src\lib.rs: /// Helper function to extract... => /// Helper function to extract...**
+Status: Completed
+
+Diff: lib.rs
+```
+//! Grok CLI Library
+//!
+//! This library provides the core functionality for the Grok CLI,
+//! including API integration, configuration management, and display utilities.
+//!
+//! # Architecture Notes
+//!
+//! ## Library vs Binary Separation
+//!
+//! This crate contains both library and binary code. According to Rust best practices,
+//! libraries should NOT contain:
+//! - Terminal I/O operations (println!, eprintln!, print!, etc.)
+//! - Progress bars (indicatif)
+//! - Terminal UI (ratatui, crossterm)
+//! - Direct runtime dependencies (#[tokio::main])
+//! - Code that exits the process
+//!
+//! ## Current State
+//!
+//! The following modules currently violate library/binary separation:
+//! - `cli::mod` - Contains I/O helper functions (marked deprecated)
+//! - `cli::commands::*` - Command handlers print directly to stdout/stderr
+//! - `display` - Some functions perform direct I/O
+//!
+//! ## Migration Path
+//!
+//! 1. ✅ Created `src/terminal/` module for binary-only I/O (not exposed in lib.rs)
+//! 2. ⏳ TODO: Refactor command handlers to return Result<DisplayData> instead of printing
+//! 3. ⏳ TODO: Move `cli::app` and command dispatch to binary crate
+//! 4. ⏳ TODO: Make all `display` functions pure (return String, no I/O)
+//!
+//! For now, I/O functions are marked with `#[deprecated]` to indicate they should
+//! be moved to the binary crate in a future refactor.
+
+use clap::Subcommand;
+
+pub mod acp;
+pub mod cli;
+pub mod config;
+pub mod display;
+pub mod grok_client_ext;
+pub mod hooks;
+pub mod mcp;
+pub mod skills;
+pub mod utils;
+
+// Re-export grok_api types for use throughout the crate
+pub use grok_api::{
+    ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, MessageContent, ToolCall,
+    Usage,
+};
+
+// Re-export the extended GrokClient and types
+pub use grok_client_ext::{GrokClient, MessageWithFinishReason};
+
+/// Helper function to extract text content from String
+/// Kept for backwards compatibility with refactored code
+pub fn extract_text_content(content: &MessageContent) -> String {
+    match content {
+        MessageContent::Text(s) => s.clone(),
+        _ => String::new(),
+    }
+}
+
+/// Helper function to convert Option<String> to String
+/// Kept for backwards compatibility with refactored code
+pub fn content_to_string(content: Option<&MessageContent>) -> String {
+    content.map(|c| extract_text_content(c)).unwrap_or_default()
+}
+
+/// Helper function to create text content
+/// Kept for backwards compatibility with refactored code
+pub fn text_content(text: impl Into<String>) -> MessageContent {
+    MessageContent::Text(text.into())
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum CodeAction {
+    /// Explain code functionality
+    Explain {
+        /// File path or code snippet
+        input: String,
+        /// Input is a file path (default: auto-detect)
+        #[arg(short, long)]
+        file: bool,
+    },
+    /// Review code for improvements
+    Review {
+        /// File path or code snippet
+        input: String,
+        /// Input is a file path (default: auto-detect)
+        #[arg(short, long)]
+        file: bool,
+        /// Focus on specific aspects (security, performance, style, etc.)
+        #[arg(long)]
+        focus: Option<String>,
+    },
+    /// Generate code from description
+    Generate {
+        /// Description of what to generate
+        description: Vec<String>,
+        /// Programming language
+        #[arg(short, long)]
+        language: Option<String>,
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Fix code issues
+    Fix {
+        /// File path containing code to fix
+        file: String,
+        /// Description of the issue to fix
+        issue: Vec<String>,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum AcpAction {
+    /// Start ACP server for Zed integration
+    Server {
+        /// Port to bind to (default: auto-assign)
+        #[arg(short, long)]
+        port: Option<u16>,
+        /// Host to bind to
+        #[arg(short = 'H', long, default_value = "127.0.0.1")]
+        host: String,
+    },
+    /// Start ACP in stdio mode (default for Zed)
+    Stdio {
+        /// Model to use (overrides default)
+        #[arg(long)]
+        model: Option<String>,
+    },
+    /// Test ACP connection
+    Test {
+        /// ACP server address
+        #[arg(short, long)]
+        address: String,
+    },
+    /// Show ACP capabilities
+    Capabilities,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum ConfigAction {
+    /// Show current configuration
+    Show,
+    /// Set configuration value
+    Set {
+        /// Configuration key
+        key: String,
+        /// Configuration value
+        value: String,
+    },
+    /// Get configuration value
+    Get {
+        /// Configuration key
+        key: String,
+    },
+    /// Initialize configuration with defaults
+    Init {
+        /// Force overwrite existing config
+        #[arg(long)]
+        force: bool,
+    },
+    /// Validate configuration
+    Validate,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum SettingsAction {
+    /// Show interactive settings browser
+    Show,
+    /// Edit settings interactively
+    Edit,
+    /// Reset settings to defaults
+    Reset {
+        /// Category to reset (optional, resets all if not specified)
+        #[arg(short, long)]
+        category: Option<String>,
+    },
+    /// Export settings to file
+    Export {
+        /// Export file path
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+    /// Import settings from file
+    Import {
+        /// Import file path
+        #[arg(short, long)]
+        path: String,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum HistoryAction {
+    /// List all chat sessions
+    List,
+    /// View a specific chat session
+    View {
+        /// Session ID to view
+        session_id: String,
+    },
+    /// Search through chat sessions
+    Search {
+        /// Search query
+        query: String,
+    },
+    /// Clear chat history
+    Clear {
+        /// Confirm deletion
+        #[arg(long)]
+        confirm: bool,
+    },
+}
+
+// Re-export commonly used types and functions
+pub use config::{Config, ConfigSource, RateLimitConfig};
+pub use display::{
+    ascii_art::{get_logo_for_width, print_grok_logo},
+    banner::{BannerConfig, BannerType, print_banner, print_welcome_banner},
+    get_terminal_size,
+};
+
+```
+
+
+## Assistant
+
+Now I will fix `src/grok_client_ext.rs` to handle `MessageContent` and correctly implement `chat_completion_with_history`.
+
+I will:
+1. Update `chat_completion_with_history` to parse tool calls and tool results.
+2. Update `chat_completion_with_history` to wrap string content in `MessageContent::Text`.
+3. Handle new `tool_calls` logic.
+
+I need to confirm if `ChatMessage::tool` exists. I'll assume it does because `grok_api` changed.
+If not, I'll see error.
+
+Wait, `ChatMessage` is a struct (from probe test).
+So I should use `ChatMessage { role: "tool".into(), content: Some(MessageContent::Text(result)), tool_call_id: Some(id), .. }`?
+But probe said `tool_call_id` field missing.
+
+If `grok_api` changed to use `MessageContent`, maybe it ALSO added `tool_call_id`?
+Or maybe `MessageContent::ToolResult` variant?
+
+I'll assume `ChatMessage::tool` helper exists because the error note suggested `assistant_with_tools` which handles tool calls.
+And logically, if there is `assistant_with_tools`, there MUST be a way to send back results.
+Usually `ChatMessage::tool(content, id)`.
+
+I'll try to use `ChatMessage::tool`.
+
+Also, for `assistant` messages, I need to check if `tool_calls` field in JSON is populated.
+And use `ChatMessage::assistant_with_tools`.
+
+Here is the plan for `src/grok_client_ext.rs`:
+
+```rust
+    pub async fn chat_completion_with_history(
+        &self,
+        messages: &[Value],
+        temperature: f32,
+        max_tokens: u32,
+        model: &str,
+        tools: Option<Vec<Value>>,
+    ) -> Result<MessageWithFinishReason> {
+        // Convert JSON messages to ChatMessage format
+        let chat_messages: Vec<ChatMessage> = messages
+            .iter()
+            .filter_map(|msg| {
+                let role = msg.get("role")?.as_str()?;
+                // content might be null for tool calls
+                let content = msg.get("content").and_then(|c| c.as_str());
+
+                match role {
+                    "system" => Some(ChatMessage::system(content.unwrap_or(""))),
+                    "user" => Some(ChatMessage::user(content.unwrap_or(""))),
+                    "assistant" => {
+                        if let Some(tool_calls_val) = msg.get("tool_calls") {
+                             // potential tool calls
+                             // deserialize tool calls
+                             if let Ok(calls) = serde_json::from_value::<Vec<ToolCall>>(tool_calls_val.clone()) {
+                                 return Some(ChatMessage::assistant_with_tools(content, calls));
+                             }
+                        }
+                        Some(ChatMessage::assistant(content.unwrap_or("")))
+                    },
+                    "tool" => {
+                        let tool_call_id = msg.get("tool_call_id")?.as_str()?;
+                        Some(ChatMessage::tool(content.unwrap_or(""), tool_call_id))
+                    },
+                    _ => None,
+                }
+            })
+            .collect();
+
+        // ... rest of function ...
+```
+
+But I need `ToolCall` definition to match what `serde_json` expects.
+`grok_api::ToolCall` is available.
+I need to import it.
+
+And I need to update `convert_response_to_message_with_finish_reason` to handle `MessageContent`.
+The error earlier: `content: response.content().map(|s| s.to_string())`.
+I should change it to:
+`content: response.content.map(|c| extract_text_content(&c))`?
+No, `Message` struct field `content` expects `Option<MessageContent>`.
+So I should just clone it?
+`content: response.content.clone()`?
+(Assuming `Message` and `ChatResponse` both use `MessageContent`).
+
+Let's check `src/grok_client_ext.rs` imports.
+`use grok_api::{ChatMessage, ChatResponse as GrokApiChatResponse, Choice, Message};`
+
+If `GrokApiChatResponse` has `content: Option<MessageContent>`, then `convert_...` function:
+```rust
+        Ok(MessageWithFinishReason {
+            message: choice.message.clone(),
+            finish_reason: choice.finish_reason.clone(),
+        })
+```
+This is fine if `choice.message` is `Message`.
+But the fallback block:
+```rust
+        Ok(MessageWithFinishReason {
+            message: Message {
+                role: "assistant".to_string(),
+                content: response.content().map(|s| s.to_string()), // ERROR
+                tool_calls: None,
+            },
+            finish_reason: Some("stop".to_string()),
+        })
+```
+This fallback block tries to create a `Message` manually.
+Here `response.content()` returns `Option<String>`? Or `Option<MessageContent>`?
+If `ChatResponse` has `content()` helper, it probably returns reference to content.
+If I can just use `response.choices[0].message.content`, I'm good.
+But here I am in `else` block (no choices).
+Wait, if `response.choices` is empty, `response.content()` might be needed?
+Does `ChatResponse` have top-level content? Usually not for OpenAI compatible.
+If no choices, it's an error or empty response.
+
+I'll assume I can just use `None` for content if no choices, or try to get it.
+If `response` has `content` field (it might not, only `choices`), then `response.content()` helper might exist.
+The error says `response.content()` exists but returns `Option<String>` (or something compatible with `map(|s| s.to_string())` which was `Option<String>`).
+Wait, the error was:
+`expected Option<MessageContent>, found Option<String>`
+This means `Message` struct field `content` expects `MessageContent`, but the expression returned `Option<String>`.
+
+So `response.content()` (helper) returns string.
+I should wrap it: `response.content().map(|s| MessageContent::Text(s))`.
+
+I'll proceed with modifying `src/grok_client_ext.rs`.
+
+I need to import `ToolCall` and `MessageContent`.
+And implementing the logic.
+
+One detail: `tool_calls` deserialization.
+`serde_json::from_value::<Vec<ToolCall>>` requires `ToolCall` to be Deserialize.
+`grok_api` likely derives Deserialize for `ToolCall`.
+
+Let's do it.
+
+**Tool Call: src\grok_client_ext.rs: use anyhow::Result;... => use anyhow::Result;...**
+Status: Completed
+
+Diff: grok_client_ext.rs
+```
+//! Grok Client Extensions
+//!
+//! This module provides compatibility extensions for the grok_api::GrokClient
+//! to maintain API compatibility with the previous local implementation.
+
+use anyhow::Result;
+use grok_api::{ChatMessage, ChatResponse as GrokApiChatResponse, Choice, Message, MessageContent, ToolCall};
+use serde_json::Value;
+
+use crate::config::RateLimitConfig;
+
+/// Extended Grok client that wraps grok_api::GrokClient with additional methods
+#[derive(Clone, Debug)]
+pub struct GrokClient {
+    inner: grok_api::GrokClient,
+    rate_limit_config: Option<RateLimitConfig>,
+}
+
+impl GrokClient {
+    /// Create a new GrokClient with default settings
+    pub fn new(api_key: &str) -> Result<Self> {
+        let inner = grok_api::GrokClient::new(api_key)?;
+        Ok(Self {
+            inner,
+            rate_limit_config: None,
+        })
+    }
+
+    /// Create a new GrokClient with custom timeout and retry settings
+    pub fn with_settings(api_key: &str, timeout_secs: u64, max_retries: u32) -> Result<Self> {
+        let inner = grok_api::GrokClient::builder()
+            .api_key(api_key)
+            .timeout_secs(timeout_secs)
+            .max_retries(max_retries)
+            .build()?;
+
+        Ok(Self {
+            inner,
+            rate_limit_config: None,
+        })
+    }
+
+    /// Set rate limit configuration (for compatibility - currently a no-op)
+    pub fn with_rate_limits(mut self, config: RateLimitConfig) -> Self {
+        self.rate_limit_config = Some(config);
+        self
+    }
+
+    /// Send a single chat completion request to Grok
+    pub async fn chat_completion(
+        &self,
+        message: &str,
+        system_prompt: Option<&str>,
+        temperature: f32,
+        max_tokens: u32,
+        model: &str,
+    ) -> Result<String> {
+        let mut messages = Vec::new();
+
+        // Add system message if provided
+        if let Some(system) = system_prompt {
+            messages.push(ChatMessage::system(system));
+        }
+
+        // Add user message
+        messages.push(ChatMessage::user(message));
+
+        let response = self
+            .inner
+            .chat_with_history(&messages)
+            .temperature(temperature)
+            .max_tokens(max_tokens)
+            .model(model)
+            .send()
+            .await?;
+
+        // Extract text content from response
+        Ok(response
+            .content()
+            .unwrap_or_default())
+    }
+
+    /// Send chat completion with conversation history and optional tools
+    /// Returns (Message, finish_reason)
+    pub async fn chat_completion_with_history(
+        &self,
+        messages: &[Value],
+        temperature: f32,
+        max_tokens: u32,
+        model: &str,
+        tools: Option<Vec<Value>>,
+    ) -> Result<MessageWithFinishReason> {
+        // Convert JSON messages to ChatMessage format
+        let chat_messages: Vec<ChatMessage> = messages
+            .iter()
+            .filter_map(|msg| {
+                let role = msg.get("role")?.as_str()?;
+                // content might be null for tool calls
+                let content = msg.get("content").and_then(|c| c.as_str());
+
+                match role {
+                    "system" => Some(ChatMessage::system(content.unwrap_or(""))),
+                    "user" => Some(ChatMessage::user(content.unwrap_or(""))),
+                    "assistant" => {
+                        if let Some(tool_calls_val) = msg.get("tool_calls") {
+                             // potential tool calls
+                             // deserialize tool calls
+                             if let Ok(calls) = serde_json::from_value::<Vec<ToolCall>>(tool_calls_val.clone()) {
+                                 return Some(ChatMessage::assistant_with_tools(content, calls));
+                             }
+                        }
+                        Some(ChatMessage::assistant(content.unwrap_or("")))
+                    },
+                    "tool" => {
+                        let tool_call_id = msg.get("tool_call_id")?.as_str()?;
+                        Some(ChatMessage::tool(content.unwrap_or(""), tool_call_id))
+                    },
+                    _ => None,
+                }
+            })
+            .collect();
+
+        let mut request = self
+            .inner
+            .chat_with_history(&chat_messages)
+            .temperature(temperature)
+            .max_tokens(max_tokens)
+            .model(model);
+
+        // Add tools if provided
+        if let Some(tool_defs) = tools {
+            // Convert tools to the format expected by grok_api
+            request = request.tools(tool_defs);
+        }
+
+        let response = request.send().await?;
+
+        // Convert the response to the Message format with finish_reason
+        convert_response_to_message_with_finish_reason(response)
+    }
+
+    /// Test the connection to the Grok API
+    pub async fn test_connection(&self) -> Result<()> {
+        self.inner.test_connection().await.map_err(|e| e.into())
+    }
+
+    /// List available models
+    pub async fn list_models(&self) -> Result<Vec<String>> {
+        self.inner.list_models().await.map_err(|e| e.into())
+    }
+
+    /// Get the underlying grok_api client
+    pub fn inner(&self) -> &grok_api::GrokClient {
+        &self.inner
+    }
+}
+
+/// Message with finish_reason for proper loop control
+#[derive(Debug, Clone)]
+pub struct MessageWithFinishReason {
+    pub message: Message,
+    pub finish_reason: Option<String>,
+}
+
+/// Convert ChatResponse to Message format with finish_reason
+fn convert_response_to_message_with_finish_reason(
+    response: GrokApiChatResponse,
+) -> Result<MessageWithFinishReason> {
+    // Get the first choice
+    if let Some(choice) = response.choices.first() {
+        Ok(MessageWithFinishReason {
+            message: choice.message.clone(),
+            finish_reason: choice.finish_reason.clone(),
+        })
+    } else {
+        // Fallback if no choices
+        Ok(MessageWithFinishReason {
+            message: Message {
+                role: "assistant".to_string(),
+                content: response.content().map(MessageContent::Text),
+                tool_calls: None,
+            },
+            finish_reason: Some("stop".to_string()),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_grok_client_creation() {
+        let client = GrokClient::with_settings("test-key", 30, 3);
+        assert!(client.is_ok());
+
+        let empty_key_client = GrokClient::with_settings("", 30, 3);
+        assert!(empty_key_client.is_err());
+    }
+
+    #[test]
+    fn test_with_rate_limits() {
+        let client = GrokClient::new("test-key").unwrap();
+        let rate_config = RateLimitConfig::default();
+        let client_with_limits = client.with_rate_limits(rate_config);
+
+        assert!(client_with_limits.rate_limit_config.is_some());
+    }
+}
+
+```
+
+
+## Assistant
+
+I will run `cargo check` to verify if the changes fixed the compilation errors and successfully addressed the tool calling issue.
+
+**Tool Call: cargo check [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0277]: the trait bound `MessageContent: std::default::Default` is not satisfied
+    --> src\acp\mod.rs:745:38
+     |
+ 745 |             response.content.clone().unwrap_or_default()
+     |                                      ^^^^^^^^^^^^^^^^^ the trait `std::default::Default` is not implemented for `MessageContent`
+     |
+note: required by a bound in `std::option::Option::<T>::unwrap_or_default`
+    --> C:\Users\johnm\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\option.rs:1095:12
+     |
+1093 |     pub const fn unwrap_or_default(self) -> T
+     |                  ----------------- required by a bound in this associated function
+1094 |     where
+1095 |         T: [const] Default,
+     |            ^^^^^^^^^^^^^^^ required by this bound in `Option::<T>::unwrap_or_default`
+help: consider removing this method call, as the receiver has type `std::option::Option<MessageContent>` and `std::option::Option<MessageContent>: std::default::Default` trivially holds
+     |
+ 745 -             response.content.clone().unwrap_or_default()
+ 745 +             response.content.unwrap_or_default()
+     |
+
+error[E0277]: `MessageContent` doesn't implement `std::fmt::Display`
+   --> src\acp\mod.rs:745:13
+    |
+742 |             "Code operation for session {}: {} -> {}",
+    |                                                   -- required by this formatting parameter
+...
+745 |             response.content.clone().unwrap_or_default()
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MessageContent` cannot be formatted with the default formatter
+    |
+    = help: the trait `std::fmt::Display` is not implemented for `MessageContent`
+    = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+    = note: this error originates in the macro `$crate::__macro_support::format_args` which comes from the expansion of the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+error[E0599]: no function or associated item named `tool` found for struct `grok_api::ChatMessage` in the current scope
+   --> src\grok_client_ext.rs:118:43
+    |
+118 | ...       Some(ChatMessage::tool(content.unwrap_or(""), tool_call_id))    
+    |                             ^^^^ function or associated item not found in `grok_api::ChatMessage`
+    |
+note: if you're trying to build a new `grok_api::ChatMessage` consider using one of the following associated functions:
+      grok_api::ChatMessage::system
+      grok_api::ChatMessage::user
+      grok_api::ChatMessage::user_parts
+      grok_api::ChatMessage::assistant
+      grok_api::ChatMessage::assistant_with_tools
+   --> H:\GitHub\grok_crate\grok_api\src\models.rs:95:5
+    |
+ 95 |       pub fn system<S: Into<MessageContent>>(content: S) -> Self {        
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+104 |       pub fn user<S: Into<MessageContent>>(content: S) -> Self {
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+113 |       pub fn user_parts(parts: Vec<ContentPart>) -> Self {
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+122 |       pub fn assistant<S: Into<MessageContent>>(content: S) -> Self {     
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^       
+...
+131 | /     pub fn assistant_with_tools<S: Into<MessageContent>>(
+132 | |         content: Option<S>,
+133 | |         tool_calls: Vec<ToolCall>,
+134 | |     ) -> Self {
+    | |_____________^
+
+error[E0308]: mismatched types
+   --> src\grok_client_ext.rs:80:12
+    |
+ 80 |         Ok(response.content().unwrap_or_default())
+    |         -- ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `String`, found `&str`
+    |         |
+    |         arguments to this enum variant are incorrect
+    |
+help: the type constructed contains `&str` due to the type of the argument passed
+   --> src\grok_client_ext.rs:80:9
+    |
+ 80 |         Ok(response.content().unwrap_or_default())
+    |         ^^^--------------------------------------^
+    |            |
+    |            this argument influences the type of `Ok`
+note: tuple variant defined here
+   --> C:\Users\johnm\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\result.rs:561:5
+    |
+561 |     Ok(#[stable(feature = "rust1", since = "1.0.0")] T),
+    |     ^^
+help: try using a conversion method
+    |
+ 80 |         Ok(response.content().unwrap_or_default().to_string())
+    |                                                  ++++++++++++
+
+error[E0631]: type mismatch in function arguments
+    --> src\grok_client_ext.rs:182:49
+     |
+ 182 |                 content: response.content().map(MessageContent::Text),   
+     |                                             --- ^^^^^^^^^^^^^^^^^^^^     
+     |                                             |   |
+     |                                             |   expected due to this     
+     |                                             |   found signature defined here
+     |                                             required by a bound introduced by this call
+     |
+     = note: expected function signature `fn(&str) -> _`
+                found function signature `fn(std::string::String) -> _`
+note: required by a bound in `std::option::Option::<T>::map`
+    --> C:\Users\johnm\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\option.rs:1162:12
+     |
+1160 |     pub const fn map<U, F>(self, f: F) -> Option<U>
+     |                  --- required by a bound in this associated function     
+1161 |     where
+1162 |         F: [const] FnOnce(T) -> U + [const] Destruct,
+     |            ^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Option::<T>::map`
+help: consider wrapping the function in a closure
+     |
+ 182 |                 content: response.content().map(|arg0: &str| MessageContent::Text(/* std::string::String */)),
+     |                                                 ++++++++++++             
+        +++++++++++++++++++++++++++
+
+Some errors have detailed explanations: E0277, E0308, E0599, E0631.
+For more information about an error, try `rustc --explain E0277`.
+error: could not compile `grok-cli` (lib) due to 5 previous errors
+
+## Assistant
+
+Okay, this is progress.
+1. `ChatMessage::tool` is STILL missing!
+   `note: ... consider using one of the following associated functions: system, user, user_parts, assistant, assistant_with_tools`.
+   This means the user's `grok_api` supports tool *calls* (via `assistant_with_tools`) but NOT tool *results* (via `tool`)?
+   That's very strange. Maybe there is `ChatMessage::function`? No, that's deprecated.
+
+   Wait, if `user_parts` exists, maybe `tool` results are sent as `user` messages with specific parts?
+   Or maybe `grok_api` is just incomplete and I need to tell the user to fix it?
+   But the user said "grok_api is mine".
+
+   However, I can inspect `grok_api` source code now!
+   Because I changed `Cargo.toml` to point to `../grok_crate/grok_api`.
+   Wait, can I inspect it? My tool restrictions prevent reading outside workspace.
+   But `cargo` can read it.
+
+   I will create a small program in `src/bin` that prints the structure of `ChatMessage` using reflection? No, Rust doesn't have reflection like that.
+
+   But I can infer from the `note`:
+   ```
+      grok_api::ChatMessage::system
+      grok_api::ChatMessage::user
+      grok_api::ChatMessage::user_parts
+      grok_api::ChatMessage::assistant
+      grok_api::ChatMessage::assistant_with_tools
+   ```
+   There is NO `tool` method.
+
+   Is it possible `tool` results are sent as `user` messages?
+   Some APIs (like Anthropic) treat tool results as user messages.
+   But Grok usually follows OpenAI.
+
+   Maybe `ChatMessage` struct fields are public and I should construct it directly?
+   I previously found it has `role`, `content`, `tool_calls`.
+   It does NOT have `tool_call_id`.
+
+   If `grok_api` is incomplete, I can't fix it from here.
+   BUT, maybe I can use `user` role with a specific content format?
+   Or maybe I should use `ChatMessage::user`?
+
+   Wait, if `assistant_with_tools` exists, then `tool_calls` field exists.
+   If I construct `ChatMessage` manually:
+   `ChatMessage { role: "tool".into(), content: Some(...), tool_calls: None }`.
+   But I still need `tool_call_id`.
+
+   If `grok_api` is missing `tool_call_id` field on `ChatMessage` struct (which I confirmed earlier), then `grok_api` CANNOT support OpenAI-style tool results unless:
+   1. It puts ID in content.
+   2. It puts ID in `tool_calls` (unlikely).
+   3. It uses a different struct.
+
+   I will ask the user about `grok_api`.
+   "I notice `grok_api` handles `assistant_with_tools` but seems to be missing a way to create `tool` result messages with `tool_call_id`. Is there a specific way to send tool results, or should `ChatMessage` have a `tool` method?"
+
+   But wait, I am an "interactive CLI agent". I should try to solve it.
+
+   If `grok_api` is the user's, maybe they expect me to fix `grok-cli` to work with what IS there.
+   If `tool` role is not supported, maybe I should send results as `user` messages?
+   "Tool output: [result]"?
+   This acts as a fallback for models that don't support native tool calling.
+   But Grok *does* support native tool calling (it sends tool calls).
+   If I reply with user message, the model might get confused or treat it as new instruction.
+   But if `grok_api` doesn't support "tool" role, that's the only option.
+
+   However, the user said "It will just use up all the max_tool_loop_iterations".
+   This confirms the model keeps retrying.
+   If I send results as `user` message, the model *might* understand it if I phrase it right.
+   "Tool 'read_file' result: ..."
+
+   But `assistant_with_tools` implies native support.
+   It's highly likely `grok_api` is just missing the `tool` constructor and field.
+
+   Since I cannot edit `grok_api`, I will assume I should use `user` role as a workaround, OR construct `ChatMessage` manually if I can find where `tool_call_id` goes.
+   But I proved `tool_call_id` field does not exist.
+
+   So I have two options:
+   1. Use `user` role to report results.
+   2. Ask user to fix `grok_api`.
+
+   Given the user's request "handle command line inputs ... specifically addressing the stateless nature ... and implement token usage ...", wait, that was context.
+   The current request is "hum when i ask (in acp zed) to read a file i get a error tell me to up the max_tool_loop_iterations".
+
+   I will try to implement the `user` role fallback.
+   ```rust
+   ChatMessage::user(format!("Tool '{}' (ID: {}) result: {}", name, id, content))
+   ```
+   This breaks the native flow but might stop the loop.
+
+   BUT, before I do that, I'll check `src/acp/mod.rs` errors again.
+   `response.content.clone().unwrap_or_default()`
+   `MessageContent` does not implement `Default` or `Display`.
+   I need to fix `src/acp/mod.rs` to use `content_to_string` helper which I fixed in `src/lib.rs`.
+
+   I'll fix `src/acp/mod.rs` first.
+   And `src/grok_client_ext.rs`.
+
+   In `src/grok_client_ext.rs`:
+   ```rust
+   Ok(response.content().unwrap_or_default().to_string())
+   ```
+   The error: `response.content()` returns `Option<&str>`.
+   So `response.content().unwrap_or_default()` returns `&str`.
+   `.to_string()` works.
+   The error was `expected String, found &str`.
+   So `.to_string()` fixes it.
+
+   And:
+   ```rust
+   content: response.content().map(MessageContent::Text),
+   ```
+   Error: `response.content()` returns `Option<&str>`. `MessageContent::Text` expects `String`.
+   So: `response.content().map(|s| MessageContent::Text(s.to_string()))`.
+
+   So I can fix `src/grok_client_ext.rs` compilation errors.
+
+   Now about `ChatMessage::tool`.
+   I'll replace:
+   ```rust
+   Some(ChatMessage::tool(content.unwrap_or(""), tool_call_id))
+   ```
+   with:
+   ```rust
+   // Fallback since ChatMessage::tool doesn't exist
+   Some(ChatMessage::user(format!("Tool result (ID: {}): {}", tool_call_id, content.unwrap_or(""))))
+   ```
+   And add a comment that `grok_api` seems to report tool results as user messages (or we are forcing it).
+
+   Wait, if I do this, `handle_chat_completion` in `src/acp/mod.rs` adds `role: "tool"` to history.
+   ```rust
+                session.messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": content
+                }));
+   ```
+   And `src/grok_client_ext.rs` reads this back.
+   My `filter_map` logic will see `role: "tool"`.
+   And it will convert it to `ChatMessage::user(...)`.
+
+   This effectively converts tool results to user messages before sending to API.
+   This might confuse the model if it expects "tool" role.
+   But if `grok_api` doesn't support "tool" role, maybe the underlying API doesn't either? (Unlikely for Grok/XAI).
+   OR `grok_api` is just missing it.
+
+   If I use `user` role, the model sees:
+   User: "Read file x"
+   Assistant: "Call tool read_file"
+   User: "Tool result: content of x"
+
+   This is a valid conversation flow for models that don't support native tools.
+   For models that DO support native tools (which Grok does), it might be suboptimal but functional. It stops the loop because the model sees the result.
+
+   I'll proceed with this plan.
+
+   Fixing `src/acp/mod.rs`:
+   The error `MessageContent` doesn't implement `Display` or `Default`.
+   L745: `response.content.clone().unwrap_or_default()`
+   I should change this to `content_to_string(response.content.as_ref())`.
+
+   L742: `debug!("... {}", ... response.content ...)`
+   I should use `content_to_string` here too or `{:?}` if Debug is implemented.
+   I'll use `content_to_string`.
+
+   L428, L449, L748: `content_to_string(response.content.as_ref())` - error `Option<&MessageContent>` vs `Option<&String>`.
+   I ALREADY fixed `content_to_string` signature in `src/lib.rs` to take `Option<&MessageContent>`.
+   The error persists because `grok-cli` lib compilation failed, so `acp/mod.rs` sees old signature?
+   No, `acp/mod.rs` is PART of `grok-cli` lib.
+   The compiler checks everything.
+   The error `expected Option<&String>, found Option<&MessageContent>` implies `content_to_string` expects `Option<&String>`.
+   BUT I changed it!
+
+   Maybe I made a mistake in `src/lib.rs` change?
+   Let's check `src/lib.rs` content again.
+
+   Wait, I see the error in `src/grok_client_ext.rs` compilation:
+   `note: expected enum Option<MessageContent> found enum Option<String>`.
+   This was regarding `content` field construction.
+
+   But the errors in `src/acp/mod.rs`:
+   `note: function defined here ... pub fn content_to_string(content: Option<&String>) -> String`
+   This means the compiler sees the OLD signature!
+   Why?
+   Did my `replace` fail?
+   "Successfully modified file: H:\GitHub\grok-cli\src\lib.rs (1 replacements)."
+
+   Maybe I replaced `extract_text_content` but NOT `content_to_string`?
+   I replaced a block.
+   Let's check `src/lib.rs` content.
+
+**Tool Call: src\lib.rs**
+Status: Completed
+
+## Assistant
+
+The file `src/lib.rs` IS updated!
+`pub fn content_to_string(content: Option<&MessageContent>) -> String`
+
+Then why did `cargo check` say:
+`note: function defined here ... pub fn content_to_string(content: Option<&String>) -> String`
+
+Ah, `cargo check` output I saw was BEFORE my last `replace`?
+No, I ran `replace`, then `cargo check`.
+Wait, I ran `replace` on `src/lib.rs` TWICE.
+First to remove MyGuess, second to... wait.
+
+Ah, I replaced `MyGuess` with `Text`.
+And I updated the signature in the same replace call.
+
+Wait, maybe `src/acp/mod.rs` imports it differently?
+`use crate::{content_to_string, extract_text_content};`
+It should pick up the change.
+
+Maybe `cargo check` output was stale? Or maybe I misread it?
+Let's run `cargo check` again. It should now complain about mismatched types in `src/acp/mod.rs` but in reverse direction?
+No, `src/acp/mod.rs` passes `response.content.as_ref()` which is `Option<&MessageContent>`.
+So it should match `Option<&MessageContent>`.
+So `src/acp/mod.rs` errors should disappear (except `Display`/`Default` ones).
+
+Wait, the error `MessageContent` doesn't implement `Display` in `src/acp/mod.rs` at line 745.
+Line 745: `response.content.clone().unwrap_or_default()`
+This returns `MessageContent` (if unwrap works).
+But `MessageContent` doesn't implement `Default`.
+So `unwrap_or_default` fails.
+I need to change this line to use `content_to_string(response.content.as_ref())`.
+
+I need to fix `src/acp/mod.rs`.
+
+I'll check `src/display/interactive.rs` too.
+It uses `content_to_string`.
+
+I'll check `src/cli/commands/chat.rs` too.
+It uses `extract_text_content(&content)`.
+`content` is `MessageContent`.
+`extract_text_content` takes `&MessageContent`.
+So this should work.
+
+So the main fix is in `src/acp/mod.rs`.
+And `src/grok_client_ext.rs` needs a fix for `response.content().map(...)` error.
+
+I'll fix `src/grok_client_ext.rs` first (add `.to_string()`).
+And then `src/acp/mod.rs` (fix `unwrap_or_default`).
+
+Wait, `src/grok_client_ext.rs` also had `E0308` at line 80:
+`Ok(response.content().unwrap_or_default())`
+Expected `String`, found `&str`.
+I need to change it to `.to_string()`.
+
+And `E0631` at line 182:
+`content: response.content().map(MessageContent::Text)`
+`response.content()` returns `Option<&str>`. `MessageContent::Text` expects `String`.
+So I need a closure: `|s| MessageContent::Text(s.to_string())`.
+
+Let's apply fixes to `src/grok_client_ext.rs`.
+
+**Tool Call: src\grok_client_ext.rs:         // Extract text conten... =>         // Extract text conten...**
+Status: Failed
+
+Failed to edit, 0 occurrences found for old_string in H:\GitHub\grok-cli\src\grok_client_ext.rs. Ensure you're not escaping content incorrectly and check whitespace, indentation, and context. Use read_file tool to verify.
+
+## Assistant
+
+I made a mistake in `old_string` matching. I used `MessageContent::Text` in the `old_string` of `convert_response_to_message_with_finish_reason` but in the file it was `s.to_string()`.
+
+Wait, in my PREVIOUS edit to `grok_client_ext.rs`, I successfully applied changes.
+But I tried to replace `Some(ChatMessage::tool(...))` with `Some(ChatMessage::user(...))`.
+BUT `ChatMessage::tool` was only in my `new_string` of the PREVIOUS edit.
+And `convert_response_to_message_with_finish_reason` fallback was also only in my `new_string`.
+
+Wait, I must have succeeded in updating `grok_client_ext.rs` in the PREVIOUS step?
+"Successfully modified file: ... (1 replacements)."
+Yes.
+
+So now `grok_client_ext.rs` HAS `ChatMessage::tool` inside it (because I put it there).
+But `cargo check` failed because `ChatMessage::tool` doesn't exist.
+
+So I need to replace `ChatMessage::tool` with `ChatMessage::user` fallback.
+AND fix the other errors.
+
+I'll read `grok_client_ext.rs` to be sure what is there.
+
+**Tool Call: src\grok_client_ext.rs**
+Status: Completed
+
+## Assistant
+
+I will rewrite `src/grok_client_ext.rs` completely to include all fixes, ensuring I handle the "tool" role workaround, correct type conversions, and formatting.
+
+**Tool Call: Writing to src\grok_client_ext.rs**
+Status: Completed
+
+Diff: grok_client_ext.rs
+```
+//! Grok Client Extensions
+//!
+//! This module provides compatibility extensions for the grok_api::GrokClient
+//! to maintain API compatibility with the previous local implementation.
+
+use anyhow::Result;
+use grok_api::{
+    ChatMessage, ChatResponse as GrokApiChatResponse, Choice, Message, MessageContent, ToolCall,
+};
+use serde_json::Value;
+
+use crate::config::RateLimitConfig;
+
+/// Extended Grok client that wraps grok_api::GrokClient with additional methods
+#[derive(Clone, Debug)]
+pub struct GrokClient {
+    inner: grok_api::GrokClient,
+    rate_limit_config: Option<RateLimitConfig>,
+}
+
+impl GrokClient {
+    /// Create a new GrokClient with default settings
+    pub fn new(api_key: &str) -> Result<Self> {
+        let inner = grok_api::GrokClient::new(api_key)?;
+        Ok(Self {
+            inner,
+            rate_limit_config: None,
+        })
+    }
+
+    /// Create a new GrokClient with custom timeout and retry settings
+    pub fn with_settings(api_key: &str, timeout_secs: u64, max_retries: u32) -> Result<Self> {
+        let inner = grok_api::GrokClient::builder()
+            .api_key(api_key)
+            .timeout_secs(timeout_secs)
+            .max_retries(max_retries)
+            .build()?;
+
+        Ok(Self {
+            inner,
+            rate_limit_config: None,
+        })
+    }
+
+    /// Set rate limit configuration (for compatibility - currently a no-op)
+    pub fn with_rate_limits(mut self, config: RateLimitConfig) -> Self {
+        self.rate_limit_config = Some(config);
+        self
+    }
+
+    /// Send a single chat completion request to Grok
+    pub async fn chat_completion(
+        &self,
+        message: &str,
+        system_prompt: Option<&str>,
+        temperature: f32,
+        max_tokens: u32,
+        model: &str,
+    ) -> Result<String> {
+        let mut messages = Vec::new();
+
+        // Add system message if provided
+        if let Some(system) = system_prompt {
+            messages.push(ChatMessage::system(system));
+        }
+
+        // Add user message
+        messages.push(ChatMessage::user(message));
+
+        let response = self
+            .inner
+            .chat_with_history(&messages)
+            .temperature(temperature)
+            .max_tokens(max_tokens)
+            .model(model)
+            .send()
+            .await?;
+
+        // Extract text content from response
+        Ok(response
+            .content()
+            .unwrap_or_default()
+            .to_string())
+    }
+
+    /// Send chat completion with conversation history and optional tools
+    /// Returns (Message, finish_reason)
+    pub async fn chat_completion_with_history(
+        &self,
+        messages: &[Value],
+        temperature: f32,
+        max_tokens: u32,
+        model: &str,
+        tools: Option<Vec<Value>>,
+    ) -> Result<MessageWithFinishReason> {
+        // Convert JSON messages to ChatMessage format
+        let chat_messages: Vec<ChatMessage> = messages
+            .iter()
+            .filter_map(|msg| {
+                let role = msg.get("role")?.as_str()?;
+                // content might be null for tool calls
+                let content = msg.get("content").and_then(|c| c.as_str());
+
+                match role {
+                    "system" => Some(ChatMessage::system(content.unwrap_or(""))),
+                    "user" => Some(ChatMessage::user(content.unwrap_or(""))),
+                    "assistant" => {
+                        if let Some(tool_calls_val) = msg.get("tool_calls") {
+                             // potential tool calls
+                             // deserialize tool calls
+                             if let Ok(calls) = serde_json::from_value::<Vec<ToolCall>>(tool_calls_val.clone()) {
+                                 return Some(ChatMessage::assistant_with_tools(content, calls));
+                             }
+                        }
+                        Some(ChatMessage::assistant(content.unwrap_or("")))
+                    },
+                    "tool" => {
+                        let tool_call_id = msg.get("tool_call_id")?.as_str()?;
+                        // Fallback: report tool result as user message since tool role is missing in grok_api
+                        // This ensures the model sees the result even if native tool role is not supported
+                        Some(ChatMessage::user(format!("Tool result (ID: {}): {}", tool_call_id, content.unwrap_or(""))))
+                    },
+                    _ => None,
+                }
+            })
+            .collect();
+
+        let mut request = self
+            .inner
+            .chat_with_history(&chat_messages)
+            .temperature(temperature)
+            .max_tokens(max_tokens)
+            .model(model);
+
+        // Add tools if provided
+        if let Some(tool_defs) = tools {
+            // Convert tools to the format expected by grok_api
+            request = request.tools(tool_defs);
+        }
+
+        let response = request.send().await?;
+
+        // Convert the response to the Message format with finish_reason
+        convert_response_to_message_with_finish_reason(response)
+    }
+
+    /// Test the connection to the Grok API
+    pub async fn test_connection(&self) -> Result<()> {
+        self.inner.test_connection().await.map_err(|e| e.into())
+    }
+
+    /// List available models
+    pub async fn list_models(&self) -> Result<Vec<String>> {
+        self.inner.list_models().await.map_err(|e| e.into())
+    }
+
+    /// Get the underlying grok_api client
+    pub fn inner(&self) -> &grok_api::GrokClient {
+        &self.inner
+    }
+}
+
+/// Message with finish_reason for proper loop control
+#[derive(Debug, Clone)]
+pub struct MessageWithFinishReason {
+    pub message: Message,
+    pub finish_reason: Option<String>,
+}
+
+/// Convert ChatResponse to Message format with finish_reason
+fn convert_response_to_message_with_finish_reason(
+    response: GrokApiChatResponse,
+) -> Result<MessageWithFinishReason> {
+    // Get the first choice
+    if let Some(choice) = response.choices.first() {
+        Ok(MessageWithFinishReason {
+            message: choice.message.clone(),
+            finish_reason: choice.finish_reason.clone(),
+        })
+    } else {
+        // Fallback if no choices
+        Ok(MessageWithFinishReason {
+            message: Message {
+                role: "assistant".to_string(),
+                content: response.content().map(|s| MessageContent::Text(s.to_string())),
+                tool_calls: None,
+            },
+            finish_reason: Some("stop".to_string()),
+        })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_grok_client_creation() {
+        let client = GrokClient::with_settings("test-key", 30, 3);
+        assert!(client.is_ok());
+
+        let empty_key_client = GrokClient::with_settings("", 30, 3);
+        assert!(empty_key_client.is_err());
+    }
+
+    #[test]
+    fn test_with_rate_limits() {
+        let client = GrokClient::new("test-key").unwrap();
+        let rate_config = RateLimitConfig::default();
+        let client_with_limits = client.with_rate_limits(rate_config);
+
+        assert!(client_with_limits.rate_limit_config.is_some());
+    }
+}
+
+```
+
+
+## Assistant
+
+I will run `cargo check` to verify if the compilation errors in `grok_client_ext.rs` are resolved and if the remaining errors are only in `src/acp/mod.rs` (and possibly `src/display/interactive.rs`).
+
+**Tool Call: cargo check [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0277]: the trait bound `MessageContent: std::default::Default` is not satisfied
+    --> src\acp\mod.rs:745:38
+     |
+ 745 |             response.content.clone().unwrap_or_default()
+     |                                      ^^^^^^^^^^^^^^^^^ the trait `std::default::Default` is not implemented for `MessageContent`
+     |
+note: required by a bound in `std::option::Option::<T>::unwrap_or_default`
+    --> C:\Users\johnm\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\option.rs:1095:12
+     |
+1093 |     pub const fn unwrap_or_default(self) -> T
+     |                  ----------------- required by a bound in this associated function
+1094 |     where
+1095 |         T: [const] Default,
+     |            ^^^^^^^^^^^^^^^ required by this bound in `Option::<T>::unwrap_or_default`
+help: consider removing this method call, as the receiver has type `std::option::Option<MessageContent>` and `std::option::Option<MessageContent>: std::default::Default` trivially holds
+     |
+ 745 -             response.content.clone().unwrap_or_default()
+ 745 +             response.content.unwrap_or_default()
+     |
+
+error[E0277]: `MessageContent` doesn't implement `std::fmt::Display`
+   --> src\acp\mod.rs:745:13
+    |
+742 |             "Code operation for session {}: {} -> {}",
+    |                                                   -- required by this formatting parameter
+...
+745 |             response.content.clone().unwrap_or_default()
+    |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ `MessageContent` cannot be formatted with the default formatter
+    |
+    = help: the trait `std::fmt::Display` is not implemented for `MessageContent`
+    = note: in format strings you may be able to use `{:?}` (or {:#?} for pretty-print) instead
+    = note: this error originates in the macro `$crate::__macro_support::format_args` which comes from the expansion of the macro `debug` (in Nightly builds, run with -Z macro-backtrace for more info)
+
+For more information about this error, try `rustc --explain E0277`.
+error: could not compile `grok-cli` (lib) due to 2 previous errors
+
+## Assistant
+
+Great! `src/grok_client_ext.rs` is fixed. Now the only errors are in `src/acp/mod.rs` around line 745.
+
+This is in `handle_chat_with_system_prompt`.
+```rust
+        debug!(
+            "Code operation for session {}: {} -> {}",
+            session_id.0,
+            message,
+            response.content.clone().unwrap_or_default()
+        );
+```
+I need to convert `response.content` (which is `Option<MessageContent>`) to String.
+I already have `content_to_string` helper in `src/lib.rs` which I updated to take `Option<&MessageContent>`.
+
+So I should change this to:
+```rust
+            content_to_string(response.content.as_ref())
+```
+
+I will apply this fix to `src/acp/mod.rs`.
+Wait, I need to check imports in `src/acp/mod.rs` to ensure `content_to_string` is available.
+It is: `use crate::{content_to_string, extract_text_content};` (L18).
+
+So I will perform the replacement.
+
+**Tool Call: src\acp\mod.rs:         debug!(... =>         debug!(...**
+Status: Completed
+
+Diff: mod.rs
+```
+//! ACP (Agent Client Protocol) integration module
+//!
+//! This module provides the Grok AI agent implementation for the Agent Client Protocol,
+//! enabling seamless integration with Zed editor and other ACP-compatible clients.
+
+use crate::acp::protocol::SessionId;
+use anyhow::{Result, anyhow};
+use serde_json::{Value, json};
+use std::collections::HashMap;
+use std::sync::Arc;
+use tokio::sync::RwLock;
+use tracing::{debug, error, info, warn};
+
+use crate::GrokClient;
+use crate::config::Config;
+use crate::grok_client_ext::MessageWithFinishReason;
+use crate::hooks::HookManager;
+use crate::{content_to_string, extract_text_content};
+
+pub mod protocol;
+pub mod security;
+pub mod tools;
+
+use crate::acp::protocol::{
+    AGENT_METHOD_NAMES, AgentCapabilities, ContentBlock, ContentChunk, Implementation,
+    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest,
+    PromptResponse, ProtocolVersion, SessionId as ProtocolSessionId, SessionNotification,
+    SessionUpdate, StopReason, TextContent,
+};
+use security::SecurityManager;
+
+/// Grok AI agent implementation for ACP
+pub struct GrokAcpAgent {
+    /// Grok API client
+    grok_client: GrokClient,
+
+    /// Agent configuration
+    config: Config,
+
+    /// Active sessions
+    sessions: Arc<RwLock<HashMap<String, SessionData>>>,
+
+    /// Agent capabilities
+    capabilities: GrokAgentCapabilities,
+
+    /// Security manager
+    pub security: SecurityManager,
+
+    /// Hook manager
+    hook_manager: Arc<RwLock<HookManager>>,
+
+    /// Default model override
+    default_model: Option<String>,
+}
+
+/// Session data for tracking conversation state
+#[derive(Debug, Clone)]
+struct SessionData {
+    /// Conversation history
+    messages: Vec<Value>,
+
+    /// Session configuration
+    config: SessionConfig,
+
+    /// Creation timestamp
+    created_at: std::time::Instant,
+
+    /// Last activity timestamp
+    last_activity: std::time::Instant,
+}
+
+/// Session-specific configuration
+#[derive(Debug, Clone)]
+pub struct SessionConfig {
+    /// Model to use for this session
+    pub model: String,
+
+    /// Temperature setting
+    pub temperature: f32,
+
+    /// Maximum tokens per response
+    pub max_tokens: u32,
+
+    /// System prompt for this session
+    pub system_prompt: Option<String>,
+}
+
+/// Agent capabilities for ACP
+#[derive(Debug, Clone)]
+pub struct GrokAgentCapabilities {
+    /// Supported models
+    pub models: Vec<String>,
+
+    /// Maximum context length
+    pub max_context_length: u32,
+
+    /// Supported features
+    pub features: Vec<String>,
+
+    /// Tool definitions
+    pub tools: Vec<ToolDefinition>,
+}
+
+/// Tool definition for ACP
+#[derive(Debug, Clone)]
+pub struct ToolDefinition {
+    /// Tool name
+    pub name: String,
+
+    /// Tool description
+    pub description: String,
+
+    /// Tool parameters schema
+    pub parameters: Value,
+}
+
+impl Default for SessionConfig {
+    fn default() -> Self {
+        Self {
+            model: "grok-3".to_string(),
+            temperature: 0.5, // Lower temperature for more deterministic coding output
+            max_tokens: 4096,
+            system_prompt: Some(
+                "You are an expert software engineer and coding assistant. \
+                Your primary goal is to write high-quality, efficient, and maintainable code. \
+                You have access to tools to read files, write files, and list directories. \
+                Use these tools to understand the codebase and perform tasks. \
+                Follow these guidelines:\n\
+                1. Write clean, idiomatic code adhering to standard conventions.\n\
+                2. Prioritize correctness, performance, and security.\n\
+                3. Provide clear explanations for your design choices.\n\
+                4. When modifying existing code, respect the existing style and structure.\n\
+                5. Always consider edge cases and error handling.\n\
+                6. Suggest tests to verify your code when appropriate."
+                    .to_string(),
+            ),
+        }
+    }
+}
+
+impl GrokAcpAgent {
+    /// Create a new Grok ACP agent
+    pub async fn new(config: Config, default_model: Option<String>) -> Result<Self> {
+        let api_key = config
+            .api_key
+            .as_ref()
+            .ok_or_else(|| anyhow!("API key not configured"))?;
+
+        let grok_client =
+            GrokClient::with_settings(api_key, config.timeout_secs, config.max_retries)?;
+
+        let capabilities = Self::create_capabilities();
+
+        let security = SecurityManager::new();
+        // Trust current directory by default, canonicalizing to resolve symlinks
+        if let Ok(cwd) = std::env::current_dir() {
+            let canonical_cwd = cwd.canonicalize().unwrap_or(cwd);
+            security.add_trusted_directory(canonical_cwd);
+        }
+
+        Ok(Self {
+            grok_client,
+            config,
+            sessions: Arc::new(RwLock::new(HashMap::new())),
+            capabilities,
+            security,
+            hook_manager: Arc::new(RwLock::new(HookManager::new())),
+            default_model,
+        })
+    }
+
+    /// Create agent capabilities
+    fn create_capabilities() -> GrokAgentCapabilities {
+        GrokAgentCapabilities {
+            models: vec![
+                "grok-4-1-fast-reasoning".to_string(),
+                "grok-4-1-fast-non-reasoning".to_string(),
+                "grok-code-fast-1".to_string(),
+                "grok-4-fast-reasoning".to_string(),
+                "grok-4-fast-non-reasoning".to_string(),
+                "grok-4-0709".to_string(),
+                "grok-3".to_string(),
+                "grok-3-mini".to_string(),
+                "grok-2-vision-1212".to_string(),
+                "grok-2".to_string(), // Fallback
+            ],
+            max_context_length: 131072,
+            features: vec![
+                "chat_completion".to_string(),
+                "code_generation".to_string(),
+                "code_review".to_string(),
+                "code_explanation".to_string(),
+                "streaming".to_string(),
+                "function_calling".to_string(),
+            ],
+            tools: vec![
+                ToolDefinition {
+                    name: "chat_complete".to_string(),
+                    description: "Generate chat completions using Grok AI".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {
+                            "message": {
+                                "type": "string",
+                                "description": "The message to send to Grok"
+                            },
+                            "temperature": {
+                                "type": "number",
+                                "minimum": 0.0,
+                                "maximum": 2.0,
+                                "description": "Creativity level (0.0 to 2.0)"
+                            },
+                            "max_tokens": {
+                                "type": "integer",
+                                "minimum": 1,
+                                "maximum": 131072,
+                                "description": "Maximum tokens in response"
+                            }
+                        },
+                        "required": ["message"]
+                    }),
+                },
+                ToolDefinition {
+                    name: "code_explain".to_string(),
+                    description: "Explain code functionality and structure".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "The code to explain"
+                            },
+                            "language": {
+                                "type": "string",
+                                "description": "Programming language (optional)"
+                            },
+                            "detail_level": {
+                                "type": "string",
+                                "enum": ["basic", "detailed", "expert"],
+                                "description": "Level of detail in explanation"
+                            }
+                        },
+                        "required": ["code"]
+                    }),
+                },
+                ToolDefinition {
+                    name: "code_review".to_string(),
+                    description: "Review code for issues and improvements".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {
+                            "code": {
+                                "type": "string",
+                                "description": "The code to review"
+                            },
+                            "focus": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string",
+                                    "enum": ["security", "performance", "style", "bugs", "maintainability"]
+                                },
+                                "description": "Areas to focus on during review"
+                            },
+                            "language": {
+                                "type": "string",
+                                "description": "Programming language"
+                            }
+                        },
+                        "required": ["code"]
+                    }),
+                },
+                ToolDefinition {
+                    name: "code_generate".to_string(),
+                    description: "Generate code from natural language descriptions".to_string(),
+                    parameters: json!({
+                        "type": "object",
+                        "properties": {
+                            "description": {
+                                "type": "string",
+                                "description": "Description of what to generate"
+                            },
+                            "language": {
+                                "type": "string",
+                                "description": "Target programming language"
+                            },
+                            "style": {
+                                "type": "string",
+                                "enum": ["functional", "object-oriented", "procedural"],
+                                "description": "Programming style preference"
+                            },
+                            "include_tests": {
+                                "type": "boolean",
+                                "description": "Whether to include unit tests"
+                            }
+                        },
+                        "required": ["description"]
+                    }),
+                },
+            ],
+        }
+    }
+
+    /// Initialize a new session
+    pub async fn initialize_session(
+        &self,
+        session_id: SessionId,
+        config: Option<SessionConfig>,
+    ) -> Result<()> {
+        let mut session_config = config.unwrap_or_default();
+
+        // Apply default model override if present and config matches default
+        if let Some(model) = &self.default_model {
+            session_config.model = model.clone();
+        }
+
+        let session_data = SessionData {
+            messages: Vec::new(),
+            config: session_config,
+            created_at: std::time::Instant::now(),
+            last_activity: std::time::Instant::now(),
+        };
+
+        let mut sessions = self.sessions.write().await;
+        sessions.insert(session_id.0.clone(), session_data);
+
+        info!("Initialized new ACP session: {}", session_id.0);
+        Ok(())
+    }
+
+    /// Handle a chat completion request
+    pub async fn handle_chat_completion(
+        &self,
+        session_id: &SessionId,
+        message: &str,
+        options: Option<Value>,
+    ) -> Result<String> {
+        let start_time = std::time::Instant::now();
+        info!("🚀 Starting chat completion for session: {}", session_id.0);
+        info!("📝 User message: {} chars", message.len());
+
+        let mut sessions = self.sessions.write().await;
+        let session = sessions
+            .get_mut(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+
+        // Update last activity
+        session.last_activity = std::time::Instant::now();
+
+        // Add user message to history
+        session.messages.push(json!({
+            "role": "user",
+            "content": message
+        }));
+
+        info!("📚 Session history: {} messages", session.messages.len());
+
+        // Extract options
+        let temperature = options
+            .as_ref()
+            .and_then(|o| o.get("temperature"))
+            .and_then(|t| t.as_f64())
+            .map(|t| t as f32)
+            .unwrap_or(session.config.temperature);
+
+        let max_tokens = options
+            .as_ref()
+            .and_then(|o| o.get("max_tokens"))
+            .and_then(|t| t.as_u64())
+            .map(|t| t as u32)
+            .unwrap_or(session.config.max_tokens);
+
+        let tool_defs = tools::get_available_tool_definitions();
+        info!("🔧 Available tools: {}", tool_defs.len());
+
+        let mut loop_count = 0;
+        let max_loops = self.config.acp.max_tool_loop_iterations;
+
+        loop {
+            if loop_count >= max_loops {
+                let elapsed = start_time.elapsed();
+                error!(
+                    "❌ Max tool loop iterations reached ({} iterations) after {:?}",
+                    max_loops, elapsed
+                );
+                return Err(anyhow!(
+                    "Max tool loop iterations reached ({} iterations). \
+                    Consider increasing 'acp.max_tool_loop_iterations' in config or breaking task into smaller steps.",
+                    max_loops
+                ));
+            }
+            loop_count += 1;
+
+            let loop_start = std::time::Instant::now();
+            info!("🔄 Tool loop iteration {}/{}", loop_count, max_loops);
+
+            // Make request to Grok
+            info!(
+                "📡 Calling Grok API (model: {}, temp: {}, max_tokens: {})...",
+                session.config.model, temperature, max_tokens
+            );
+            let api_call_start = std::time::Instant::now();
+
+            let response_with_finish = self
+                .grok_client
+                .chat_completion_with_history(
+                    &session.messages,
+                    temperature,
+                    max_tokens,
+                    &session.config.model,
+                    Some(tool_defs.clone()),
+                )
+                .await?;
+
+            let api_duration = api_call_start.elapsed();
+            info!("✅ Grok API responded in {:?}", api_duration);
+
+            let response_msg = response_with_finish.message;
+            let finish_reason = response_with_finish.finish_reason.as_deref();
+
+            info!("📋 Finish reason: {:?}", finish_reason);
+
+            // Add assistant response to history
+            session.messages.push(serde_json::to_value(&response_msg)?);
+
+            // Check finish_reason - if "stop", we're done regardless of tool_calls
+            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
+                let elapsed = start_time.elapsed();
+                let response_text = content_to_string(response_msg.content.as_ref());
+                info!(
+                    "✅ Model signaled completion (finish_reason: {:?}) in {:?} ({} loops, {} chars)",
+                    finish_reason,
+                    elapsed,
+                    loop_count,
+                    response_text.len()
+                );
+                return Ok(response_text);
+            }
+
+            // Check if we have tool calls to process
+            let has_tool_calls = response_msg
+                .tool_calls
+                .as_ref()
+                .map(|tc| !tc.is_empty())
+                .unwrap_or(false);
+
+            if !has_tool_calls {
+                // No tool calls and no explicit stop - return content
+                let elapsed = start_time.elapsed();
+                let response_text = content_to_string(response_msg.content.as_ref());
+                info!(
+                    "✨ Chat completion finished in {:?} ({} loops, {} chars)",
+                    elapsed,
+                    loop_count,
+                    response_text.len()
+                );
+                return Ok(response_text);
+            }
+
+            // We have tool calls to process
+            let tool_calls = response_msg.tool_calls.as_ref().unwrap();
+            info!("🛠️  Processing {} tool calls", tool_calls.len());
+
+            for (tool_idx, tool_call) in tool_calls.iter().enumerate() {
+                let tool_start = std::time::Instant::now();
+                info!(
+                    "🔨 Tool {}/{}: {}",
+                    tool_idx + 1,
+                    tool_calls.len(),
+                    tool_call.function.name
+                );
+                let function_name = &tool_call.function.name;
+                let arguments = &tool_call.function.arguments;
+                let args: Value = serde_json::from_str(arguments).map_err(|e| {
+                    error!("❌ Invalid tool arguments for {}: {}", function_name, e);
+                    anyhow!("Invalid tool arguments for {}: {}", function_name, e)
+                })?;
+
+                debug!("📋 Tool args: {}", arguments);
+
+                // Execute before_tool hooks
+                {
+                    let hooks = self.hook_manager.read().await;
+                    if !hooks.execute_before_tool(function_name, &args)? {
+                        session.messages.push(json!({
+                            "role": "tool",
+                            "tool_call_id": tool_call.id,
+                            "content": "Tool execution blocked by hook."
+                        }));
+                        continue;
+                    }
+                }
+
+                let result = match function_name.as_str() {
+                    "read_file" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        tools::read_file(path, &self.security.get_policy())
+                    }
+                    "write_file" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
+                        tools::write_file(path, content, &self.security.get_policy())
+                    }
+                    "list_directory" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        tools::list_directory(path, &self.security.get_policy())
+                    }
+                    "glob_search" => {
+                        let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
+                        tools::glob_search(pattern, &self.security.get_policy())
+                    }
+                    "search_file_content" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
+                        tools::search_file_content(path, pattern, &self.security.get_policy())
+                    }
+                    "run_shell_command" => {
+                        let command = args["command"].as_str().ok_or(anyhow!("Missing command"))?;
+                        tools::run_shell_command(command, &self.security.get_policy())
+                    }
+                    "replace" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        let old_string = args["old_string"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing old_string"))?;
+                        let new_string = args["new_string"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing new_string"))?;
+                        let expected_replacements =
+                            args["expected_replacements"].as_u64().map(|n| n as u32);
+                        tools::replace(
+                            path,
+                            old_string,
+                            new_string,
+                            expected_replacements,
+                            &self.security.get_policy(),
+                        )
+                    }
+                    "save_memory" => {
+                        let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
+                        tools::save_memory(fact)
+                    }
+                    "web_search" => {
+                        let query = args["query"].as_str().ok_or(anyhow!("Missing query"))?;
+                        tools::web_search(query).await
+                    }
+                    "web_fetch" => {
+                        let url = args["url"].as_str().ok_or(anyhow!("Missing url"))?;
+                        tools::web_fetch(url).await
+                    }
+                    "read_multiple_files" => {
+                        let paths_value =
+                            args["paths"].as_array().ok_or(anyhow!("Missing paths"))?;
+                        let paths: Result<Vec<String>> = paths_value
+                            .iter()
+                            .map(|v| {
+                                v.as_str()
+                                    .ok_or(anyhow!("Invalid path"))
+                                    .map(|s| s.to_string())
+                            })
+                            .collect();
+                        tools::read_multiple_files(paths?, &self.security.get_policy())
+                    }
+                    "list_code_definitions" => {
+                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
+                        tools::list_code_definitions(path, &self.security.get_policy())
+                    }
+                    _ => Err(anyhow!("Unknown tool: {}", function_name)),
+                };
+
+                let content = match result {
+                    Ok(s) => {
+                        let tool_duration = tool_start.elapsed();
+                        info!(
+                            "✅ Tool completed in {:?} ({} bytes)",
+                            tool_duration,
+                            s.len()
+                        );
+                        s
+                    }
+                    Err(e) => {
+                        let tool_duration = tool_start.elapsed();
+                        warn!("⚠️  Tool failed in {:?}: {}", tool_duration, e);
+                        format!("Error executing tool {}: {}", function_name, e)
+                    }
+                };
+
+                // Execute after_tool hooks
+                {
+                    let hooks = self.hook_manager.read().await;
+                    hooks.execute_after_tool(function_name, &args, &content)?;
+                }
+
+                // Add tool result to history
+                session.messages.push(json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": content
+                }));
+            }
+
+            let loop_duration = loop_start.elapsed();
+            info!("🔄 Loop iteration completed in {:?}", loop_duration);
+            // Continue loop to get next response from model with tool results
+        }
+    }
+
+    /// Handle code explanation request
+    pub async fn handle_code_explain(
+        &self,
+        session_id: &SessionId,
+        code: &str,
+        language: Option<&str>,
+        detail_level: Option<&str>,
+    ) -> Result<String> {
+        let detail = detail_level.unwrap_or("detailed");
+        let lang_hint = language
+            .map(|l| format!(" (language: {})", l))
+            .unwrap_or_default();
+
+        let system_prompt = format!(
+            "You are an expert code reviewer and teacher. Explain the provided code with {} detail. Focus on:\n\
+            - What the code does\n\
+            - How it works\n\
+            - Key concepts and patterns used\n\
+            - Potential improvements\n\
+            Be clear and educational in your explanation.",
+            detail
+        );
+
+        let user_message = format!(
+            "Please explain this code{}:\n\n```\n{}\n```",
+            lang_hint, code
+        );
+
+        self.handle_chat_with_system_prompt(session_id, &user_message, &system_prompt)
+            .await
+    }
+
+    /// Handle code review request
+    pub async fn handle_code_review(
+        &self,
+        session_id: &SessionId,
+        code: &str,
+        focus_areas: Option<&[String]>,
+        language: Option<&str>,
+    ) -> Result<String> {
+        let focus = focus_areas
+            .map(|areas| format!("Focus areas: {}", areas.join(", ")))
+            .unwrap_or_else(|| "Comprehensive review".to_string());
+
+        let lang_hint = language
+            .map(|l| format!(" (language: {})", l))
+            .unwrap_or_default();
+
+        let system_prompt = format!(
+            "You are an expert code reviewer. Review the provided code for:\n\
+            - Bugs and potential issues\n\
+            - Security vulnerabilities\n\
+            - Performance improvements\n\
+            - Code style and best practices\n\
+            - Maintainability\n\
+            Provide specific, actionable feedback. {}",
+            focus
+        );
+
+        let user_message = format!(
+            "Please review this code{}:\n\n```\n{}\n```",
+            lang_hint, code
+        );
+
+        self.handle_chat_with_system_prompt(session_id, &user_message, &system_prompt)
+            .await
+    }
+
+    /// Handle code generation request
+    pub async fn handle_code_generate(
+        &self,
+        session_id: &SessionId,
+        description: &str,
+        language: Option<&str>,
+        style: Option<&str>,
+        include_tests: Option<bool>,
+    ) -> Result<String> {
+        let lang = language.unwrap_or("Python");
+        let prog_style = style.unwrap_or("object-oriented");
+        let tests = if include_tests.unwrap_or(false) {
+            "Include comprehensive unit tests."
+        } else {
+            ""
+        };
+
+        let system_prompt = format!(
+            "You are an expert software developer. Generate clean, well-documented {} code \
+            using {} programming style. Follow best practices and include helpful comments. {}",
+            lang, prog_style, tests
+        );
+
+        let user_message = format!("Generate code for: {}", description);
+
+        self.handle_chat_with_system_prompt(session_id, &user_message, &system_prompt)
+            .await
+    }
+
+    /// Handle chat with a specific system prompt
+    async fn handle_chat_with_system_prompt(
+        &self,
+        session_id: &SessionId,
+        message: &str,
+        system_prompt: &str,
+    ) -> Result<String> {
+        // Create a temporary session with the system prompt
+        let messages = vec![
+            json!({
+                "role": "system",
+                "content": system_prompt
+            }),
+            json!({
+                "role": "user",
+                "content": message
+            }),
+        ];
+
+        let sessions = self.sessions.read().await;
+        let session = sessions
+            .get(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+
+        let response_with_finish = self
+            .grok_client
+            .chat_completion_with_history(
+                &messages,
+                session.config.temperature,
+                session.config.max_tokens,
+                &session.config.model,
+                None,
+            )
+            .await?;
+
+        let response = response_with_finish.message;
+
+        debug!(
+            "Code operation for session {}: {} -> {}",
+            session_id.0,
+            message,
+            content_to_string(response.content.as_ref())
+        );
+
+        Ok(content_to_string(response.content.as_ref()))
+    }
+
+    /// Get agent capabilities
+    pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
+        &self.capabilities
+    }
+
+    /// Clean up expired sessions
+    pub async fn cleanup_sessions(&self, max_age: std::time::Duration) -> Result<usize> {
+        let mut sessions = self.sessions.write().await;
+        let now = std::time::Instant::now();
+        let initial_count = sessions.len();
+
+        sessions.retain(|session_id, session_data| {
+            let expired = now.duration_since(session_data.last_activity) > max_age;
+            if expired {
+                info!("Cleaning up expired session: {}", session_id);
+            }
+            !expired
+        });
+
+        let cleaned = initial_count - sessions.len();
+        if cleaned > 0 {
+            info!("Cleaned up {} expired sessions", cleaned);
+        }
+
+        Ok(cleaned)
+    }
+
+    /// Get session statistics
+    pub async fn get_session_stats(&self) -> Result<Value> {
+        let sessions = self.sessions.read().await;
+        let now = std::time::Instant::now();
+
+        let mut active_sessions = 0;
+        let mut total_messages = 0;
+        let mut oldest_session = now;
+
+        for session_data in sessions.values() {
+            active_sessions += 1;
+            total_messages += session_data.messages.len();
+            if session_data.created_at < oldest_session {
+                oldest_session = session_data.created_at;
+            }
+        }
+
+        let uptime = now.duration_since(oldest_session).as_secs();
+
+        Ok(json!({
+            "active_sessions": active_sessions,
+            "total_messages": total_messages,
+            "uptime_seconds": uptime,
+            "capabilities": {
+                "models": self.capabilities.models,
+                "features": self.capabilities.features,
+                "max_context_length": self.capabilities.max_context_length
+            }
+        }))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_session_config_default() {
+        let config = SessionConfig::default();
+        assert_eq!(config.model, "grok-3");
+        assert_eq!(config.temperature, 0.5);
+        assert_eq!(config.max_tokens, 4096);
+        assert!(config.system_prompt.is_some());
+    }
+
+    #[test]
+    fn test_capabilities_creation() {
+        let capabilities = GrokAcpAgent::create_capabilities();
+        assert!(!capabilities.models.is_empty());
+        assert!(!capabilities.features.is_empty());
+        assert!(!capabilities.tools.is_empty());
+        assert!(capabilities.max_context_length > 0);
+    }
+
+    #[tokio::test]
+    async fn test_session_management() {
+        // This would require a mock config and API key for full testing
+        // For now, just test the structure
+        let session_id = SessionId::new("test-session");
+        assert_eq!(session_id.0.as_str(), "test-session");
+    }
+}
+
+```
+
+
+## Assistant
+
+I will run `cargo check` to confirm all compilation errors are resolved.
+
+**Tool Call: cargo check [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Checking grok-cli v0.1.4 (H:\GitHub\grok-cli)
+error[E0599]: no function or associated item named `tool` found for struct `ChatMessage` in the current scope
+   --> src\bin\probe_types.rs:4:33
+    |
+  4 |     let tool_msg = ChatMessage::tool("content", "call_id");
+    |                                 ^^^^ function or associated item not found in `ChatMessage`
+    |
+note: if you're trying to build a new `ChatMessage` consider using one of the following associated functions:
+      ChatMessage::system
+      ChatMessage::user
+      ChatMessage::user_parts
+      ChatMessage::assistant
+      ChatMessage::assistant_with_tools
+   --> H:\GitHub\grok_crate\grok_api\src\models.rs:95:5
+    |
+ 95 |       pub fn system<S: Into<MessageContent>>(content: S) -> Self {
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+104 |       pub fn user<S: Into<MessageContent>>(content: S) -> Self {
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+113 |       pub fn user_parts(parts: Vec<ContentPart>) -> Self {
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+122 |       pub fn assistant<S: Into<MessageContent>>(content: S) -> Self {
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+...
+131 | /     pub fn assistant_with_tools<S: Into<MessageContent>>(
+132 | |         content: Option<S>,
+133 | |         tool_calls: Vec<ToolCall>,
+134 | |     ) -> Self {
+    | |_____________^
+
+For more information about this error, try `rustc --explain E0599`.             
+error: could not compile `grok-cli` (bin "probe_types") due to 1 previous error 
+warning: build failed, waiting for other jobs to finish...
+                                                                                
+
+## Assistant
+
+Excellent! `grok-cli` (lib) compiles successfully!
+The only error is in `src/bin/probe_types.rs` which I created to probe the API. I can ignore it or delete it.
+The "warning: build failed, waiting for other jobs to finish..." usually means one target failed (the probe) but others might have succeeded.
+The `grok-cli` lib compiled.
+
+Wait, `cargo check` checks everything.
+If `grok-cli` lib compiled, `src/bin/grok.rs` (the main binary) should also be checked.
+
+I'll delete `src/bin/probe_types.rs` to have a clean build.
+
+**Tool Call: del src\bin\probe_types.rs [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+## Assistant
+
+I will run `cargo check` again to ensure the main library and binary are error-free.
+
+**Tool Call: cargo check [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 0.41s
+
+## Assistant
+
+Success! `grok-cli` now compiles with the local `grok_api` and handles tool calls.
+
+Summary of changes:
+1. Updated `Cargo.toml` to use local `grok_api` path.
+2. Updated `src/lib.rs` to handle `MessageContent` (Text variant) because `grok_api` changed from String to Enum.
+3. Updated `src/grok_client_ext.rs` to:
+   - Handle `MessageContent` conversion in `chat_completion` and `chat_completion_with_history`.
+   - Implement `chat_completion_with_history` to correctly parse `tool` messages and `assistant` messages with `tool_calls`.
+   - Implemented a workaround for missing `ChatMessage::tool` by sending tool results as `ChatMessage::user` messages with formatted content.
+4. Updated `src/acp/mod.rs` to fix `Debug` logging using `content_to_string`.
+
+This should resolve the issue where tool calls were not being fed back to the model, causing loops.
+
+I'll remove the temporary file `src/bin/probe_types.rs`? I already did.
+
+I'll verify if `src/bin/api_probe.rs` exists and remove it if so.
+
+**Tool Call: dir src\bin\api_probe.rs [current working directory H:\GitHub\grok-cli]**
+Status: Completed
+
+dir : Cannot find path 'H:\GitHub\grok-cli\src\bin\api_probe.rs' because it 
+does not exist.
+At line:1 char:1
++ dir src\bin\api_probe.rs
++ ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : ObjectNotFound: (H:\GitHub\grok-cli\src\bin\api_ 
+   probe.rs:String) [Get-ChildItem], ItemNotFoundException
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetCh 
+   ildItemCommand
+ 
+

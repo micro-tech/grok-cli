@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Tool Message Handling**: Upgraded to use native `ChatMessage::tool()` method from `grok_api` v0.1.2
+  - Replaced workaround that converted tool results to user messages
+  - Tool messages now properly use `role: "tool"` with `tool_call_id` field
+  - Improves compatibility with Grok API's expected message format
+  - Eliminates potential confusion from tool results appearing as user messages
+  - Requires `grok_api` v0.1.2 or higher with native tool support
+
 ### Added
 
 - **Tool Loop Debugging Tools**: Added comprehensive diagnostic and troubleshooting tools for ACP tool loops

@@ -4,7 +4,9 @@
 //! to maintain API compatibility with the previous local implementation.
 
 use anyhow::Result;
-use grok_api::{ChatMessage, ChatResponse as GrokApiChatResponse, Choice, Message};
+use grok_api::{
+    ChatMessage, ChatResponse as GrokApiChatResponse, Choice, Message, MessageContent, ToolCall,
+};
 use serde_json::Value;
 
 use crate::config::RateLimitConfig;
@@ -74,7 +76,8 @@ impl GrokClient {
             .send()
             .await?;
 
-        Ok(response.content().unwrap_or("").to_string())
+        // Extract text content from response
+        Ok(response.content().unwrap_or_default().to_string())
     }
 
     /// Send chat completion with conversation history and optional tools
@@ -92,14 +95,30 @@ impl GrokClient {
             .iter()
             .filter_map(|msg| {
                 let role = msg.get("role")?.as_str()?;
-                let content = msg.get("content")?.as_str()?;
+                // content might be null for tool calls
+                let content = msg.get("content").and_then(|c| c.as_str());
 
-                Some(match role {
-                    "system" => ChatMessage::system(content),
-                    "user" => ChatMessage::user(content),
-                    "assistant" => ChatMessage::assistant(content),
-                    _ => return None,
-                })
+                match role {
+                    "system" => Some(ChatMessage::system(content.unwrap_or(""))),
+                    "user" => Some(ChatMessage::user(content.unwrap_or(""))),
+                    "assistant" => {
+                        if let Some(tool_calls_val) = msg.get("tool_calls") {
+                            // potential tool calls
+                            // deserialize tool calls
+                            if let Ok(calls) =
+                                serde_json::from_value::<Vec<ToolCall>>(tool_calls_val.clone())
+                            {
+                                return Some(ChatMessage::assistant_with_tools(content, calls));
+                            }
+                        }
+                        Some(ChatMessage::assistant(content.unwrap_or("")))
+                    }
+                    "tool" => {
+                        let tool_call_id = msg.get("tool_call_id")?.as_str()?;
+                        Some(ChatMessage::tool(content.unwrap_or(""), tool_call_id))
+                    }
+                    _ => None,
+                }
             })
             .collect();
 
@@ -113,8 +132,6 @@ impl GrokClient {
         // Add tools if provided
         if let Some(tool_defs) = tools {
             // Convert tools to the format expected by grok_api
-            // Note: This is a simplified conversion - you may need to adjust
-            // based on the exact tool format expected by grok_api
             request = request.tools(tool_defs);
         }
 
@@ -162,7 +179,9 @@ fn convert_response_to_message_with_finish_reason(
         Ok(MessageWithFinishReason {
             message: Message {
                 role: "assistant".to_string(),
-                content: response.content().map(|s| s.to_string()),
+                content: response
+                    .content()
+                    .map(|s| MessageContent::Text(s.to_string())),
                 tool_calls: None,
             },
             finish_reason: Some("stop".to_string()),
