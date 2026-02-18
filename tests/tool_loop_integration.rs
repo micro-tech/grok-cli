@@ -73,7 +73,7 @@ async fn test_tool_message_format() {
     let response = result.unwrap();
 
     // The response should not be another tool call for the same operation
-    if let Some(tool_calls) = response.message.tool_calls() {
+    if let Some(tool_calls) = &response.message.tool_calls {
         // If there are tool calls, they should be different from the previous one
         assert!(
             tool_calls.iter().all(|call| call.id != "call_test123"),
@@ -133,7 +133,7 @@ async fn test_tool_loop_prevention() {
         messages.push(json!({
             "role": "assistant",
             "content": result.message.content.as_ref().map(|c| c.to_string()),
-            "tool_calls": result.message.tool_calls()
+            "tool_calls": result.message.tool_calls
         }));
 
         // Check finish reason
@@ -143,7 +143,7 @@ async fn test_tool_loop_prevention() {
                 break;
             } else if finish_reason == "tool_calls" {
                 // Execute tool and add result
-                if let Some(tool_calls) = result.message.tool_calls() {
+                if let Some(tool_calls) = &result.message.tool_calls {
                     for tool_call in tool_calls {
                         // Simulate tool execution
                         let tool_result = format!("File content from iteration {}", iterations);
