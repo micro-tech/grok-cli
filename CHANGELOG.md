@@ -52,6 +52,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Provides recommendations for setting `max_tool_loop_iterations` based on use case
   - Includes instructions for safely updating system config without breaking existing setup
 
+## [0.1.41] - 2025-02-15
+
+### Changed
+
+- **Version Update**: Updated project version from 0.1.4 to 0.1.41 to reflect ongoing development and improvements.
+
+### Fixed
+
+- **Tool Calling**: Addressed issues with tool calling functionality to ensure proper execution and response handling.
+  - Fixed errors in tool message processing to align with the expected format by the Grok API.
+  - Improved reliability of tool execution in multi-turn conversations.
+
 ## [0.1.4] - 2025-02-10
 
 ### Added
