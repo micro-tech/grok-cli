@@ -8,6 +8,51 @@ protocol_version = "2024-11-05"
 dev_mode = false
 max_tool_loop_iterations = 25
 
+# Context Configuration
+[context]
+# Project-specific context files for AI
+# These are always loaded (use sparingly - high token cost!)
+files = [
+    "context.md",          # Project overview and guidelines
+    # ".zed/tasks.json",   # Uncomment when actively working on tasks
+]
+
+# Model Configuration
+[model]
+# Default model settings for this project
+name = "grok-3"
+temperature = 0.7
+max_tokens = 8000
+
+# Tools Configuration
+[tools]
+# Enable/disable specific tools for this project
+read_file = true
+write_file = true
+edit_file = true
+list_directory = true
+search_files = true
+run_shell_command = true
+web_search = true
+web_fetch = true
+
+# Session Configuration
+[session]
+auto_save = true
+save_interval_seconds = 300
+
+# Extensions Configuration
+[experimental.extensions]
+enabled = true
+extension_dir = "~/.grok/extensions"
+enabled_extensions = []  # Empty = all enabled
+allow_config_extensions = true
+
+# Logging Configuration
+[logging]
+level = "info"
+chat_logging = true
+
 # MCP Servers Configuration
 [mcp.servers.github]
 type = "stdio"

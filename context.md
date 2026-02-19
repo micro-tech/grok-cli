@@ -1,348 +1,269 @@
+# Grok CLI - Project Context
 
-# This System is using a Starlink sat wich drop from time to time so build all
-network calls with error checking and test for drop network with time out and retrys.
+## System Information
 
-# Zed Editor Tooling - AI Assistant Rules
+This system uses Starlink satellite internet which may drop from time to time. All network calls must include:
+- Comprehensive error checking
+- Network drop detection
+- Configurable timeouts
+- Automatic retry logic with exponential backoff
 
 ## Project Overview
-This repository contains tooling setup, documentation, and configurations for the Zed editor. The project specifically focuses on providing utilities, customizations, and reference materials to enhance the Zed editing experience on Windows 11 and with Rust development.
+
+Grok CLI is a powerful command-line interface for interacting with Grok AI via X API. The project focuses on providing an enhanced development experience with features like session persistence, skills system, extension hooks, and comprehensive tooling integration.
 
 ## Key Technologies
-- Zed Editor
-- Rust programming language
-- Windows 11
-- Tree-sitter grammars
-- Language Server Protocol (LSP)
+
+- **Language**: Rust (2021 edition)
+- **Primary Editor**: Zed Editor
+- **Platform**: Windows 11 (with cross-platform support)
+- **Build System**: Cargo
+- **APIs**: X API (Grok AI), Agent Client Protocol (ACP)
+- **Key Crates**: tokio, serde, clap, anyhow, thiserror
 
 ## Project Structure
-- Follow the main lange normal/stander pratices.
-- `.zed/` - Configuration files for Zed and task list for the ai
-- `Doc` - Documentation for Zed features and capabilities
-- 'env' - for ALL api codes and settings "Should not be include in the git repo.....
 
+```
+grok-cli/
+├── src/                # Source code
+├── .zed/               # Zed editor configuration and tasks
+├── .grok/              # Grok CLI project-specific config
+├── Doc/                # Documentation
+├── examples/           # Example code, skills, and extensions
+├── tests/              # Integration tests
+└── target/             # Build artifacts (ignored)
+```
+
+### Important Directories
+
+- **`.zed/`** - Zed editor settings, tasks.json for task tracking, and AI rules
+- **`Doc/`** - Comprehensive documentation for features and capabilities
+- **`.grok/`** - Project-specific Grok CLI configuration
+- **`examples/skills/`** - Example skills (rust-expert, cli-design, task-list)
+- **`examples/extensions/`** - Hook extensions (logging, file-backup, project-setup)
 
 ## Development Guidelines
 
-### Documentation
-- Maintain clear, comprehensive documentation in Markdown format
-- Use proper heading hierarchies (H1, H2, H3) for organization
-- Include code examples where appropriate using Zed's code block format
-- Be consistent with terminology throughout documentation
+### Rust Best Practices
 
-### Configuration
-- Keep configurations well-commented and organized
-- Follow idiomatic practices for each configuration language (JSON, TOML, etc.)
-- Document any non-obvious configuration settings
-- KEEP all config and API in .env files
-
-### Rust Guidelines
-- Follow Rust 2025 best practices
+- Follow Rust 2021 edition standards
 - Prioritize safety, concurrency, and performance
 - Use expressive variable names that convey intent
-- Follow Rust naming conventions for variables, functions, types
-- Implement proper error handling with Result and Option types
-- Write doc comments for public API functions
+- Follow Rust naming conventions:
+  - `snake_case` for variables, functions, and modules
+  - `CamelCase` for types and traits
+  - `SCREAMING_SNAKE_CASE` for constants
+- Implement proper error handling with `Result<T, E>` and `Option<T>`
+- Use the `?` operator for error propagation
+- Write doc comments (`///`) for public API functions
+- Always run `cargo clippy` to catch common mistakes
+
+### Error Handling
+
+- Use `anyhow` for application-level error handling
+- Use `thiserror` for library-level custom error types
+- Provide meaningful error messages with context
+- Handle network errors with retry logic (Starlink consideration)
+- Never use unwrap/expect in production code without justification
+
+### Testing
+
+- Write unit tests using `#[cfg(test)]` modules
+- Write integration tests in the `tests/` directory
+- Test error cases, not just happy paths
+- Run `cargo test` before committing
+- Include doc tests in public API documentation
+
+### Documentation
+
+- Maintain clear, comprehensive documentation in Markdown format
+- Use proper heading hierarchies (H1, H2, H3) for organization
+- Include code examples where appropriate
+- Be consistent with terminology throughout documentation
+- Update CHANGELOG.md for all significant changes
+- Store documentation notes in `.zed/` directory
+
+### Configuration Management
+
+- Keep configurations well-commented and organized
+- Follow idiomatic practices for each format (JSON, TOML, etc.)
+- Store API keys and secrets in `.env` files (git-ignored)
+- Use `.grok/config.toml` for project-specific Grok CLI settings
+- Document any non-obvious configuration settings
 
 ### Windows Integration
-- Consider Windows-specific paths, separators, and environment variables
+
+- Consider Windows-specific paths and separators (use `std::path`)
+- Handle CRLF line endings appropriately
+- Test on Windows 11 when possible
+- Use Git Bash or WSL for shell scripts on Windows
 - Follow Windows 11 UI/UX guidelines when applicable
-- Address compatibility considerations for Windows systems
--  Configure your Git settings for Windows, including line endings (CRLF).
+
+### Network Resilience (Starlink)
+
+- Implement exponential backoff for retries
+- Use configurable timeouts (default: 60 seconds)
+- Detect network drops and handle gracefully
+- Log retry attempts for debugging
+- See `src/utils/network.rs` for network utilities
 
 ## AI Assistant Behavior
-- Prioritize giving accurate, implementation-ready solutions
-- Acknowledge Windows and Rust-specific considerations in all suggestions
-- Provide explanations that focus on the "why" behind recommendations
-- When suggesting code changes, consider the broader implications on the codebase
-- Include references to relevant Zed documentation when appropriate
-- For documentation edits, maintain the existing style and structure
-- Ensure configurations properly address Windows-specific needs
--  Always run Clippy to catch common mistakes and improve code quality.
 
-## Maintenance
-- Any modifications should be documented in CHANGELOG.md
-- Include rationale for changes
-- Note source of suggestions (AI or human)
-- Update the project_layout file when changing directory structure
+### Code Assistance
 
-## GitNore that must be not be uploaded to Git
-# Generated by Cargo
+- Prioritize accurate, implementation-ready solutions
+- Acknowledge Windows and Rust-specific considerations
+- Provide explanations focusing on the "why" behind recommendations
+- Consider broader implications when suggesting code changes
+- Include references to relevant documentation when appropriate
+- Run mental `cargo check` and `cargo clippy` before suggesting code
+
+### File Operations
+
+- Use appropriate tools (read_file, write_file, edit_file)
+- Preserve existing code style and formatting
+- Update tests when changing functionality
+- Update documentation when changing APIs
+- Check for breaking changes
+
+### Project Awareness
+
+- Understand the skills system (activate with `/activate skill-name`)
+- Understand the hooks/extensions system
+- Respect the task list in `.zed/tasks.json`
+- Follow dependency chains when working on tasks
+- Update CHANGELOG.md for completed work
+
+## Security Considerations
+
+- Never commit API keys, passwords, or secrets to git
+- Use `.env` files for sensitive configuration (git-ignored)
+- Validate all user input
+- Avoid command injection, SQL injection, path traversal
+- Use `.grok/.env` for project-specific secrets
+- Be cautious with `unsafe` code blocks
+- Run security audits with `cargo audit`
+
+## Key Features
+
+### Skills System
+
+- Modular instruction sets for AI expertise
+- Located in `~/.grok/skills/` and `examples/skills/`
+- Activate on-demand with `/activate skill-name`
+- Deactivate with `/deactivate skill-name`
+- Example skills: rust-expert, cli-design, task-list
+
+### Extensions/Hooks System
+
+- Intercept tool calls before/after execution
+- Execute custom scripts in any language
+- Located in `~/.grok/extensions/` and `examples/extensions/`
+- Configure in config.toml: `[experimental.extensions]`
+- Example extensions: logging-hook, file-backup-hook, project-setup-hook
+
+### Session Persistence
+
+- Save conversations with `/save session-name`
+- Load conversations with `/load session-name`
+- List saved sessions with `/list`
+- Sessions saved to `~/.grok/sessions/`
+
+### Configuration Hierarchy
+
+1. System config: `~/.config/grok-cli/config.toml` (or `%APPDATA%\grok-cli\config.toml`)
+2. Project config: `.grok/config.toml` (this file)
+3. Environment variables: `.grok/.env`
+
+## Git Workflow
+
+### What NOT to Commit
+
+```gitignore
+# Build artifacts
 /target/
-.env
-.zed/
-.grok/
+Cargo.lock  # Only for libraries; commit for binaries
 
-# Remove Cargo.lock from gitignore if creating an executable, leave it for libraries
-/cargo-toml-vs-cargo-lock.html
-Cargo.lock
-
-# These are backup files generated by rustfmt
-**/*.rs.bk
-
-# MSVC Windows builds of rustc generate these, which store debugging information
-*.pdb
-
-# Environment variables
+# Environment and secrets
 .env
 .env.local
 .env.*.local
+.grok/.env
 
-# Zed editor directories
+# Project-specific directories
 .zed/
+.grok/
 
-# IDE and editor files
+# Editor files
 .vscode/
 .idea/
 *.swp
 *.swo
 *~
 
-# OS generated files
+# OS files
 .DS_Store
-.DS_Store?
-._*
-.Spotlight-V100
-.Trashes
-ehthumbs.db
 Thumbs.db
+
+# Rust artifacts
+**/*.rs.bk
+*.pdb
 
 # Logs
 *.log
-
-# Temporary files
 *.tmp
 *.temp
-
-
-# Task Builder Guide
-
-## Overview
-This document provides guidelines for creating and managing tasks in the task management system. Tasks are stored in the `task_list.json` file located in the `.zed` folder.
-
-## Creating Tasks
-
-### Task Structure
-Each task in the `task_list.json` file should have the following structure:
-
-```json
-{
-  "id": 1,
-  "title": "Task Title",
-  "description": "Brief description of the task",
-  "status": "pending",
-  "dependencies": [2, 3],
-  "priority": "high",
-  "details": "Detailed implementation instructions...",
-  "testStrategy": "How to verify the task is complete",
-  "subtasks": []
-}
 ```
 
-### Task Fields
+### Commit Guidelines
 
-- **id**: Unique identifier for the task (numeric, can include decimal points for subtasks)
-- **title**: Brief, descriptive title of the task
-- **description**: Concise description of what the task involves
-- **status**: Current state of the task (options: "pending", "in_progress", "done", "deferred")
-- **dependencies**: IDs of tasks that must be completed before this task
-- **priority**: Importance level of the task (options: "high", "medium", "low")
-- **details**: In-depth implementation instructions
-- **testStrategy**: Verification approach for determining task completion
-- **subtasks**: List of smaller, more specific tasks that make up the main task
+- Write clear, descriptive commit messages
+- Use present tense ("Add feature" not "Added feature")
+- Keep commits focused on a single change
+- Run tests before committing
+- Update CHANGELOG.md for notable changes
 
-## Breaking Down Tasks
+## Common Commands
 
-When a task is too complex, break it down into subtasks:
+```bash
+# Build the project
+cargo build
 
-1. Create a main task with a unique ID (e.g., 5)
-2. Add subtasks with decimal IDs (e.g., 5.1, 5.2, 5.3)
-3. Define dependencies between subtasks to establish order
+# Run the binary
+cargo run -- [args]
 
-### Subtask Example
+# Run tests
+cargo test
 
-```json
-{
-  "id": 5,
-  "title": "Implement Feature X",
-  "description": "Develop feature X for the system",
-  "status": "pending",
-  "dependencies": [3, 4],
-  "priority": "high",
-  "details": "Implementation details for feature X",
-  "testStrategy": "Test strategy for feature X",
-  "subtasks": [
-    {
-      "id": 5.1,
-      "title": "Design component A",
-      "status": "pending",
-      "dependencies": []
-    },
-    {
-      "id": 5.2,
-      "title": "Implement component A",
-      "status": "pending",
-      "dependencies": [5.1]
-    },
-    {
-      "id": 5.3,
-      "title": "Test component A",
-      "status": "pending",
-      "dependencies": [5.2]
-    }
-  ]
-}
+# Run clippy linter
+cargo clippy
+
+# Format code
+cargo fmt
+
+# Check without building
+cargo check
+
+# Build for release
+cargo build --release
+
+# Run specific binary
+cargo run --bin grok -- interactive
 ```
 
-## Managing Dependencies
+## Resources
 
-- Dependencies are represented by task IDs
-- A task should not be started until all its dependencies are marked as "done"
-- Dependencies can be visualized as: ✅ (completed) or ⏱️ (pending)
-- Circular dependencies should be avoided
+- **Documentation**: See `Doc/` directory for comprehensive guides
+- **Examples**: See `examples/` for skills and extensions
+- **Tasks**: See `.zed/tasks.json` for project task list
+- **Changelog**: See `CHANGELOG.md` for version history
+- **Skills Guide**: `Doc/SKILLS_QUICK_START.md`
+- **Hooks Guide**: `Doc/HOOKS_AND_EXTENSIONS.md`
 
-## Task Prioritization
+## Notes
 
-Assign priorities to help determine the order of task execution:
-
-- **high**: Critical tasks that block progress
-- **medium**: Important tasks that should be done soon
-- **low**: Tasks that can be deferred if necessary
-
-## Adding New Tasks
-
-To add a new task:
-
-1. Determine the next available task ID
-2. Fill in all required fields
-3. Identify dependencies on existing tasks
-4. Set appropriate priority
-5. Add to the `tasks` array in `task_manager.json`
-
-## Best Practices
-
-1. **Be specific**: Tasks should be clear and unambiguous
-2. **Set realistic dependencies**: Only add dependencies that are truly required
-3. **Provide detailed instructions**: The "details" field should contain enough information for someone to implement the task
-4. **Define verification methods**: Always include a test strategy
-5. **Update status consistently**: Keep the status field updated as tasks progress
-6. **Review periodically**: Regularly review tasks for relevancy and completeness
-7. **Document changes**: Update the CHANGELOG.md when modifying tasks
-
-## Task Validation
-
-Periodically validate the task list for:
-- Invalid dependencies
-- Circular dependencies
-- Missing required fields
-- Inconsistent status updates
-
-
-# Task Runner Guide
-
-## Overview
-This document provides guidelines for executing tasks defined in the `task_list.json` file. The task runner helps ensure tasks are completed in the correct order and properly documented.
-
-## Reading Tasks
-
-Before executing tasks:
-
-1. Load the `task_list.json` file from the `.zed` directory
-2. Check for available tasks that are marked as "pending"
-3. Filter for tasks whose dependencies have been satisfied
-4. Sort remaining tasks by priority ("high" → "medium" → "low")
-
-## Task Execution Workflow
-
-### 1. Select the Next Task
-
-Choose the highest priority task with all dependencies satisfied. The task should be in "pending" status.
-
-### 2. Update Task Status
-
-Change the task status to "in_progress" in `task_manager.json` before beginning work.
-
-### 3. Execute the Task
-
-Follow these steps to execute a task:
-
-- Review the task description, details, and test strategy
-- If the task has subtasks:
-  - Execute each subtask in the correct order (respecting dependencies)
-  - Mark each subtask as "done" when completed
-- Implement the task according to the details provided
-- Document any deviations from the original plan
-- Apply the test strategy to verify the task is complete
-
-### 4. Document Results
-
-For each completed task:
-
-- Create a brief summary of implementation details
-- Note any challenges encountered and solutions applied
-- Document any configuration changes made
-- Record performance metrics if applicable
-- List any remaining issues or follow-up items
-
-### 5. Update Task Status
-
-When a task is complete:
-
-- Update its status to "done" in `task_manager.json`
-- Check if this completion unblocks any dependent tasks
-- Update the CHANGELOG.md with a summary of the completed work
-
-## Task Status Tracking
-
-Task status follows this lifecycle:
-
-- **pending**: Task is defined but not started
-- **in_progress**: Task is currently being worked on
-- **done**: Task is completed and verified
-- **deferred**: Task is postponed for a future iteration
-
-## Handling Dependencies
-
-- Never start a task unless all its dependencies are marked as "done"
-- If a dependency task is blocked, consider:
-  - Breaking the dependency if it's not strictly necessary
-  - Helping to complete the blocking task first
-  - Requesting a reprioritization of tasks
-
-## Progress Reporting
-
-Maintain clear visibility on task progress:
-
-- Update task status promptly in `task_manager.json`
-- For long-running tasks, consider adding progress notes
-- Document blockers or issues that prevent task completion
-- Periodically review overall project progress
-
-## Task Modification During Execution
-
-If a task needs to be modified during execution:
-
-1. Document the reason for the change
-2. Update the task details in `task_manager.json`
-3. If necessary, create new subtasks
-4. Ensure dependencies remain valid
-5. Update the test strategy if needed
-
-## Best Practices
-
-1. **Follow the dependency chain**: Always respect task dependencies
-2. **Update status promptly**: Keep `task_manager.json` up to date
-3. **Document thoroughly**: Record all significant implementation details
-4. **Verify completion**: Always apply the test strategy
-5. **Communicate blockers**: Report any issues that prevent task completion
-6. **Respect priorities**: Focus on high-priority tasks first
-7. **Close the loop**: Ensure all updates are reflected in documentation
-
-## Upon Completion of All Tasks
-
-When all tasks are complete:
-
-1. Perform a final review of all deliverables
-2. Update the project documentation to reflect all changes
-3. Create a summary report of completed work and any outstanding items
-4. Update the CHANGELOG.md with a comprehensive list of changes
-5. Consider creating new tasks for future improvements
+- This project is at version 0.1.4 with 75% completion (52/69 tasks done)
+- 17 tasks remaining in `.zed/tasks.json`
+- For task management methodology, activate the `task-list` skill
+- For project scaffolding, use the `project-setup-hook` extension
+- All network code includes Starlink-optimized retry logic
