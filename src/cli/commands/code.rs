@@ -19,6 +19,7 @@ use crate::cli::{
     create_spinner, format_code, print_error, print_info, print_success, print_warning,
 };
 use crate::config::RateLimitConfig;
+use crate::utils::client::initialize_client;
 
 /// Handle code-related commands
 pub async fn handle_code_action(
@@ -29,8 +30,7 @@ pub async fn handle_code_action(
     max_retries: u32,
     rate_limit_config: RateLimitConfig,
 ) -> Result<()> {
-    let client = GrokClient::with_settings(api_key, timeout_secs, max_retries)?
-        .with_rate_limits(rate_limit_config);
+    let client = initialize_client(api_key, timeout_secs, max_retries, rate_limit_config)?;
 
     match action {
         CodeAction::Explain { input, file } => {
@@ -57,6 +57,19 @@ pub async fn handle_code_action(
     }
 }
 
+/// Utility to read code from input (file or direct string)
+fn read_code_input(input: &str, is_file: bool) -> Result<(String, Option<String>)> {
+    if is_file || Path::new(input).exists() {
+        print_info(&format!("Reading code from file: {}", input));
+        let code = fs::read_to_string(input)
+            .map_err(|e| anyhow!("Failed to read file '{}': {}", input, e))?;
+        let language = detect_language_from_path(input);
+        Ok((code, language))
+    } else {
+        Ok((input.to_string(), None))
+    }
+}
+
 /// Handle code explanation requests
 async fn handle_code_explain(
     client: GrokClient,
@@ -64,17 +77,7 @@ async fn handle_code_explain(
     is_file: bool,
     model: &str,
 ) -> Result<()> {
-    let (code, language) = if is_file || Path::new(input).exists() {
-        print_info(&format!("Reading code from file: {}", input));
-        let code = fs::read_to_string(input)
-            .map_err(|e| anyhow!("Failed to read file '{}': {}", input, e))?;
-
-        let language = detect_language_from_path(input);
-        (code, language)
-    } else {
-        (input.to_string(), None)
-    };
-
+    let (code, language) = read_code_input(input, is_file)?;
     if code.trim().is_empty() {
         return Err(anyhow!("No code provided to explain"));
     }
@@ -88,14 +91,7 @@ async fn handle_code_explain(
         .map(|l| format!(" (detected language: {})", l))
         .unwrap_or_default();
 
-    let system_prompt = "You are an expert software engineer and teacher. Your task is to explain code in a clear, educational manner. Focus on:
-- What the code does (high-level purpose)
-- How it works (step-by-step breakdown)
-- Key programming concepts and patterns used
-- Important details about the implementation
-- Potential improvements or alternatives
-
-Make your explanation accessible but thorough. Use examples when helpful.";
+    let system_prompt = "You are an expert software engineer and teacher. Your task is to explain code in a clear, educational manner. Focus on:\n- What the code does (high-level purpose)\n- How it works (step-by-step breakdown)\n- Key programming concepts and patterns used\n- Important details about the implementation\n- Potential improvements or alternatives\n\nMake your explanation accessible but thorough. Use examples when helpful.";
 
     let user_message = format!(
         "Please explain this code{}:\n\n```\n{}\n```",
@@ -138,17 +134,7 @@ async fn handle_code_review(
     focus: Option<&str>,
     model: &str,
 ) -> Result<()> {
-    let (code, language) = if is_file || Path::new(input).exists() {
-        print_info(&format!("Reading code from file: {}", input));
-        let code = fs::read_to_string(input)
-            .map_err(|e| anyhow!("Failed to read file '{}': {}", input, e))?;
-
-        let language = detect_language_from_path(input);
-        (code, language)
-    } else {
-        (input.to_string(), None)
-    };
-
+    let (code, language) = read_code_input(input, is_file)?;
     if code.trim().is_empty() {
         return Err(anyhow!("No code provided to review"));
     }
@@ -318,16 +304,11 @@ async fn handle_code_fix(
         return Err(anyhow!("No issue description provided"));
     }
 
-    print_info(&format!("Reading code from file: {}", file_path));
-
-    let code = fs::read_to_string(file_path)
-        .map_err(|e| anyhow!("Failed to read file '{}': {}", file_path, e))?;
-
+    let (code, language) = read_code_input(file_path, true)?;
     if code.trim().is_empty() {
         return Err(anyhow!("File is empty: {}", file_path));
     }
 
-    let language = detect_language_from_path(file_path);
     print_info(&format!("Fixing code using model: {}", model));
 
     if let Some(ref lang) = language {

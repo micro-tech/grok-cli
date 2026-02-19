@@ -25,6 +25,17 @@ pub enum SkillsCommand {
     },
 }
 
+const SKILL_TEMPLATE: &str = r#"---
+name: {}
+description: Description for {}
+license: MIT
+---
+
+# Instructions for {}
+
+Write your skill instructions here.
+"#;
+
 pub async fn handle_skills_command(command: SkillsCommand) -> Result<()> {
     let skills_dir = get_default_skills_dir()
         .unwrap_or_else(|| std::env::current_dir().unwrap().join(".grok/skills"));
@@ -77,21 +88,13 @@ pub async fn handle_skills_command(command: SkillsCommand) -> Result<()> {
                 );
                 return Ok(());
             }
-            fs::create_dir_all(&skill_path)?;
-            let skill_md = format!(
-                r#"---
-name: {}
-description: Description for {}
-license: MIT
----
-
-# Instructions for {}
-
-Write your skill instructions here.
-"#,
-                name, name, name
-            );
-            fs::write(skill_path.join("SKILL.md"), skill_md)?;
+            fs::create_dir_all(&skill_path).map_err(|e| {
+                anyhow::anyhow!("Failed to create skill directory at {}: {}", skill_path.display(), e)
+            })?;
+            let skill_md = SKILL_TEMPLATE.replace("{}", &name);
+            fs::write(skill_path.join("SKILL.md"), skill_md).map_err(|e| {
+                anyhow::anyhow!("Failed to write SKILL.md for '{}': {}", name, e)
+            })?;
             println!(
                 "Created new skill '{}' at {}",
                 name.green(),

@@ -21,6 +21,7 @@ use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
 use crate::cli::{create_spinner, format_grok_response, print_error, print_info, print_success};
 use crate::config::RateLimitConfig;
+use crate::utils::client::initialize_client;
 use crate::{GrokClient, ToolCall, content_to_string, extract_text_content};
 
 pub struct ChatOptions<'a> {
@@ -37,9 +38,12 @@ pub struct ChatOptions<'a> {
 }
 
 pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
-    let client =
-        GrokClient::with_settings(options.api_key, options.timeout_secs, options.max_retries)?
-            .with_rate_limits(options.rate_limit_config);
+    let client = initialize_client(
+        options.api_key,
+        options.timeout_secs,
+        options.max_retries,
+        options.rate_limit_config,
+    )?;
 
     if options.interactive {
         handle_interactive_chat(
@@ -309,81 +313,19 @@ async fn handle_interactive_chat(
                 let input = input.trim();
                 let lower_input = input.to_lowercase();
 
-                // Handle special commands
-                if lower_input == "exit" || lower_input == "quit" || lower_input == "q" {
-                    println!("{}", "Goodbye!".cyan());
-                    break;
-                } else if lower_input == "help" || lower_input == "h" {
-                    print_help();
-                    continue;
-                } else if lower_input == "clear" || lower_input == "cls" {
-                    // Clear conversation history but keep system message
-                    if conversation_history
-                        .first()
-                        .and_then(|msg| msg.get("role"))
-                        .and_then(|role| role.as_str())
-                        == Some("system")
-                    {
-                        let system_msg = conversation_history[0].clone();
-                        conversation_history.clear();
-                        conversation_history.push(system_msg);
-                    } else {
-                        conversation_history.clear();
-                    }
-                    print_success("Conversation history cleared!");
-                    continue;
-                } else if lower_input == "history" {
-                    print_conversation_history(&conversation_history);
-                    continue;
-                } else if lower_input == "ls" || lower_input == "dir" {
-                    match fs::read_dir(".") {
-                        Ok(entries) => {
-                            println!("{}", "Current Directory Entries:".cyan().bold());
-                            for entry in entries.flatten() {
-                                let path = entry.path();
-                                let name = path.file_name().unwrap_or_default().to_string_lossy();
-                                if path.is_dir() {
-                                    println!("  {} {}", name.blue().bold(), "(DIR)".dimmed());
-                                } else {
-                                    println!("  {}", name);
-                                }
-                            }
+                // Handle special commands using a command registry
+                if let Some(result) = handle_interactive_command(
+                    &lower_input,
+                    input,
+                    &mut conversation_history,
+                )? {
+                    match result {
+                        CommandResult::Exit => {
+                            println!("{}", "Goodbye!".cyan());
+                            break;
                         }
-                        Err(e) => print_error(&format!("Failed to list directory: {}", e)),
+                        CommandResult::Continue => continue,
                     }
-                    continue;
-                } else if lower_input.starts_with("cd ") {
-                    let path = input[3..].trim();
-                    if let Err(e) = env::set_current_dir(path) {
-                        print_error(&format!("Failed to change directory to '{}': {}", path, e));
-                    } else {
-                        print_success(&format!(
-                            "Changed directory to {}",
-                            env::current_dir().unwrap_or_default().display()
-                        ));
-                    }
-                    continue;
-                } else if let Some(stripped) = input.strip_prefix('!') {
-                    let command_line = stripped.trim();
-                    if !command_line.is_empty() {
-                        let result = if cfg!(target_os = "windows") {
-                            Command::new("cmd").arg("/C").arg(command_line).status()
-                        } else {
-                            Command::new("sh").arg("-c").arg(command_line).status()
-                        };
-
-                        match result {
-                            Ok(status) => {
-                                if !status.success() {
-                                    print_error(&format!("Command exited with status: {}", status));
-                                }
-                            }
-                            Err(e) => print_error(&format!("Failed to execute command: {}", e)),
-                        }
-                    }
-                    continue;
-                } else if input.is_empty() {
-                    continue;
                 }
 
                 // Add user message to history
@@ -451,6 +393,100 @@ async fn handle_interactive_chat(
     }
 
     Ok(())
+}
+
+/// Enum to represent the result of processing a command
+enum CommandResult {
+    Exit,
+    Continue,
+}
+
+/// Handle interactive mode commands
+fn handle_interactive_command(
+    lower_input: &str,
+    input: &str,
+    conversation_history: &mut Vec<Value>,
+) -> Result<Option<CommandResult>> {
+    match lower_input {
+        "exit" | "quit" | "q" => return Ok(Some(CommandResult::Exit)),
+        "help" | "h" => {
+            print_help();
+            return Ok(Some(CommandResult::Continue));
+        }
+        "clear" | "cls" => {
+            // Clear conversation history but keep system message
+            if conversation_history
+                .first()
+                .and_then(|msg| msg.get("role"))
+                .and_then(|role| role.as_str())
+                == Some("system")
+            {
+                let system_msg = conversation_history[0].clone();
+                conversation_history.clear();
+                conversation_history.push(system_msg);
+            } else {
+                conversation_history.clear();
+            }
+            print_success("Conversation history cleared!");
+            return Ok(Some(CommandResult::Continue));
+        }
+        "history" => {
+            print_conversation_history(conversation_history);
+            return Ok(Some(CommandResult::Continue));
+        }
+        "ls" | "dir" => {
+            match fs::read_dir(".") {
+                Ok(entries) => {
+                    println!("{}", "Current Directory Entries:".cyan().bold());
+                    for entry in entries.flatten() {
+                        let path = entry.path();
+                        let name = path.file_name().unwrap_or_default().to_string_lossy();
+                        if path.is_dir() {
+                            println!("  {} {}", name.blue().bold(), "(DIR)".dimmed());
+                        } else {
+                            println!("  {}", name);
+                        }
+                    }
+                }
+                Err(e) => print_error(&format!("Failed to list directory: {}", e)),
+            }
+            return Ok(Some(CommandResult::Continue));
+        }
+        _ if lower_input.starts_with("cd ") => {
+            let path = input[3..].trim();
+            if let Err(e) = env::set_current_dir(path) {
+                print_error(&format!("Failed to change directory to '{}': {}", path, e));
+            } else {
+                print_success(&format!(
+                    "Changed directory to {}",
+                    env::current_dir().unwrap_or_default().display()
+                ));
+            }
+            return Ok(Some(CommandResult::Continue));
+        }
+        _ if input.starts_with('!') => {
+            let command_line = input[1..].trim();
+            if !command_line.is_empty() {
+                let result = if cfg!(target_os = "windows") {
+                    Command::new("cmd").arg("/C").arg(command_line).status()
+                } else {
+                    Command::new("sh").arg("-c").arg(command_line).status()
+                };
+
+                match result {
+                    Ok(status) => {
+                        if !status.success() {
+                            print_error(&format!("Command exited with status: {}", status));
+                        }
+                    }
+                    Err(e) => print_error(&format!("Failed to execute command: {}", e)),
+                }
+            }
+            return Ok(Some(CommandResult::Continue));
+        }
+        _ if input.is_empty() => return Ok(Some(CommandResult::Continue)),
+        _ => return Ok(None),
+    }
 }
 
 fn print_help() {

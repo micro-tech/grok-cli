@@ -342,6 +342,31 @@ $ grok skills show rust-expert
 3. **Explore the spec**: See `Doc/SKILL_SPECIFICATION.md` for details
 4. **Share skills**: Contribute useful skills back to the community
 
+### Validating Skills for Security
+
+Before activating a skill, especially one from an external source, it's important to check for potential security issues. Use the `validate` command to analyze a skill:
+
+```bash
+grok skills validate my-skill
+```
+
+This will scan the skill for dangerous patterns or instructions and provide a safety rating (SAFE, WARNING, SUSPICIOUS, or DANGEROUS) along with specific issues if any are found.
+
+### Using Skills via CLI (Non-Interactive)
+
+In addition to interactive mode, you can manage skills directly from the command line:
+
+```bash
+# List all available skills
+grok skills list
+
+# Show details of a specific skill
+grok skills show rust-expert
+
+# Create a new skill template
+grok skills new my-custom-skill
+```
+
 ## Resources
 
 - [Full Skills Documentation](SKILL_SPECIFICATION.md)
