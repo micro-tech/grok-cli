@@ -1,0 +1,70 @@
+{
+  "languages": {
+    "Rust": {
+      "format_on_save": "on",
+      "formatter": "language_server",
+      "tab_size": 4,
+      "hard_tabs": false
+    },
+    "TOML": {
+      "format_on_save": "on",
+      "tab_size": 2
+    },
+    "JSON": {
+      "format_on_save": "on",
+      "tab_size": 2
+    },
+    "Markdown": {
+      "format_on_save": "off",
+      "tab_size": 2,
+      "soft_wrap": "editor_width"
+    }
+  },
+  "lsp": {
+    "rust-analyzer": {
+      "initialization_options": {
+        "check": {
+          "command": "clippy",
+          "extraArgs": ["--all-targets"]
+        },
+        "cargo": {
+          "allFeatures": true,
+          "loadOutDirsFromCheck": true
+        },
+        "procMacro": {
+          "enable": true
+        },
+        "diagnostics": {
+          "enable": true,
+          "disabled": [],
+          "warningsAsInfo": []
+        },
+        "inlayHints": {
+          "typeHints": true,
+          "parameterHints": true,
+          "chainingHints": true
+        }
+      }
+    }
+  },
+  "terminal": {
+    "shell": {
+      "program": "bash"
+    }
+  },
+  "assistant": {
+    "enabled": true,
+    "version": "2",
+    "button": true
+  },
+  "vim_mode": false,
+  "theme": "One Dark",
+  "buffer_font_size": 14,
+  "ui_font_size": 16,
+  "indent_guides": {
+    "enabled": true
+  },
+  "show_whitespaces": "selection",
+  "remove_trailing_whitespace_on_save": true,
+  "ensure_final_newline_on_save": true
+}

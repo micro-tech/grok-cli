@@ -1,0 +1,26 @@
+{
+  "name": "project-setup-hook",
+  "version": "1.0.0",
+  "description": "Automatically sets up new Rust projects with cargo init, git init, and default .zed/.grok configurations. Creates complete project scaffolding with one command.",
+  "author": "john mcconnell <john.microtech@gmail.com>",
+  "extension_type": "hook",
+  "hooks": [
+    {
+      "name": "project-setup-interceptor",
+      "hook_type": "before_tool",
+      "script": "scripts/intercept_setup.sh",
+      "config": {
+        "enabled": true,
+        "trigger_patterns": [
+          "create.*project",
+          "setup.*project",
+          "new.*rust.*project",
+          "init.*project"
+        ],
+        "auto_setup": true
+      }
+    }
+  ],
+  "dependencies": [],
+  "enabled": true
+}

@@ -1,0 +1,73 @@
+# Grok CLI Project Configuration
+
+# ACP (Agent Client Protocol) Configuration
+[acp]
+enabled = true
+bind_host = "127.0.0.1"
+bind_port = 3000
+protocol_version = "2024-11-05"
+dev_mode = false
+max_tool_loop_iterations = 25
+
+# Context Configuration
+[context]
+# Project-specific context files for AI
+files = [
+    ".zed/rules",
+    "README.md"
+]
+
+# Model Configuration
+[model]
+# Default model to use
+name = "grok-3"
+temperature = 0.7
+max_tokens = 8000
+
+# Tool Configuration
+[tools]
+# Enable/disable specific tools
+read_file = true
+write_file = true
+edit_file = true
+list_directory = true
+search_files = true
+run_shell_command = true
+web_search = true
+web_fetch = true
+
+# Security Configuration
+[security]
+# Trusted directories for file operations
+trusted_directories = [
+    "."
+]
+
+# Allow shell commands in project directory
+allow_shell = true
+
+# Session Configuration
+[session]
+# Automatically save sessions
+auto_save = true
+save_interval_seconds = 300
+
+# Extension System
+[experimental.extensions]
+enabled = true
+extension_dir = "~/.grok/extensions"
+enabled_extensions = []  # Empty = all enabled
+allow_config_extensions = true
+
+# Logging Configuration
+[logging]
+level = "info"
+chat_logging = true
+
+# MCP (Model Context Protocol) Servers
+# Uncomment and configure as needed
+# [mcp.servers.example]
+# type = "stdio"
+# command = "/path/to/mcp-server"
+# args = []
+# env = {}

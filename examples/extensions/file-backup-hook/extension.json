@@ -1,0 +1,24 @@
+{
+  "name": "file-backup-hook",
+  "version": "1.0.0",
+  "description": "Automatically backs up files before AI modifies them, allowing easy rollback of changes",
+  "author": "john mcconnell <john.microtech@gmail.com>",
+  "extension_type": "hook",
+  "hooks": [
+    {
+      "name": "file-backup",
+      "hook_type": "before_tool",
+      "script": "scripts/backup.sh",
+      "config": {
+        "enabled": true,
+        "backup_dir": "~/.grok/backups",
+        "tools_to_backup": ["write_file", "edit_file", "create_file"],
+        "max_backups_per_file": 10,
+        "compress_old_backups": false,
+        "verbose_logging": true
+      }
+    }
+  ],
+  "dependencies": [],
+  "enabled": true
+}

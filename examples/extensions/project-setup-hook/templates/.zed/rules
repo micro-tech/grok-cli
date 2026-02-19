@@ -1,0 +1,147 @@
+# Zed Editor Rules for AI Assistant
+
+## Project Overview
+This is a Rust project managed with Cargo. Follow Rust best practices and idiomatic patterns.
+
+## Code Style Guidelines
+
+### Rust Conventions
+- Follow Rust 2021 edition standards
+- Use `rustfmt` for automatic formatting
+- Run `cargo clippy` before committing
+- Use snake_case for variables, functions, and modules
+- Use CamelCase for types, traits, and enums
+- Use SCREAMING_SNAKE_CASE for constants
+
+### Error Handling
+- Use `Result<T, E>` for recoverable errors
+- Use `Option<T>` for nullable values
+- Prefer the `?` operator for error propagation
+- Use `anyhow` for application error handling
+- Use `thiserror` for library error types
+- Only use `panic!` for truly unrecoverable errors
+
+### Documentation
+- Write doc comments (`///`) for all public APIs
+- Include examples in doc comments when helpful
+- Document panics, errors, and safety requirements
+- Keep comments up-to-date with code changes
+
+### Testing
+- Write unit tests in the same file using `#[cfg(test)]` module
+- Write integration tests in the `tests/` directory
+- Test error cases, not just happy paths
+- Use descriptive test names that explain what's being tested
+- Run `cargo test` before committing
+
+### Performance
+- Prefer borrowing (`&T`, `&mut T`) over ownership when possible
+- Use iterators instead of explicit loops when appropriate
+- Avoid unnecessary allocations and clones
+- Profile before optimizing
+
+### Dependencies
+- Keep dependencies minimal and well-maintained
+- Check for security advisories regularly
+- Document why each dependency is needed
+- Prefer dependencies with permissive licenses
+
+## Project Structure
+
+### Directories
+- `src/` - Source code
+- `tests/` - Integration tests
+- `examples/` - Example programs (for libraries)
+- `benches/` - Benchmarks
+- `docs/` - Documentation
+
+### Important Files
+- `Cargo.toml` - Project manifest and dependencies
+- `Cargo.lock` - Locked dependency versions (commit for binaries)
+- `.gitignore` - Files to exclude from version control
+- `README.md` - Project documentation
+- `.grok/config.toml` - Grok CLI configuration
+
+## Git Workflow
+
+### Commits
+- Write clear, descriptive commit messages
+- Use present tense ("Add feature" not "Added feature")
+- Keep commits focused on a single change
+- Run tests before committing
+
+### Branches
+- Use feature branches for new work
+- Keep main/master branch stable
+- Delete branches after merging
+
+## AI Assistant Guidelines
+
+### When Writing Code
+- Always run `cargo check` mentally before suggesting code
+- Ensure proper error handling
+- Include necessary imports
+- Follow the style guidelines above
+- Consider edge cases and error conditions
+
+### When Modifying Files
+- Preserve existing code style
+- Update tests when changing functionality
+- Update documentation when changing APIs
+- Check for breaking changes
+
+### When Creating New Files
+- Follow the project structure
+- Include appropriate module declarations
+- Add necessary copyright/license headers if required
+- Create corresponding tests
+
+## Security Considerations
+- Validate all user input
+- Avoid SQL injection, command injection, path traversal
+- Don't commit secrets, API keys, or credentials
+- Use `.grok/.env` for secrets (it's git-ignored)
+- Be cautious with `unsafe` code blocks
+
+## Common Commands
+
+```bash
+# Build the project
+cargo build
+
+# Run the project
+cargo run
+
+# Run with arguments
+cargo run -- arg1 arg2
+
+# Run tests
+cargo test
+
+# Run specific test
+cargo test test_name
+
+# Run with output
+cargo test -- --nocapture
+
+# Check for errors without building
+cargo check
+
+# Run clippy linter
+cargo clippy
+
+# Format code
+cargo fmt
+
+# Update dependencies
+cargo update
+
+# Build for release
+cargo build --release
+```
+
+## When in Doubt
+- Check the Rust documentation: https://doc.rust-lang.org/
+- Follow the API guidelines: https://rust-lang.github.io/api-guidelines/
+- Look at examples in the Rust ecosystem
+- Ask for clarification rather than guessing
