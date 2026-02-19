@@ -3,6 +3,9 @@
 # ACP Configuration
 [acp]
 enabled = true
+bind_host = "127.0.0.1"
+protocol_version = "2024-11-05"
+dev_mode = false
 max_tool_loop_iterations = 25
 
 # MCP Servers Configuration

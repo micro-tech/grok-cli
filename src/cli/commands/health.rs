@@ -15,6 +15,7 @@ use std::time::{Duration, Instant};
 use crate::GrokClient;
 use crate::cli::{create_spinner, print_error, print_info, print_success, print_warning};
 use crate::config::Config;
+use crate::utils::client::initialize_client;
 use crate::utils::network::{detect_starlink_connection, test_connectivity};
 
 /// Handle health check commands
@@ -156,8 +157,7 @@ pub async fn handle_health_check(
 
             // Test API key validity
             let api_spinner = create_spinner("Testing Grok API connection...");
-            let client_result = GrokClient::with_settings(key, timeout_secs, 3)
-                .map(|client| client.with_rate_limits(config.rate_limits));
+            let client_result = initialize_client(key, timeout_secs, 3, config.rate_limits.clone());
 
             match client_result {
                 Ok(client) => {
@@ -199,9 +199,7 @@ pub async fn handle_health_check(
             }
 
             // Test model availability
-            match GrokClient::with_settings(key, timeout_secs, 3)
-                .map(|client| client.with_rate_limits(config.rate_limits))
-            {
+            match initialize_client(key, timeout_secs, 3, config.rate_limits.clone()) {
                 Ok(client) => {
                     let models_spinner = create_spinner("Checking model availability...");
                     let models_result = client.list_models().await;

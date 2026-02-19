@@ -6,6 +6,7 @@
 
 pub mod auth;
 pub mod chat_logger;
+pub mod client;
 pub mod context;
 pub mod network;
 pub mod rate_limiter;
