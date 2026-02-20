@@ -59,6 +59,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Troubleshooting guide for common symlink issues
   - Comparison tables and real-world examples
   - Proposes future configuration-based external directory access with security controls
+
+- **Configurable External Directory Access (Complete Feature)**: Full implementation of secure read-only access to files outside project boundaries
+  - **Configuration Schema** (`src/config/mod.rs`):
+    - Added `ExternalAccessConfig` struct with all security controls
+    - Environment variable support: `GROK_EXTERNAL_ACCESS_ENABLED`, `GROK_EXTERNAL_ACCESS_PATHS`, etc.
+    - Default excluded patterns protect 13 types of sensitive files (.env, .ssh/, keys, credentials)
+    - Session-based trusted paths with thread-safe storage
+  - **Enhanced Security Policy** (`src/acp/security.rs`):
+    - Three-tier access validation: Internal, External, ExternalRequiresApproval
+    - Glob pattern matching for file exclusions
+    - Path canonicalization prevents symlink attacks
+    - Session trust management for "Trust Always" decisions
+  - **Interactive Approval UI** (`src/cli/approval.rs`):
+    - Styled terminal prompts with box drawing characters
+    - Four options: [A]llow Once, [T]rust Always, [D]eny, [V]iew Path
+    - View file metadata before approving access
+    - Batch approval support for multiple files
+  - **Read File Integration** (`src/acp/tools.rs`):
+    - Integrated approval prompts for external files
+    - Session trust support (no persistent storage)
+    - Comprehensive logging with tracing
+  - **Audit Logging System** (`src/security/audit.rs`):
+    - Complete audit trail in JSONL format (~/.grok/audit/external_access.jsonl)
+    - Tracks: timestamp, path, operation, decision, user, session_id
+    - Username detection with `whoami` crate
+    - Query methods: recent logs, date ranges, by path
+    - Statistics and analytics: total/allowed/denied, top paths
+  - **Configuration Validation** (`grok config validate-external-access`):
+    - Verify paths exist and are readable
+    - Validate glob pattern syntax
+    - Security recommendations
+    - Check approval and logging settings
+  - **Audit Summary Command** (`grok audit external-access`):
+    - View recent access logs with filtering
+    - Date range filtering (--from, --to)
+    - Path-specific filtering (--path)
+    - Statistics dashboard (--summary)
+    - CSV export (--export)
+    - Top 10 most accessed paths
+    - Recent denials with reasons
+  - **Security Features**:
+    - Read-only access (no write operations)
+    - Default-deny with explicit allow-list
+    - User approval required by default
+    - Complete audit trail for compliance
+    - 13 default sensitive file patterns
   - Documents how system config interacts with project config
   - Provides recommendations for setting `max_tool_loop_iterations` based on use case
   - Includes instructions for safely updating system config without breaking existing setup

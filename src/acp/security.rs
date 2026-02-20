@@ -1,3 +1,4 @@
+use crate::config::ExternalAccessConfig;
 use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -6,6 +7,7 @@ use std::sync::{Arc, Mutex};
 pub struct SecurityPolicy {
     trusted_directories: Vec<PathBuf>,
     working_directory: PathBuf,
+    external_access_config: ExternalAccessConfig,
 }
 
 impl SecurityPolicy {
@@ -14,13 +16,20 @@ impl SecurityPolicy {
         Self {
             trusted_directories: Vec::new(),
             working_directory,
+            external_access_config: ExternalAccessConfig::default(),
         }
+    }
+
+    pub fn with_external_access_config(mut self, config: ExternalAccessConfig) -> Self {
+        self.external_access_config = config;
+        self
     }
 
     pub fn with_working_directory(working_directory: PathBuf) -> Self {
         Self {
             trusted_directories: Vec::new(),
             working_directory,
+            external_access_config: ExternalAccessConfig::default(),
         }
     }
 
@@ -34,6 +43,11 @@ impl SecurityPolicy {
     /// Get the working directory
     pub fn working_directory(&self) -> &Path {
         &self.working_directory
+    }
+
+    /// Check if external access logging is enabled
+    pub fn is_external_access_logging_enabled(&self) -> bool {
+        self.external_access_config.logging
     }
 
     /// Resolve a path to its canonical absolute form
@@ -63,7 +77,8 @@ impl SecurityPolicy {
         })
     }
 
-    pub fn is_path_trusted<P: AsRef<Path>>(&self, path: P) -> bool {
+    /// Check if a path is within internal project boundaries
+    pub fn is_internal_path<P: AsRef<Path>>(&self, path: P) -> bool {
         // Resolve the path first
         let resolved = match self.resolve_path(path) {
             Ok(p) => p,
@@ -80,6 +95,119 @@ impl SecurityPolicy {
             .any(|trusted| resolved.starts_with(trusted))
     }
 
+    /// Legacy method - kept for backward compatibility
+    pub fn is_path_trusted<P: AsRef<Path>>(&self, path: P) -> bool {
+        self.is_internal_path(path)
+    }
+
+    /// Check if external access is allowed for a path
+    pub fn is_external_access_allowed<P: AsRef<Path>>(&self, path: P) -> ExternalAccessResult {
+        // If external access is disabled, deny
+        if !self.external_access_config.enabled {
+            return ExternalAccessResult::Denied(
+                "External access is disabled in configuration".to_string(),
+            );
+        }
+
+        let resolved = match self.resolve_path(&path) {
+            Ok(p) => p,
+            Err(e) => return ExternalAccessResult::Denied(format!("Cannot resolve path: {}", e)),
+        };
+
+        // Check if path matches excluded patterns
+        if self.is_path_excluded(&resolved) {
+            return ExternalAccessResult::Denied(
+                "Path matches excluded pattern (security protection)".to_string(),
+            );
+        }
+
+        // Check if path is in allowed external paths
+        let is_allowed = self
+            .external_access_config
+            .allowed_paths
+            .iter()
+            .any(|allowed| {
+                // Canonicalize allowed path if possible
+                let canonical_allowed = allowed.canonicalize().unwrap_or_else(|_| allowed.clone());
+                resolved.starts_with(&canonical_allowed)
+            });
+
+        // Check session-trusted paths
+        let session_trusted = {
+            let session_paths = self
+                .external_access_config
+                .session_trusted_paths
+                .lock()
+                .expect("Session trusted paths mutex poisoned");
+            session_paths
+                .iter()
+                .any(|trusted| resolved.starts_with(trusted))
+        };
+
+        if !is_allowed && !session_trusted {
+            return ExternalAccessResult::Denied(
+                "Path is not in allowed external paths or session-trusted paths".to_string(),
+            );
+        }
+
+        // Check if approval is required
+        if self.external_access_config.require_approval && !session_trusted {
+            ExternalAccessResult::RequiresApproval(resolved)
+        } else {
+            ExternalAccessResult::Allowed(resolved)
+        }
+    }
+
+    /// Check if path matches any excluded pattern
+    fn is_path_excluded(&self, path: &Path) -> bool {
+        use glob::Pattern;
+
+        let path_str = path.to_string_lossy();
+        self.external_access_config
+            .excluded_patterns
+            .iter()
+            .any(|pattern| {
+                // Use glob matching
+                Pattern::new(pattern)
+                    .map(|p| p.matches(&path_str))
+                    .unwrap_or(false)
+            })
+    }
+
+    /// Combined path validation (internal or external)
+    pub fn validate_path_access<P: AsRef<Path>>(&self, path: P) -> Result<PathAccessType> {
+        let path_ref = path.as_ref();
+
+        // First check if it's internal (project paths)
+        if self.is_internal_path(path_ref) {
+            return Ok(PathAccessType::Internal(self.resolve_path(path_ref)?));
+        }
+
+        // Not internal, check external access
+        match self.is_external_access_allowed(path_ref) {
+            ExternalAccessResult::Allowed(resolved) => Ok(PathAccessType::External(resolved)),
+            ExternalAccessResult::RequiresApproval(resolved) => {
+                Ok(PathAccessType::ExternalRequiresApproval(resolved))
+            }
+            ExternalAccessResult::Denied(reason) => Err(anyhow!("Access denied: {}", reason)),
+        }
+    }
+
+    /// Add a path to session-trusted paths (for "Trust Always" during session)
+    pub fn add_session_trusted_path<P: AsRef<Path>>(&self, path: P) {
+        let path = path.as_ref();
+        if let Ok(canonical) = path.canonicalize() {
+            let mut session_paths = self
+                .external_access_config
+                .session_trusted_paths
+                .lock()
+                .expect("Session trusted paths mutex poisoned");
+            if !session_paths.contains(&canonical) {
+                session_paths.push(canonical);
+            }
+        }
+    }
+
     pub fn validate_shell_command(&self, command: &str) -> Result<()> {
         // Basic blacklist for really dangerous things if needed,
         // but mostly we rely on user confirmation + trusted scope.
@@ -89,6 +217,22 @@ impl SecurityPolicy {
         }
         Ok(())
     }
+}
+
+/// Result type for external access checks
+#[derive(Debug)]
+pub enum ExternalAccessResult {
+    Allowed(PathBuf),
+    RequiresApproval(PathBuf),
+    Denied(String),
+}
+
+/// Type of path access (internal project or external)
+#[derive(Debug)]
+pub enum PathAccessType {
+    Internal(PathBuf),
+    External(PathBuf),
+    ExternalRequiresApproval(PathBuf),
 }
 
 pub struct SecurityManager {
@@ -102,11 +246,25 @@ impl SecurityManager {
         }
     }
 
+    pub fn new_with_config(config: ExternalAccessConfig) -> Self {
+        let policy = SecurityPolicy::new().with_external_access_config(config);
+        Self {
+            policy: Arc::new(Mutex::new(policy)),
+        }
+    }
+
     pub fn get_policy(&self) -> SecurityPolicy {
         self.policy
             .lock()
             .expect("SecurityManager mutex poisoned - this is a bug")
             .clone()
+    }
+
+    pub fn update_external_access_config(&self, config: ExternalAccessConfig) {
+        self.policy
+            .lock()
+            .expect("SecurityManager mutex poisoned - this is a bug")
+            .external_access_config = config;
     }
 
     pub fn add_trusted_directory<P: AsRef<Path>>(&self, path: P) {
@@ -122,6 +280,13 @@ impl SecurityManager {
         } else {
             Err(anyhow!("Access denied: Path is not in a trusted directory"))
         }
+    }
+
+    pub fn add_session_trusted_path<P: AsRef<Path>>(&self, path: P) {
+        self.policy
+            .lock()
+            .expect("SecurityManager mutex poisoned - this is a bug")
+            .add_session_trusted_path(path);
     }
 }
 

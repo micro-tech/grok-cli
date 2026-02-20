@@ -1,4 +1,6 @@
-use crate::acp::security::SecurityPolicy;
+use crate::acp::security::{PathAccessType, SecurityPolicy};
+use crate::cli::approval::{ApprovalDecision, prompt_external_access_approval};
+use crate::security::audit::{AuditLogger, create_access_log};
 use anyhow::{Result, anyhow};
 use glob::glob;
 use regex::Regex;
@@ -7,18 +9,144 @@ use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
 use std::process::Command;
+use tracing::{info, warn};
+use uuid::Uuid;
 
-/// Read file content
+/// Read file content with support for external access
 pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
-    // Resolve path to absolute canonical form
-    let resolved_path = security
-        .resolve_path(path)
-        .map_err(|e| anyhow!("Failed to resolve path '{}': {}", path, e))?;
+    // Validate path access (handles both internal and external paths)
+    let access_type = security.validate_path_access(path)?;
 
-    // Check trust on resolved path
-    if !security.is_path_trusted(&resolved_path) {
-        return Err(anyhow!("Access denied: Path is not in a trusted directory"));
-    }
+    let resolved_path = match &access_type {
+        PathAccessType::Internal(path) => {
+            // Internal project file - allow immediately
+            path.clone()
+        }
+        PathAccessType::External(path) => {
+            // External file with auto-approval
+            if security.is_external_access_logging_enabled() {
+                info!("External file access (auto-approved): {}", path.display());
+
+                // Log to audit file
+                if let Ok(logger) = AuditLogger::new(true) {
+                    let session_id = Uuid::new_v4().to_string();
+                    let log = create_access_log(
+                        path.to_str().unwrap_or("unknown"),
+                        "read",
+                        "allowed",
+                        &session_id,
+                        None,
+                        Some("auto-approved".to_string()),
+                    );
+                    let _ = logger.log_access(log);
+                }
+            }
+            path.clone()
+        }
+        PathAccessType::ExternalRequiresApproval(path) => {
+            // External file requiring user approval
+            info!("External file access requested: {}", path.display());
+
+            // Determine config source for display
+            let config_source = if std::env::var("GROK_EXTERNAL_ACCESS_ENABLED").is_ok() {
+                "environment variable"
+            } else {
+                ".grok/.env or config.toml"
+            };
+
+            let session_id = Uuid::new_v4().to_string();
+            let path_str = path.to_str().unwrap_or("unknown");
+
+            // Prompt user for approval
+            match prompt_external_access_approval(path, config_source) {
+                Ok(ApprovalDecision::AllowOnce) => {
+                    info!("External file access approved (once): {}", path.display());
+
+                    // Log approval
+                    if security.is_external_access_logging_enabled() {
+                        if let Ok(logger) = AuditLogger::new(true) {
+                            let log = create_access_log(
+                                path_str,
+                                "read",
+                                "approved_once",
+                                &session_id,
+                                None,
+                                Some(config_source.to_string()),
+                            );
+                            let _ = logger.log_access(log);
+                        }
+                    }
+
+                    path.clone()
+                }
+                Ok(ApprovalDecision::TrustAlways) => {
+                    info!(
+                        "External file access approved (session): {}",
+                        path.display()
+                    );
+
+                    // Log approval
+                    if security.is_external_access_logging_enabled() {
+                        if let Ok(logger) = AuditLogger::new(true) {
+                            let log = create_access_log(
+                                path_str,
+                                "read",
+                                "approved_always",
+                                &session_id,
+                                None,
+                                Some(config_source.to_string()),
+                            );
+                            let _ = logger.log_access(log);
+                        }
+                    }
+
+                    // Add to session-trusted paths
+                    security.add_session_trusted_path(path);
+                    path.clone()
+                }
+                Ok(ApprovalDecision::Deny) => {
+                    warn!("External file access denied by user: {}", path.display());
+
+                    // Log denial
+                    if security.is_external_access_logging_enabled() {
+                        if let Ok(logger) = AuditLogger::new(true) {
+                            let log = create_access_log(
+                                path_str,
+                                "read",
+                                "denied",
+                                &session_id,
+                                Some("User denied access".to_string()),
+                                Some(config_source.to_string()),
+                            );
+                            let _ = logger.log_access(log);
+                        }
+                    }
+
+                    return Err(anyhow!("Access denied by user"));
+                }
+                Err(e) => {
+                    warn!("External file access approval failed: {}", e);
+
+                    // Log error
+                    if security.is_external_access_logging_enabled() {
+                        if let Ok(logger) = AuditLogger::new(true) {
+                            let log = create_access_log(
+                                path_str,
+                                "read",
+                                "error",
+                                &session_id,
+                                Some(format!("Approval prompt failed: {}", e)),
+                                Some(config_source.to_string()),
+                            );
+                            let _ = logger.log_access(log);
+                        }
+                    }
+
+                    return Err(anyhow!("Approval prompt failed: {}", e));
+                }
+            }
+        }
+    };
 
     if !resolved_path.exists() {
         return Err(anyhow!("File not found: {}", resolved_path.display()));

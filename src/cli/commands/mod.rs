@@ -7,6 +7,7 @@
 //! refactored in Phase 2. They have #![allow(deprecated)] to suppress warnings.
 
 pub mod acp;
+pub mod audit;
 pub mod chat;
 pub mod code;
 pub mod config;

@@ -17,13 +17,15 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 > 
 > See [Quick Reference](docs/QUICK_REFERENCE.md) for details.
 >
-> **🔧 Latest Update**: 
+> **🔧 Latest Update (v0.2.0)**: 
+> - **🔒 External Directory Access**: Securely read files outside your project with approval prompts and audit logging!
 > - **Chat Logging**: Automatic conversation logging with search and replay capabilities
 > - Fixed "failed to deserialize response" error in Zed integration. See [FIXES.md](FIXES.md) for details.
 
 ## 🚀 Features
 
-### 🆕 New Features (v0.1.2)
+### 🆕 New Features (v0.2.0)
+- **🔒 External Directory Access** - Securely read files outside project boundaries with interactive approval prompts, comprehensive audit logging, and pattern-based security protections. Perfect for shared configs and cross-project references! [Quick Start Guide](Doc/EXTERNAL_ACCESS_QUICK_START.md)
 - **Session Persistence** - Save and resume conversations with `/save`, `/load`, and `/list` commands
 - **Hierarchical Configuration** - Project-local settings override system defaults (`.grok/config.toml`)
 - **Enhanced Context Discovery** - Multi-editor support: `.zed/rules`, `.claude.md`, `.cursor/rules`, and more
@@ -55,8 +57,10 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 - **Multi-language Support** - Works with any programming language
 
 ### 🔧 Developer Tools
+- **External Access Controls** - Securely reference files outside project with approval and audit
 - **Health Diagnostics** - Comprehensive system and API monitoring
-- **Configuration Management** - Flexible TOML-based settings
+- **Configuration Management** - Flexible TOML-based settings with validation
+- **Audit Logging** - Complete access tracking with CSV export and analytics
 - **Zed Editor Integration** - Agent Client Protocol (ACP) support
 - **Network Resilience** - Starlink-optimized with retry logic
 

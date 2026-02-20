@@ -9,6 +9,7 @@ use dirs::config_dir;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 use tracing::{debug, info, warn};
 
 use crate::mcp::config::McpConfig;
@@ -542,6 +543,8 @@ pub struct SecurityConfig {
     pub environment_variable_redaction: EnvVarRedactionConfig,
     #[serde(default = "default_shell_approval_mode")]
     pub shell_approval_mode: String,
+    #[serde(default)]
+    pub external_access: ExternalAccessConfig,
 }
 
 fn default_shell_approval_mode() -> String {
@@ -562,6 +565,76 @@ pub struct EnvVarRedactionConfig {
     pub blocked: Vec<String>,
     #[serde(default)]
     pub enabled: bool,
+}
+
+/// Configuration for external directory access
+/// Allows read-only access to files outside project boundaries with security controls
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExternalAccessConfig {
+    /// Enable external directory access feature (disabled by default)
+    #[serde(default)]
+    pub enabled: bool,
+
+    /// Require user approval for each external file access
+    #[serde(default = "default_require_approval")]
+    pub require_approval: bool,
+
+    /// Log all external access attempts
+    #[serde(default = "default_true_external")]
+    pub logging: bool,
+
+    /// List of allowed external paths (absolute paths only)
+    #[serde(default)]
+    pub allowed_paths: Vec<PathBuf>,
+
+    /// Glob patterns to exclude even within allowed paths
+    /// e.g., "**/.env", "**/.ssh/**", "**/*.key"
+    #[serde(default = "default_excluded_patterns")]
+    pub excluded_patterns: Vec<String>,
+
+    /// Session-only trusted paths (not persisted to config)
+    /// Used for "Trust Always" decisions during a session
+    #[serde(skip)]
+    pub session_trusted_paths: Arc<Mutex<Vec<PathBuf>>>,
+}
+
+fn default_require_approval() -> bool {
+    true
+}
+
+fn default_true_external() -> bool {
+    true
+}
+
+fn default_excluded_patterns() -> Vec<String> {
+    vec![
+        "**/.env".to_string(),
+        "**/.env.*".to_string(),
+        "**/.git/**".to_string(),
+        "**/.ssh/**".to_string(),
+        "**/*.key".to_string(),
+        "**/*.pem".to_string(),
+        "**/*.p12".to_string(),
+        "**/*.pfx".to_string(),
+        "**/id_rsa*".to_string(),
+        "**/password*".to_string(),
+        "**/secret*".to_string(),
+        "**/.aws/**".to_string(),
+        "**/.azure/**".to_string(),
+    ]
+}
+
+impl Default for ExternalAccessConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            require_approval: true,
+            logging: true,
+            allowed_paths: Vec::new(),
+            excluded_patterns: default_excluded_patterns(),
+            session_trusted_paths: Arc::new(Mutex::new(Vec::new())),
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1504,6 +1577,33 @@ impl Config {
         // Security configuration
         if let Ok(mode) = std::env::var("GROK_SHELL_APPROVAL_MODE") {
             self.security.shell_approval_mode = mode;
+        }
+
+        // External access configuration
+        if let Ok(val) = std::env::var("GROK_EXTERNAL_ACCESS_ENABLED") {
+            self.security.external_access.enabled = val.parse::<bool>().unwrap_or(false);
+        }
+
+        if let Ok(val) = std::env::var("GROK_EXTERNAL_ACCESS_REQUIRE_APPROVAL") {
+            self.security.external_access.require_approval = val.parse::<bool>().unwrap_or(true);
+        }
+
+        if let Ok(val) = std::env::var("GROK_EXTERNAL_ACCESS_LOGGING") {
+            self.security.external_access.logging = val.parse::<bool>().unwrap_or(true);
+        }
+
+        if let Ok(paths) = std::env::var("GROK_EXTERNAL_ACCESS_PATHS") {
+            // Parse comma-separated list of paths
+            let parsed_paths: Vec<PathBuf> = paths
+                .split(',')
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+                .map(PathBuf::from)
+                .collect();
+
+            if !parsed_paths.is_empty() {
+                self.security.external_access.allowed_paths = parsed_paths;
+            }
         }
     }
 

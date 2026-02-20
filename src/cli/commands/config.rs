@@ -23,6 +23,7 @@ pub async fn handle_config_action(action: ConfigAction, config: &Config) -> Resu
         ConfigAction::Get { key } => get_config_value(&key).await,
         ConfigAction::Init { force } => init_config(force).await,
         ConfigAction::Validate => validate_config().await,
+        ConfigAction::ValidateExternalAccess => validate_external_access_config(config).await,
     }
 }
 
@@ -251,6 +252,170 @@ async fn init_config(force: bool) -> Result<()> {
             return Err(e);
         }
     }
+
+    Ok(())
+}
+
+/// Validate external access configuration
+async fn validate_external_access_config(config: &Config) -> Result<()> {
+    use glob::Pattern;
+    use std::fs;
+
+    println!(
+        "{}",
+        "🔒 External Access Configuration Validation".cyan().bold()
+    );
+    println!();
+
+    let ext_config = &config.security.external_access;
+
+    // Check if feature is enabled
+    if !ext_config.enabled {
+        println!("{}", "Status:".yellow().bold());
+        println!(
+            "  {} External access is {}",
+            "ℹ".blue(),
+            "disabled".yellow()
+        );
+        println!();
+        println!("{}", "To enable external access:".dimmed());
+        println!("  1. Set GROK_EXTERNAL_ACCESS_ENABLED=true in .grok/.env");
+        println!("  2. Or add to config.toml:");
+        println!("     [security.external_access]");
+        println!("     enabled = true");
+        return Ok(());
+    }
+
+    println!("{}", "✓ External access is enabled".green());
+    println!();
+
+    // Validate allowed paths
+    println!("{}", "Allowed Paths:".green().bold());
+    if ext_config.allowed_paths.is_empty() {
+        println!("  {} No paths configured", "⚠".yellow());
+        println!(
+            "  {}",
+            "Add paths with GROK_EXTERNAL_ACCESS_PATHS or in config.toml".dimmed()
+        );
+    } else {
+        let mut all_valid = true;
+        for (i, path) in ext_config.allowed_paths.iter().enumerate() {
+            print!("  {}. {} ", i + 1, path.display().to_string().cyan());
+
+            match fs::metadata(path) {
+                Ok(metadata) => {
+                    if metadata.is_dir() {
+                        println!("{}", "(directory, exists, readable)".green());
+                    } else {
+                        println!("{}", "(file, exists, readable)".green());
+                    }
+                }
+                Err(_) => {
+                    println!("{}", "⚠️  does not exist".yellow());
+                    all_valid = false;
+                }
+            }
+        }
+
+        if !all_valid {
+            println!();
+            println!("{}", "Recommendation:".yellow().bold());
+            println!("  Remove non-existent paths from configuration");
+        }
+    }
+    println!();
+
+    // Validate excluded patterns
+    println!("{}", "Excluded Patterns:".green().bold());
+    println!(
+        "  {} patterns configured",
+        ext_config.excluded_patterns.len()
+    );
+
+    let mut invalid_patterns = Vec::new();
+    for pattern in &ext_config.excluded_patterns {
+        if Pattern::new(pattern).is_err() {
+            invalid_patterns.push(pattern.clone());
+        }
+    }
+
+    if !invalid_patterns.is_empty() {
+        println!("  {} Invalid patterns found:", "⚠".yellow());
+        for pattern in &invalid_patterns {
+            println!("    - {}", pattern.red());
+        }
+    } else {
+        println!("  {} All patterns are valid", "✓".green());
+    }
+    println!();
+
+    // Security settings
+    println!("{}", "Security Settings:".green().bold());
+    let approval_status = if ext_config.require_approval {
+        "✓ Enabled (recommended)".green()
+    } else {
+        "⚠ Disabled".yellow()
+    };
+    println!("  Approval required: {}", approval_status);
+
+    let logging_status = if ext_config.logging {
+        "✓ Enabled (recommended)".green()
+    } else {
+        "⚠ Disabled".yellow()
+    };
+    println!("  Logging enabled: {}", logging_status);
+    println!();
+
+    // Security recommendations
+    println!("{}", "Security Recommendations:".yellow().bold());
+    let mut has_recommendations = false;
+
+    // Check for dangerous patterns that should be excluded
+    let recommended_patterns = vec![
+        "**/.ssh/**",
+        "**/.aws/**",
+        "**/.azure/**",
+        "**/.env",
+        "**/*.key",
+        "**/*.pem",
+    ];
+
+    for pattern in &recommended_patterns {
+        if !ext_config.excluded_patterns.contains(&pattern.to_string()) {
+            if !has_recommendations {
+                has_recommendations = true;
+            }
+            println!(
+                "  {} Consider adding excluded pattern: {}",
+                "ℹ".blue(),
+                pattern.cyan()
+            );
+        }
+    }
+
+    if !ext_config.require_approval {
+        if !has_recommendations {
+            has_recommendations = true;
+        }
+        println!(
+            "  {} Enable approval prompts for better security",
+            "ℹ".blue()
+        );
+    }
+
+    if !ext_config.logging {
+        if !has_recommendations {
+            has_recommendations = true;
+        }
+        println!("  {} Enable logging for audit trail", "ℹ".blue());
+    }
+
+    if !has_recommendations {
+        println!("  {} Configuration looks good!", "✓".green());
+    }
+
+    println!();
+    println!("{}", "Validation complete".green().bold());
 
     Ok(())
 }

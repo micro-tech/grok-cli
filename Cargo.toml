@@ -73,6 +73,7 @@ regex = "1"
 urlencoding = "2"
 clap-markdown = "0.1"
 serde_yaml = "0.9.34"
+whoami = "2.1.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.55"

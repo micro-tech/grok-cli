@@ -105,6 +105,12 @@ pub enum Commands {
         action: crate::HistoryAction,
     },
 
+    /// Audit log management and review
+    Audit {
+        #[command(subcommand)]
+        action: crate::AuditAction,
+    },
+
     /// Health check and diagnostics
     Health {
         /// Check API connectivity
@@ -279,6 +285,12 @@ pub async fn run() -> Result<()> {
                 show_banner_fn();
             }
             crate::cli::commands::history::handle_history_action(action.clone()).await?;
+        }
+        Some(Commands::Audit { action }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::audit::handle_audit_action(action.clone()).await?;
         }
         Some(Commands::Health {
             api,

@@ -41,6 +41,7 @@ pub mod display;
 pub mod grok_client_ext;
 pub mod hooks;
 pub mod mcp;
+pub mod security;
 pub mod skills;
 pub mod utils;
 
@@ -166,6 +167,8 @@ pub enum ConfigAction {
     },
     /// Validate configuration
     Validate,
+    /// Validate external access configuration
+    ValidateExternalAccess,
 }
 
 #[derive(Subcommand, Clone, Debug)]
@@ -209,6 +212,42 @@ pub enum HistoryAction {
         query: String,
     },
     /// Clear chat history
+    Clear {
+        /// Confirm deletion
+        #[arg(long)]
+        confirm: bool,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum AuditAction {
+    /// Show external access audit summary
+    ExternalAccess {
+        /// Show detailed statistics
+        #[arg(long)]
+        summary: bool,
+
+        /// Number of recent entries to show
+        #[arg(short, long, default_value = "20")]
+        count: usize,
+
+        /// Filter by date range (YYYY-MM-DD)
+        #[arg(long)]
+        from: Option<String>,
+
+        /// Filter by date range (YYYY-MM-DD)
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Filter by specific path
+        #[arg(long)]
+        path: Option<String>,
+
+        /// Export to CSV file
+        #[arg(long)]
+        export: Option<String>,
+    },
+    /// Clear all audit logs
     Clear {
         /// Confirm deletion
         #[arg(long)]

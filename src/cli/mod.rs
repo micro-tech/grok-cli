@@ -13,6 +13,7 @@
 #![allow(deprecated)]
 
 pub mod app;
+pub mod approval;
 pub mod commands;
 
 use anyhow::Result;
