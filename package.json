@@ -1,6 +1,6 @@
 {
   "name": "grok-cli-acp",
-  "version": "0.1.41",
+  "version": "0.1.42",
   "description": "A CLI tool for interacting with Grok AI via X API with external file access, audit logging, and tool loop debugging - Rust binary wrapper",
   "main": "index.js",
   "keywords": [

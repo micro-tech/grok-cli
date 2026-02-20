@@ -9,10 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- **Installer Updates**: Updated all installers to v0.1.41 with enhanced features and network reliability
-  - Updated `package.json` version from 0.1.4 to 0.1.41
+- **Installer Updates**: Updated all installers to v0.1.42 with enhanced features and network reliability
+  - Updated `package.json` version from 0.1.4 to 0.1.42
   - Enhanced package description to highlight new features (external access, audit logging, tool loop debugging)
-  - Updated Windows installer (`src/bin/installer.rs`) version display to show v0.1.41
+  - Updated Windows installer (`src/bin/installer.rs`) version display to show v0.1.42
   - Updated default model in installer config template to `grok-2-latest`
   - Enhanced installer success messages with feature announcements
 
@@ -43,7 +43,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Enhanced `[network]` section with retry delay settings for Starlink optimization
   - Added `[logging]` section with default settings
   - Added `[security]` section with shell approval mode
-  - Updated to include all v0.1.41 configuration options
+  - Updated to include all v0.1.42 configuration options
 
 - **Expanded Documentation Installation**:
   - `EXTERNAL_FILE_ACCESS_SUMMARY.md` - Master summary of external access feature

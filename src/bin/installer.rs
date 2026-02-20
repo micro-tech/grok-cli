@@ -26,7 +26,7 @@ fn find_project_root() -> Option<PathBuf> {
 fn main() {
     println!(
         "{}",
-        "Grok CLI Installer v0.1.41 for Windows 11".green().bold()
+        "Grok CLI Installer v0.1.42 for Windows 11".green().bold()
     );
     println!("=============================================");
 
@@ -124,7 +124,7 @@ fn install_windows() {
     setup_audit_directory();
 
     println!("\n{}", "Installation Complete!".green().bold());
-    println!("Version: 0.1.41");
+    println!("Version: 0.1.42");
     println!("\nNew features in this version:");
     println!("  • External file access with security controls");
     println!("  • Audit logging for compliance tracking");
@@ -335,7 +335,7 @@ enable_tool_output_truncation = true
 disable_yolo_mode = false
 shell_approval_mode = "prompt"
 
-# External Access Configuration (v0.1.41)
+# External Access Configuration (v0.1.42)
 [external_access]
 enabled = false
 require_approval = true

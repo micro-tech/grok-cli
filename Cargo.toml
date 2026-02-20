@@ -1,6 +1,6 @@
 [package]
 name = "grok-cli"
-version = "0.1.41"
+version = "0.1.42"
 edition = "2024"
 authors = ["john mcconnell john.microtech@gmail.com"]
 description = "A CLI tool for interacting with Grok AI via X API"

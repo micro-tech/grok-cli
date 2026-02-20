@@ -9,7 +9,7 @@
 
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
-> **🎉 New in v0.1.2**: 
+> **🎉 New in v0.1.42**: 
 > - Session Persistence - Save and resume conversations
 > - Hierarchical Configuration - Project-specific settings
 > - Enhanced Context Discovery - Multi-editor support (.zed/rules, .claude.md, etc.)
@@ -17,14 +17,14 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 > 
 > See [Quick Reference](docs/QUICK_REFERENCE.md) for details.
 >
-> **🔧 Latest Update (v0.2.0)**: 
+> **🔧 Latest Update (v0.1.42)**: 
 > - **🔒 External Directory Access**: Securely read files outside your project with approval prompts and audit logging!
 > - **Chat Logging**: Automatic conversation logging with search and replay capabilities
 > - Fixed "failed to deserialize response" error in Zed integration. See [FIXES.md](FIXES.md) for details.
 
 ## 🚀 Features
 
-### 🆕 New Features (v0.2.0)
+### 🆕 New Features (v0.1.42)
 - **🔒 External Directory Access** - Securely read files outside project boundaries with interactive approval prompts, comprehensive audit logging, and pattern-based security protections. Perfect for shared configs and cross-project references! [Quick Start Guide](Doc/EXTERNAL_ACCESS_QUICK_START.md)
 - **Session Persistence** - Save and resume conversations with `/save`, `/load`, and `/list` commands
 - **Hierarchical Configuration** - Project-local settings override system defaults (`.grok/config.toml`)
@@ -193,7 +193,7 @@ If you experience issues after installation:
 (Get-Command grok).Path
 grok --version
 
-# If showing old version (0.1.3), remove old Cargo installation
+# If showing old version, remove old Cargo installation
 .\scripts\cleanup_old_install.ps1
 # OR
 .\scripts\cleanup_old_install.bat
