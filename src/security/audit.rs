@@ -135,6 +135,10 @@ impl AuditLogger {
 
         writeln!(file, "{}", json).map_err(|e| anyhow!("Failed to write to audit log: {}", e))?;
 
+        // Explicitly flush to ensure data is written before returning
+        file.flush()
+            .map_err(|e| anyhow!("Failed to flush audit log: {}", e))?;
+
         debug!("Logged external access: {} - {}", log.path, log.decision);
         Ok(())
     }
@@ -354,9 +358,11 @@ pub fn create_access_log(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use tempfile::TempDir;
 
     #[test]
+    #[serial]
     fn test_create_audit_logger() {
         let logger = AuditLogger::new(true);
         assert!(logger.is_ok());
@@ -366,6 +372,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_log_access() {
         let logger = AuditLogger::new(true).unwrap();
 
@@ -385,6 +392,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_recent_logs() {
         let logger = AuditLogger::new(true).unwrap();
 
@@ -408,6 +416,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_get_statistics() {
         let logger = AuditLogger::new(true).unwrap();
 
@@ -447,6 +456,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_create_access_log() {
         let log = create_access_log(
             "C:\\test\\file.txt",
@@ -464,6 +474,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn test_disabled_logger() {
         let logger = AuditLogger::new(false).unwrap();
         assert!(!logger.is_enabled());
