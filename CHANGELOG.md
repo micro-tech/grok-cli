@@ -48,6 +48,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - **Key insight**: The limit is a safety mechanism - increasing it doesn't fix loop problems
 - Added system configuration notes documentation
   - Explains configuration hierarchy and priority order
+- **Added External File Access Documentation**: Comprehensive guides for referencing files outside project boundaries
+  - `EXTERNAL_FILE_ACCESS_SUMMARY.md` - Master summary of all solutions and workarounds
+  - `Doc/EXTERNAL_FILE_REFERENCE.md` - Complete guide with step-by-step instructions (406 lines)
+  - `Doc/PROPOSAL_EXTERNAL_ACCESS.md` - Technical proposal for future configurable external access feature (803 lines)
+  - `.zed/EXTERNAL_FILES_QUICK_REF.md` - Quick reference card with common solutions (171 lines)
+  - Documents 5 workarounds: symlinks (recommended), file copying, copy-paste, terminal commands, and Zed multi-root
+  - Includes Windows-specific guidance for symlinks without admin rights (Developer Mode, junctions)
+  - Security best practices and .gitignore templates
+  - Troubleshooting guide for common symlink issues
+  - Comparison tables and real-world examples
+  - Proposes future configuration-based external directory access with security controls
   - Documents how system config interacts with project config
   - Provides recommendations for setting `max_tool_loop_iterations` based on use case
   - Includes instructions for safely updating system config without breaking existing setup
