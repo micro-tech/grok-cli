@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- **Installer Updates**: Updated all installers to v0.1.41 with enhanced features and network reliability
+  - Updated `package.json` version from 0.1.4 to 0.1.41
+  - Enhanced package description to highlight new features (external access, audit logging, tool loop debugging)
+  - Updated Windows installer (`src/bin/installer.rs`) version display to show v0.1.41
+  - Updated default model in installer config template to `grok-2-latest`
+  - Enhanced installer success messages with feature announcements
+
 - **Tool Message Handling**: Upgraded to use native `ChatMessage::tool()` method from `grok_api` v0.1.2
   - Replaced workaround that converted tool results to user messages
   - Tool messages now properly use `role: "tool"` with `tool_call_id` field
@@ -18,7 +25,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Starlink-Optimized Network Retry in npm Installer** (`install.js`):
+  - Implemented exponential backoff retry logic (2s → 4s → 8s, max 60s)
+  - Automatic retry on network drops (up to 3 attempts, 5-minute timeout per attempt)
+  - Detects multiple network error types (timeout, ECONNRESET, ETIMEDOUT, ENOTFOUND, DNS failures)
+  - Converted to async/await for better error handling and retry management
+  - Clear user feedback during retry attempts with progress indicators
+  - Network error-specific messages to help diagnose Starlink connection issues
+
+- **Audit Directory Setup in Windows Installer**:
+  - Automatically creates `~/.grok/audit/` directory during installation
+  - Required for external file access audit logging (JSONL format)
+  - Enables compliance tracking out of the box
+
+- **Enhanced Configuration Template in Windows Installer**:
+  - Added `[external_access]` section with security defaults (disabled, approval required, audit enabled)
+  - Enhanced `[network]` section with retry delay settings for Starlink optimization
+  - Added `[logging]` section with default settings
+  - Added `[security]` section with shell approval mode
+  - Updated to include all v0.1.41 configuration options
+
+- **Expanded Documentation Installation**:
+  - `EXTERNAL_FILE_ACCESS_SUMMARY.md` - Master summary of external access feature
+  - `EXTERNAL_FILE_REFERENCE.md` - Complete implementation guide (406 lines)
+  - `PROPOSAL_EXTERNAL_ACCESS.md` - Technical proposal (803 lines)
+  - `TROUBLESHOOTING_TOOL_LOOPS.md` - Tool loop debugging guide
+  - `SYSTEM_CONFIG_NOTES.md` - System configuration documentation
+  - `CONTRIBUTING.md` - Contribution guidelines
+  - All new docs automatically installed by Windows installer
+
 - **Tool Loop Debugging Tools**: Added comprehensive diagnostic and troubleshooting tools for ACP tool loops
+</text>
+
   - New PowerShell script `analyze_tool_loops.ps1` to analyze debug logs and identify loop patterns
   - New bash script `test_tool_loop_debug.sh` for reproducing and debugging tool loop issues
   - New documentation `Doc/TROUBLESHOOTING_TOOL_LOOPS.md` with detailed guide for diagnosing and fixing tool loops

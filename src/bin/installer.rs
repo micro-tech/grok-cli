@@ -24,8 +24,11 @@ fn find_project_root() -> Option<PathBuf> {
 }
 
 fn main() {
-    println!("{}", "Grok CLI Installer for Windows 11".green().bold());
-    println!("=======================================");
+    println!(
+        "{}",
+        "Grok CLI Installer v0.1.41 for Windows 11".green().bold()
+    );
+    println!("=============================================");
 
     if !cfg!(windows) {
         eprintln!("{}", "This installer is designed for Windows only.".red());
@@ -116,8 +119,18 @@ fn install_windows() {
     println!("{}", "Setting up global context...".cyan());
     setup_context(&root_dir);
 
+    // 11. Setup Audit Directory
+    println!("{}", "Setting up audit logging...".cyan());
+    setup_audit_directory();
+
     println!("\n{}", "Installation Complete!".green().bold());
-    println!("Please restart your terminal to use the 'grok' command.");
+    println!("Version: 0.1.41");
+    println!("\nNew features in this version:");
+    println!("  • External file access with security controls");
+    println!("  • Audit logging for compliance tracking");
+    println!("  • Tool loop debugging and diagnostics");
+    println!("  • Enhanced MCP server support");
+    println!("\nPlease restart your terminal to use the 'grok' command.");
     println!(
         "\nDocumentation installed to: {}",
         install_dir.parent().unwrap().join("docs").display()
@@ -222,6 +235,24 @@ fn setup_context(root_dir: &Path) {
 }
 
 #[cfg(windows)]
+fn setup_audit_directory() {
+    if let Some(home_dir) = dirs::home_dir() {
+        let audit_dir = home_dir.join(".grok").join("audit");
+
+        if !audit_dir.exists() {
+            match fs::create_dir_all(&audit_dir) {
+                Ok(_) => println!("Audit directory created at {}", audit_dir.display()),
+                Err(e) => eprintln!("Failed to create audit directory: {}", e),
+            }
+        } else {
+            println!("Audit directory already exists at {}", audit_dir.display());
+        }
+    } else {
+        eprintln!("Failed to locate home directory for audit setup.");
+    }
+}
+
+#[cfg(windows)]
 fn setup_config(root_dir: &Path) {
     let config_dir = dirs::config_dir()
         .expect("Failed to get config directory")
@@ -271,16 +302,49 @@ fn setup_config(root_dir: &Path) {
 api_key = "{}"
 
 # Default Model
-default_model = "grok-3"
+default_model = "grok-2-latest"
+default_temperature = 0.7
+default_max_tokens = 4096
 
 # ACP Configuration
 [acp]
+enabled = true
 max_tool_loop_iterations = 25
 
-# Network Configuration
+# Network Configuration (Optimized for Starlink)
 [network]
 starlink_optimizations = true
 health_monitoring = true
+base_retry_delay = 2
+max_retry_delay = 60
+
+# UI Configuration
+[ui]
+colors = true
+unicode = true
+hide_tips = false
+hide_banner = false
+
+# Tools Configuration
+[tools]
+auto_accept = false
+enable_tool_output_truncation = true
+
+# Security Configuration
+[security]
+disable_yolo_mode = false
+shell_approval_mode = "prompt"
+
+# External Access Configuration (v0.1.41)
+[external_access]
+enabled = false
+require_approval = true
+enable_audit_log = true
+
+# Logging Configuration
+[logging]
+level = "info"
+file_logging = false
 "#,
                             key
                         );
@@ -386,10 +450,28 @@ fn install_additional_files(root_dir: &Path, install_dir: &Path) {
         ("README.md", "README.md"),
         ("CONFIGURATION.md", "CONFIGURATION.md"),
         ("CHANGELOG.md", "CHANGELOG.md"),
+        ("CONTRIBUTING.md", "CONTRIBUTING.md"),
+        (
+            "EXTERNAL_FILE_ACCESS_SUMMARY.md",
+            "EXTERNAL_FILE_ACCESS_SUMMARY.md",
+        ),
         (
             "Doc/MAX_TOOL_LOOP_ITERATIONS.md",
             "MAX_TOOL_LOOP_ITERATIONS.md",
         ),
+        (
+            "Doc/EXTERNAL_FILE_REFERENCE.md",
+            "EXTERNAL_FILE_REFERENCE.md",
+        ),
+        (
+            "Doc/PROPOSAL_EXTERNAL_ACCESS.md",
+            "PROPOSAL_EXTERNAL_ACCESS.md",
+        ),
+        (
+            "Doc/TROUBLESHOOTING_TOOL_LOOPS.md",
+            "TROUBLESHOOTING_TOOL_LOOPS.md",
+        ),
+        ("Doc/SYSTEM_CONFIG_NOTES.md", "SYSTEM_CONFIG_NOTES.md"),
     ];
 
     for (src_path, dst_name) in core_docs {
