@@ -25,6 +25,26 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Dynamic Skill Builder v2.0** - Create and activate custom skills on-the-fly without session restart:
+  - Complete rewrite of skill-builder system with dynamic skill creation capabilities
+  - Create skills from natural language descriptions or structured specifications (YAML/JSON)
+  - Interactive step-by-step skill building with guided prompts
+  - Clone and extend existing skills with automatic adaptation
+  - Immediate activation - skills available instantly in current session without restart
+  - Security validation with automatic tool permission checking
+  - Comprehensive skill specification format (SKILL_SPEC.md) with validation rules
+  - Support for skill dependencies, conflicts, and auto-activation triggers
+  - Four creation modes: Natural Language, Specification-based, Interactive, Template-based
+  - Tool usage guidelines with read-only defaults for security
+  - Complete skill templates for common patterns (language experts, framework specialists, tool assistants)
+  - Enhanced skill management: create, update, validate, and activate dynamically
+  - 972-line comprehensive examples document with real-world use cases
+  - 410-line skill specification format documentation
+  - Integrated with existing `/activate` and `/skills` commands
+  - Skills created via write_file tool immediately added to session's active_skills list
+  - Progressive disclosure for efficient context management
+  - Compatible with all existing skill system features
+
 - **Starlink-Optimized Network Retry in npm Installer** (`install.js`):
   - Implemented exponential backoff retry logic (2s → 4s → 8s, max 60s)
   - Automatic retry on network drops (up to 3 attempts, 5-minute timeout per attempt)
