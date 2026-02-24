@@ -41,6 +41,14 @@ impl HookManager {
         self.hooks.push(hook);
     }
 
+    pub fn list_hooks(&self) -> Vec<&str> {
+        self.hooks.iter().map(|h| h.name()).collect()
+    }
+
+    pub fn hook_count(&self) -> usize {
+        self.hooks.len()
+    }
+
     pub fn execute_before_tool(&self, tool_name: &str, args: &Value) -> Result<bool> {
         let context = ToolContext {
             tool_name: tool_name.to_string(),

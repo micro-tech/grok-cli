@@ -850,6 +850,10 @@ async fn handle_special_commands(
             }
             Ok(Some(true))
         }
+        "hooks" => {
+            print_hooks_info(app_config);
+            Ok(Some(true))
+        }
         _ => {
             println!("{} Unknown command: /{}", "⚠".bright_yellow(), parts[0]);
             println!("Type /help for available commands");
@@ -886,6 +890,7 @@ fn print_interactive_help() {
         ("/skills", "List available skills and their status"),
         ("/activate <skill>", "Activate a skill for this session"),
         ("/deactivate <skill>", "Deactivate an active skill"),
+        ("/hooks", "Show hooks system status and information"),
     ];
 
     for (command, description) in commands {
@@ -1514,6 +1519,84 @@ fn get_active_skills_context(session: &InteractiveSession) -> Option<String> {
     }
 
     Some(context)
+}
+
+fn print_hooks_info(config: &Config) {
+    println!("{}", "Hooks System Information".bright_cyan().bold());
+    println!();
+
+    // Check if hooks are enabled
+    let hooks_enabled = config.tools.enable_hooks;
+    let status_symbol = if hooks_enabled {
+        "✓".bright_green()
+    } else {
+        "✗".bright_red()
+    };
+    let status_text = if hooks_enabled {
+        "Enabled".bright_green()
+    } else {
+        "Disabled".bright_red()
+    };
+
+    println!("  {} Hooks Status: {}", status_symbol, status_text);
+    println!();
+
+    // Extensions information
+    let extensions_enabled = config.experimental.extensions.enabled;
+    let ext_status_symbol = if extensions_enabled {
+        "✓".bright_green()
+    } else {
+        "✗".bright_red()
+    };
+    let ext_status_text = if extensions_enabled {
+        "Enabled".bright_green()
+    } else {
+        "Disabled".bright_red()
+    };
+
+    println!(
+        "  {} Extensions System: {}",
+        ext_status_symbol, ext_status_text
+    );
+
+    if extensions_enabled {
+        if let Some(ext_dir) = &config.experimental.extensions.extension_dir {
+            println!(
+                "  {} Extension Directory: {}",
+                "ℹ".bright_blue(),
+                ext_dir.display()
+            );
+        }
+
+        if !config.experimental.extensions.enabled_extensions.is_empty() {
+            println!();
+            println!("  {} Enabled Extensions:", "📦".bright_cyan());
+            for ext in &config.experimental.extensions.enabled_extensions {
+                println!("    • {}", ext.bright_white());
+            }
+        }
+    }
+
+    println!();
+    println!("{}", "About Hooks:".bright_yellow().bold());
+    println!("  Hooks allow you to execute custom logic before and after tool calls.");
+    println!("  They can be used for logging, validation, security checks, and more.");
+    println!();
+
+    if !hooks_enabled {
+        println!("{}", "To enable hooks:".bright_yellow());
+        println!("  1. Edit your config file (use /settings)");
+        println!("  2. Set 'tools.enable_hooks = true'");
+        println!("  3. Optionally enable extensions system for custom hooks");
+        println!();
+    }
+
+    if hooks_enabled && !extensions_enabled {
+        println!("{}", "Tip:".bright_blue().bold());
+        println!("  Enable the extensions system to load custom hooks from extensions.");
+        println!("  Set 'experimental.extensions.enabled = true' in your config.");
+        println!();
+    }
 }
 
 #[cfg(test)]

@@ -23,6 +23,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Eliminates potential confusion from tool results appearing as user messages
   - Requires `grok_api` v0.1.2 or higher with native tool support
 
+### Fixed
+
+- **Interactive Mode**: Fixed `/hooks` command not being recognized
+  - Added missing command handler in `handle_special_commands` function
+  - Implemented `print_hooks_info()` to display hooks system status and configuration
+  - Added `list_hooks()` and `hook_count()` methods to HookManager API
+  - Shows hooks enable status, extensions configuration, and helpful usage tips
+  - Updated interactive help menu to include `/hooks` command
+
 ### Added
 
 - **Dynamic Skill Builder v2.0** - Create and activate custom skills on-the-fly without session restart:
