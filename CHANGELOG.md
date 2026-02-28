@@ -13,6 +13,30 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+### Added
+
+- **`grok acp stdio --workspace <path>` flag for explicit project root**
+  - Zed (and other ACP clients) sometimes launch the `grok` binary from the
+    user's home directory rather than the project root, causing every file
+    access to be denied. The new `--workspace` flag lets you tell grok exactly
+    which directory to trust at startup — before any protocol messages arrive.
+  - In your Zed agent settings, pass `--workspace ${workspaceFolder}` and Zed
+    will substitute the open project's root automatically.
+  - Two environment-variable fallbacks are also checked (in order):
+    1. `GROK_WORKSPACE_ROOT` — grok-specific override
+    2. `WORKSPACE_ROOT` — generic convention used by some CI systems
+  - Example Zed agent config (`~/.config/zed/settings.json`):
+    ```json
+    {
+      "agent": {
+        "command": "grok",
+        "args": ["acp", "stdio", "--workspace", "${workspaceFolder}"]
+      }
+    }
+    ```
+  - At startup grok now logs the CWD (or the explicit workspace root) to
+    `tracing` at INFO level so it is always clear which directory is trusted.
+
 ### Fixed
 
 - **ACP Mode — Cross-project file access denied when using Zed resource links**

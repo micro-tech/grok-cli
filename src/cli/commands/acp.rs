@@ -35,7 +35,9 @@ use crate::utils::chat_logger;
 pub async fn handle_acp_action(action: crate::AcpAction, config: &Config) -> Result<()> {
     match action {
         crate::AcpAction::Server { port, host } => start_acp_server(port, &host, config).await,
-        crate::AcpAction::Stdio { model } => start_acp_stdio(config, model).await,
+        crate::AcpAction::Stdio { model, workspace } => {
+            start_acp_stdio(config, model, workspace).await
+        }
         crate::AcpAction::Test { address } => test_acp_connection(&address, config).await,
         crate::AcpAction::Capabilities => show_acp_capabilities().await,
     }
@@ -112,10 +114,43 @@ async fn start_acp_server(port: Option<u16>, host: &str, config: &Config) -> Res
     Ok(())
 }
 
-async fn start_acp_stdio(config: &Config, model: Option<String>) -> Result<()> {
+async fn start_acp_stdio(
+    config: &Config,
+    model: Option<String>,
+    workspace: Option<String>,
+) -> Result<()> {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     let agent = GrokAcpAgent::new(config.clone(), model).await?;
+
+    // Trust an explicitly-supplied workspace root immediately — before any
+    // ACP protocol messages arrive.  This is the most reliable way to handle
+    // the case where Zed does not send workspaceRoot in initialize/session.new.
+    //
+    // In your Zed agent settings pass: --workspace ${workspaceFolder}
+    // That tells Zed to substitute the open project's root directory.
+    //
+    // Also honour the GROK_WORKSPACE_ROOT environment variable as a fallback
+    // for shells / CI environments that set it without CLI flags.
+    let explicit_workspace = workspace
+        .or_else(|| std::env::var("GROK_WORKSPACE_ROOT").ok())
+        .or_else(|| std::env::var("WORKSPACE_ROOT").ok());
+
+    if let Some(ref root) = explicit_workspace {
+        info!("Explicit workspace root supplied at startup: {}", root);
+        register_workspace_root(&agent, root);
+    } else {
+        // No explicit root.  Log the CWD so the user can see where grok thinks
+        // the project is.  This is printed to stderr so it doesn't corrupt the
+        // JSON-RPC stream on stdout.
+        match std::env::current_dir() {
+            Ok(cwd) => info!(
+                "No explicit --workspace supplied; trusting CWD: {}",
+                cwd.display()
+            ),
+            Err(e) => warn!("Could not determine CWD: {}", e),
+        }
+    }
 
     info!("Starting ACP session on stdio");
     run_acp_session(stdin, stdout, agent).await

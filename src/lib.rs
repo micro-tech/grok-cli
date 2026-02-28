@@ -132,6 +132,11 @@ pub enum AcpAction {
         /// Model to use (overrides default)
         #[arg(long)]
         model: Option<String>,
+        /// Explicitly set the workspace/project root directory to trust.
+        /// Use this when Zed does not send workspaceRoot automatically.
+        /// In Zed agent settings you can pass: --workspace ${workspaceFolder}
+        #[arg(long, value_name = "PATH")]
+        workspace: Option<String>,
     },
     /// Test ACP connection
     Test {
