@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 use colored::*;
 use serde_json::{Value, json};
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
@@ -342,20 +342,87 @@ fn register_workspace_root(agent: &GrokAcpAgent, raw_path: &str) {
     let resolved = resolve_workspace_path(raw_path);
     info!("Registering workspace root as trusted: {:?}", resolved);
     agent.security.add_trusted_directory(&resolved);
+}
 
-    // Belt-and-suspenders: also trust every parent component that looks like
-    // a reasonable project root (stops at the drive root / filesystem root).
-    // This handles cases where the client sends a sub-directory instead of
-    // the real root.
-    // We deliberately do NOT trust "/" or "C:\" to avoid opening up the whole
-    // filesystem — we stop at depth 2 from root.
-    // (Disabled for now; uncomment if sub-directory issues arise.)
-    // let mut p = resolved.as_path();
-    // while let Some(parent) = p.parent() {
-    //     if parent.components().count() <= 1 { break; }
-    //     agent.security.add_trusted_directory(parent);
-    //     p = parent;
-    // }
+/// Walk up from a file path to find the project workspace root by looking for
+/// common project markers (.git, Cargo.toml, package.json, .grok, etc.).
+/// Falls back to the file's immediate parent directory if no marker is found.
+fn find_workspace_root_from_path(file_path: &Path) -> PathBuf {
+    // Start from the file's parent directory (or the path itself if it's a dir)
+    let start = if file_path.is_dir() {
+        file_path.to_path_buf()
+    } else {
+        file_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| file_path.to_path_buf())
+    };
+
+    // Common project root markers — ordered from most specific to least
+    const MARKERS: &[&str] = &[
+        ".git",
+        "Cargo.toml",
+        "package.json",
+        "pyproject.toml",
+        "setup.py",
+        "go.mod",
+        ".grok",
+        "composer.json",
+        "pom.xml",
+        "build.gradle",
+        ".svn",
+    ];
+
+    let mut current = start.clone();
+    loop {
+        // Stop before we reach the filesystem root (depth ≤ 2 on Windows means
+        // something like "C:\" or "C:\Users" — too broad to trust wholesale).
+        if current.components().count() <= 2 {
+            break;
+        }
+        for marker in MARKERS {
+            if current.join(marker).exists() {
+                return current;
+            }
+        }
+        match current.parent() {
+            Some(parent) => current = parent.to_path_buf(),
+            None => break,
+        }
+    }
+    // Fallback: trust the starting directory (immediate parent of the file)
+    start
+}
+
+/// Extract the workspace root from a resource URI (file:// or plain path) and
+/// register it as a trusted directory with the security policy.
+///
+/// This is the mechanism that lets Grok access files in **any project that the
+/// user has open in Zed**, not only the directory where the `grok` binary was
+/// originally launched. When Zed embeds @-mentioned files via `ResourceLink` or
+/// `Resource` blocks inside a `session/prompt` message, those URIs give us the
+/// exact on-disk location of the resource. We walk up from that location to
+/// find the project root and trust the entire project tree.
+fn trust_workspace_from_uri(uri: &str, agent: &GrokAcpAgent) {
+    // Only process URIs that look like local file references
+    let looks_like_file = uri.starts_with("file://")
+        || uri.starts_with('/')
+        || (uri.len() > 2 && uri.chars().nth(1) == Some(':'))   // Windows  C:\...
+        || uri.contains(":\\")
+        || uri.contains(":/");
+
+    if !looks_like_file {
+        return;
+    }
+
+    let file_path = resolve_workspace_path(uri);
+    let workspace_root = find_workspace_root_from_path(&file_path);
+
+    info!(
+        "Auto-trusting workspace root from resource URI '{}' → {:?}",
+        uri, workspace_root
+    );
+    agent.security.add_trusted_directory(&workspace_root);
 }
 
 async fn handle_initialize(params: &Value, agent: &GrokAcpAgent) -> Result<Value> {
@@ -501,17 +568,27 @@ where
 
     let session_id = SessionId::new(req.session_id.0.clone());
 
-    // Extract text from prompt
+    // Extract text from prompt.
+    // While iterating we also auto-trust any workspace roots that can be
+    // inferred from embedded resource URIs.  This covers the common case where
+    // the user has Grok open for project A but is @-mentioning files that live
+    // in project B — without this, those paths would be denied by the security
+    // policy because only project A's root was registered at startup.
     let mut message_text = String::new();
     for block in req.prompt {
         match block {
             ContentBlock::Text(text) => message_text.push_str(&text.text),
             ContentBlock::ResourceLink(link) => {
+                // Auto-trust the workspace that owns this linked resource so
+                // the model can follow up with read_file / list_directory calls.
+                trust_workspace_from_uri(&link.uri, agent);
                 message_text.push_str(&format!("\n[Resource: {} ({})]", link.name, link.uri));
             }
             ContentBlock::Resource(res) => {
                 let crate::acp::protocol::EmbeddedResourceResource::TextResourceContents(text_res) =
                     res.resource;
+                // Auto-trust the workspace that owns this embedded resource.
+                trust_workspace_from_uri(&text_res.uri, agent);
                 message_text.push_str(&format!(
                     "\n[Context: {}]\n{}\n",
                     text_res.uri, text_res.text

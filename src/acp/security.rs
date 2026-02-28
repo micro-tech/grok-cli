@@ -201,7 +201,39 @@ impl SecurityPolicy {
             ExternalAccessResult::RequiresApproval(resolved) => {
                 Ok(PathAccessType::ExternalRequiresApproval(resolved))
             }
-            ExternalAccessResult::Denied(reason) => Err(anyhow!("Access denied: {}", reason)),
+            ExternalAccessResult::Denied(reason) => {
+                // Build a diagnostic message that shows the caller exactly which
+                // directories are currently trusted and what path was resolved.
+                // This makes it much easier to understand why access failed when
+                // Grok is running as an ACP server for a different project than
+                // the one it was launched from.
+                let resolved_display = self
+                    .resolve_path(path_ref)
+                    .map(|p| format!("{}", p.display()))
+                    .unwrap_or_else(|_| format!("{}", path_ref.display()));
+
+                let trusted_list = if self.trusted_directories.is_empty() {
+                    "  (none — no trusted directories registered yet)".to_string()
+                } else {
+                    self.trusted_directories
+                        .iter()
+                        .map(|p| format!("  • {}", p.display()))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                };
+
+                Err(anyhow!(
+                    "Access denied: {}\n\
+                     Requested path : {}\n\
+                     Trusted directories:\n{}\n\
+                     Tip: if this file is in your project, make sure Grok is \
+                     launched from the project root, or @-mention any file in \
+                     the project so the workspace root is auto-detected.",
+                    reason,
+                    resolved_display,
+                    trusted_list,
+                ))
+            }
         }
     }
 

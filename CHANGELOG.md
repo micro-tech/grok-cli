@@ -15,6 +15,30 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Fixed
 
+- **ACP Mode — Cross-project file access denied when using Zed resource links**
+  - **Root cause:** When Grok is launched as an ACP server for project A but the
+    user @-mentions files from project B in Zed, project B's directory was never
+    added to the trusted paths — only the directory where `grok` was started was
+    trusted. Every `read_file` / `list_directory` call for project B would return
+    "Access denied: External access is disabled in configuration".
+  - **Fix (`src/cli/commands/acp.rs`):** `handle_session_prompt` now inspects
+    every `ResourceLink` and `Resource` block in the incoming `session/prompt`
+    message. For each `file://` URI it finds, it calls the new
+    `trust_workspace_from_uri` helper which:
+    1. Decodes the URI using the existing `resolve_workspace_path` logic
+       (handles `file://`, forward-slash Windows paths, Git-bash paths, etc.)
+    2. Walks up the directory tree from the resolved path looking for common
+       project-root markers (`.git`, `Cargo.toml`, `package.json`, `.grok`, etc.)
+       via the new `find_workspace_root_from_path` helper
+    3. Registers the discovered workspace root as a trusted directory so all
+       subsequent `read_file` / `list_directory` / `glob_search` calls for that
+       project succeed without requiring external-access config changes
+  - **Fix (`src/acp/security.rs`):** `validate_path_access` now includes a
+    detailed diagnostic when access is denied — showing the resolved path,
+    the full list of currently-trusted directories, and a tip on how to fix it.
+    This replaces the terse "Access denied: …" message that gave the AI model
+    nothing useful to tell the user.
+
 - **ACP Mode — "Request timeout after 30 seconds" — root cause diagnosed and mitigated**
   - **Root cause 1 (grok_api crate bug):** `grok_api ≤ 0.1.2` hardcodes the
     literal `30` in its `from_reqwest` error formatter regardless of the actual
