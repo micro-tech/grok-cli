@@ -23,6 +23,7 @@ use crate::display::{
     BannerConfig, clear_current_line, print_directory_recommendation, print_grok_logo,
     print_welcome_banner,
 };
+use crate::skills::{AutoActivationEngine, list_skills};
 use crate::utils::context::{
     format_context_for_prompt, get_all_context_file_paths, load_and_merge_project_context,
 };
@@ -47,6 +48,15 @@ pub struct InteractiveSession {
     /// List of currently active skill names
     #[serde(default)]
     pub active_skills: Vec<String>,
+    /// Whether the auto-activation engine should check each user message
+    /// and suggest/activate relevant skills automatically.
+    /// Toggled at runtime with `/auto-skills on|off`.
+    #[serde(default = "default_auto_skills_enabled")]
+    pub auto_skills_enabled: bool,
+}
+
+fn default_auto_skills_enabled() -> bool {
+    true
 }
 
 /// Conversation item in the session
@@ -102,6 +112,7 @@ impl InteractiveSession {
             temperature: 0.7,
             max_tokens: 4096,
             active_skills: Vec::new(),
+            auto_skills_enabled: true,
             system_prompt,
             conversation_history: Vec::new(),
             current_directory,
@@ -491,6 +502,10 @@ async fn run_interactive_loop(
             description: "Deactivate a skill".to_string(),
         },
         Suggestion {
+            text: "/auto-skills".to_string(),
+            description: "Toggle skill auto-activation (on/off)".to_string(),
+        },
+        Suggestion {
             text: "!ls".to_string(),
             description: "List files (shell command)".to_string(),
         },
@@ -532,6 +547,34 @@ async fn run_interactive_loop(
         handle_special_commands(input, session, interactive_config, app_config).await?
     {
         return Ok(command_result);
+    }
+
+    // Auto-activate skills based on the user's message context.
+    if session.auto_skills_enabled {
+        if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
+            if let Ok(available) = list_skills(&skills_dir) {
+                let engine = AutoActivationEngine::new();
+                let suggestions = engine.check(
+                    input,
+                    &session.current_directory,
+                    &available,
+                    &session.active_skills,
+                );
+                for m in suggestions {
+                    println!(
+                        "{} Auto-activating skill {} (confidence: {}%)",
+                        "🔧".bright_cyan(),
+                        m.skill_name.bright_yellow(),
+                        m.confidence
+                    );
+                    for reason in &m.reasons {
+                        println!("     {}", reason.dimmed());
+                    }
+                    // Activate via the existing helper so security validation runs.
+                    let _ = activate_skill(session, &m.skill_name);
+                }
+            }
+        }
     }
 
     // Send to Grok API
@@ -850,6 +893,61 @@ async fn handle_special_commands(
             }
             Ok(Some(true))
         }
+        "auto-skills" => {
+            match parts.get(1).copied() {
+                Some("on") => {
+                    session.auto_skills_enabled = true;
+                    println!(
+                        "{} Skill auto-activation {}",
+                        "✓".bright_green(),
+                        "enabled".bright_green()
+                    );
+                    println!(
+                        "  {}",
+                        "Skills will be activated automatically based on your messages.".dimmed()
+                    );
+                }
+                Some("off") => {
+                    session.auto_skills_enabled = false;
+                    println!(
+                        "{} Skill auto-activation {}",
+                        "✓".bright_green(),
+                        "disabled".bright_yellow()
+                    );
+                    println!(
+                        "  {}",
+                        "Use /activate <skill-name> to enable skills manually.".dimmed()
+                    );
+                }
+                _ => {
+                    let state = if session.auto_skills_enabled {
+                        "on".bright_green()
+                    } else {
+                        "off".bright_yellow()
+                    };
+                    println!(
+                        "{} Skill auto-activation is currently: {}",
+                        "ℹ".bright_blue(),
+                        state
+                    );
+                    println!(
+                        "  Usage: {} or {}",
+                        "/auto-skills on".bright_cyan(),
+                        "/auto-skills off".bright_cyan()
+                    );
+                    println!(
+                        "  {}",
+                        "Skills with 'auto-activate' triggers in their SKILL.md will be".dimmed()
+                    );
+                    println!(
+                        "  {}",
+                        "suggested automatically based on keywords, patterns, and project files."
+                            .dimmed()
+                    );
+                }
+            }
+            Ok(Some(true))
+        }
         "hooks" => {
             print_hooks_info(app_config);
             Ok(Some(true))
@@ -890,6 +988,10 @@ fn print_interactive_help() {
         ("/skills", "List available skills and their status"),
         ("/activate <skill>", "Activate a skill for this session"),
         ("/deactivate <skill>", "Deactivate an active skill"),
+        (
+            "/auto-skills [on|off]",
+            "Toggle or show skill auto-activation",
+        ),
         ("/hooks", "Show hooks system status and information"),
     ];
 

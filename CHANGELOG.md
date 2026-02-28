@@ -7,6 +7,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- **Skill Auto-Activation Engine** (Task 18.3) - Skills now activate automatically based on conversation context:
+  - New `AutoActivationEngine` in `src/skills/auto_activate.rs` with three trigger types:
+    - **Keywords** – case-insensitive word/phrase matches in the user's message (e.g. `"rust"`, `"cargo"`)
+    - **Regex patterns** – full Rust `regex` patterns matched against the user's message (e.g. `fn\s+\w+`)
+    - **File extensions** – skills activate when the working directory contains matching file types (e.g. `.rs`, `.py`)
+  - Confidence scoring system: keywords (+30), patterns (+40), file extensions (+25), capped at 100
+  - Per-skill `min_confidence` threshold (default: 50) — raise it for noisier skills
+  - New `auto-activate` YAML frontmatter block in `SKILL.md` to declare trigger conditions
+  - New `/auto-skills [on|off]` interactive command to toggle auto-activation globally
+  - Auto-activation runs security validation (via existing `SkillSecurityValidator`) before activating
+  - Already-active skills are never suggested twice in the same session
+  - 11 unit tests covering: keyword matching, regex matching, multi-keyword accumulation, confidence
+    thresholding, score capping, case-insensitivity, already-active exclusion, disabled skills,
+    invalid regex safety, and sort order
+  - New `AutoActivateConfig` and `SkillMatch` types exported from `skills` module
+  - `InteractiveSession` gains `auto_skills_enabled: bool` field (serializable, default `true`)
+
 ### Changed
 
 - **Installer Updates**: Updated all installers to v0.1.42 with enhanced features and network reliability
