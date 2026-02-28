@@ -1,5 +1,42 @@
 # Grok CLI Project Configuration
 
+# ─── Request / Network Timeouts ──────────────────────────────────────────────
+# Total time (seconds) the HTTP client will wait for the Grok API to respond.
+# LLM responses on complex prompts with tool loops can take several minutes.
+# On Starlink the satellite round-trip alone adds ~600 ms and a multi-step
+# session can easily run 60-120 s.
+# ⚠️  NOTE: grok_api ≤ 0.1.2 has a bug where the error message ALWAYS prints
+#     "Request timeout after 30 seconds" regardless of this value. The "30" in
+#     that message is a hardcoded constant in the crate — your real timeout is
+#     whatever you set here.  Don't change this to 30 because of that message!
+# Environment override: GROK_TIMEOUT
+timeout_secs = 300
+
+# How many times to retry a failed / timed-out request before giving up.
+# Environment override: GROK_MAX_RETRIES
+max_retries = 5
+
+# ─── Network / Starlink settings ─────────────────────────────────────────────
+[network]
+starlink_optimizations = true
+base_retry_delay = 5
+max_retry_delay = 60
+health_monitoring = true
+
+# TCP connection-establishment timeout (seconds).
+# ⚠️  IMPORTANT: the grok_api crate (≤ 0.1.2) HARDCODES its own connect_timeout
+#     of 10 s and does NOT expose a setter for it.  Changing this value in our
+#     config currently has NO effect on actual API calls — it is reserved for a
+#     future version of grok_api that exposes connect_timeout configuration.
+#     Your change from 30 → 40 will not help; the real fix is timeout_secs above.
+# Environment override: GROK_CONNECT_TIMEOUT
+connect_timeout = 10
+
+# How long (seconds) to wait for data after the connection is open.
+# Set to match (or slightly exceed) timeout_secs above.
+# Environment override: GROK_READ_TIMEOUT
+read_timeout = 300
+
 # ACP Configuration
 [acp]
 enabled = true

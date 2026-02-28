@@ -1,38 +1,68 @@
 # Grok CLI Configuration Example
-# Copy this to ~/.config/grok-cli/config.toml and customize as needed
+# Copy this to ~/.grok/config.toml (project) or %APPDATA%\grok-cli\config.toml (system)
+# and customize as needed.
+#
+# Priority order (highest → lowest):
+#   Environment variables → project .grok/config.toml → system config → built-in defaults
 
-# API Configuration
+# ── API ──────────────────────────────────────────────────────────────────────
 api_key = "xai-your-api-key-here"
 default_model = "grok-2-latest"
 default_temperature = 0.7
-default_max_tokens = 4096
-timeout_secs = 60
+default_max_tokens = 256000
+
+# Request timeout in seconds.
+# LLM responses can be slow, especially with large max_tokens or many tool
+# calls.  On Starlink the satellite round-trip alone adds ~600 ms, and a
+# complex multi-step session can take several minutes.
+# ⚠️  30 seconds (old default) is almost always too short — use 300 or higher.
+# Environment override: GROK_TIMEOUT
+timeout_secs = 300
+
+# How many times to retry a failed request before giving up.
+# Each retry uses exponential back-off: 2 s → 4 s → 8 s.
+# Environment override: GROK_MAX_RETRIES
 max_retries = 3
 
-# ACP (Agent Client Protocol) Configuration
+# ── ACP (Agent Client Protocol / Zed Integration) ────────────────────────────
 [acp]
 enabled = true
 bind_host = "127.0.0.1"
 protocol_version = "1.0"
 dev_mode = false
 
-# Maximum tool loop iterations (prevents infinite loops)
-# Increase this value for complex multi-step tasks
-# Default: 25 (was previously hardcoded to 10)
+# Maximum tool-loop iterations before the agent gives up.
+# Prevents runaway loops when the model repeatedly calls tools.
 # Recommended values:
-#   - 25: Default, handles most tasks
-#   - 50: Complex multi-step operations
-#   - 100+: Very complex tasks with many tool calls
+#   25  — default, handles most tasks
+#   50  — complex multi-step operations
+#   100 — very large refactoring / many files
 max_tool_loop_iterations = 25
 
-# Network Configuration (Optimized for Starlink)
+# ── Network (Starlink-optimised) ─────────────────────────────────────────────
 [network]
+# Enable Starlink-specific retry heuristics (satellite drop detection).
 starlink_optimizations = true
+
+# Initial delay before the first retry, in seconds.  Doubles each attempt.
 base_retry_delay = 2
+
+# Upper bound on retry delay, in seconds.
 max_retry_delay = 60
+
+# Monitor network health and adapt retry behaviour automatically.
 health_monitoring = true
-connect_timeout = 30
-read_timeout = 60
+
+# TCP connection timeout in seconds (just for establishing the socket).
+# 10 s is usually fine even on Starlink.
+# Environment override: GROK_CONNECT_TIMEOUT
+connect_timeout = 10
+
+# How long to wait for data after the connection is open, in seconds.
+# Set this to match (or slightly exceed) timeout_secs above.
+# ⚠️  30 seconds is too short for LLM streaming responses.
+# Environment override: GROK_READ_TIMEOUT
+read_timeout = 300
 
 # UI Configuration
 [ui]

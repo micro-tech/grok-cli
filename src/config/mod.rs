@@ -390,7 +390,7 @@ fn default_max_tokens() -> u32 {
 }
 
 fn default_timeout_secs() -> u64 {
-    30
+    300
 }
 
 fn default_max_retries() -> u32 {
@@ -735,7 +735,7 @@ impl Default for Config {
             default_model: default_model(),
             default_temperature: 0.7,
             default_max_tokens: 256000,
-            timeout_secs: 30,
+            timeout_secs: 300,
             max_retries: 3,
             general: GeneralConfig::default(),
             output: OutputConfig::default(),
@@ -776,7 +776,7 @@ impl Default for NetworkConfig {
             max_retry_delay: 60,
             health_monitoring: true,
             connect_timeout: 10,
-            read_timeout: 30,
+            read_timeout: 300,
         }
     }
 }

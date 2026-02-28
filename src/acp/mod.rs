@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
+use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
 use crate::GrokClient;
@@ -393,23 +394,122 @@ impl GrokAcpAgent {
             let loop_start = std::time::Instant::now();
             info!("🔄 Tool loop iteration {}/{}", loop_count, max_loops);
 
-            // Make request to Grok
+            // Make request to Grok — with per-call retry/backoff for Starlink drops.
+            // Starlink handovers can take 20-60 s; we need enough retries + delays
+            // to outlast a satellite dropout before giving up on this iteration.
+            //
+            // ⚠️  KNOWN UPSTREAM BUG (grok_api ≤ 0.1.2):
+            //     The crate's `from_reqwest` always emits "Request timeout after 30
+            //     seconds" regardless of the real configured timeout_secs value.
+            //     The hardcoded "30" in that message is NOT the actual timeout — it
+            //     is a bug in the crate.  Our real timeout is `config.timeout_secs`.
+            const MAX_API_RETRIES: u32 = 5;
+            // Starlink-safe delays: 5 → 10 → 20 → 40 → 60 s (capped)
+            const BASE_RETRY_DELAY_SECS: u64 = 5;
+            const MAX_RETRY_DELAY_SECS: u64 = 60;
+
             info!(
-                "📡 Calling Grok API (model: {}, temp: {}, max_tokens: {})...",
-                session.config.model, temperature, max_tokens
+                "📡 Calling Grok API (model: {}, temp: {}, max_tokens: {}, \
+                 real_timeout: {}s)…",
+                session.config.model, temperature, max_tokens, self.config.timeout_secs,
             );
+            // NOTE: if you see "Request timeout after 30 seconds" the "30" is a
+            // hardcoded value in the grok_api crate error formatter — the actual
+            // HTTP timeout driving the request is the real_timeout printed above.
             let api_call_start = std::time::Instant::now();
 
-            let response_with_finish = self
-                .grok_client
-                .chat_completion_with_history(
-                    &session.messages,
-                    temperature,
-                    max_tokens,
-                    &session.config.model,
-                    Some(tool_defs.clone()),
-                )
-                .await?;
+            let response_with_finish = {
+                let mut last_err = anyhow!("API call failed before first attempt");
+                let mut attempt = 0u32;
+                loop {
+                    attempt += 1;
+                    match self
+                        .grok_client
+                        .chat_completion_with_history(
+                            &session.messages,
+                            temperature,
+                            max_tokens,
+                            &session.config.model,
+                            Some(tool_defs.clone()),
+                        )
+                        .await
+                    {
+                        Ok(resp) => break resp,
+                        Err(e) => {
+                            let is_retriable = crate::utils::network::detect_network_drop(&e) || {
+                                let msg = e.to_string().to_lowercase();
+                                msg.contains("timeout")
+                                    || msg.contains("timed out")
+                                    || msg.contains("reset")
+                                    || msg.contains("connection")
+                                    || msg.contains("503")
+                                    || msg.contains("502")
+                                    || msg.contains("504")
+                            };
+
+                            if attempt <= MAX_API_RETRIES && is_retriable {
+                                // Exponential backoff capped at MAX_RETRY_DELAY_SECS.
+                                // Using saturating_mul + min(6) on the shift to avoid
+                                // overflow on large attempt counts.
+                                let delay = BASE_RETRY_DELAY_SECS
+                                    .saturating_mul(1u64 << (attempt - 1).min(6))
+                                    .min(MAX_RETRY_DELAY_SECS);
+
+                                let err_kind = {
+                                    let m = e.to_string().to_lowercase();
+                                    if m.contains("timeout") || m.contains("timed out") {
+                                        // ⚠️  grok_api always says "30 seconds" here —
+                                        //     the real timeout is config.timeout_secs
+                                        format!(
+                                            "TIMEOUT (real timeout={}s; grok_api \
+                                             hardcodes '30' in the error message)",
+                                            self.config.timeout_secs
+                                        )
+                                    } else {
+                                        "NETWORK DROP".to_string()
+                                    }
+                                };
+
+                                warn!(
+                                    "⚠️  API call failed (attempt {}/{}) [{}]: {}. \
+                                     Waiting {}s before retry (Starlink recovery)…",
+                                    attempt, MAX_API_RETRIES, err_kind, e, delay
+                                );
+                                sleep(Duration::from_secs(delay)).await;
+                                last_err = e;
+                                continue;
+                            } else {
+                                let tip = {
+                                    let m = e.to_string().to_lowercase();
+                                    if m.contains("timeout") || m.contains("timed out") {
+                                        format!(
+                                            "\n💡 The error says '30 seconds' but that is a \
+                                             grok_api crate bug — your real timeout_secs={s}. \
+                                             If this is a Starlink dropout the connection usually \
+                                             recovers; try again or increase max_tool_loop_\
+                                             iterations in .grok/config.toml.",
+                                            s = self.config.timeout_secs
+                                        )
+                                    } else {
+                                        String::new()
+                                    }
+                                };
+                                if is_retriable {
+                                    error!(
+                                        "❌ API call failed after {} retries: {}{}",
+                                        MAX_API_RETRIES, e, tip
+                                    );
+                                } else {
+                                    error!("❌ Non-retriable API error: {}{}", e, tip);
+                                }
+                                return Err(anyhow!("{}{}", e, tip));
+                            }
+                        }
+                    }
+                }
+            };
+            // suppress unused-variable warning on last_err path
+            let _ = &response_with_finish;
 
             let api_duration = api_call_start.elapsed();
             info!("✅ Grok API responded in {:?}", api_duration);

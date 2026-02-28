@@ -13,6 +13,43 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+### Fixed
+
+- **ACP Mode — "Request timeout after 30 seconds" — root cause diagnosed and mitigated**
+  - **Root cause 1 (grok_api crate bug):** `grok_api ≤ 0.1.2` hardcodes the
+    literal `30` in its `from_reqwest` error formatter regardless of the actual
+    configured `timeout_secs`. The message "Request timeout after 30 seconds"
+    is therefore always misleading — the real HTTP timeout driving the request
+    is `config.timeout_secs` (default 300 s). This is a bug in the upstream
+    crate and cannot be fixed without a crate update or fork.
+  - **Root cause 2 (connect_timeout config is dead code):** `NetworkConfig.
+    connect_timeout` is read from `.grok/config.toml` but was never passed to
+    the `grok_api` HTTP client. The crate hardcodes `connect_timeout(10 s)`
+    internally. Changing `connect_timeout` in config had zero effect on API
+    calls. Added prominent warning comments in config to prevent confusion.
+  - **Root cause 3 (retry delays too short for Starlink):** ACP retry backoff
+    was `2 → 4 → 8 s` over 3 attempts — far too short for a Starlink satellite
+    handover which can take 20–60 s to recover.
+
+- **ACP retry logic hardened for Starlink satellite drops**
+  - `MAX_API_RETRIES` raised from **3 → 5** in `handle_chat_completion`
+  - `BASE_RETRY_DELAY_SECS` raised from **2 s → 5 s**; delays now follow
+    `5 → 10 → 20 → 40 → 60 s` (capped at 60 s via `MAX_RETRY_DELAY_SECS`)
+  - Total maximum wait before giving up: **~135 s** vs the previous **~14 s**
+  - Retry log now labels each failure as `TIMEOUT` or `NETWORK DROP` and
+    prints `real_timeout=Ns` so it is clear which configured timeout applies
+  - Error message when all retries are exhausted now includes a diagnostic tip
+    explaining the grok_api "30 seconds" bug and suggesting `timeout_secs` as
+    the knob to adjust
+
+- **`.grok/config.toml` — explicit timeout settings added**
+  - `timeout_secs = 300` and `max_retries = 5` now appear explicitly at the
+    top of the project config so they are visible and easy to tune
+  - `[network]` section added with `connect_timeout`, `read_timeout`, and
+    Starlink-specific retry parameters
+  - Every timeout field annotated with comments explaining what it controls,
+    its environment-variable override, and the grok_api crate limitations
+
 ---
 
 ## [0.1.5] - 2026-02-28
