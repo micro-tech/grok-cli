@@ -13,8 +13,14 @@ pub struct SecurityPolicy {
 impl SecurityPolicy {
     pub fn new() -> Self {
         let working_directory = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+        // Always trust the working directory at construction time so that the
+        // project root where Grok was opened is accessible from the very first
+        // tool call — before any session/new or initialize message arrives.
+        let canonical_cwd = working_directory
+            .canonicalize()
+            .unwrap_or_else(|_| working_directory.clone());
         Self {
-            trusted_directories: Vec::new(),
+            trusted_directories: vec![canonical_cwd],
             working_directory,
             external_access_config: ExternalAccessConfig::default(),
         }
@@ -26,8 +32,14 @@ impl SecurityPolicy {
     }
 
     pub fn with_working_directory(working_directory: PathBuf) -> Self {
+        // Also trust the supplied working directory immediately so that callers
+        // who use this constructor (e.g. tests) don't have to call
+        // add_trusted_directory separately.
+        let canonical = working_directory
+            .canonicalize()
+            .unwrap_or_else(|_| working_directory.clone());
         Self {
-            trusted_directories: Vec::new(),
+            trusted_directories: vec![canonical],
             working_directory,
             external_access_config: ExternalAccessConfig::default(),
         }
@@ -427,14 +439,39 @@ mod tests {
     }
 
     #[test]
-    fn test_empty_trusted_directories() {
+    fn test_working_directory_auto_trusted() {
         let temp_dir = TempDir::new().unwrap();
         let temp_path = temp_dir.path().canonicalize().unwrap();
 
-        let policy = SecurityPolicy::with_working_directory(temp_path.clone());
+        // Create a test file inside the working directory
+        let file_path = temp_path.join("test.txt");
+        fs::write(&file_path, "test").unwrap();
 
-        // Without any trusted directories, nothing should be trusted
-        assert!(!policy.is_path_trusted("test.txt"));
+        // with_working_directory now auto-trusts the supplied path, so a file
+        // inside it should be accessible without calling add_trusted_directory.
+        let policy = SecurityPolicy::with_working_directory(temp_path.clone());
+        assert!(
+            policy.is_path_trusted(&file_path),
+            "working directory should be trusted automatically"
+        );
+    }
+
+    #[test]
+    fn test_path_outside_working_directory_not_auto_trusted() {
+        let temp_dir1 = TempDir::new().unwrap();
+        let temp_dir2 = TempDir::new().unwrap();
+        let temp_path1 = temp_dir1.path().canonicalize().unwrap();
+        let temp_path2 = temp_dir2.path().canonicalize().unwrap();
+
+        // dir2 is NOT the working directory and was never explicitly trusted
+        let file_in_dir2 = temp_path2.join("secret.txt");
+        fs::write(&file_in_dir2, "secret").unwrap();
+
+        let policy = SecurityPolicy::with_working_directory(temp_path1.clone());
+        assert!(
+            !policy.is_path_trusted(&file_in_dir2),
+            "a directory that was never trusted should remain inaccessible"
+        );
     }
 
     #[test]

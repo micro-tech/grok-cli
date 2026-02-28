@@ -13,6 +13,7 @@ use anyhow::{Result, anyhow};
 use colored::*;
 use serde_json::{Value, json};
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
@@ -261,7 +262,103 @@ where
     Ok(())
 }
 
-async fn handle_initialize(params: &Value, _agent: &GrokAcpAgent) -> Result<Value> {
+/// Resolve a raw workspace path string sent by a client into a `PathBuf` that
+/// can be trusted by the security policy.
+///
+/// Handles the following variations that Zed and other ACP clients may send:
+///
+/// - `file:///H:/GitHub/my-project`  — strip the `file://` URI scheme
+/// - `file:///home/user/project`     — strip the `file://` URI scheme (Unix)
+/// - `H:/GitHub/my-project`          — Windows path with forward slashes
+/// - `/h/GitHub/my-project`          — WSL / Git-bash style Unix path on Windows
+/// - `/home/user/project`            — normal Unix path
+///
+/// After normalisation the path is canonicalized to resolve symlinks.  If
+/// canonicalization fails (e.g., the path does not yet exist) the normalised
+/// but un-canonicalized path is returned instead of failing — this is
+/// intentional because we must never silently drop a legitimate workspace root.
+fn resolve_workspace_path(raw: &str) -> PathBuf {
+    // Strip file:// URI scheme (handles file:// and file:///)
+    let stripped = if raw.starts_with("file:///") {
+        // URL-decode the path component
+        let decoded = urlencoding::decode(&raw[7..])
+            .map(|s| s.into_owned())
+            .unwrap_or_else(|_| raw[7..].to_string());
+        decoded
+    } else if raw.starts_with("file://") {
+        let decoded = urlencoding::decode(&raw[7..])
+            .map(|s| s.into_owned())
+            .unwrap_or_else(|_| raw[7..].to_string());
+        decoded
+    } else {
+        raw.to_string()
+    };
+
+    // On Windows, normalise forward slashes to backslashes.
+    // Also handle the Git-bash / WSL path style "/h/foo" → "H:\foo".
+    #[cfg(target_os = "windows")]
+    let normalised = {
+        let s = stripped.replace('/', "\\");
+        // Git-bash paths look like "\h\GitHub\project" — convert leading \X\ to X:\
+        if s.starts_with('\\')
+            && s.len() >= 3
+            && s.chars().nth(1).map_or(false, |c| c.is_ascii_alphabetic())
+            && s.chars().nth(2) == Some('\\')
+        {
+            let drive = s.chars().nth(1).unwrap().to_uppercase().next().unwrap();
+            format!("{}:{}", drive, &s[2..])
+        } else {
+            s
+        }
+    };
+
+    #[cfg(not(target_os = "windows"))]
+    let normalised = stripped;
+
+    let path = PathBuf::from(&normalised);
+
+    // Attempt full canonicalization; fall back to the normalised path so that
+    // we *always* register something rather than silently losing access.
+    match path.canonicalize() {
+        Ok(canonical) => {
+            info!("Workspace path resolved: {} → {:?}", raw, canonical);
+            canonical
+        }
+        Err(e) => {
+            warn!(
+                "Could not canonicalize workspace path '{}' ({}); \
+                 using normalised path '{}' as trusted root",
+                raw, e, normalised
+            );
+            path
+        }
+    }
+}
+
+/// Register a workspace root with the security policy, logging the outcome.
+/// Always succeeds — a warning is emitted if the path looks suspicious but we
+/// still add it so the user doesn't lose access.
+fn register_workspace_root(agent: &GrokAcpAgent, raw_path: &str) {
+    let resolved = resolve_workspace_path(raw_path);
+    info!("Registering workspace root as trusted: {:?}", resolved);
+    agent.security.add_trusted_directory(&resolved);
+
+    // Belt-and-suspenders: also trust every parent component that looks like
+    // a reasonable project root (stops at the drive root / filesystem root).
+    // This handles cases where the client sends a sub-directory instead of
+    // the real root.
+    // We deliberately do NOT trust "/" or "C:\" to avoid opening up the whole
+    // filesystem — we stop at depth 2 from root.
+    // (Disabled for now; uncomment if sub-directory issues arise.)
+    // let mut p = resolved.as_path();
+    // while let Some(parent) = p.parent() {
+    //     if parent.components().count() <= 1 { break; }
+    //     agent.security.add_trusted_directory(parent);
+    //     p = parent;
+    // }
+}
+
+async fn handle_initialize(params: &Value, agent: &GrokAcpAgent) -> Result<Value> {
     info!("Received initialize request with params: {}", params);
 
     // Parse the initialize request with better error handling
@@ -290,6 +387,24 @@ async fn handle_initialize(params: &Value, _agent: &GrokAcpAgent) -> Result<Valu
     info!("Client info: {}", req.client_info);
     info!("Client capabilities: {}", req.capabilities);
 
+    // Some clients (including certain Zed versions) send the workspace root
+    // as part of the initialize request rather than (or in addition to)
+    // session/new.  Register it immediately so that file access works even
+    // before session/new is received.
+    let workspace_root = req.workspace_root.or(req.working_directory).or_else(|| {
+        // Also check well-known environment variables as a last resort.
+        std::env::var("WORKSPACE_ROOT")
+            .or_else(|_| std::env::var("CODER_AGENT_WORKSPACE_PATH"))
+            .ok()
+    });
+
+    if let Some(ref root) = workspace_root {
+        info!("Workspace root received in initialize: {}", root);
+        register_workspace_root(agent, root);
+    } else {
+        info!("No workspace root in initialize request; will rely on session/new or CWD");
+    }
+
     let mut caps = AgentCapabilities::new();
     // Enable session capabilities
     caps.session_capabilities = crate::acp::protocol::SessionCapabilities::new();
@@ -311,28 +426,39 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
     let req: NewSessionRequest = serde_json::from_value(params.clone())
         .map_err(|e| anyhow!("Invalid session/new parameters: {}", e))?;
 
-    // Extract workspace context from request or environment
+    // Extract workspace context from request or environment.
+    // Use the robust resolver so that file:// URIs, forward-slash Windows
+    // paths, and canonicalization failures are all handled gracefully.
     let workspace_root = req
         .workspace_root
         .or(req.working_directory)
         .or_else(|| std::env::var("CODER_AGENT_WORKSPACE_PATH").ok())
         .or_else(|| std::env::var("WORKSPACE_ROOT").ok());
 
-    // If workspace root is provided, update trusted directories
-    if let Some(workspace_path) = &workspace_root {
-        use std::path::PathBuf;
-        let path = PathBuf::from(workspace_path);
-        if let Ok(canonical_path) = path.canonicalize() {
-            info!(
-                "Adding workspace root to trusted directories: {:?}",
-                canonical_path
-            );
-            agent.security.add_trusted_directory(canonical_path);
-        } else {
-            warn!("Failed to canonicalize workspace path: {}", workspace_path);
-        }
+    if let Some(ref workspace_path) = workspace_root {
+        info!(
+            "session/new: registering workspace root '{}'",
+            workspace_path
+        );
+        register_workspace_root(agent, workspace_path);
     } else {
-        info!("No workspace root provided, using current directory from agent initialization");
+        // No workspace root provided — make sure the CWD is trusted.
+        // (GrokAcpAgent::new already does this, but we re-add it here as a
+        //  safety net in case the binary was launched from a different dir.)
+        match std::env::current_dir() {
+            Ok(cwd) => {
+                let canonical_cwd = cwd.canonicalize().unwrap_or(cwd);
+                info!(
+                    "session/new: no workspace root provided, \
+                     trusting CWD {:?}",
+                    canonical_cwd
+                );
+                agent.security.add_trusted_directory(canonical_cwd);
+            }
+            Err(e) => {
+                warn!("session/new: could not determine CWD: {}", e);
+            }
+        }
     }
 
     // Generate a session ID

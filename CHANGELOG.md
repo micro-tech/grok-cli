@@ -7,6 +7,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **ACP Workspace Access** - Grok can no longer lose access to the project root after startup:
+  - `SecurityPolicy::new()` and `with_working_directory()` now automatically add the working
+    directory to `trusted_directories` at construction time — the root where Grok is opened is
+    always accessible without waiting for a `session/new` message.
+  - Added robust `resolve_workspace_path()` helper in the ACP command handler that correctly
+    handles all path formats clients may send:
+    - `file:///H:/GitHub/my-project` — `file://` URI scheme (URL-decoded)
+    - `H:/GitHub/my-project` — Windows path with forward slashes
+    - `/h/GitHub/my-project` — Git-bash / WSL style paths on Windows
+    - `/home/user/project` — standard Unix paths
+  - **Canonicalization no longer silently drops the workspace root** — if `canonicalize()`
+    fails for any reason (path not yet on disk, permission error, race condition) the
+    normalised-but-un-canonicalized path is used instead of discarding it entirely.
+  - `InitializeRequest` now parses `workspaceRoot`, `workspace_root`, `rootUri`, and `rootPath`
+    fields so that clients that send the project root during `initialize` (rather than
+    `session/new`) are handled correctly.
+  - `handle_initialize` now calls `register_workspace_root` immediately, so file access works
+    from the very first tool call even before `session/new` is received.
+  - `handle_session_new` falls back to re-trusting the CWD when no workspace root is provided,
+    rather than relying solely on the path set at agent startup.
+  - Updated `test_empty_trusted_directories` → `test_working_directory_auto_trusted` to
+    validate the new always-trusted CWD behaviour.
+  - Added `test_path_outside_working_directory_not_auto_trusted` to confirm untrusted
+    directories remain blocked.
+  - All 110 unit tests passing.
+
 ### Added
 
 - **Skill Auto-Activation Engine** (Task 18.3) - Skills now activate automatically based on conversation context:

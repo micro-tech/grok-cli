@@ -51,6 +51,19 @@ pub struct InitializeRequest {
     pub capabilities: Value,
     #[serde(default, alias = "clientInfo")]
     pub client_info: Value,
+    /// Project root sent by the client (e.g. Zed) at initialization time.
+    /// Accepted under multiple field names to maximise compatibility.
+    #[serde(
+        default,
+        alias = "workspaceRoot",
+        alias = "workspace_root",
+        alias = "rootUri",
+        alias = "rootPath"
+    )]
+    pub workspace_root: Option<String>,
+    /// Alternative working-directory field some clients send.
+    #[serde(default, alias = "workingDirectory")]
+    pub working_directory: Option<String>,
 }
 
 fn default_protocol_version() -> String {
