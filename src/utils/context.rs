@@ -5,6 +5,7 @@
 //! the AI agent in project conventions and guidelines.
 
 use anyhow::{Result, anyhow};
+use std::collections::HashSet;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -164,6 +165,10 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Op
     // Find project root by walking up directory tree
     let project_root = find_project_root(start_dir)?;
     let mut merged_content = Vec::new();
+    // Track canonical paths so the same file is never merged twice
+    // (e.g. .grok/context.md vs ~/.grok/context.md vs ~/.grok/CONTEXT.md
+    // all resolve to the same inode on Windows / case-insensitive FS).
+    let mut seen_canonical: HashSet<PathBuf> = HashSet::new();
 
     // 1. Load from project directory
     if project_root.exists() && project_root.is_dir() {
@@ -171,6 +176,11 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Op
             let file_path = project_root.join(file_name);
 
             if file_path.exists() && file_path.is_file() {
+                // Skip if this resolves to a file we have already loaded
+                let canonical = fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
+                if !seen_canonical.insert(canonical) {
+                    continue;
+                }
                 // Check file size before reading
                 let metadata = fs::metadata(&file_path)?;
                 if metadata.len() > MAX_CONTEXT_SIZE {
@@ -211,6 +221,12 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Op
                 let file_path = global_dir.join(file_name);
 
                 if file_path.exists() && file_path.is_file() {
+                    // Skip duplicates (same physical file, different name/case)
+                    let canonical =
+                        fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
+                    if !seen_canonical.insert(canonical) {
+                        continue;
+                    }
                     let metadata = fs::metadata(&file_path)?;
                     if metadata.len() > MAX_CONTEXT_SIZE {
                         continue;
@@ -251,14 +267,20 @@ pub fn get_all_context_file_paths<P: AsRef<Path>>(start_dir: P) -> Vec<PathBuf> 
         Ok(root) => root,
         Err(_) => return Vec::new(),
     };
-    let mut found_paths = Vec::new();
+    let mut found_paths: Vec<PathBuf> = Vec::new();
+    // Deduplicate by canonical path so the same file is never listed twice
+    // regardless of mixed separators or case differences (Windows FS).
+    let mut seen_canonical: HashSet<PathBuf> = HashSet::new();
 
     // Check project directory
     if project_root.exists() && project_root.is_dir() {
         for file_name in CONTEXT_FILE_NAMES {
             let file_path = project_root.join(file_name);
             if file_path.exists() && file_path.is_file() {
-                found_paths.push(file_path);
+                let canonical = fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
+                if seen_canonical.insert(canonical) {
+                    found_paths.push(file_path);
+                }
             }
         }
     }
@@ -269,7 +291,11 @@ pub fn get_all_context_file_paths<P: AsRef<Path>>(start_dir: P) -> Vec<PathBuf> 
             for file_name in GLOBAL_CONTEXT_FILE_NAMES {
                 let file_path = global_dir.join(file_name);
                 if file_path.exists() && file_path.is_file() {
-                    found_paths.push(file_path);
+                    let canonical =
+                        fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
+                    if seen_canonical.insert(canonical) {
+                        found_paths.push(file_path);
+                    }
                 }
             }
         }
