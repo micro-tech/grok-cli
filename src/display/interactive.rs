@@ -277,28 +277,35 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
     // Show context files info if loaded
     let context_paths = get_all_context_file_paths(&session.current_directory);
     if !context_paths.is_empty() {
-        if context_paths.len() == 1 {
-            println!(
-                "  Context loaded: {}",
-                context_paths[0]
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("unknown")
-                    .bright_green()
-            );
-        } else {
-            println!(
-                "  Context loaded: {} files",
-                context_paths.len().to_string().bright_green()
-            );
-            for path in &context_paths {
-                println!(
-                    "    - {}",
-                    path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("unknown")
-                        .dimmed()
-                );
+        println!(
+            "  Context loaded: {} {}",
+            context_paths.len().to_string().bright_green(),
+            if context_paths.len() == 1 {
+                "file"
+            } else {
+                "files"
+            }
+        );
+        for path in &context_paths {
+            // Show full path instead of just filename
+            println!("    - {}", path.display().to_string().bright_green());
+            // When hide_context_summary is false, show a short preview of the file
+            if !config.ui.hide_context_summary
+                && let Ok(content) = std::fs::read_to_string(path)
+            {
+                let preview: Vec<&str> = content
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .take(3)
+                    .collect();
+                for line in preview {
+                    let truncated = if line.len() > 80 {
+                        format!("{}...", &line[..80])
+                    } else {
+                        line.to_string()
+                    };
+                    println!("      {}", truncated.dimmed());
+                }
             }
         }
     }
@@ -350,15 +357,10 @@ fn load_project_context_for_session(project_root: &PathBuf) -> Option<String> {
             }
 
             if context_paths.len() == 1 {
-                let context_file_name = context_paths[0]
-                    .file_name()
-                    .and_then(|n| n.to_os_string().into_string().ok())
-                    .unwrap_or_else(|| "context file".to_string());
-
                 println!(
                     "{} {}",
                     "✓".bright_green(),
-                    format!("Loaded project context from {}", context_file_name).dimmed()
+                    format!("Loaded project context from {}", context_paths[0].display()).dimmed()
                 );
             } else {
                 println!(
@@ -367,9 +369,8 @@ fn load_project_context_for_session(project_root: &PathBuf) -> Option<String> {
                     format!("Loaded and merged {} context files", context_paths.len()).dimmed()
                 );
                 for path in &context_paths {
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        println!("  {} {}", "•".dimmed(), name.dimmed());
-                    }
+                    // Show full path for each context file
+                    println!("  {} {}", "•".dimmed(), path.display().to_string().dimmed());
                 }
             }
 

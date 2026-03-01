@@ -15,6 +15,21 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Added
 
+- **Context file display improvements in session startup info (Task 25)**
+  - Context files now show their **full absolute path** (e.g.
+    `H:\GitHub\grok-cli\context.md`) instead of just the bare filename.
+    This makes it immediately clear which file on disk was loaded, especially
+    useful when multiple context sources (project + global `~/.grok`) are
+    active at the same time.
+  - When `ui.hide_context_summary` is `false` (the default), the first three
+    non-empty lines of each context file are printed as a dimmed preview
+    directly beneath the path. Lines longer than 80 characters are truncated.
+    Set `ui.hide_context_summary = true` in your config to suppress the preview.
+  - Load confirmation messages emitted by `load_project_context_for_session`
+    also now show full paths instead of bare filenames.
+  - Source: AI (Claude Sonnet 4.6) — triggered by user feedback that filename-
+    only display made it impossible to tell which `context.md` was loaded.
+
 - **`grok acp stdio --workspace <path>` flag for explicit project root**
   - Zed (and other ACP clients) sometimes launch the `grok` binary from the
     user's home directory rather than the project root, causing every file
