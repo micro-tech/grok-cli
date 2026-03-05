@@ -1767,6 +1767,7 @@ impl Config {
             "tools.enable_message_bus_integration" => {
                 Ok(self.tools.enable_message_bus_integration.to_string())
             }
+            "tools.enable_hooks" => Ok(self.tools.enable_hooks.to_string()),
 
             // Security settings
             "security.disable_yolo_mode" => Ok(self.security.disable_yolo_mode.to_string()),
@@ -1797,6 +1798,19 @@ impl Config {
                 .codebase_investigator_settings
                 .max_num_turns
                 .to_string()),
+            "experimental.extensions.enabled" => {
+                Ok(self.experimental.extensions.enabled.to_string())
+            }
+            "experimental.extensions.extension_dir" => Ok(self
+                .experimental
+                .extensions
+                .extension_dir
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()),
+            "experimental.extensions.enabled_extensions" => {
+                Ok(self.experimental.extensions.enabled_extensions.join(", "))
+            }
 
             // ACP settings
             "acp.enabled" => Ok(self.acp.enabled.to_string()),
@@ -2128,6 +2142,11 @@ impl Config {
                     .parse()
                     .map_err(|_| anyhow!("Invalid boolean: {}", value))?;
             }
+            "tools.enable_hooks" => {
+                self.tools.enable_hooks = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean: {}", value))?;
+            }
 
             // Security settings
             "security.disable_yolo_mode" => {
@@ -2183,6 +2202,25 @@ impl Config {
                     .max_num_turns = value
                     .parse()
                     .map_err(|_| anyhow!("Invalid number: {}", value))?;
+            }
+            "experimental.extensions.enabled" => {
+                self.experimental.extensions.enabled = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean: {}", value))?;
+            }
+            "experimental.extensions.extension_dir" => {
+                self.experimental.extensions.extension_dir = if value.is_empty() {
+                    None
+                } else {
+                    Some(std::path::PathBuf::from(value))
+                };
+            }
+            "experimental.extensions.enabled_extensions" => {
+                self.experimental.extensions.enabled_extensions = if value.is_empty() {
+                    vec![]
+                } else {
+                    value.split(',').map(|s| s.trim().to_string()).collect()
+                };
             }
 
             // ACP settings

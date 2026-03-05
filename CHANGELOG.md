@@ -15,6 +15,26 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Added
 
+- **Hooks settings exposed in `/settings` and `/hooks` command wired (Task 26)**
+  - `tools.enable_hooks` is now visible and editable in the **Tools** category
+    of the `/settings` menu. Toggling it to `true` activates before/after
+    tool-call hook execution; the `/hooks` command immediately reflects the
+    change.
+  - Three new **Experimental** settings surface the extensions subsystem that
+    powers custom hooks:
+    - `experimental.extensions.enabled` — master toggle for loading extensions.
+    - `experimental.extensions.extension_dir` — path to the extensions folder
+      (defaults to `~/.grok/extensions` when left blank).
+    - `experimental.extensions.enabled_extensions` — comma-separated list of
+      extension names to load on startup.
+  - `get_value()` and `set_value()` in `src/config/mod.rs` now handle all four
+    new keys so that `grok config set tools.enable_hooks true` (and the
+    equivalent extension keys) round-trip correctly through the config layer.
+  - Created `.zed/task_list.json` as the canonical task-tracking file going
+    forward; Task 26 is recorded there with all five subtasks marked **done**.
+  - Source: AI (Claude Sonnet 4.6) — triggered by missing hooks/settings
+    entries reported by user.
+
 - **Context file display improvements in session startup info (Task 25)**
   - Context files now show their **full absolute path** (e.g.
     `H:\GitHub\grok-cli\context.md`) instead of just the bare filename.
