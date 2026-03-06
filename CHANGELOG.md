@@ -11,7 +11,7 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
-## [Unreleased]
+## [0.1.6] - 2026-03-06
 
 ### Added
 
@@ -48,12 +48,6 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
     formatting helpers — all passing.
   - Source: AI (Claude Sonnet 4.6) — triggered by user request to implement ACP
     slash-command advertisement as specified in the ACP protocol documentation.
-
-
-
-## [0.1.6-pre] - 2026-03-05
-
-### Added
 
 - **Hooks settings exposed in `/settings` and `/hooks` command wired (Task 26)**
   - `tools.enable_hooks` is now visible and editable in the **Tools** category
