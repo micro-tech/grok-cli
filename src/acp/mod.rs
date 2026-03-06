@@ -335,6 +335,9 @@ impl GrokAcpAgent {
         session_id: &SessionId,
         message: &str,
         options: Option<Value>,
+        event_sender: Option<
+            tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
+        >,
     ) -> Result<String> {
         let start_time = std::time::Instant::now();
         info!("🚀 Starting chat completion for session: {}", session_id.0);
@@ -576,6 +579,23 @@ impl GrokAcpAgent {
 
                 debug!("📋 Tool args: {}", arguments);
 
+                // Emit ToolCall event to ACP client
+                if let Some(sender) = &event_sender {
+                    let tool_call_event = crate::acp::protocol::ToolCall {
+                        tool_call_id: tool_call.id.clone(),
+                        title: format!("Running tool: {}", function_name),
+                        kind: Some(crate::acp::protocol::ToolKind::Execute),
+                        status: Some(crate::acp::protocol::ToolCallStatus::InProgress),
+                        raw_input: Some(args.clone()),
+                        raw_output: None,
+                        locations: None,
+                        content: None,
+                    };
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ToolCall(
+                        tool_call_event,
+                    ));
+                }
+
                 // Execute before_tool hooks
                 {
                     let hooks = self.hook_manager.read().await;
@@ -666,7 +686,7 @@ impl GrokAcpAgent {
                     _ => Err(anyhow!("Unknown tool: {}", function_name)),
                 };
 
-                let content = match result {
+                let (content, status) = match result {
                     Ok(s) => {
                         let tool_duration = tool_start.elapsed();
                         info!(
@@ -674,14 +694,33 @@ impl GrokAcpAgent {
                             tool_duration,
                             s.len()
                         );
-                        s
+                        (s, crate::acp::protocol::ToolCallStatus::Completed)
                     }
                     Err(e) => {
                         let tool_duration = tool_start.elapsed();
                         warn!("⚠️  Tool failed in {:?}: {}", tool_duration, e);
-                        format!("Error executing tool {}: {}", function_name, e)
+                        (
+                            format!("Error executing tool {}: {}", function_name, e),
+                            crate::acp::protocol::ToolCallStatus::Failed,
+                        )
                     }
                 };
+
+                // Emit ToolCallUpdate event
+                if let Some(sender) = &event_sender {
+                    let tool_call_update = crate::acp::protocol::ToolCallUpdate {
+                        tool_call_id: tool_call.id.clone(),
+                        kind: None,
+                        status: Some(status),
+                        locations: None,
+                        content: Some(vec![crate::acp::protocol::ToolCallContent::Text(
+                            crate::acp::protocol::TextContent::new(content.clone()),
+                        )]),
+                    };
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ToolCallUpdate(
+                        tool_call_update,
+                    ));
+                }
 
                 // Execute after_tool hooks
                 {

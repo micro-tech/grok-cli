@@ -276,6 +276,92 @@ pub enum SessionUpdate {
     /// the slash commands this agent supports.
     #[serde(rename = "available_commands_update")]
     AvailableCommandsUpdate(AvailableCommandsUpdate),
+    /// Notification that a new tool call has been initiated.
+    #[serde(rename = "tool_call")]
+    ToolCall(ToolCall),
+    /// Update on the status or results of a tool call.
+    #[serde(rename = "tool_call_update")]
+    ToolCallUpdate(ToolCallUpdate),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolKind {
+    Read,
+    Edit,
+    Search,
+    Execute,
+    Think,
+    Other,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ToolCallStatus {
+    Pending,
+    InProgress,
+    Completed,
+    Failed,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCall {
+    pub tool_call_id: String,
+    pub title: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ToolKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ToolCallStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_input: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub raw_output: Option<Value>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locations: Option<Vec<ToolCallLocation>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<Vec<ToolCallContent>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallUpdate {
+    pub tool_call_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ToolKind>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ToolCallStatus>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub locations: Option<Vec<ToolCallLocation>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub content: Option<Vec<ToolCallContent>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type")]
+pub enum ToolCallContent {
+    #[serde(rename = "text")]
+    Text(TextContent),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ToolCallLocation {
+    pub uri: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub range: Option<ToolCallRange>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCallRange {
+    pub start: Position,
+    pub end: Position,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Position {
+    pub line: u32,
+    pub character: u32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

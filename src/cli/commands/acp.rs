@@ -758,7 +758,7 @@ where
                 session_id.0
             );
             let response_text = agent
-                .handle_chat_completion(&session_id, &enhanced, None)
+                .handle_chat_completion(&session_id, &enhanced, None, None)
                 .await?;
 
             info!("Received response from Grok: {} chars", response_text.len());
@@ -790,9 +790,34 @@ where
         "Calling Grok API for session {} with message: {}",
         session_id.0, message_text
     );
-    let response_text = agent
-        .handle_chat_completion(&session_id, &message_text, None)
-        .await?;
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let chat_fut = agent.handle_chat_completion(&session_id, &message_text, None, Some(tx));
+    tokio::pin!(chat_fut);
+
+    let response_text;
+    loop {
+        tokio::select! {
+            update = rx.recv() => {
+                if let Some(update) = update {
+                    let params = SessionNotification::new(session_id.clone(), update);
+                    let notification = json!({
+                        "jsonrpc": "2.0",
+                        "method": "session/update",
+                        "params": params
+                    });
+                    if let Ok(msg) = serde_json::to_string(&notification) {
+                        let _ = writer.write_all(msg.as_bytes()).await;
+                        let _ = writer.write_all(b"\n").await;
+                        let _ = writer.flush().await;
+                    }
+                }
+            }
+            res = &mut chat_fut => {
+                response_text = res?;
+                break;
+            }
+        }
+    }
 
     info!("Received response from Grok: {} chars", response_text.len());
     debug!("Response text: {}", response_text);
