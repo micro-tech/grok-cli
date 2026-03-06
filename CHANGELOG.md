@@ -13,6 +13,10 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+---
+
+## [0.1.61-pre] - 2026-03-06
+
 ### Added
 
 - **ACP Slash Commands** (`src/acp/slash_commands.rs`, `src/acp/protocol.rs`, `src/cli/commands/acp.rs`)
