@@ -475,7 +475,6 @@ impl GrokAcpAgent {
                                     attempt, MAX_API_RETRIES, err_kind, e, delay
                                 );
                                 sleep(Duration::from_secs(delay)).await;
-                                last_err = e;
                                 continue;
                             } else {
                                 let tip = {
