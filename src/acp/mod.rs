@@ -20,6 +20,7 @@ use crate::{content_to_string, extract_text_content};
 
 pub mod protocol;
 pub mod security;
+pub mod slash_commands;
 pub mod tools;
 
 use crate::acp::protocol::{
@@ -849,6 +850,54 @@ impl GrokAcpAgent {
     /// Get agent capabilities
     pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
         &self.capabilities
+    }
+
+    /// Clear the conversation history for a session (used by the `/clear` slash command).
+    pub async fn clear_session_history(&self, session_id: &SessionId) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            session.messages.clear();
+            info!("Cleared conversation history for session: {}", session_id.0);
+        }
+        Ok(())
+    }
+
+    /// Return a clone of the [`SessionConfig`] for a session.
+    ///
+    /// Used by the `/context` slash command to report the active model, temperature, etc.
+    pub async fn get_session_config(&self, session_id: &SessionId) -> Result<SessionConfig> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .map(|s| s.config.clone())
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))
+    }
+
+    /// Return the number of messages currently stored in the session history.
+    ///
+    /// Used by the `/context` slash command to show conversation depth.
+    pub async fn get_session_message_count(&self, session_id: &SessionId) -> Result<usize> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .map(|s| s.messages.len())
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))
+    }
+
+    /// Switch the model used for a session (used by the `/model` slash command).
+    pub async fn set_session_model(&self, session_id: &SessionId, model: String) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            let old_model = session.config.model.clone();
+            session.config.model = model.clone();
+            info!(
+                "Switched model from '{}' to '{}' for session: {}",
+                old_model, model, session_id.0
+            );
+        } else {
+            return Err(anyhow!("Session not found: {}", session_id.0));
+        }
+        Ok(())
     }
 
     /// Clean up expired sessions

@@ -21,10 +21,13 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 use crate::acp::protocol::{
-    AGENT_METHOD_NAMES, AgentCapabilities, ContentBlock, ContentChunk, Implementation,
-    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest,
-    PromptResponse, ProtocolVersion, SessionId, SessionNotification, SessionUpdate, StopReason,
-    TextContent,
+    AGENT_METHOD_NAMES, AgentCapabilities, AvailableCommandsUpdate, ContentBlock, ContentChunk,
+    Implementation, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
+    PromptRequest, PromptResponse, ProtocolVersion, SessionId, SessionNotification, SessionUpdate,
+    StopReason, TextContent,
+};
+use crate::acp::slash_commands::{
+    self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
 };
 use crate::acp::tools;
 use crate::acp::{GrokAcpAgent, SessionConfig};
@@ -290,6 +293,24 @@ where
         writer.write_all(response_str.as_bytes()).await?;
         writer.write_all(b"\n").await?;
         writer.flush().await?;
+
+        // After a successful session/new, advertise available slash commands.
+        // Per the ACP spec the agent MAY send `available_commands_update`
+        // immediately after the session is created.
+        if method == AGENT_METHOD_NAMES.session_new
+            && let Some(session_id) = response
+                .get("result")
+                .and_then(|r| r.get("sessionId"))
+                .and_then(|s| s.as_str())
+        {
+            info!(
+                "Sending available_commands_update for session: {}",
+                session_id
+            );
+            if let Err(e) = send_available_commands_update(writer, session_id).await {
+                warn!("Failed to send available_commands_update: {}", e);
+            }
+        }
     } else if let Some(method) = msg.get("method").and_then(|m| m.as_str()) {
         // Notification
         info!("Received notification: {}", method);
@@ -637,6 +658,127 @@ where
         return Err(anyhow!("Empty prompt received"));
     }
 
+    // --- Slash command detection & dispatch ---
+    // Check if the user message starts with a `/` command prefix.
+    // Built-in commands (help, clear, model, context) are handled here
+    // without an AI round-trip.  AI-assisted commands (web, explain, review,
+    // plan, test, fix) rewrite the prompt before forwarding to Grok.
+    if let Some(cmd) = parse_slash_command(&message_text) {
+        info!("Slash command detected: {:?}", cmd);
+
+        // Try to handle as a built-in (no AI needed)
+        if let Some(builtin) = handle_builtin(&cmd) {
+            let response_text = match builtin {
+                BuiltinResult::Text(text) => {
+                    info!("Built-in slash command returning direct text response");
+                    text
+                }
+                BuiltinResult::ClearHistory => {
+                    info!("Clearing session history for {}", session_id.0);
+                    if let Err(e) = agent.clear_session_history(&session_id).await {
+                        warn!("Failed to clear session history: {}", e);
+                    }
+                    if let Err(e) = chat_logger::log_system(
+                        "Conversation history cleared by /clear command".to_string(),
+                    ) {
+                        warn!("Failed to log clear event: {}", e);
+                    }
+                    "✅ Conversation history cleared. Starting fresh!".to_string()
+                }
+                BuiltinResult::SwitchModel(model_name) => {
+                    info!("Switching session model to '{}'", model_name);
+                    match agent
+                        .set_session_model(&session_id, model_name.clone())
+                        .await
+                    {
+                        Ok(()) => {
+                            if let Err(e) =
+                                chat_logger::log_system(format!("Model switched to {model_name}"))
+                            {
+                                warn!("Failed to log model switch: {}", e);
+                            }
+                            format!("✅ Switched to model **`{model_name}`** for this session.")
+                        }
+                        Err(e) => {
+                            warn!("Model switch failed: {}", e);
+                            format!(
+                                "❌ Could not switch to model `{model_name}`: {e}\n\n{}",
+                                slash_commands::format_model_list()
+                            )
+                        }
+                    }
+                }
+                BuiltinResult::ShowContext => {
+                    info!("Fetching session context for /context command");
+                    match agent.get_session_config(&session_id).await {
+                        Ok(cfg) => {
+                            let msg_count = agent
+                                .get_session_message_count(&session_id)
+                                .await
+                                .unwrap_or(0);
+                            format_context_text(
+                                &session_id.0,
+                                &cfg.model,
+                                cfg.temperature,
+                                cfg.max_tokens,
+                                msg_count,
+                            )
+                        }
+                        Err(e) => format!("❌ Could not retrieve session context: {e}"),
+                    }
+                }
+            };
+
+            // Log the assistant response and stream it back to the client
+            if let Err(e) = chat_logger::log_assistant(&response_text) {
+                warn!("Failed to log slash-command response: {}", e);
+            }
+            send_text_update(writer, &session_id.0, &response_text).await?;
+            let response = PromptResponse::new(StopReason::EndTurn);
+            return Ok(serde_json::to_value(response)?);
+        }
+
+        // AI-assisted command: rewrite the prompt with richer instructions
+        if let Some(ai_prompt) = slash_commands::command_to_prompt(&cmd) {
+            info!(
+                "Rewriting slash command prompt ({} → {} chars)",
+                message_text.len(),
+                ai_prompt.len()
+            );
+            // Use the enhanced prompt directly — it already contains the full
+            // AI instruction built by command_to_prompt().
+            let enhanced = ai_prompt;
+            // Log original slash command as the user message, then forward
+            // the rewritten prompt to the model.
+            if let Err(e) = chat_logger::log_user(&message_text) {
+                warn!("Failed to log slash-command user message: {}", e);
+            }
+            info!(
+                "Calling Grok API for session {} with rewritten slash-command prompt",
+                session_id.0
+            );
+            let response_text = agent
+                .handle_chat_completion(&session_id, &enhanced, None)
+                .await?;
+
+            info!("Received response from Grok: {} chars", response_text.len());
+            let final_text = if response_text.is_empty() {
+                warn!("Grok returned empty response for slash command!");
+                "[No response content received from model]".to_string()
+            } else {
+                response_text
+            };
+
+            if let Err(e) = chat_logger::log_assistant(&final_text) {
+                warn!("Failed to log assistant response: {}", e);
+            }
+            send_text_update(writer, &session_id.0, &final_text).await?;
+            let response = PromptResponse::new(StopReason::EndTurn);
+            return Ok(serde_json::to_value(response)?);
+        }
+    }
+    // --- End slash command handling ---
+
     // Log user prompt
     if let Err(e) = chat_logger::log_user(&message_text) {
         warn!("Failed to log user message: {}", e);
@@ -676,6 +818,43 @@ where
     info!("Returning final response with stopReason: EndTurn");
     let response = PromptResponse::new(StopReason::EndTurn);
     Ok(serde_json::to_value(response)?)
+}
+
+/// Send an `available_commands_update` notification to the client advertising
+/// all slash commands that this agent supports.
+///
+/// Per the ACP spec this is a JSON-RPC notification (no `id` field) sent over
+/// the same channel as regular responses.  It MUST be sent after the
+/// `session/new` response so the client can populate its command palette.
+async fn send_available_commands_update<W>(writer: &mut W, session_id: &str) -> Result<()>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let commands = slash_commands::get_available_commands();
+    let count = commands.len();
+
+    let update = SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(commands));
+    let params = SessionNotification::new(SessionId::new(session_id), update);
+
+    let notification = json!({
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": params
+    });
+
+    let msg = serde_json::to_string(&notification)?;
+    info!(
+        "Sending available_commands_update ({} commands) for session {}",
+        count, session_id
+    );
+    debug!("available_commands_update payload: {}", msg);
+
+    writer.write_all(msg.as_bytes()).await?;
+    writer.write_all(b"\n").await?;
+    writer.flush().await?;
+
+    info!("available_commands_update sent successfully");
+    Ok(())
 }
 
 /// Helper to send text update notification

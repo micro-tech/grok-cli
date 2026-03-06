@@ -13,6 +13,44 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+### Added
+
+- **ACP Slash Commands** (`src/acp/slash_commands.rs`, `src/acp/protocol.rs`, `src/cli/commands/acp.rs`)
+  - Implements the ACP `available_commands_update` session notification as specified at
+    <https://agentclientprotocol.com/protocol/slash-commands>.
+  - After every `session/new` the agent automatically sends an
+    `available_commands_update` notification so clients (e.g. Zed) can populate
+    their `/` command palette with Grok's capabilities.
+  - **Ten slash commands** are advertised and handled:
+    | Command | Type | Description |
+    |---------|------|-------------|
+    | `/help` | built-in | List all available commands and usage |
+    | `/web <query>` | AI-assisted | Research a topic / search the web |
+    | `/explain [subject]` | AI-assisted | Thorough explanation of code or a concept |
+    | `/review [target]` | AI-assisted | Comprehensive code review (bugs, security, performance, style) |
+    | `/plan <description>` | AI-assisted | Detailed step-by-step implementation plan |
+    | `/test [target]` | AI-assisted | Write, run, or debug tests |
+    | `/fix [problem]` | AI-assisted | Diagnose and fix a bug or error |
+    | `/model [name]` | built-in | Switch the active Grok model; lists available models if no name given |
+    | `/clear` | built-in | Wipe conversation history for the current session |
+    | `/context` | built-in | Show session ID, model, temperature, token limit, and message count |
+  - **Built-in commands** (`/help`, `/clear`, `/model`, `/context`) are resolved
+    entirely on the agent side with zero AI round-trips.
+  - **AI-assisted commands** rewrite the raw `/command text` into a structured,
+    richly-instructed prompt before forwarding to the Grok API, resulting in
+    more focused and complete model responses.
+  - New protocol types added to `src/acp/protocol.rs`:
+    `AvailableCommandInput`, `AvailableCommand`, `AvailableCommandsUpdate`,
+    and a new `SessionUpdate::AvailableCommandsUpdate` variant.
+  - New session helpers on `GrokAcpAgent`: `clear_session_history`,
+    `get_session_config`, `get_session_message_count`, `set_session_model`.
+  - 17 unit tests covering the parser, prompt builder, builtin dispatcher, and
+    formatting helpers — all passing.
+  - Source: AI (Claude Sonnet 4.6) — triggered by user request to implement ACP
+    slash-command advertisement as specified in the ACP protocol documentation.
+
+
+
 ## [0.1.6-pre] - 2026-03-05
 
 ### Added
