@@ -1367,7 +1367,21 @@ impl Config {
     pub async fn save(&self, config_path: Option<&str>) -> Result<()> {
         let config_file_path = match config_path {
             Some(path) => PathBuf::from(path),
-            None => Self::default_config_path()?,
+            None => match &self.config_source {
+                Some(ConfigSource::Explicit(path)) => path.clone(),
+                Some(ConfigSource::Project(path)) => path.clone(),
+                Some(ConfigSource::System(path)) => path.clone(),
+                Some(ConfigSource::Hierarchical { project, system }) => {
+                    if let Some(path) = project {
+                        path.clone()
+                    } else if let Some(path) = system {
+                        path.clone()
+                    } else {
+                        Self::default_config_path()?
+                    }
+                }
+                _ => Self::default_config_path()?,
+            },
         };
 
         // Ensure config directory exists
@@ -1382,7 +1396,7 @@ impl Config {
         fs::write(&config_file_path, contents)
             .map_err(|e| anyhow!("Failed to write config file: {}", e))?;
 
-        info!("Configuration saved to: {:?}", config_file_path);
+        info!("Configuration saved to: {}", config_file_path.display());
         Ok(())
     }
 

@@ -172,6 +172,8 @@ pub async fn start_interactive_mode(
     config: &Config,
     interactive_config: InteractiveConfig,
 ) -> Result<()> {
+    let mut app_config = config.clone();
+
     // Load project context if available
     let project_context = load_project_context_for_session(
         &env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
@@ -185,7 +187,7 @@ pub async fn start_interactive_mode(
 
     // Display startup elements
     if interactive_config.show_banner {
-        display_startup_screen(&interactive_config, &session, config).await?;
+        display_startup_screen(&interactive_config, &session, &app_config).await?;
     }
 
     // Check if running in home directory
@@ -202,7 +204,9 @@ pub async fn start_interactive_mode(
 
     // Main interactive loop
     loop {
-        match run_interactive_loop(&mut session, &client, &interactive_config, config).await {
+        match run_interactive_loop(&mut session, &client, &interactive_config, &mut app_config)
+            .await
+        {
             Ok(should_continue) => {
                 if !should_continue {
                     break;
@@ -401,7 +405,7 @@ async fn run_interactive_loop(
     session: &mut InteractiveSession,
     client: &GrokClient,
     interactive_config: &InteractiveConfig,
-    app_config: &Config,
+    app_config: &mut Config,
 ) -> Result<bool> {
     // Prepare prompt
     let prompt = match interactive_config.prompt_style {
@@ -721,7 +725,7 @@ async fn handle_special_commands(
     input: &str,
     session: &mut InteractiveSession,
     interactive_config: &InteractiveConfig,
-    app_config: &Config,
+    app_config: &mut Config,
 ) -> Result<Option<bool>> {
     if !input.starts_with('/') {
         return Ok(None);
@@ -792,6 +796,13 @@ async fn handle_special_commands(
                 app_config,
             )
             .await?;
+
+            // Reload config after modifying settings
+            if let Ok(new_config) = Config::load_hierarchical().await {
+                *app_config = new_config;
+                println!("{} Configuration reloaded successfully", "✓".bright_green());
+            }
+
             Ok(Some(true))
         }
         "tools" => {
