@@ -1,5 +1,5 @@
 use crate::display::interactive::InteractiveSession;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -49,9 +49,10 @@ pub fn list_sessions() -> Result<Vec<String>> {
         let entry = entry?;
         let path = entry.path();
         if path.extension().and_then(|s| s.to_str()) == Some("json")
-            && let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                sessions.push(stem.to_string());
-            }
+            && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+        {
+            sessions.push(stem.to_string());
+        }
     }
 
     sessions.sort();

@@ -16,11 +16,16 @@ pub mod terminal;
 pub mod tips;
 
 // Re-export commonly used items
-pub use ascii_art::{get_logo_for_width, print_grok_logo};
+#[allow(deprecated)]
+pub use ascii_art::print_grok_logo;
+pub use ascii_art::{format_grok_logo, get_logo_for_width};
+
 pub use banner::{
-    BannerConfig, BannerType, clear_current_line, print_banner, print_directory_recommendation,
-    print_welcome_banner,
+    BannerConfig, BannerType, clear_current_line, format_banner, format_directory_recommendation,
+    format_welcome_banner,
 };
+#[allow(deprecated)]
+pub use banner::{print_banner, print_directory_recommendation, print_welcome_banner};
 pub use tips::{get_random_tip, get_random_tips};
 
 use colored::*;
@@ -48,41 +53,6 @@ pub fn get_terminal_size() -> (u16, u16) {
 pub fn clear_screen() {
     print!("\x1B[2J\x1B[1;1H");
     io::stdout().flush().unwrap_or(());
-}
-
-/// Print a separator line
-///
-/// # Deprecated
-/// This function performs I/O and should not be in the library.
-#[deprecated(note = "Move to binary crate - performs I/O")]
-pub fn print_separator(width: u16, color: Option<Color>) {
-    let line = "─".repeat(width as usize);
-    if let Some(c) = color {
-        println!("{}", line.color(c));
-    } else {
-        println!("{}", line.dimmed());
-    }
-}
-
-/// Print centered text
-///
-/// # Deprecated
-/// This function performs I/O and should not be in the library.
-#[deprecated(note = "Move to binary crate - performs I/O")]
-pub fn print_centered(text: &str, width: u16, color: Option<Color>) {
-    let text_len = text.len();
-    let padding = if width as usize > text_len {
-        (width as usize - text_len) / 2
-    } else {
-        0
-    };
-
-    let centered = format!("{}{}", " ".repeat(padding), text);
-    if let Some(c) = color {
-        println!("{}", centered.color(c));
-    } else {
-        println!("{}", centered);
-    }
 }
 
 /// Format a separator line (pure function, returns String)

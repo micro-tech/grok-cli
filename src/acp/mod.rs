@@ -20,6 +20,7 @@ use crate::{content_to_string, extract_text_content};
 
 pub mod protocol;
 pub mod security;
+pub mod slash_commands;
 pub mod tools;
 
 use crate::acp::protocol::{
@@ -118,7 +119,7 @@ pub struct ToolDefinition {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            model: "grok-3".to_string(),
+            model: "grok-4-1-fast-reasoning".to_string(),
             temperature: 0.5, // Lower temperature for more deterministic coding output
             max_tokens: 4096,
             system_prompt: Some(
@@ -419,7 +420,6 @@ impl GrokAcpAgent {
             let api_call_start = std::time::Instant::now();
 
             let response_with_finish = {
-                let mut last_err = anyhow!("API call failed before first attempt");
                 let mut attempt = 0u32;
                 loop {
                     attempt += 1;
@@ -476,7 +476,6 @@ impl GrokAcpAgent {
                                     attempt, MAX_API_RETRIES, err_kind, e, delay
                                 );
                                 sleep(Duration::from_secs(delay)).await;
-                                last_err = e;
                                 continue;
                             } else {
                                 let tip = {
@@ -853,6 +852,54 @@ impl GrokAcpAgent {
         &self.capabilities
     }
 
+    /// Clear the conversation history for a session (used by the `/clear` slash command).
+    pub async fn clear_session_history(&self, session_id: &SessionId) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            session.messages.clear();
+            info!("Cleared conversation history for session: {}", session_id.0);
+        }
+        Ok(())
+    }
+
+    /// Return a clone of the [`SessionConfig`] for a session.
+    ///
+    /// Used by the `/context` slash command to report the active model, temperature, etc.
+    pub async fn get_session_config(&self, session_id: &SessionId) -> Result<SessionConfig> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .map(|s| s.config.clone())
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))
+    }
+
+    /// Return the number of messages currently stored in the session history.
+    ///
+    /// Used by the `/context` slash command to show conversation depth.
+    pub async fn get_session_message_count(&self, session_id: &SessionId) -> Result<usize> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .map(|s| s.messages.len())
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))
+    }
+
+    /// Switch the model used for a session (used by the `/model` slash command).
+    pub async fn set_session_model(&self, session_id: &SessionId, model: String) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            let old_model = session.config.model.clone();
+            session.config.model = model.clone();
+            info!(
+                "Switched model from '{}' to '{}' for session: {}",
+                old_model, model, session_id.0
+            );
+        } else {
+            return Err(anyhow!("Session not found: {}", session_id.0));
+        }
+        Ok(())
+    }
+
     /// Clean up expired sessions
     pub async fn cleanup_sessions(&self, max_age: std::time::Duration) -> Result<usize> {
         let mut sessions = self.sessions.write().await;
@@ -914,7 +961,7 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-        assert_eq!(config.model, "grok-3");
+        assert_eq!(config.model, "grok-4-1-fast-reasoning");
         assert_eq!(config.temperature, 0.5);
         assert_eq!(config.max_tokens, 4096);
         assert!(config.system_prompt.is_some());

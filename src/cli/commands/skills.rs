@@ -89,12 +89,15 @@ pub async fn handle_skills_command(command: SkillsCommand) -> Result<()> {
                 return Ok(());
             }
             fs::create_dir_all(&skill_path).map_err(|e| {
-                anyhow::anyhow!("Failed to create skill directory at {}: {}", skill_path.display(), e)
+                anyhow::anyhow!(
+                    "Failed to create skill directory at {}: {}",
+                    skill_path.display(),
+                    e
+                )
             })?;
             let skill_md = SKILL_TEMPLATE.replace("{}", &name);
-            fs::write(skill_path.join("SKILL.md"), skill_md).map_err(|e| {
-                anyhow::anyhow!("Failed to write SKILL.md for '{}': {}", name, e)
-            })?;
+            fs::write(skill_path.join("SKILL.md"), skill_md)
+                .map_err(|e| anyhow::anyhow!("Failed to write SKILL.md for '{}': {}", name, e))?;
             println!(
                 "Created new skill '{}' at {}",
                 name.green(),

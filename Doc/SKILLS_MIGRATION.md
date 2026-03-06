@@ -58,7 +58,7 @@ grok interactive
 ```json
 {
   "session_id": "grok-...",
-  "model": "grok-3",
+  "model": "grok-4-1-fast-reasoning",
   "conversation_history": [...],
   "system_prompt": "..."
 }
@@ -68,7 +68,7 @@ grok interactive
 ```json
 {
   "session_id": "grok-...",
-  "model": "grok-3",
+  "model": "grok-4-1-fast-reasoning",
   "conversation_history": [...],
   "system_prompt": "...",
   "active_skills": ["rust-expert"]
@@ -266,7 +266,7 @@ grok interactive
 ```bash
 > /status
 Session: my-work
-Model: grok-3
+Model: grok-4-1-fast-reasoning
 Skills: 10 available, 2 active
   Active: rust-expert, cli-design
 ```

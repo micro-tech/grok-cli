@@ -109,8 +109,8 @@ X_API_KEY=xai-your-api-key-here
 
 ```bash
 # Default model to use
-# Options: grok-3, grok-2-latest, grok-2, grok-code-fast-1, grok-vision-beta
-GROK_MODEL=grok-3
+# Options: grok-4-1-fast-reasoning, grok-3, grok-2-latest, grok-2, grok-code-fast-1, grok-vision-beta
+GROK_MODEL=grok-4-1-fast-reasoning
 
 # Temperature (0.0 = deterministic, 2.0 = very creative)
 GROK_TEMPERATURE=0.7
@@ -275,7 +275,7 @@ GROK_TELEMETRY_LOG_FILE=/path/to/telemetry.log
 **System config** (`~/.grok/.env`):
 ```bash
 GROK_API_KEY=xai-your-key
-GROK_MODEL=grok-3  # Default for most projects
+GROK_MODEL=grok-4-1-fast-reasoning  # Default for most projects
 ```
 
 **Code project** (`.grok/.env`):
@@ -285,7 +285,7 @@ GROK_MODEL=grok-code-fast-1  # Optimized for coding
 
 **Creative project** (`.grok/.env`):
 ```bash
-GROK_MODEL=grok-3
+GROK_MODEL=grok-4-1-fast-reasoning
 GROK_TEMPERATURE=1.5  # More creative
 ```
 
@@ -417,7 +417,7 @@ Commit example files without secrets:
 ```bash
 # .env.example
 GROK_API_KEY=xai-your-key-here
-GROK_MODEL=grok-3
+GROK_MODEL=grok-4-1-fast-reasoning
 ```
 
 ### 3. Use Secret Management in Production
@@ -442,7 +442,7 @@ If you have existing `config.toml` files, convert them to `.env`:
 
 **Old** (`config.toml`):
 ```toml
-default_model = "grok-3"
+default_model = "grok-4-1-fast-reasoning"
 default_temperature = 0.7
 timeout_secs = 30
 
@@ -453,7 +453,7 @@ progress_bars = true
 
 **New** (`.env`):
 ```bash
-GROK_MODEL=grok-3
+GROK_MODEL=grok-4-1-fast-reasoning
 GROK_TEMPERATURE=0.7
 GROK_TIMEOUT=30
 GROK_COLORS=true

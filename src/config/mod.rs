@@ -22,6 +22,7 @@ pub struct Config {
     pub config_source: Option<ConfigSource>,
 
     /// X API key for Grok access
+    #[serde(skip)]
     pub api_key: Option<String>,
 
     /// Default model to use
@@ -378,7 +379,7 @@ fn default_theme() -> String {
 }
 
 fn default_model() -> String {
-    "grok-3".to_string()
+    "grok-4-1-fast-reasoning".to_string()
 }
 
 fn default_temperature() -> f32 {
@@ -1096,6 +1097,7 @@ impl Config {
     ///    - Unix/Mac: ~/.config/grok-cli/config.toml and ~/.grok/.env
     /// 3. Built-in defaults
     /// 4. Environment variables (highest priority, applied last)
+    /// Load configuration with hierarchical priority: project → system → defaults
     ///
     /// Settings from higher priority sources override lower priority sources.
     pub async fn load_hierarchical() -> Result<Self> {
@@ -1119,6 +1121,24 @@ impl Config {
                     config = Self::merge_configs(config, system_config);
                     loaded_system_config = Some(system_config_path.clone());
                     info!("✓ Loaded system config.toml from: {:?}", system_config_path);
+                }
+                Err(e) => {
+                    warn!("Failed to load system config.toml: {}", e);
+                }
+            }
+        } else {
+            debug!("No system config.toml found at: {:?}", system_config_path);
+        }
+
+        // Try loading system-level config.toml first
+        let system_config_path = Self::default_config_path()?;
+        if system_config_path.exists() {
+            debug!("Loading system config.toml from: {:?}", system_config_path);
+            match Self::load_config_from_path(&system_config_path).await {
+                Ok(system_config) => {
+                    config = Self::merge_configs(config, system_config);
+                    loaded_system_config = Some(system_config_path.clone());
+                    debug!("✓ Loaded system config.toml from: {:?}", system_config_path);
                 }
                 Err(e) => {
                     warn!("Failed to load system config.toml: {}", e);
@@ -1347,7 +1367,21 @@ impl Config {
     pub async fn save(&self, config_path: Option<&str>) -> Result<()> {
         let config_file_path = match config_path {
             Some(path) => PathBuf::from(path),
-            None => Self::default_config_path()?,
+            None => match &self.config_source {
+                Some(ConfigSource::Explicit(path)) => path.clone(),
+                Some(ConfigSource::Project(path)) => path.clone(),
+                Some(ConfigSource::System(path)) => path.clone(),
+                Some(ConfigSource::Hierarchical { project, system }) => {
+                    if let Some(path) = project {
+                        path.clone()
+                    } else if let Some(path) = system {
+                        path.clone()
+                    } else {
+                        Self::default_config_path()?
+                    }
+                }
+                _ => Self::default_config_path()?,
+            },
         };
 
         // Ensure config directory exists
@@ -1362,7 +1396,7 @@ impl Config {
         fs::write(&config_file_path, contents)
             .map_err(|e| anyhow!("Failed to write config file: {}", e))?;
 
-        info!("Configuration saved to: {:?}", config_file_path);
+        info!("Configuration saved to: {}", config_file_path.display());
         Ok(())
     }
 
@@ -1767,6 +1801,7 @@ impl Config {
             "tools.enable_message_bus_integration" => {
                 Ok(self.tools.enable_message_bus_integration.to_string())
             }
+            "tools.enable_hooks" => Ok(self.tools.enable_hooks.to_string()),
 
             // Security settings
             "security.disable_yolo_mode" => Ok(self.security.disable_yolo_mode.to_string()),
@@ -1797,6 +1832,19 @@ impl Config {
                 .codebase_investigator_settings
                 .max_num_turns
                 .to_string()),
+            "experimental.extensions.enabled" => {
+                Ok(self.experimental.extensions.enabled.to_string())
+            }
+            "experimental.extensions.extension_dir" => Ok(self
+                .experimental
+                .extensions
+                .extension_dir
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default()),
+            "experimental.extensions.enabled_extensions" => {
+                Ok(self.experimental.extensions.enabled_extensions.join(", "))
+            }
 
             // ACP settings
             "acp.enabled" => Ok(self.acp.enabled.to_string()),
@@ -2128,6 +2176,11 @@ impl Config {
                     .parse()
                     .map_err(|_| anyhow!("Invalid boolean: {}", value))?;
             }
+            "tools.enable_hooks" => {
+                self.tools.enable_hooks = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean: {}", value))?;
+            }
 
             // Security settings
             "security.disable_yolo_mode" => {
@@ -2183,6 +2236,25 @@ impl Config {
                     .max_num_turns = value
                     .parse()
                     .map_err(|_| anyhow!("Invalid number: {}", value))?;
+            }
+            "experimental.extensions.enabled" => {
+                self.experimental.extensions.enabled = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean: {}", value))?;
+            }
+            "experimental.extensions.extension_dir" => {
+                self.experimental.extensions.extension_dir = if value.is_empty() {
+                    None
+                } else {
+                    Some(std::path::PathBuf::from(value))
+                };
+            }
+            "experimental.extensions.enabled_extensions" => {
+                self.experimental.extensions.enabled_extensions = if value.is_empty() {
+                    vec![]
+                } else {
+                    value.split(',').map(|s| s.trim().to_string()).collect()
+                };
             }
 
             // ACP settings
@@ -2313,7 +2385,7 @@ mod tests {
     #[tokio::test]
     async fn test_config_default() {
         let config = Config::default();
-        assert_eq!(config.default_model, "grok-3");
+        assert_eq!(config.default_model, "grok-4-1-fast-reasoning");
         assert_eq!(config.default_temperature, 0.7);
         assert!(config.validate().is_ok());
     }
@@ -2338,7 +2410,10 @@ mod tests {
         let mut config = Config::default();
 
         // Test getting values
-        assert_eq!(config.get_value("default_model").unwrap(), "grok-3");
+        assert_eq!(
+            config.get_value("default_model").unwrap(),
+            "grok-4-1-fast-reasoning"
+        );
         assert_eq!(config.get_value("ui.colors").unwrap(), "true");
 
         // Test setting values

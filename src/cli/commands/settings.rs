@@ -821,7 +821,7 @@ pub fn get_all_settings(config: &Config) -> Vec<SettingDefinition> {
             description: "Default model to use for requests".to_string(),
             category: "Model".to_string(),
             setting_type: SettingType::String,
-            default_value: "grok-3".to_string(),
+            default_value: "grok-4-1-fast-reasoning".to_string(),
             requires_restart: false,
             current_value: config.default_model.clone(),
         },
@@ -841,7 +841,7 @@ pub fn get_all_settings(config: &Config) -> Vec<SettingDefinition> {
             description: "Default maximum tokens per response".to_string(),
             category: "Model".to_string(),
             setting_type: SettingType::Number,
-            default_value: "4096".to_string(),
+            default_value: "256000".to_string(),
             requires_restart: false,
             current_value: config.default_max_tokens.to_string(),
         },
@@ -1038,6 +1038,16 @@ pub fn get_all_settings(config: &Config) -> Vec<SettingDefinition> {
             requires_restart: false,
             current_value: config.tools.enable_message_bus_integration.to_string(),
         },
+        SettingDefinition {
+            key: "tools.enable_hooks".to_string(),
+            label: "Enable Hooks".to_string(),
+            description: "Enable before/after tool-call hook execution (see /hooks)".to_string(),
+            category: "Tools".to_string(),
+            setting_type: SettingType::Boolean,
+            default_value: "false".to_string(),
+            requires_restart: false,
+            current_value: config.tools.enable_hooks.to_string(),
+        },
     ]);
 
     // Security settings
@@ -1157,6 +1167,44 @@ pub fn get_all_settings(config: &Config) -> Vec<SettingDefinition> {
                 .codebase_investigator_settings
                 .max_num_turns
                 .to_string(),
+        },
+        SettingDefinition {
+            key: "experimental.extensions.enabled".to_string(),
+            label: "Extensions Enabled".to_string(),
+            description: "Load custom hooks and extensions from the extension directory"
+                .to_string(),
+            category: "Experimental".to_string(),
+            setting_type: SettingType::Boolean,
+            default_value: "false".to_string(),
+            requires_restart: false,
+            current_value: config.experimental.extensions.enabled.to_string(),
+        },
+        SettingDefinition {
+            key: "experimental.extensions.extension_dir".to_string(),
+            label: "Extension Directory".to_string(),
+            description: "Path to directory containing extensions (default: ~/.grok/extensions)"
+                .to_string(),
+            category: "Experimental".to_string(),
+            setting_type: SettingType::String,
+            default_value: String::new(),
+            requires_restart: false,
+            current_value: config
+                .experimental
+                .extensions
+                .extension_dir
+                .as_ref()
+                .map(|p| p.display().to_string())
+                .unwrap_or_default(),
+        },
+        SettingDefinition {
+            key: "experimental.extensions.enabled_extensions".to_string(),
+            label: "Enabled Extensions".to_string(),
+            description: "Comma-separated list of extension names to load".to_string(),
+            category: "Experimental".to_string(),
+            setting_type: SettingType::Array,
+            default_value: String::new(),
+            requires_restart: false,
+            current_value: config.experimental.extensions.enabled_extensions.join(", "),
         },
     ]);
 

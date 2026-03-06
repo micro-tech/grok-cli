@@ -5,6 +5,7 @@
 # Priority order (highest → lowest):
 #   Environment variables → project .grok/config.toml → system config → built-in defaults
 
+<<<<<<< HEAD
 # ── API ──────────────────────────────────────────────────────────────────────
 api_key = "xai-your-api-key-here"
 default_model = "grok-2-latest"
@@ -22,6 +23,17 @@ timeout_secs = 300
 # How many times to retry a failed request before giving up.
 # Each retry uses exponential back-off: 2 s → 4 s → 8 s.
 # Environment override: GROK_MAX_RETRIES
+=======
+# API Configuration
+# NOTE: Do NOT store your API key in this file!
+# Instead, create a .env file in ~/.config/grok-cli/ with:
+#   GROK_API_KEY=xai-your-api-key-here
+# Or set the environment variable GROK_API_KEY or X_API_KEY
+default_model = "grok-code-fast-1"
+default_temperature = 0.7
+default_max_tokens = 256000
+timeout_secs = 60
+>>>>>>> checkup/refactor
 max_retries = 3
 
 # ── ACP (Agent Client Protocol / Zed Integration) ────────────────────────────

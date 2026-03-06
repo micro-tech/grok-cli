@@ -1,5 +1,5 @@
 use chrono::Utc;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::fs::OpenOptions;
 use std::io::Write;
 use std::path::PathBuf;
@@ -35,7 +35,8 @@ pub fn track_event(event: &str, properties: Value) {
     });
 
     if let Some(path) = &state.log_file
-        && let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
-            let _ = writeln!(file, "{}", log_entry);
-        }
+        && let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path)
+    {
+        let _ = writeln!(file, "{}", log_entry);
+    }
 }

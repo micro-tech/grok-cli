@@ -272,6 +272,10 @@ impl SessionNotification {
 pub enum SessionUpdate {
     #[serde(rename = "agent_message_chunk")]
     AgentMessageChunk(ContentChunk),
+    /// Sent after session creation (and any time the set changes) to advertise
+    /// the slash commands this agent supports.
+    #[serde(rename = "available_commands_update")]
+    AvailableCommandsUpdate(AvailableCommandsUpdate),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -282,6 +286,67 @@ pub struct ContentChunk {
 impl ContentChunk {
     pub fn new(content: ContentBlock) -> Self {
         Self { content }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Slash-command advertisement types (ACP `available_commands_update`)
+// ---------------------------------------------------------------------------
+
+/// Input specification for a slash command — currently only unstructured text.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvailableCommandInput {
+    /// Hint text shown in the client UI when no input has been typed yet.
+    pub hint: String,
+}
+
+impl AvailableCommandInput {
+    pub fn new(hint: impl Into<String>) -> Self {
+        Self { hint: hint.into() }
+    }
+}
+
+/// A single slash command that the agent advertises to ACP clients.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvailableCommand {
+    /// Command name without leading slash (e.g. `"web"`, `"plan"`).
+    pub name: String,
+    /// Human-readable description shown in the client command palette.
+    pub description: String,
+    /// Optional input specification. Omitted for commands that take no args.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub input: Option<AvailableCommandInput>,
+}
+
+impl AvailableCommand {
+    /// Create a command that accepts no additional input.
+    pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            description: description.into(),
+            input: None,
+        }
+    }
+
+    /// Builder-style helper: attach a text-input hint to this command.
+    pub fn with_input(mut self, hint: impl Into<String>) -> Self {
+        self.input = Some(AvailableCommandInput::new(hint));
+        self
+    }
+}
+
+/// Payload carried inside a `SessionUpdate::AvailableCommandsUpdate` notification.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AvailableCommandsUpdate {
+    #[serde(rename = "availableCommands")]
+    pub available_commands: Vec<AvailableCommand>,
+}
+
+impl AvailableCommandsUpdate {
+    pub fn new(commands: Vec<AvailableCommand>) -> Self {
+        Self {
+            available_commands: commands,
+        }
     }
 }
 

@@ -26,7 +26,9 @@ fn find_project_root() -> Option<PathBuf> {
 fn main() {
     println!(
         "{}",
-        "Grok CLI Installer v0.1.5 for Windows 11".green().bold()
+        "Grok CLI Installer v0.1.6-pre for Windows 11"
+            .green()
+            .bold()
     );
     println!("=============================================");
 
@@ -124,7 +126,7 @@ fn install_windows() {
     setup_audit_directory();
 
     println!("\n{}", "Installation Complete!".green().bold());
-    println!("Version: 0.1.5");
+    println!("Version: 0.1.6-pre");
     println!("\nNew features in this version:");
     println!("  • External file access with security controls");
     println!("  • Audit logging for compliance tracking");
@@ -265,9 +267,11 @@ fn setup_config(root_dir: &Path) {
         return;
     }
 
-    // Copy example config if it exists
+    let config_file = config_dir.join("config.toml");
     let example_config_src = root_dir.join("config.example.toml");
     let example_config_dst = config_dir.join("config.example.toml");
+
+    // Always copy example config for reference
     if example_config_src.exists() {
         if let Err(e) = fs::copy(&example_config_src, &example_config_dst) {
             eprintln!("Failed to copy example config: {}", e);
@@ -279,84 +283,69 @@ fn setup_config(root_dir: &Path) {
         }
     }
 
-    let config_file = config_dir.join("config.toml");
     if !config_file.exists() {
-        println!("Configuration file not found at: {}", config_file.display());
-        print!("Do you want to set up your Grok API Key now? [Y/n]: ");
+        println!("\n{}", "Setting up configuration...".cyan());
+        println!("Configuration will be saved to: {}", config_file.display());
+
+        // Copy example config as the default config.toml
+        if example_config_src.exists() {
+            if let Err(e) = fs::copy(&example_config_src, &config_file) {
+                eprintln!("Failed to create default config: {}", e);
+                return;
+            }
+            println!("Default configuration created from example config.");
+        } else {
+            eprintln!("Warning: config.example.toml not found in project root!");
+            return;
+        }
+
+        // Prompt for API key
+        print!("\nDo you want to set up your Grok API Key now? [Y/n]: ");
         io::stdout().flush().unwrap_or_default();
 
         let mut input = String::new();
         if io::stdin().read_line(&mut input).is_ok() {
             let input = input.trim().to_lowercase();
             if input != "n" && input != "no" {
-                print!("Enter your X API Key: ");
+                print!("Enter your X API Key (starts with 'xai-'): ");
                 io::stdout().flush().unwrap_or_default();
                 let mut key = String::new();
                 if io::stdin().read_line(&mut key).is_ok() {
                     let key = key.trim();
                     if !key.is_empty() {
-                        let config_content = format!(
-                            r#"# Grok CLI Configuration
-
-# X API Key
-api_key = "{}"
-
-# Default Model
-default_model = "grok-2-latest"
-default_temperature = 0.7
-default_max_tokens = 4096
-
-# ACP Configuration
-[acp]
-enabled = true
-max_tool_loop_iterations = 25
-
-# Network Configuration (Optimized for Starlink)
-[network]
-starlink_optimizations = true
-health_monitoring = true
-base_retry_delay = 2
-max_retry_delay = 60
-
-# UI Configuration
-[ui]
-colors = true
-unicode = true
-hide_tips = false
-hide_banner = false
-
-# Tools Configuration
-[tools]
-auto_accept = false
-enable_tool_output_truncation = true
-
-# Security Configuration
-[security]
-disable_yolo_mode = false
-shell_approval_mode = "prompt"
-
-# External Access Configuration (v0.1.5)
-[external_access]
-enabled = false
-require_approval = true
-enable_audit_log = true
-
-# Logging Configuration
-[logging]
-level = "info"
-file_logging = false
-"#,
-                            key
-                        );
-                        if let Err(e) = fs::write(&config_file, config_content) {
-                            eprintln!("Failed to write config file: {}", e);
-                        } else {
-                            println!("Configuration saved to {}", config_file.display());
+                        // Write API key to .env file (config.toml already copied from example)
+                        let env_file = config_dir.join(".env");
+                        let env_content = format!("GROK_API_KEY={}\n", key);
+                        match fs::write(&env_file, env_content) {
+                            Ok(_) => {
+                                println!("{}", "✓ API key configured successfully!".green());
+                                println!("API key saved to: {}", env_file.display());
+                                println!(
+                                    "\n{}",
+                                    "Note: The .env file contains sensitive data and is excluded from version control.".yellow()
+                                );
+                            }
+                            Err(e) => {
+                                eprintln!("Failed to create .env file: {}", e);
+                                println!("\nYou can manually create a .env file at:");
+                                println!("  {}", env_file.display());
+                                println!("And add: GROK_API_KEY={}", key);
+                            }
                         }
                     } else {
                         println!("Skipping API key setup (empty key provided).");
+                        println!("You can manually create a .env file later at:");
+                        let env_file = config_dir.join(".env");
+                        println!("  {}", env_file.display());
+                        println!("And add: GROK_API_KEY=your-api-key-here");
                     }
                 }
+            } else {
+                println!("Skipping API key setup.");
+                println!("You can manually create a .env file later at:");
+                let env_file = config_dir.join(".env");
+                println!("  {}", env_file.display());
+                println!("And add: GROK_API_KEY=your-api-key-here");
             }
         }
     } else {

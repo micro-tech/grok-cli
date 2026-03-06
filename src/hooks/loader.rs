@@ -5,7 +5,7 @@
 
 use super::{Extension, ExtensionManager, Hook, HookManager, ToolContext};
 use crate::config::ExtensionsConfig;
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::{Path, PathBuf};

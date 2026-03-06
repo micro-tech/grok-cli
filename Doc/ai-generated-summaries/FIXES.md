@@ -25,7 +25,7 @@ This document outlines recent bug fixes and solutions for common issues encounte
 
 - **API Key Validation Errors**:
   - **Issue**: Some users report intermittent API key validation failures.
-  - **Workaround**: Verify your key with `grok config get api_key` and reset if necessary using `grok config set api_key YOUR_KEY`. Test connectivity with `grok health --api`.
+  - **Workaround**: Verify your key with `grok config get api_key` and reset if necessary using `grok config set api_key YOUR_KEY` (stores in .env file). Alternatively, manually edit `~/.config/grok-cli/.env` (or `%APPDATA%\.grok\.env` on Windows) to add `GROK_API_KEY=your-key-here`. Test connectivity with `grok health --api`.
 - **Network Connectivity Drops**:
   - **Issue**: Users on satellite internet (e.g., Starlink) may experience connection drops.
   - **Workaround**: Enable Starlink optimizations with `grok config set network.starlink_optimizations true`.

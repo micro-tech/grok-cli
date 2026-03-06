@@ -20,8 +20,8 @@ use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
 use crate::config::Config;
 use crate::display::{
-    BannerConfig, clear_current_line, print_directory_recommendation, print_grok_logo,
-    print_welcome_banner,
+    BannerConfig, clear_current_line, format_directory_recommendation, format_grok_logo,
+    format_welcome_banner,
 };
 use crate::skills::{AutoActivationEngine, list_skills};
 use crate::utils::context::{
@@ -172,6 +172,8 @@ pub async fn start_interactive_mode(
     config: &Config,
     interactive_config: InteractiveConfig,
 ) -> Result<()> {
+    let mut app_config = config.clone();
+
     // Load project context if available
     let project_context = load_project_context_for_session(
         &env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
@@ -185,21 +187,26 @@ pub async fn start_interactive_mode(
 
     // Display startup elements
     if interactive_config.show_banner {
-        display_startup_screen(&interactive_config, &session, config).await?;
+        display_startup_screen(&interactive_config, &session, &app_config).await?;
     }
 
     // Check if running in home directory
     if interactive_config.check_directory && is_home_directory(&session.current_directory) {
         let banner_config = BannerConfig::default();
-        print_directory_recommendation(
-            &session.current_directory.display().to_string(),
-            &banner_config,
+        println!(
+            "{}",
+            format_directory_recommendation(
+                &session.current_directory.display().to_string(),
+                &banner_config,
+            )
         );
     }
 
     // Main interactive loop
     loop {
-        match run_interactive_loop(&mut session, &client, &interactive_config, config).await {
+        match run_interactive_loop(&mut session, &client, &interactive_config, &mut app_config)
+            .await
+        {
             Ok(should_continue) => {
                 if !should_continue {
                     break;
@@ -234,7 +241,7 @@ async fn display_startup_screen(
     crate::display::clear_screen();
 
     if config.show_banner && !config.show_tips {
-        print_grok_logo(width);
+        println!("{}", format_grok_logo(width));
         sleep(Duration::from_millis(500)).await;
     }
 
@@ -245,7 +252,7 @@ async fn display_startup_screen(
             show_updates: true,
             width: Some(width),
         };
-        print_welcome_banner(&banner_config);
+        println!("{}", format_welcome_banner(&banner_config));
     }
 
     // Show current session info
@@ -277,28 +284,35 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
     // Show context files info if loaded
     let context_paths = get_all_context_file_paths(&session.current_directory);
     if !context_paths.is_empty() {
-        if context_paths.len() == 1 {
-            println!(
-                "  Context loaded: {}",
-                context_paths[0]
-                    .file_name()
-                    .and_then(|n| n.to_str())
-                    .unwrap_or("unknown")
-                    .bright_green()
-            );
-        } else {
-            println!(
-                "  Context loaded: {} files",
-                context_paths.len().to_string().bright_green()
-            );
-            for path in &context_paths {
-                println!(
-                    "    - {}",
-                    path.file_name()
-                        .and_then(|n| n.to_str())
-                        .unwrap_or("unknown")
-                        .dimmed()
-                );
+        println!(
+            "  Context loaded: {} {}",
+            context_paths.len().to_string().bright_green(),
+            if context_paths.len() == 1 {
+                "file"
+            } else {
+                "files"
+            }
+        );
+        for path in &context_paths {
+            // Show full path instead of just filename
+            println!("    - {}", path.display().to_string().bright_green());
+            // When hide_context_summary is false, show a short preview of the file
+            if !config.ui.hide_context_summary
+                && let Ok(content) = std::fs::read_to_string(path)
+            {
+                let preview: Vec<&str> = content
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .take(3)
+                    .collect();
+                for line in preview {
+                    let truncated = if line.len() > 80 {
+                        format!("{}...", &line[..80])
+                    } else {
+                        line.to_string()
+                    };
+                    println!("      {}", truncated.dimmed());
+                }
             }
         }
     }
@@ -350,15 +364,10 @@ fn load_project_context_for_session(project_root: &PathBuf) -> Option<String> {
             }
 
             if context_paths.len() == 1 {
-                let context_file_name = context_paths[0]
-                    .file_name()
-                    .and_then(|n| n.to_os_string().into_string().ok())
-                    .unwrap_or_else(|| "context file".to_string());
-
                 println!(
                     "{} {}",
                     "✓".bright_green(),
-                    format!("Loaded project context from {}", context_file_name).dimmed()
+                    format!("Loaded project context from {}", context_paths[0].display()).dimmed()
                 );
             } else {
                 println!(
@@ -367,9 +376,8 @@ fn load_project_context_for_session(project_root: &PathBuf) -> Option<String> {
                     format!("Loaded and merged {} context files", context_paths.len()).dimmed()
                 );
                 for path in &context_paths {
-                    if let Some(name) = path.file_name().and_then(|n| n.to_str()) {
-                        println!("  {} {}", "•".dimmed(), name.dimmed());
-                    }
+                    // Show full path for each context file
+                    println!("  {} {}", "•".dimmed(), path.display().to_string().dimmed());
                 }
             }
 
@@ -397,7 +405,7 @@ async fn run_interactive_loop(
     session: &mut InteractiveSession,
     client: &GrokClient,
     interactive_config: &InteractiveConfig,
-    app_config: &Config,
+    app_config: &mut Config,
 ) -> Result<bool> {
     // Prepare prompt
     let prompt = match interactive_config.prompt_style {
@@ -717,7 +725,7 @@ async fn handle_special_commands(
     input: &str,
     session: &mut InteractiveSession,
     interactive_config: &InteractiveConfig,
-    app_config: &Config,
+    app_config: &mut Config,
 ) -> Result<Option<bool>> {
     if !input.starts_with('/') {
         return Ok(None);
@@ -740,7 +748,7 @@ async fn handle_special_commands(
             crate::display::clear_screen();
             if interactive_config.show_banner {
                 let (width, _) = crate::display::get_terminal_size();
-                print_grok_logo(width);
+                println!("{}", format_grok_logo(width));
             }
             Ok(Some(true))
         }
@@ -788,6 +796,13 @@ async fn handle_special_commands(
                 app_config,
             )
             .await?;
+
+            // Reload config after modifying settings
+            if let Ok(new_config) = Config::load_hierarchical().await {
+                *app_config = new_config;
+                println!("{} Configuration reloaded successfully", "✓".bright_green());
+            }
+
             Ok(Some(true))
         }
         "tools" => {

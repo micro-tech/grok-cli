@@ -3,7 +3,7 @@
 //! Handles display of helpful tips and getting started information
 
 use colored::*;
-use rand::Rng;
+use rand::RngExt;
 use rand::prelude::IndexedMutRandom;
 use rand::seq::SliceRandom;
 

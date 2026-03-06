@@ -13,7 +13,7 @@ use anyhow::{Result, anyhow};
 use colored::*;
 use serde_json::{Value, json};
 use std::net::SocketAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
@@ -21,11 +21,15 @@ use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 use crate::acp::protocol::{
-    AGENT_METHOD_NAMES, AgentCapabilities, ContentBlock, ContentChunk, Implementation,
-    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest,
-    PromptResponse, ProtocolVersion, SessionId, SessionNotification, SessionUpdate, StopReason,
-    TextContent,
+    AGENT_METHOD_NAMES, AgentCapabilities, AvailableCommandsUpdate, ContentBlock, ContentChunk,
+    Implementation, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
+    PromptRequest, PromptResponse, ProtocolVersion, SessionId, SessionNotification, SessionUpdate,
+    StopReason, TextContent,
 };
+use crate::acp::slash_commands::{
+    self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
+};
+use crate::acp::tools;
 use crate::acp::{GrokAcpAgent, SessionConfig};
 use crate::cli::{create_spinner, print_error, print_info, print_success, print_warning};
 use crate::config::Config;
@@ -35,7 +39,9 @@ use crate::utils::chat_logger;
 pub async fn handle_acp_action(action: crate::AcpAction, config: &Config) -> Result<()> {
     match action {
         crate::AcpAction::Server { port, host } => start_acp_server(port, &host, config).await,
-        crate::AcpAction::Stdio { model } => start_acp_stdio(config, model).await,
+        crate::AcpAction::Stdio { model, workspace } => {
+            start_acp_stdio(config, model, workspace).await
+        }
         crate::AcpAction::Test { address } => test_acp_connection(&address, config).await,
         crate::AcpAction::Capabilities => show_acp_capabilities().await,
     }
@@ -112,10 +118,43 @@ async fn start_acp_server(port: Option<u16>, host: &str, config: &Config) -> Res
     Ok(())
 }
 
-async fn start_acp_stdio(config: &Config, model: Option<String>) -> Result<()> {
+async fn start_acp_stdio(
+    config: &Config,
+    model: Option<String>,
+    workspace: Option<String>,
+) -> Result<()> {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
     let agent = GrokAcpAgent::new(config.clone(), model).await?;
+
+    // Trust an explicitly-supplied workspace root immediately — before any
+    // ACP protocol messages arrive.  This is the most reliable way to handle
+    // the case where Zed does not send workspaceRoot in initialize/session.new.
+    //
+    // In your Zed agent settings pass: --workspace ${workspaceFolder}
+    // That tells Zed to substitute the open project's root directory.
+    //
+    // Also honour the GROK_WORKSPACE_ROOT environment variable as a fallback
+    // for shells / CI environments that set it without CLI flags.
+    let explicit_workspace = workspace
+        .or_else(|| std::env::var("GROK_WORKSPACE_ROOT").ok())
+        .or_else(|| std::env::var("WORKSPACE_ROOT").ok());
+
+    if let Some(ref root) = explicit_workspace {
+        info!("Explicit workspace root supplied at startup: {}", root);
+        register_workspace_root(&agent, root);
+    } else {
+        // No explicit root.  Log the CWD so the user can see where grok thinks
+        // the project is.  This is printed to stderr so it doesn't corrupt the
+        // JSON-RPC stream on stdout.
+        match std::env::current_dir() {
+            Ok(cwd) => info!(
+                "No explicit --workspace supplied; trusting CWD: {}",
+                cwd.display()
+            ),
+            Err(e) => warn!("Could not determine CWD: {}", e),
+        }
+    }
 
     info!("Starting ACP session on stdio");
     run_acp_session(stdin, stdout, agent).await
@@ -254,6 +293,24 @@ where
         writer.write_all(response_str.as_bytes()).await?;
         writer.write_all(b"\n").await?;
         writer.flush().await?;
+
+        // After a successful session/new, advertise available slash commands.
+        // Per the ACP spec the agent MAY send `available_commands_update`
+        // immediately after the session is created.
+        if method == AGENT_METHOD_NAMES.session_new
+            && let Some(session_id) = response
+                .get("result")
+                .and_then(|r| r.get("sessionId"))
+                .and_then(|s| s.as_str())
+        {
+            info!(
+                "Sending available_commands_update for session: {}",
+                session_id
+            );
+            if let Err(e) = send_available_commands_update(writer, session_id).await {
+                warn!("Failed to send available_commands_update: {}", e);
+            }
+        }
     } else if let Some(method) = msg.get("method").and_then(|m| m.as_str()) {
         // Notification
         info!("Received notification: {}", method);
@@ -342,20 +399,87 @@ fn register_workspace_root(agent: &GrokAcpAgent, raw_path: &str) {
     let resolved = resolve_workspace_path(raw_path);
     info!("Registering workspace root as trusted: {:?}", resolved);
     agent.security.add_trusted_directory(&resolved);
+}
 
-    // Belt-and-suspenders: also trust every parent component that looks like
-    // a reasonable project root (stops at the drive root / filesystem root).
-    // This handles cases where the client sends a sub-directory instead of
-    // the real root.
-    // We deliberately do NOT trust "/" or "C:\" to avoid opening up the whole
-    // filesystem — we stop at depth 2 from root.
-    // (Disabled for now; uncomment if sub-directory issues arise.)
-    // let mut p = resolved.as_path();
-    // while let Some(parent) = p.parent() {
-    //     if parent.components().count() <= 1 { break; }
-    //     agent.security.add_trusted_directory(parent);
-    //     p = parent;
-    // }
+/// Walk up from a file path to find the project workspace root by looking for
+/// common project markers (.git, Cargo.toml, package.json, .grok, etc.).
+/// Falls back to the file's immediate parent directory if no marker is found.
+fn find_workspace_root_from_path(file_path: &Path) -> PathBuf {
+    // Start from the file's parent directory (or the path itself if it's a dir)
+    let start = if file_path.is_dir() {
+        file_path.to_path_buf()
+    } else {
+        file_path
+            .parent()
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| file_path.to_path_buf())
+    };
+
+    // Common project root markers — ordered from most specific to least
+    const MARKERS: &[&str] = &[
+        ".git",
+        "Cargo.toml",
+        "package.json",
+        "pyproject.toml",
+        "setup.py",
+        "go.mod",
+        ".grok",
+        "composer.json",
+        "pom.xml",
+        "build.gradle",
+        ".svn",
+    ];
+
+    let mut current = start.clone();
+    loop {
+        // Stop before we reach the filesystem root (depth ≤ 2 on Windows means
+        // something like "C:\" or "C:\Users" — too broad to trust wholesale).
+        if current.components().count() <= 2 {
+            break;
+        }
+        for marker in MARKERS {
+            if current.join(marker).exists() {
+                return current;
+            }
+        }
+        match current.parent() {
+            Some(parent) => current = parent.to_path_buf(),
+            None => break,
+        }
+    }
+    // Fallback: trust the starting directory (immediate parent of the file)
+    start
+}
+
+/// Extract the workspace root from a resource URI (file:// or plain path) and
+/// register it as a trusted directory with the security policy.
+///
+/// This is the mechanism that lets Grok access files in **any project that the
+/// user has open in Zed**, not only the directory where the `grok` binary was
+/// originally launched. When Zed embeds @-mentioned files via `ResourceLink` or
+/// `Resource` blocks inside a `session/prompt` message, those URIs give us the
+/// exact on-disk location of the resource. We walk up from that location to
+/// find the project root and trust the entire project tree.
+fn trust_workspace_from_uri(uri: &str, agent: &GrokAcpAgent) {
+    // Only process URIs that look like local file references
+    let looks_like_file = uri.starts_with("file://")
+        || uri.starts_with('/')
+        || (uri.len() > 2 && uri.chars().nth(1) == Some(':'))   // Windows  C:\...
+        || uri.contains(":\\")
+        || uri.contains(":/");
+
+    if !looks_like_file {
+        return;
+    }
+
+    let file_path = resolve_workspace_path(uri);
+    let workspace_root = find_workspace_root_from_path(&file_path);
+
+    info!(
+        "Auto-trusting workspace root from resource URI '{}' → {:?}",
+        uri, workspace_root
+    );
+    agent.security.add_trusted_directory(&workspace_root);
 }
 
 async fn handle_initialize(params: &Value, agent: &GrokAcpAgent) -> Result<Value> {
@@ -501,17 +625,27 @@ where
 
     let session_id = SessionId::new(req.session_id.0.clone());
 
-    // Extract text from prompt
+    // Extract text from prompt.
+    // While iterating we also auto-trust any workspace roots that can be
+    // inferred from embedded resource URIs.  This covers the common case where
+    // the user has Grok open for project A but is @-mentioning files that live
+    // in project B — without this, those paths would be denied by the security
+    // policy because only project A's root was registered at startup.
     let mut message_text = String::new();
     for block in req.prompt {
         match block {
             ContentBlock::Text(text) => message_text.push_str(&text.text),
             ContentBlock::ResourceLink(link) => {
+                // Auto-trust the workspace that owns this linked resource so
+                // the model can follow up with read_file / list_directory calls.
+                trust_workspace_from_uri(&link.uri, agent);
                 message_text.push_str(&format!("\n[Resource: {} ({})]", link.name, link.uri));
             }
             ContentBlock::Resource(res) => {
                 let crate::acp::protocol::EmbeddedResourceResource::TextResourceContents(text_res) =
                     res.resource;
+                // Auto-trust the workspace that owns this embedded resource.
+                trust_workspace_from_uri(&text_res.uri, agent);
                 message_text.push_str(&format!(
                     "\n[Context: {}]\n{}\n",
                     text_res.uri, text_res.text
@@ -523,6 +657,127 @@ where
     if message_text.is_empty() {
         return Err(anyhow!("Empty prompt received"));
     }
+
+    // --- Slash command detection & dispatch ---
+    // Check if the user message starts with a `/` command prefix.
+    // Built-in commands (help, clear, model, context) are handled here
+    // without an AI round-trip.  AI-assisted commands (web, explain, review,
+    // plan, test, fix) rewrite the prompt before forwarding to Grok.
+    if let Some(cmd) = parse_slash_command(&message_text) {
+        info!("Slash command detected: {:?}", cmd);
+
+        // Try to handle as a built-in (no AI needed)
+        if let Some(builtin) = handle_builtin(&cmd) {
+            let response_text = match builtin {
+                BuiltinResult::Text(text) => {
+                    info!("Built-in slash command returning direct text response");
+                    text
+                }
+                BuiltinResult::ClearHistory => {
+                    info!("Clearing session history for {}", session_id.0);
+                    if let Err(e) = agent.clear_session_history(&session_id).await {
+                        warn!("Failed to clear session history: {}", e);
+                    }
+                    if let Err(e) = chat_logger::log_system(
+                        "Conversation history cleared by /clear command".to_string(),
+                    ) {
+                        warn!("Failed to log clear event: {}", e);
+                    }
+                    "✅ Conversation history cleared. Starting fresh!".to_string()
+                }
+                BuiltinResult::SwitchModel(model_name) => {
+                    info!("Switching session model to '{}'", model_name);
+                    match agent
+                        .set_session_model(&session_id, model_name.clone())
+                        .await
+                    {
+                        Ok(()) => {
+                            if let Err(e) =
+                                chat_logger::log_system(format!("Model switched to {model_name}"))
+                            {
+                                warn!("Failed to log model switch: {}", e);
+                            }
+                            format!("✅ Switched to model **`{model_name}`** for this session.")
+                        }
+                        Err(e) => {
+                            warn!("Model switch failed: {}", e);
+                            format!(
+                                "❌ Could not switch to model `{model_name}`: {e}\n\n{}",
+                                slash_commands::format_model_list()
+                            )
+                        }
+                    }
+                }
+                BuiltinResult::ShowContext => {
+                    info!("Fetching session context for /context command");
+                    match agent.get_session_config(&session_id).await {
+                        Ok(cfg) => {
+                            let msg_count = agent
+                                .get_session_message_count(&session_id)
+                                .await
+                                .unwrap_or(0);
+                            format_context_text(
+                                &session_id.0,
+                                &cfg.model,
+                                cfg.temperature,
+                                cfg.max_tokens,
+                                msg_count,
+                            )
+                        }
+                        Err(e) => format!("❌ Could not retrieve session context: {e}"),
+                    }
+                }
+            };
+
+            // Log the assistant response and stream it back to the client
+            if let Err(e) = chat_logger::log_assistant(&response_text) {
+                warn!("Failed to log slash-command response: {}", e);
+            }
+            send_text_update(writer, &session_id.0, &response_text).await?;
+            let response = PromptResponse::new(StopReason::EndTurn);
+            return Ok(serde_json::to_value(response)?);
+        }
+
+        // AI-assisted command: rewrite the prompt with richer instructions
+        if let Some(ai_prompt) = slash_commands::command_to_prompt(&cmd) {
+            info!(
+                "Rewriting slash command prompt ({} → {} chars)",
+                message_text.len(),
+                ai_prompt.len()
+            );
+            // Use the enhanced prompt directly — it already contains the full
+            // AI instruction built by command_to_prompt().
+            let enhanced = ai_prompt;
+            // Log original slash command as the user message, then forward
+            // the rewritten prompt to the model.
+            if let Err(e) = chat_logger::log_user(&message_text) {
+                warn!("Failed to log slash-command user message: {}", e);
+            }
+            info!(
+                "Calling Grok API for session {} with rewritten slash-command prompt",
+                session_id.0
+            );
+            let response_text = agent
+                .handle_chat_completion(&session_id, &enhanced, None)
+                .await?;
+
+            info!("Received response from Grok: {} chars", response_text.len());
+            let final_text = if response_text.is_empty() {
+                warn!("Grok returned empty response for slash command!");
+                "[No response content received from model]".to_string()
+            } else {
+                response_text
+            };
+
+            if let Err(e) = chat_logger::log_assistant(&final_text) {
+                warn!("Failed to log assistant response: {}", e);
+            }
+            send_text_update(writer, &session_id.0, &final_text).await?;
+            let response = PromptResponse::new(StopReason::EndTurn);
+            return Ok(serde_json::to_value(response)?);
+        }
+    }
+    // --- End slash command handling ---
 
     // Log user prompt
     if let Err(e) = chat_logger::log_user(&message_text) {
@@ -563,6 +818,43 @@ where
     info!("Returning final response with stopReason: EndTurn");
     let response = PromptResponse::new(StopReason::EndTurn);
     Ok(serde_json::to_value(response)?)
+}
+
+/// Send an `available_commands_update` notification to the client advertising
+/// all slash commands that this agent supports.
+///
+/// Per the ACP spec this is a JSON-RPC notification (no `id` field) sent over
+/// the same channel as regular responses.  It MUST be sent after the
+/// `session/new` response so the client can populate its command palette.
+async fn send_available_commands_update<W>(writer: &mut W, session_id: &str) -> Result<()>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let commands = slash_commands::get_available_commands();
+    let count = commands.len();
+
+    let update = SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(commands));
+    let params = SessionNotification::new(SessionId::new(session_id), update);
+
+    let notification = json!({
+        "jsonrpc": "2.0",
+        "method": "session/update",
+        "params": params
+    });
+
+    let msg = serde_json::to_string(&notification)?;
+    info!(
+        "Sending available_commands_update ({} commands) for session {}",
+        count, session_id
+    );
+    debug!("available_commands_update payload: {}", msg);
+
+    writer.write_all(msg.as_bytes()).await?;
+    writer.write_all(b"\n").await?;
+    writer.flush().await?;
+
+    info!("available_commands_update sent successfully");
+    Ok(())
 }
 
 /// Helper to send text update notification

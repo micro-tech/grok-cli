@@ -195,8 +195,14 @@ grok query "read C:\Users\<username>\ntuser.dat"
 # Check API key
 grok config get api_key
 
-# If empty, set it:
+# If empty, set it (stores in .env file):
 grok config set api_key xai-your-key-here
+
+# Or manually create .env file:
+# Windows:
+echo GROK_API_KEY=xai-your-key-here > %APPDATA%\.grok\.env
+# Linux/Mac:
+echo "GROK_API_KEY=xai-your-key-here" > ~/.config/grok-cli/.env
 
 # Or use environment variable:
 set GROK_API_KEY=xai-your-key-here

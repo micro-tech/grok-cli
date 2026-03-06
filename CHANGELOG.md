@@ -13,7 +13,145 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+### Added
+
+- **ACP Slash Commands** (`src/acp/slash_commands.rs`, `src/acp/protocol.rs`, `src/cli/commands/acp.rs`)
+  - Implements the ACP `available_commands_update` session notification as specified at
+    <https://agentclientprotocol.com/protocol/slash-commands>.
+  - After every `session/new` the agent automatically sends an
+    `available_commands_update` notification so clients (e.g. Zed) can populate
+    their `/` command palette with Grok's capabilities.
+  - **Ten slash commands** are advertised and handled:
+    | Command | Type | Description |
+    |---------|------|-------------|
+    | `/help` | built-in | List all available commands and usage |
+    | `/web <query>` | AI-assisted | Research a topic / search the web |
+    | `/explain [subject]` | AI-assisted | Thorough explanation of code or a concept |
+    | `/review [target]` | AI-assisted | Comprehensive code review (bugs, security, performance, style) |
+    | `/plan <description>` | AI-assisted | Detailed step-by-step implementation plan |
+    | `/test [target]` | AI-assisted | Write, run, or debug tests |
+    | `/fix [problem]` | AI-assisted | Diagnose and fix a bug or error |
+    | `/model [name]` | built-in | Switch the active Grok model; lists available models if no name given |
+    | `/clear` | built-in | Wipe conversation history for the current session |
+    | `/context` | built-in | Show session ID, model, temperature, token limit, and message count |
+  - **Built-in commands** (`/help`, `/clear`, `/model`, `/context`) are resolved
+    entirely on the agent side with zero AI round-trips.
+  - **AI-assisted commands** rewrite the raw `/command text` into a structured,
+    richly-instructed prompt before forwarding to the Grok API, resulting in
+    more focused and complete model responses.
+  - New protocol types added to `src/acp/protocol.rs`:
+    `AvailableCommandInput`, `AvailableCommand`, `AvailableCommandsUpdate`,
+    and a new `SessionUpdate::AvailableCommandsUpdate` variant.
+  - New session helpers on `GrokAcpAgent`: `clear_session_history`,
+    `get_session_config`, `get_session_message_count`, `set_session_model`.
+  - 17 unit tests covering the parser, prompt builder, builtin dispatcher, and
+    formatting helpers — all passing.
+  - Source: AI (Claude Sonnet 4.6) — triggered by user request to implement ACP
+    slash-command advertisement as specified in the ACP protocol documentation.
+
+
+
+## [0.1.6-pre] - 2026-03-05
+
+### Added
+
+- **Hooks settings exposed in `/settings` and `/hooks` command wired (Task 26)**
+  - `tools.enable_hooks` is now visible and editable in the **Tools** category
+    of the `/settings` menu. Toggling it to `true` activates before/after
+    tool-call hook execution; the `/hooks` command immediately reflects the
+    change.
+  - Three new **Experimental** settings surface the extensions subsystem that
+    powers custom hooks:
+    - `experimental.extensions.enabled` — master toggle for loading extensions.
+    - `experimental.extensions.extension_dir` — path to the extensions folder
+      (defaults to `~/.grok/extensions` when left blank).
+    - `experimental.extensions.enabled_extensions` — comma-separated list of
+      extension names to load on startup.
+  - `get_value()` and `set_value()` in `src/config/mod.rs` now handle all four
+    new keys so that `grok config set tools.enable_hooks true` (and the
+    equivalent extension keys) round-trip correctly through the config layer.
+  - Created `.zed/task_list.json` as the canonical task-tracking file going
+    forward; Task 26 is recorded there with all five subtasks marked **done**.
+  - Source: AI (Claude Sonnet 4.6) — triggered by missing hooks/settings
+    entries reported by user.
+- **ACP Workspace Initialization**: Automatically reads workspace directory when ACP session starts
+  - When started in ACP mode with workspace root, grok-cli now automatically reads the top-level directory
+  - Directory contents are logged to the session for immediate context awareness
+  - AI agent has project structure information from the first interaction
+  - Uses existing security policy to ensure only trusted directories are accessed
+  - Non-breaking: directory reading failure logs warning but doesn't prevent session initialization
+  - Improves initial AI responses by providing project context upfront
+
+- **Context Discovery Enhancement**: Context files now walk up directory tree to find project root
+  - Context discovery now matches configuration discovery behavior
+  - Works from any subdirectory within a project
+  - Automatically finds project root by detecting `.git`, `Cargo.toml`, `package.json`, or `.grok/`
+  - No longer requires running grok from project root for context loading
+  - Applies to all context file types: `.zed/rules`, `.grok/context.md`, `GEMINI.md`, etc.
+  - Created PROJECT_CONTEXT_GUIDE.md (560 lines) - comprehensive guide to context and config discovery
+
+- **Context file display improvements in session startup info (Task 25)**
+  - Context files now show their **full absolute path** (e.g.
+    `H:\GitHub\grok-cli\context.md`) instead of just the bare filename.
+    This makes it immediately clear which file on disk was loaded, especially
+    useful when multiple context sources (project + global `~/.grok`) are
+    active at the same time.
+  - When `ui.hide_context_summary` is `false` (the default), the first three
+    non-empty lines of each context file are printed as a dimmed preview
+    directly beneath the path. Lines longer than 80 characters are truncated.
+    Set `ui.hide_context_summary = true` in your config to suppress the preview.
+  - Load confirmation messages emitted by `load_project_context_for_session`
+    also now show full paths instead of bare filenames.
+  - Source: AI (Claude Sonnet 4.6) — triggered by user feedback that filename-
+    only display made it impossible to tell which `context.md` was loaded.
+
+- **`grok acp stdio --workspace <path>` flag for explicit project root**
+  - Zed (and other ACP clients) sometimes launch the `grok` binary from the
+    user's home directory rather than the project root, causing every file
+    access to be denied. The new `--workspace` flag lets you tell grok exactly
+    which directory to trust at startup — before any protocol messages arrive.
+  - In your Zed agent settings, pass `--workspace ${workspaceFolder}` and Zed
+    will substitute the open project's root automatically.
+  - Two environment-variable fallbacks are also checked (in order):
+    1. `GROK_WORKSPACE_ROOT` — grok-specific override
+    2. `WORKSPACE_ROOT` — generic convention used by some CI systems
+  - Example Zed agent config (`~/.config/zed/settings.json`):
+    ```json
+    {
+      "agent": {
+        "command": "grok",
+        "args": ["acp", "stdio", "--workspace", "${workspaceFolder}"]
+      }
+    }
+    ```
+  - At startup grok now logs the CWD (or the explicit workspace root) to
+    `tracing` at INFO level so it is always clear which directory is trusted.
+
 ### Fixed
+
+- **ACP Mode — Cross-project file access denied when using Zed resource links**
+  - **Root cause:** When Grok is launched as an ACP server for project A but the
+    user @-mentions files from project B in Zed, project B's directory was never
+    added to the trusted paths — only the directory where `grok` was started was
+    trusted. Every `read_file` / `list_directory` call for project B would return
+    "Access denied: External access is disabled in configuration".
+  - **Fix (`src/cli/commands/acp.rs`):** `handle_session_prompt` now inspects
+    every `ResourceLink` and `Resource` block in the incoming `session/prompt`
+    message. For each `file://` URI it finds, it calls the new
+    `trust_workspace_from_uri` helper which:
+    1. Decodes the URI using the existing `resolve_workspace_path` logic
+       (handles `file://`, forward-slash Windows paths, Git-bash paths, etc.)
+    2. Walks up the directory tree from the resolved path looking for common
+       project-root markers (`.git`, `Cargo.toml`, `package.json`, `.grok`, etc.)
+       via the new `find_workspace_root_from_path` helper
+    3. Registers the discovered workspace root as a trusted directory so all
+       subsequent `read_file` / `list_directory` / `glob_search` calls for that
+       project succeed without requiring external-access config changes
+  - **Fix (`src/acp/security.rs`):** `validate_path_access` now includes a
+    detailed diagnostic when access is denied — showing the resolved path,
+    the full list of currently-trusted directories, and a tip on how to fix it.
+    This replaces the terse "Access denied: …" message that gave the AI model
+    nothing useful to tell the user.
 
 - **ACP Mode — "Request timeout after 30 seconds" — root cause diagnosed and mitigated**
   - **Root cause 1 (grok_api crate bug):** `grok_api ≤ 0.1.2` hardcodes the
