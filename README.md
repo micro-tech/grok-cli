@@ -89,7 +89,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 │ 4. Try: "Create a new Rust project structure"      │
 └─────────────────────────────────────────────────────┘
 
-Grok (grok-3) [demo | 100% context left | 0 messages] >
+Grok (grok-4-1-fast-reasoning) [demo | 100% context left | 0 messages] >
 ```
 
 ## 🤖 Automatic File Operations
@@ -175,18 +175,29 @@ cargo run --bin installer
 ```bash
 # Create default configuration
 grok config init
-
-# Set your API key
-grok config set api_key "your-api-key-here"
 ```
 
-Or use environment variable:
+#### Set your API key (Choose one method):
+
+**Recommended: Use .env file**
+```bash
+# Create .env file in config directory
+# Windows:
+echo GROK_API_KEY=your-api-key-here > %APPDATA%\.grok\.env
+
+# Linux/Mac:
+echo "GROK_API_KEY=your-api-key-here" > ~/.config/grok-cli/.env
+```
+
+**Alternative: Environment variable**
 ```bash
 # Add to your shell profile (.bashrc, .zshrc, etc.)
 export GROK_API_KEY="your-api-key-here"
 # or
 export X_API_KEY="your-api-key-here"
 ```
+
+> **⚠️ Security Note:** Never commit `.env` files with API keys to version control! They are automatically excluded via `.gitignore`.
 
 ### ⚠️ Troubleshooting Installation
 
@@ -269,7 +280,7 @@ Once in interactive mode, use these special commands:
 | Command | Description |
 |---------|-------------|
 | `/help` | Show available commands |
-| `/model [name]` | Change AI model (grok-3, grok-2-latest, etc.) |
+| `/model [name]` | Change AI model (grok-4-1-fast-reasoning, grok-3, grok-2-latest, etc.) |
 | `/system [prompt]` | Set system prompt for specialized behavior |
 | `/history` | View conversation history |
 | `/status` | Show session information |
@@ -312,7 +323,7 @@ Create `~/.config/grok-cli/config.toml`:
 
 ```toml
 [api]
-default_model = "grok-3"
+default_model = "grok-4-1-fast-reasoning"
 default_temperature = 0.7
 timeout_secs = 30
 
@@ -376,7 +387,7 @@ Add to your Zed `settings.json`:
     "grok": {
       "version": "1",
       "provider": "agent",
-      "default_model": "grok-2-latest",
+      "default_model": "grok-4-1-fast-reasoning",
       "agent": {
         "command": "grok",
         "args": ["acp", "stdio"],
@@ -417,7 +428,8 @@ Add to Zed `settings.json`:
 ## 🎨 Customization
 
 ### Available Models
-- `grok-3` - Latest and most capable model
+- `grok-4-1-fast-reasoning` - Latest fast reasoning model (cheaper & more up-to-date, default)
+- `grok-3` - Previous flagship model
 - `grok-2-latest` - Previous generation model
 - `grok-code-fast-1` - Optimized for code tasks
 - `grok-vision-1212` - Supports image analysis

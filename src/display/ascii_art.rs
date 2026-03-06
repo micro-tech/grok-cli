@@ -64,10 +64,11 @@ pub fn get_logo_width(logo: &str) -> usize {
         .unwrap_or(0)
 }
 
-/// Print the Grok logo with gradient colors
-pub fn print_grok_logo(width: u16) {
+/// Format the Grok logo with gradient colors (pure function)
+pub fn format_grok_logo(width: u16) -> String {
     let logo = get_logo_for_width(width);
     let lines: Vec<&str> = logo.lines().collect();
+    let mut output = String::new();
 
     for (i, line) in lines.iter().enumerate() {
         if line.trim().is_empty() {
@@ -81,8 +82,16 @@ pub fn print_grok_logo(width: u16) {
             _ => line.bright_cyan(),
         };
 
-        println!("{}", colored_line);
+        output.push_str(&format!("{}\n", colored_line));
     }
+
+    output
+}
+
+/// Print the Grok logo with gradient colors
+#[deprecated(note = "Use format_grok_logo and println! instead")]
+pub fn print_grok_logo(width: u16) {
+    print!("{}", format_grok_logo(width));
 }
 
 /// Print X.ai branding

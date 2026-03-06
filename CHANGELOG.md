@@ -34,6 +34,21 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
     forward; Task 26 is recorded there with all five subtasks marked **done**.
   - Source: AI (Claude Sonnet 4.6) — triggered by missing hooks/settings
     entries reported by user.
+- **ACP Workspace Initialization**: Automatically reads workspace directory when ACP session starts
+  - When started in ACP mode with workspace root, grok-cli now automatically reads the top-level directory
+  - Directory contents are logged to the session for immediate context awareness
+  - AI agent has project structure information from the first interaction
+  - Uses existing security policy to ensure only trusted directories are accessed
+  - Non-breaking: directory reading failure logs warning but doesn't prevent session initialization
+  - Improves initial AI responses by providing project context upfront
+
+- **Context Discovery Enhancement**: Context files now walk up directory tree to find project root
+  - Context discovery now matches configuration discovery behavior
+  - Works from any subdirectory within a project
+  - Automatically finds project root by detecting `.git`, `Cargo.toml`, `package.json`, or `.grok/`
+  - No longer requires running grok from project root for context loading
+  - Applies to all context file types: `.zed/rules`, `.grok/context.md`, `GEMINI.md`, etc.
+  - Created PROJECT_CONTEXT_GUIDE.md (560 lines) - comprehensive guide to context and config discovery
 
 - **Context file display improvements in session startup info (Task 25)**
   - Context files now show their **full absolute path** (e.g.

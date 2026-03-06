@@ -26,6 +26,7 @@ use crate::acp::protocol::{
     PromptResponse, ProtocolVersion, SessionId, SessionNotification, SessionUpdate, StopReason,
     TextContent,
 };
+use crate::acp::tools;
 use crate::acp::{GrokAcpAgent, SessionConfig};
 use crate::cli::{create_spinner, print_error, print_info, print_success, print_warning};
 use crate::config::Config;

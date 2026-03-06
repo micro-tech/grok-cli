@@ -44,7 +44,7 @@ let response = client.chat_completion(
     Some("You are helpful"),
     0.7,
     1000,
-    "grok-3"
+    "grok-4-1-fast-reasoning"
 ).await?;
 ```
 

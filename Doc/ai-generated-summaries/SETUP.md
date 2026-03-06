@@ -140,8 +140,11 @@ cp .env.example .env
 # Show current configuration
 ./target/release/grok config show
 
-# Set API key
+# Set API key (stores in .env file for security)
 ./target/release/grok config set api_key "your_api_key_here"
+
+# Or manually create .env file:
+# echo "GROK_API_KEY=your_api_key_here" > ~/.config/grok-cli/.env
 
 # Enable Starlink optimizations
 ./target/release/grok config set network.starlink_optimizations true
@@ -177,7 +180,8 @@ cp .env.example .env
    - `code_generate` - Generate code from descriptions
 
 **Available Grok Models (confirmed working):**
-- `grok-3` (default) - Latest general model
+- `grok-4-1-fast-reasoning` (default) - Latest fast reasoning model (cheaper & more up-to-date)
+- `grok-3` - Previous flagship model
 - `grok-3-mini` - Faster, lightweight version
 - `grok-4-fast-reasoning` - Advanced reasoning model
 - `grok-2-vision-1212` - Vision-capable model
@@ -237,13 +241,13 @@ export GROK_API_KEY="your_api_key"
 
 # Example successful test results:
 # - Chat: "Hey there! I'm thrilled to chat with you. I'm Grok..."
-# - Models detected: grok-3, grok-3-mini, grok-4-fast-reasoning, etc.
+# - Models detected: grok-4-1-fast-reasoning, grok-3, grok-3-mini, grok-4-fast-reasoning, etc.
 # - Code explanation: Comprehensive analysis with 7-section breakdown
 ```
 
 ## 📝 Next Steps
 
-1. **Add your X API key** to `.env` or configuration ✅ DONE & TESTED
+1. **Add your X API key** to `.env` file (NOT config.toml) ✅ DONE & TESTED
 2. **Test the basic functionality** with the health check ✅ DONE & WORKING
 3. **Try chat and code operations** once API key is configured ✅ DONE & WORKING PERFECTLY
 4. **Set up Zed integration** if using Zed editor (ACP server ready)
@@ -251,7 +255,7 @@ export GROK_API_KEY="your_api_key"
 
 **READY TO USE! 🚀**
 - API endpoint corrected to `https://api.x.ai`
-- Default model updated to `grok-3`  
+- Default model updated to `grok-4-1-fast-reasoning` (cheaper & more up-to-date)
 - All core features tested and confirmed working
 - Network resilience active for Starlink connections
 - Comprehensive error handling and retry logic operational

@@ -87,7 +87,7 @@ Active skills are saved with your session:
 # Later...
 > /load my-project
 ✓ Session 'my-project' loaded
-  Model: grok-3
+  Model: grok-4-1-fast-reasoning
   
 > /skills
 Available Skills:
@@ -272,7 +272,7 @@ Your instructions in Markdown format.
 ```bash
 > /status
 Session: grok-20250115-1430
-Model: grok-3
+Model: grok-4-1-fast-reasoning
 Skills: 2 available, 1 active
   Active: rust-expert
 ```

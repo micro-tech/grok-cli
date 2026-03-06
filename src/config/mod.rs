@@ -22,6 +22,7 @@ pub struct Config {
     pub config_source: Option<ConfigSource>,
 
     /// X API key for Grok access
+    #[serde(skip)]
     pub api_key: Option<String>,
 
     /// Default model to use
@@ -378,7 +379,7 @@ fn default_theme() -> String {
 }
 
 fn default_model() -> String {
-    "grok-3".to_string()
+    "grok-4-1-fast-reasoning".to_string()
 }
 
 fn default_temperature() -> f32 {
@@ -1096,6 +1097,7 @@ impl Config {
     ///    - Unix/Mac: ~/.config/grok-cli/config.toml and ~/.grok/.env
     /// 3. Built-in defaults
     /// 4. Environment variables (highest priority, applied last)
+    /// Load configuration with hierarchical priority: project → system → defaults
     ///
     /// Settings from higher priority sources override lower priority sources.
     pub async fn load_hierarchical() -> Result<Self> {
@@ -1119,6 +1121,24 @@ impl Config {
                     config = Self::merge_configs(config, system_config);
                     loaded_system_config = Some(system_config_path.clone());
                     info!("✓ Loaded system config.toml from: {:?}", system_config_path);
+                }
+                Err(e) => {
+                    warn!("Failed to load system config.toml: {}", e);
+                }
+            }
+        } else {
+            debug!("No system config.toml found at: {:?}", system_config_path);
+        }
+
+        // Try loading system-level config.toml first
+        let system_config_path = Self::default_config_path()?;
+        if system_config_path.exists() {
+            debug!("Loading system config.toml from: {:?}", system_config_path);
+            match Self::load_config_from_path(&system_config_path).await {
+                Ok(system_config) => {
+                    config = Self::merge_configs(config, system_config);
+                    loaded_system_config = Some(system_config_path.clone());
+                    debug!("✓ Loaded system config.toml from: {:?}", system_config_path);
                 }
                 Err(e) => {
                     warn!("Failed to load system config.toml: {}", e);
@@ -2351,7 +2371,7 @@ mod tests {
     #[tokio::test]
     async fn test_config_default() {
         let config = Config::default();
-        assert_eq!(config.default_model, "grok-3");
+        assert_eq!(config.default_model, "grok-4-1-fast-reasoning");
         assert_eq!(config.default_temperature, 0.7);
         assert!(config.validate().is_ok());
     }
@@ -2376,7 +2396,10 @@ mod tests {
         let mut config = Config::default();
 
         // Test getting values
-        assert_eq!(config.get_value("default_model").unwrap(), "grok-3");
+        assert_eq!(
+            config.get_value("default_model").unwrap(),
+            "grok-4-1-fast-reasoning"
+        );
         assert_eq!(config.get_value("ui.colors").unwrap(), "true");
 
         // Test setting values
