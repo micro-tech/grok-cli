@@ -105,7 +105,7 @@ async function installViaCargo() {
 }
 
 async function main() {
-  console.log("Setting up grok-cli v0.1.41...\n");
+  console.log("Setting up grok-cli v0.1.6-pre...\n");
 
   // Check if binary already exists
   if (checkRustBinaryExists()) {
@@ -142,9 +142,9 @@ async function main() {
   }
 
   console.log("\n━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("  grok-cli v0.1.41 is ready to use!");
+  console.log("  grok-cli v0.1.6-pre is ready to use!");
   console.log("━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-  console.log("\nNew features in v0.1.41:");
+  console.log("\nNew features in v0.1.6-pre:");
   console.log("  • External file access with audit logging");
   console.log("  • Tool loop debugging and diagnostics");
   console.log("  • Enhanced MCP server support");

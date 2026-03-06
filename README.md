@@ -9,7 +9,7 @@
 
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
-> **🎉 New in v0.1.5**: 
+> **🎉 New in v0.1.6-pre**: 
 > - Session Persistence - Save and resume conversations
 > - Hierarchical Configuration - Project-specific settings
 > - Enhanced Context Discovery - Multi-editor support (.zed/rules, .claude.md, etc.)
@@ -19,7 +19,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 > 
 > See [Quick Reference](docs/QUICK_REFERENCE.md) for details.
 >
-> **🔧 Latest Update (v0.1.5)**: 
+> **🔧 Latest Update (v0.1.6-pre)**: 
 > - **🔒 External Directory Access**: Securely read files outside your project with approval prompts and audit logging!
 > - **Chat Logging**: Automatic conversation logging with search and replay capabilities
 > - **🔧 ACP Fix**: Grok can no longer lose access to the project root after startup
@@ -27,7 +27,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 
 ## 🚀 Features
 
-### 🆕 New Features (v0.1.5)
+### 🆕 New Features (v0.1.6-pre)
 - **🔒 External Directory Access** - Securely read files outside project boundaries with interactive approval prompts, comprehensive audit logging, and pattern-based security protections. Perfect for shared configs and cross-project references! [Quick Start Guide](Doc/EXTERNAL_ACCESS_QUICK_START.md)
 - **🤖 Skill Auto-Activation** - Skills now activate automatically based on keywords, regex patterns, and file types in your project. Add an `auto-activate` block to any `SKILL.md` to declare triggers. Toggle with `/auto-skills on|off`.
 - **🔧 ACP Workspace Access Fix** - The project root where Grok is opened is always trusted from the very first tool call. Handles `file://` URIs, Windows forward-slash paths, and Git-bash style paths correctly.

@@ -314,11 +314,9 @@ async fn handle_interactive_chat(
                 let lower_input = input.to_lowercase();
 
                 // Handle special commands using a command registry
-                if let Some(result) = handle_interactive_command(
-                    &lower_input,
-                    input,
-                    &mut conversation_history,
-                )? {
+                if let Some(result) =
+                    handle_interactive_command(&lower_input, input, &mut conversation_history)?
+                {
                     match result {
                         CommandResult::Exit => {
                             println!("{}", "Goodbye!".cyan());

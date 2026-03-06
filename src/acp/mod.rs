@@ -419,7 +419,6 @@ impl GrokAcpAgent {
             let api_call_start = std::time::Instant::now();
 
             let response_with_finish = {
-                let mut last_err = anyhow!("API call failed before first attempt");
                 let mut attempt = 0u32;
                 loop {
                     attempt += 1;

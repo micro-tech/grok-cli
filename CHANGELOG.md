@@ -13,6 +13,8 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+## [0.1.6-pre] - 2026-03-05
+
 ### Added
 
 - **Hooks settings exposed in `/settings` and `/hooks` command wired (Task 26)**
