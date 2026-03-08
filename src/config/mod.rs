@@ -151,6 +151,16 @@ pub struct AcpConfig {
     /// Default: 25 (increase for complex multi-step tasks)
     #[serde(default = "default_max_tool_loop_iterations")]
     pub max_tool_loop_iterations: u32,
+
+    /// Require explicit user permission for tool execution
+    /// Default: true
+    #[serde(default = "default_true")]
+    pub require_permission: bool,
+
+    /// Timeout in seconds to wait for user permission response
+    /// Default: 60
+    #[serde(default = "default_permission_timeout_secs")]
+    pub permission_timeout_secs: u64,
 }
 
 /// Network configuration optimized for satellite connections
@@ -728,6 +738,10 @@ fn default_max_tool_loop_iterations() -> u32 {
     25
 }
 
+fn default_permission_timeout_secs() -> u64 {
+    60
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -765,6 +779,8 @@ impl Default for AcpConfig {
             protocol_version: "1.0".to_string(),
             dev_mode: false,
             max_tool_loop_iterations: default_max_tool_loop_iterations(),
+            require_permission: default_true(),
+            permission_timeout_secs: default_permission_timeout_secs(),
         }
     }
 }

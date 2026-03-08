@@ -13,6 +13,23 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+### Added
+
+- **ACP Gemini-style permission UI** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`, `src/config/mod.rs`)
+  - Implements the interactive `session/request_permission` RPC as specified in the ACP protocol.
+  - The agent now pauses before every tool execution to request explicit user permission via the client (e.g. Zed).
+  - Three outcome options are supported:
+    - **Proceed Once**: Executes the current tool call; subsequent calls for the same tool will prompt again.
+    - **Proceed Always**: Executes the current tool call and adds the tool to an `"always_allow"` set for the duration of the session, suppressing future prompts for that specific tool.
+    - **Cancel**: Rejects the tool execution; the agent receives a failure message and continues its loop gracefully.
+  - **Non-blocking Bidirectional Communication**: Refactored the ACP session handler to use a background reader task, allowing the agent to wait for user permission without deadlocking the JSON-RPC stream.
+  - **New Configuration Flags**:
+    - `acp.require_permission` (default: `true`): Enable or disable the permission gate.
+    - `acp.permission_timeout_secs` (default: `60`): How long to wait for a user response before failing the tool call.
+  - **Resilience**: Automatically cancels pending permissions on network drops or IO errors, preventing the agent from hanging.
+  - Comprehensive unit and integration tests covering all permission outcomes and timeout scenarios.
+  - Source: AI (Claude Sonnet 4.6) — implemented as Task #29 and #30 in the `.zed/task_list.json`.
+
 ---
 
 ## [0.1.61-pre] - 2026-03-06
