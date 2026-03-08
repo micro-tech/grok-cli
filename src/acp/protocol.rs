@@ -30,13 +30,34 @@ impl AgentCapabilities {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SessionCapabilities {}
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionCapabilities {
+    /// Whether this agent supports Gemini-style permission requests before tool
+    /// execution. Clients that understand `session/request_permission` should
+    /// check this flag before enabling the three-button permission prompt UI.
+    #[serde(
+        default = "default_supports_permission_requests",
+        rename = "supportsPermissionRequests"
+    )]
+    pub supports_permission_requests: bool,
+}
+
+impl Default for SessionCapabilities {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl SessionCapabilities {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            supports_permission_requests: true,
+        }
     }
+}
+
+fn default_supports_permission_requests() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -436,6 +457,167 @@ impl AvailableCommandsUpdate {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ACP Gemini-style permission types (session/request_permission RPC)
+// ---------------------------------------------------------------------------
+
+/// Semantic intent of a permission option presented to the user.
+///
+/// Maps to the three standard Gemini permission button kinds:
+///
+/// | Variant      | `option_id`       | UI label       |
+/// |--------------|-------------------|----------------|
+/// | `AllowAlways`| `"proceed_always"`| "Always Allow" |
+/// | `AllowOnce`  | `"proceed_once"`  | "Allow"        |
+/// | `RejectOnce` | `"cancel"`        | "Reject"       |
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum PermissionKind {
+    /// Grant permission for this tool for the remainder of the session.
+    AllowAlways,
+    /// Grant permission for this single tool invocation only.
+    AllowOnce,
+    /// Deny permission for this tool invocation.
+    RejectOnce,
+}
+
+/// A single button in the Gemini-style three-button permission prompt.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionOption {
+    /// Stable identifier sent back by the client in [`PermissionOutcome`].
+    /// Standard values: `"proceed_always"`, `"proceed_once"`, `"cancel"`.
+    pub option_id: String,
+    /// Human-readable label shown in the client UI button (e.g. `"Always Allow"`).
+    pub name: String,
+    /// Semantic kind so the client can colour or style the button appropriately.
+    pub kind: PermissionKind,
+}
+
+impl PermissionOption {
+    /// Construct a single permission option directly.
+    pub fn new(
+        option_id: impl Into<String>,
+        name: impl Into<String>,
+        kind: PermissionKind,
+    ) -> Self {
+        Self {
+            option_id: option_id.into(),
+            name: name.into(),
+            kind,
+        }
+    }
+}
+
+/// Returns the canonical three permission options used by the Gemini-style UI.
+///
+/// These match the three buttons shown to the user:
+///
+/// ```text
+/// [ Always Allow ]  [ Allow ]  [ Reject ]
+/// ```
+///
+/// The client echoes back the chosen `option_id` inside [`PermissionOutcome`].
+pub fn default_permission_options() -> Vec<PermissionOption> {
+    vec![
+        PermissionOption::new(
+            "proceed_always",
+            "Always Allow",
+            PermissionKind::AllowAlways,
+        ),
+        PermissionOption::new("proceed_once", "Allow", PermissionKind::AllowOnce),
+        PermissionOption::new("cancel", "Reject", PermissionKind::RejectOnce),
+    ]
+}
+
+/// Parameters sent from the agent to the client in a `session/request_permission`
+/// JSON-RPC request.  The client must reply with a JSON-RPC *response* whose
+/// `result` field deserialises as [`PermissionOutcome`].
+///
+/// The `request_id` field is distinct from the JSON-RPC message `id` — it is
+/// carried *inside* the payload so that the outcome can be correlated even
+/// after the raw JSON-RPC `id` has been consumed by the transport layer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RequestPermissionParams {
+    /// The ACP session this permission request belongs to.
+    pub session_id: SessionId,
+    /// Unique identifier for this permission request.  Echoed back by the
+    /// client in [`PermissionOutcome::request_id`] so the agent can correlate
+    /// the response to the waiting tool call.
+    pub request_id: String,
+    /// The tool-call identifier that is gated by this permission request.
+    pub tool_call_id: String,
+    /// Short, human-readable title shown at the top of the permission prompt
+    /// (e.g. `"Run shell command"`).
+    pub title: String,
+    /// Human-readable description of what the tool is about to do, shown as
+    /// body text in the prompt (e.g. `"ls -la /tmp"`).
+    pub message: String,
+    /// Optional semantic kind that the client can use to style the prompt icon.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ToolKind>,
+    /// The ordered list of buttons to present.  Callers should use
+    /// [`default_permission_options()`] for the standard three-button layout.
+    pub options: Vec<PermissionOption>,
+}
+
+impl RequestPermissionParams {
+    /// Convenience constructor for the common case.
+    pub fn new(
+        session_id: SessionId,
+        request_id: impl Into<String>,
+        tool_call_id: impl Into<String>,
+        title: impl Into<String>,
+        message: impl Into<String>,
+        kind: Option<ToolKind>,
+    ) -> Self {
+        Self {
+            session_id,
+            request_id: request_id.into(),
+            tool_call_id: tool_call_id.into(),
+            title: title.into(),
+            message: message.into(),
+            kind,
+            options: default_permission_options(),
+        }
+    }
+}
+
+/// The client's response to a `session/request_permission` request.
+/// Deserialised from the `result` field of the matching JSON-RPC response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionOutcome {
+    /// Echoed from [`RequestPermissionParams::request_id`] for correlation.
+    pub request_id: String,
+    /// The `option_id` of the button chosen by the user.
+    /// Standard values: `"proceed_always"`, `"proceed_once"`, `"cancel"`.
+    pub option_id: String,
+}
+
+impl PermissionOutcome {
+    /// Build a cancel outcome — used as a safe fallback when the client
+    /// disconnects (e.g. Starlink handover) before responding.
+    pub fn cancel(request_id: impl Into<String>) -> Self {
+        Self {
+            request_id: request_id.into(),
+            option_id: "cancel".to_string(),
+        }
+    }
+
+    /// Returns `true` when this outcome represents a denial of the tool call.
+    pub fn is_cancelled(&self) -> bool {
+        self.option_id == "cancel"
+    }
+
+    /// Returns `true` when this outcome means the tool should be allowed this
+    /// invocation AND all future same-tool invocations in the session.
+    pub fn is_always_allow(&self) -> bool {
+        self.option_id == "proceed_always"
+    }
+}
+
 pub struct ProtocolVersion;
 
 impl ProtocolVersion {
@@ -448,18 +630,91 @@ pub struct MethodNames {
     pub initialize: &'static str,
     pub session_new: &'static str,
     pub session_prompt: &'static str,
+    /// Gemini-style pre-tool-execution permission prompt sent by the agent.
+    pub session_request_permission: &'static str,
 }
 
 pub const AGENT_METHOD_NAMES: MethodNames = MethodNames {
     initialize: "initialize",
     session_new: "session/new",
     session_prompt: "session/prompt",
+    session_request_permission: "session/request_permission",
 };
 
 #[cfg(test)]
 mod serialization_tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn test_request_permission_params_serialization() {
+        let params = RequestPermissionParams::new(
+            SessionId::new("sess-abc"),
+            "req-001",
+            "tc-1",
+            "Run shell command",
+            "ls -la /tmp",
+            Some(ToolKind::Execute),
+        );
+
+        let json_val = serde_json::to_value(&params).unwrap();
+
+        // Verify camelCase field names
+        assert!(
+            json_val.get("sessionId").is_some(),
+            "sessionId field missing"
+        );
+        assert!(
+            json_val.get("requestId").is_some(),
+            "requestId field missing"
+        );
+        assert!(
+            json_val.get("toolCallId").is_some(),
+            "toolCallId field missing"
+        );
+        assert!(json_val.get("options").is_some(), "options field missing");
+
+        // Verify the three standard option ids are present in order
+        let options = json_val["options"].as_array().unwrap();
+        assert_eq!(options.len(), 3);
+        assert_eq!(options[0]["optionId"], "proceed_always");
+        assert_eq!(options[1]["optionId"], "proceed_once");
+        assert_eq!(options[2]["optionId"], "cancel");
+
+        // Verify kind values serialise as snake_case
+        assert_eq!(options[0]["kind"], "allow_always");
+        assert_eq!(options[1]["kind"], "allow_once");
+        assert_eq!(options[2]["kind"], "reject_once");
+
+        // Round-trip
+        let re: RequestPermissionParams = serde_json::from_value(json_val).unwrap();
+        assert_eq!(re.request_id, "req-001");
+        assert_eq!(re.options[0].option_id, "proceed_always");
+    }
+
+    #[test]
+    fn test_permission_outcome_helpers() {
+        let cancel = PermissionOutcome::cancel("req-001");
+        assert!(cancel.is_cancelled());
+        assert!(!cancel.is_always_allow());
+
+        let always = PermissionOutcome {
+            request_id: "req-002".to_string(),
+            option_id: "proceed_always".to_string(),
+        };
+        assert!(always.is_always_allow());
+        assert!(!always.is_cancelled());
+    }
+
+    #[test]
+    fn test_session_capabilities_serializes_permission_flag() {
+        let caps = SessionCapabilities::new();
+        let json_val = serde_json::to_value(&caps).unwrap();
+        assert_eq!(
+            json_val["supportsPermissionRequests"], true,
+            "supportsPermissionRequests must default to true"
+        );
+    }
 
     #[test]
     fn test_session_notification_serialization() {
