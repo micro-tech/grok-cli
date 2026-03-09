@@ -355,26 +355,24 @@ where
                     }
                     Err(e) => {
                         error!("Failed to parse permission outcome: {}", e);
-                        let _ = sender.send(PermissionOutcome::cancel(id.to_string()));
+                        let _ = sender.send(PermissionOutcome::cancel());
                     }
                 }
             } else if msg.get("error").is_some() {
-                // Client returned a JSON-RPC error (e.g. "Method not found").
-                // This typically means the client (e.g. Zed) does not yet
-                // support session/request_permission.  Auto-approve so tools
-                // can still execute rather than being silently blocked.
-                // To disable the permission gate entirely, set
-                // acp.require_permission = false in your config.
+                // Client returned a JSON-RPC error.
+                // Zed DOES support session/request_permission — an error here
+                // indicates a payload format mismatch.  Auto-approve so tools
+                // are not silently blocked while the issue is diagnosed.
+                // Set acp.require_permission = false to skip prompts entirely.
                 warn!(
                     "Client returned error for permission request {} — \
-                     client may not support session/request_permission; \
-                     auto-approving this tool call.",
+                     possible payload mismatch; auto-approving this tool call.",
                     id
                 );
-                let _ = sender.send(PermissionOutcome::proceed_once(id.to_string()));
+                let _ = sender.send(PermissionOutcome::proceed_once());
             } else {
                 warn!("Received response for {} but it has no 'result' field", id);
-                let _ = sender.send(PermissionOutcome::cancel(id.to_string()));
+                let _ = sender.send(PermissionOutcome::cancel());
             }
         } else {
             debug!("Received response with unknown id: {}", id);
@@ -831,11 +829,12 @@ where
 
             // 2. Permission requests from the agent
             perm_req = perm_req_rx.recv() => {
-                if let Some((params, outcome_tx)) = perm_req {
-                    info!("Forwarding permission request {} to client", params.request_id);
+                if let Some((req_id, params, outcome_tx)) = perm_req {
+                    info!("Forwarding permission request {} to client (tool: {})",
+                          req_id, params.tool_call.tool_call_id);
                     let request = json!({
                         "jsonrpc": "2.0",
-                        "id": params.request_id,
+                        "id": req_id,
                         "method": "session/request_permission",
                         "params": params
                     });
@@ -843,14 +842,14 @@ where
                     let msg = serde_json::to_string(&request)?;
                     if let Err(e) = writer.write_all(msg.as_bytes()).await {
                         error!("Failed to write permission request: {}", e);
-                        let _ = outcome_tx.send(PermissionOutcome::cancel("io_error"));
+                        let _ = outcome_tx.send(PermissionOutcome::cancel());
                         continue;
                     }
                     writer.write_all(b"\n").await?;
                     writer.flush().await?;
 
                     // Track this pending permission so handle_json_rpc can complete it
-                    pending_permissions.insert(params.request_id.clone(), outcome_tx);
+                    pending_permissions.insert(req_id.clone(), outcome_tx);
                 }
             }
 
@@ -875,26 +874,25 @@ where
                                         }
                                         Err(e) => {
                                             error!("Failed to parse permission outcome: {}", e);
-                                            let _ = sender.send(PermissionOutcome::cancel(id.clone()));
+                                            let _ = sender.send(PermissionOutcome::cancel());
                                         }
                                     }
                                 } else if json_msg.get("error").is_some() {
                                     // Client returned a JSON-RPC error (e.g. "Method not found").
-                                    // This typically means the client (e.g. Zed) does not yet
-                                    // support session/request_permission.  Auto-approve so tools
-                                    // can still execute rather than being silently blocked.
-                                    // To disable the permission gate entirely, set
+                                    // Zed DOES support session/request_permission — if we get an
+                                    // error it means a payload format mismatch.  Auto-approve so
+                                    // tools are not silently blocked while the issue is diagnosed.
+                                    // To skip permission prompts entirely, set
                                     // acp.require_permission = false in your config.
                                     warn!(
                                         "Client returned error for permission request {} — \
-                                         client may not support session/request_permission; \
-                                         auto-approving this tool call.",
+                                         possible payload mismatch; auto-approving this tool call.",
                                         id
                                     );
-                                    let _ = sender.send(PermissionOutcome::proceed_once(id.clone()));
+                                    let _ = sender.send(PermissionOutcome::proceed_once());
                                 } else {
                                     warn!("Received response for {} but it has no 'result' field", id);
-                                    let _ = sender.send(PermissionOutcome::cancel(id.clone()));
+                                    let _ = sender.send(PermissionOutcome::cancel());
                                 }
                             } else {
                                 // If it's not a permission response, it might be a new request.

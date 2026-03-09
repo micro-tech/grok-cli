@@ -152,11 +152,14 @@ pub struct AcpConfig {
     #[serde(default = "default_max_tool_loop_iterations")]
     pub max_tool_loop_iterations: u32,
 
-    /// Require explicit user permission for tool execution.
-    /// Default: false — most ACP clients (including Zed) do not yet implement
-    /// the session/request_permission protocol.  Set to true only when using a
-    /// client that explicitly supports permission dialogs.
-    #[serde(default)]
+    /// Require explicit user permission before executing each tool call.
+    ///
+    /// Zed and other ACP-compliant clients support `session/request_permission`
+    /// and will present a three-button dialog (Always Allow / Allow / Reject).
+    /// Set to `false` to skip the prompt and allow all tool calls automatically.
+    ///
+    /// Default: true
+    #[serde(default = "default_true_permission")]
     pub require_permission: bool,
 
     /// Timeout in seconds to wait for user permission response
@@ -736,6 +739,10 @@ fn default_rotation_count() -> u32 {
     5
 }
 
+fn default_true_permission() -> bool {
+    true
+}
+
 fn default_max_tool_loop_iterations() -> u32 {
     25
 }
@@ -781,7 +788,7 @@ impl Default for AcpConfig {
             protocol_version: "1.0".to_string(),
             dev_mode: false,
             max_tool_loop_iterations: default_max_tool_loop_iterations(),
-            require_permission: false,
+            require_permission: true,
             permission_timeout_secs: default_permission_timeout_secs(),
         }
     }

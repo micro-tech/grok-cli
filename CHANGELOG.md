@@ -15,6 +15,13 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Fixed
 
+- **ACP permission outcome wire format fix** (`src/acp/protocol.rs`)
+  - **Root cause**: `OutcomeDetail::Selected { option_id }` was serializing to `{"outcome":"selected","option_id":"..."}` (snake_case) instead of `{"outcome":"selected","optionId":"..."}` (camelCase) as required by the ACP spec.
+  - Serde's `rename_all = "camelCase"` at the **enum** level only renames variant names, not fields inside struct variants. The field needed an explicit `#[serde(rename = "optionId")]` annotation.
+  - This was a silent bug: the agent correctly sent `session/request_permission` requests, but when a client echoed back `{"optionId":"proceed_always"}` the agent could not deserialize it, causing every "Always Allow" permission response to fall through to the cancel path.
+  - Fixed by adding `#[serde(rename = "optionId")]` to the `option_id` field in `OutcomeDetail::Selected`.
+  - All 132 unit + integration tests pass; Clippy reports zero warnings. (Source: AI)
+
 - **ACP file-reading broken in Zed** (`src/cli/commands/acp.rs`, `src/config/mod.rs`, `src/acp/protocol.rs`)
   - **Root cause 1 — Permission gate silently blocked all tools**: `acp.require_permission` defaulted to
     `true`, causing the agent to send a `session/request_permission` JSON-RPC request to Zed before every

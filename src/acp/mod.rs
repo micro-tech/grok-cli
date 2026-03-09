@@ -34,14 +34,26 @@ use security::SecurityManager;
 /// Bridge for passing permission requests from the tool executor to the client writer task
 #[derive(Debug)]
 pub struct PermissionBridge {
-    pub outbound:
-        mpsc::UnboundedSender<(RequestPermissionParams, oneshot::Sender<PermissionOutcome>)>,
+    /// Outbound channel: `(request_id, params, response_sender)`.
+    ///
+    /// The `request_id` is used as the JSON-RPC message `id` when forwarding
+    /// the request to the client and correlating the response.  It is NOT
+    /// embedded in `params` — the ACP spec does not include it there.
+    pub outbound: mpsc::UnboundedSender<(
+        String,
+        RequestPermissionParams,
+        oneshot::Sender<PermissionOutcome>,
+    )>,
 }
 
 impl PermissionBridge {
     pub fn new() -> (
         Self,
-        mpsc::UnboundedReceiver<(RequestPermissionParams, oneshot::Sender<PermissionOutcome>)>,
+        mpsc::UnboundedReceiver<(
+            String,
+            RequestPermissionParams,
+            oneshot::Sender<PermissionOutcome>,
+        )>,
     ) {
         let (tx, rx) = mpsc::unbounded_channel();
         (Self { outbound: tx }, rx)
@@ -372,19 +384,16 @@ impl GrokAcpAgent {
 
         if let Some(bridge) = permission_bridge {
             let req_id = uuid::Uuid::new_v4().to_string();
-            let message_summary = serde_json::to_string_pretty(args).unwrap_or_default();
 
             let params = RequestPermissionParams::new(
                 session_id.clone(),
-                req_id,
                 tool_call_id.to_string(),
-                format!("Run {}", function_name),
-                format!("Tool {}:\n{}", function_name, message_summary),
+                Some(format!("Run {}", function_name)),
                 Some(crate::acp::protocol::ToolKind::Execute),
             );
 
             let (tx, rx) = oneshot::channel();
-            if bridge.outbound.send((params, tx)).is_ok() {
+            if bridge.outbound.send((req_id, params, tx)).is_ok() {
                 // Drop the write lock before awaiting the response!
                 // This allows the rest of the application (like handling the client's response)
                 // to read/write the session if needed.
@@ -401,18 +410,17 @@ impl GrokAcpAgent {
                     .ok_or_else(|| anyhow!("Session not found"))?;
 
                 match outcome_res {
-                    Ok(Ok(outcome)) => match outcome.option_id.as_str() {
-                        "proceed_always" => {
-                            session.always_allow.insert(function_name.to_string());
-                            return Ok(true);
-                        }
-                        "proceed_once" => {
-                            return Ok(true);
-                        }
-                        _ => {
+                    Ok(Ok(outcome)) => {
+                        if outcome.is_cancelled() {
                             return Ok(false);
                         }
-                    },
+                        // Any `selected` outcome is treated as approval.
+                        // Record it permanently for the session if "Always Allow".
+                        if outcome.is_always_allow() {
+                            session.always_allow.insert(function_name.to_string());
+                        }
+                        return Ok(true);
+                    }
                     Ok(Err(_)) => {
                         return Err(anyhow!("Permission bridge closed unexpectedly"));
                     }
@@ -717,40 +725,32 @@ impl GrokAcpAgent {
                     && let Some(bridge) = &permission_bridge
                 {
                     let req_id = uuid::Uuid::new_v4().to_string();
-                    let message_summary = serde_json::to_string_pretty(&args).unwrap_or_default();
 
                     let params = RequestPermissionParams::new(
                         session_id.clone(),
-                        req_id,
                         tool_call.id.clone(),
-                        format!("Run {}", function_name),
-                        format!("Tool {}:\n{}", function_name, message_summary),
+                        Some(format!("Run {}", function_name)),
                         Some(crate::acp::protocol::ToolKind::Execute),
                     );
 
                     let (tx, rx) = oneshot::channel();
-                    if bridge.outbound.send((params, tx)).is_ok() {
+                    if bridge.outbound.send((req_id, params, tx)).is_ok() {
                         let timeout_secs = self.config.acp.permission_timeout_secs;
                         match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx)
                             .await
                         {
                             Ok(Ok(outcome)) => {
-                                match outcome.option_id.as_str() {
-                                    "proceed_always" => {
-                                        session.always_allow.insert(function_name.clone());
-                                        // fall through
-                                    }
-                                    "proceed_once" => {
-                                        // fall through
-                                    }
-                                    _ => {
-                                        session.messages.push(json!({
-                                            "role": "tool",
-                                            "tool_call_id": tool_call.id,
-                                            "content": "User rejected the tool execution."
-                                        }));
-                                        continue;
-                                    }
+                                if outcome.is_cancelled() {
+                                    session.messages.push(json!({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "content": "User rejected the tool execution."
+                                    }));
+                                    continue;
+                                }
+                                // Any `selected` outcome is approval; record if always-allow.
+                                if outcome.is_always_allow() {
+                                    session.always_allow.insert(function_name.clone());
                                 }
                             }
                             Ok(Err(_)) => {
@@ -1312,10 +1312,11 @@ mod tests {
 
             // Spawn a task to act as the client and respond
             tokio::spawn(async move {
-                if let Some((_, reply_tx)) = rx.recv().await {
+                if let Some((_req_id, _params, reply_tx)) = rx.recv().await {
                     let _ = reply_tx.send(PermissionOutcome {
-                        request_id: "req".to_string(),
-                        option_id: "proceed_always".to_string(),
+                        outcome: crate::acp::protocol::OutcomeDetail::Selected {
+                            option_id: "proceed_always".to_string(),
+                        },
                     });
                 }
             });
@@ -1354,10 +1355,11 @@ mod tests {
             let bridge_arc = Arc::new(bridge);
 
             tokio::spawn(async move {
-                if let Some((_, reply_tx)) = rx.recv().await {
+                if let Some((_req_id, _params, reply_tx)) = rx.recv().await {
                     let _ = reply_tx.send(PermissionOutcome {
-                        request_id: "req".to_string(),
-                        option_id: "proceed_once".to_string(),
+                        outcome: crate::acp::protocol::OutcomeDetail::Selected {
+                            option_id: "proceed_once".to_string(),
+                        },
                     });
                 }
             });
@@ -1386,11 +1388,8 @@ mod tests {
             let bridge_arc = Arc::new(bridge);
 
             tokio::spawn(async move {
-                if let Some((_, reply_tx)) = rx.recv().await {
-                    let _ = reply_tx.send(PermissionOutcome {
-                        request_id: "req".to_string(),
-                        option_id: "cancel".to_string(),
-                    });
+                if let Some((_req_id, _params, reply_tx)) = rx.recv().await {
+                    let _ = reply_tx.send(PermissionOutcome::cancel());
                 }
             });
 

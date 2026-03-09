@@ -530,102 +530,131 @@ pub fn default_permission_options() -> Vec<PermissionOption> {
     ]
 }
 
+/// The nested `toolCall` object inside `session/request_permission` params.
+/// Mirrors the `ToolCallUpdate` shape from the ACP spec.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PermissionToolCall {
+    /// Identifier of the tool call awaiting permission.
+    pub tool_call_id: String,
+    /// Optional human-readable title for the permission dialog.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    /// Optional tool category hint for UI icons.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub kind: Option<ToolKind>,
+    /// Optional current status (typically `pending` before permission is granted).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<ToolCallStatus>,
+}
+
 /// Parameters sent from the agent to the client in a `session/request_permission`
-/// JSON-RPC request.  The client must reply with a JSON-RPC *response* whose
-/// `result` field deserialises as [`PermissionOutcome`].
+/// JSON-RPC request.  Conforms to the official ACP spec:
+/// https://agentclientprotocol.com/protocol/tool-calls#requesting-permission
 ///
-/// The `request_id` field is distinct from the JSON-RPC message `id` — it is
-/// carried *inside* the payload so that the outcome can be correlated even
-/// after the raw JSON-RPC `id` has been consumed by the transport layer.
+/// The client must reply with a JSON-RPC *response* whose `result` field
+/// deserialises as [`PermissionOutcome`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct RequestPermissionParams {
     /// The ACP session this permission request belongs to.
     pub session_id: SessionId,
-    /// Unique identifier for this permission request.  Echoed back by the
-    /// client in [`PermissionOutcome::request_id`] so the agent can correlate
-    /// the response to the waiting tool call.
-    pub request_id: String,
-    /// The tool-call identifier that is gated by this permission request.
-    pub tool_call_id: String,
-    /// Short, human-readable title shown at the top of the permission prompt
-    /// (e.g. `"Run shell command"`).
-    pub title: String,
-    /// Human-readable description of what the tool is about to do, shown as
-    /// body text in the prompt (e.g. `"ls -la /tmp"`).
-    pub message: String,
-    /// Optional semantic kind that the client can use to style the prompt icon.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub kind: Option<ToolKind>,
-    /// The ordered list of buttons to present.  Callers should use
-    /// [`default_permission_options()`] for the standard three-button layout.
+    /// The tool call that requires permission before it can run.
+    pub tool_call: PermissionToolCall,
+    /// The ordered list of permission options for the user to choose from.
+    /// Callers should use [`default_permission_options()`] for the standard layout.
     pub options: Vec<PermissionOption>,
 }
 
 impl RequestPermissionParams {
-    /// Convenience constructor for the common case.
+    /// Convenience constructor.
     pub fn new(
         session_id: SessionId,
-        request_id: impl Into<String>,
         tool_call_id: impl Into<String>,
-        title: impl Into<String>,
-        message: impl Into<String>,
+        title: Option<impl Into<String>>,
         kind: Option<ToolKind>,
     ) -> Self {
         Self {
             session_id,
-            request_id: request_id.into(),
-            tool_call_id: tool_call_id.into(),
-            title: title.into(),
-            message: message.into(),
-            kind,
+            tool_call: PermissionToolCall {
+                tool_call_id: tool_call_id.into(),
+                title: title.map(|t| t.into()),
+                kind,
+                status: Some(ToolCallStatus::Pending),
+            },
             options: default_permission_options(),
         }
     }
 }
 
-/// The client's response to a `session/request_permission` request.
-/// Deserialised from the `result` field of the matching JSON-RPC response.
+/// Inner detail of a `session/request_permission` outcome.
+///
+/// Serialises as:
+/// - `{"outcome": "cancelled"}` — user dismissed or prompt turn was cancelled
+/// - `{"outcome": "selected", "optionId": "..."}` — user clicked a button
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", tag = "outcome")]
+pub enum OutcomeDetail {
+    /// The prompt turn was cancelled before the user responded.
+    #[serde(rename = "cancelled")]
+    Cancelled,
+    /// The user selected one of the offered permission options.
+    #[serde(rename = "selected")]
+    Selected {
+        #[serde(rename = "optionId")]
+        option_id: String,
+    },
+}
+
+/// The client's response to a `session/request_permission` JSON-RPC request.
+/// Deserialised from the `result` field of the matching response.
+///
+/// Per ACP spec the result shape is:
+/// `{"outcome": {"outcome": "selected", "optionId": "..."}}` or
+/// `{"outcome": {"outcome": "cancelled"}}`
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PermissionOutcome {
-    /// Echoed from [`RequestPermissionParams::request_id`] for correlation.
-    pub request_id: String,
-    /// The `option_id` of the button chosen by the user.
-    /// Standard values: `"proceed_always"`, `"proceed_once"`, `"cancel"`.
-    pub option_id: String,
+    pub outcome: OutcomeDetail,
 }
 
 impl PermissionOutcome {
-    /// Build a cancel outcome — used as a safe fallback when the client
-    /// disconnects (e.g. Starlink handover) before responding.
-    pub fn cancel(request_id: impl Into<String>) -> Self {
+    /// Build a cancelled outcome — used when the prompt turn is cancelled or
+    /// when the client disconnects (e.g. Starlink handover) before responding.
+    pub fn cancel() -> Self {
         Self {
-            request_id: request_id.into(),
-            option_id: "cancel".to_string(),
+            outcome: OutcomeDetail::Cancelled,
         }
     }
 
     /// Build a proceed-once outcome — used when the client does not support
-    /// the `session/request_permission` protocol (e.g. Zed returning a
-    /// JSON-RPC error for an unknown method) so that tools still execute
-    /// rather than being silently blocked.
-    pub fn proceed_once(request_id: impl Into<String>) -> Self {
+    /// `session/request_permission` (returns a JSON-RPC error) so that tools
+    /// still execute rather than being silently blocked.
+    pub fn proceed_once() -> Self {
         Self {
-            request_id: request_id.into(),
-            option_id: "proceed_once".to_string(),
+            outcome: OutcomeDetail::Selected {
+                option_id: "proceed_once".to_string(),
+            },
         }
     }
 
     /// Returns `true` when this outcome represents a denial of the tool call.
     pub fn is_cancelled(&self) -> bool {
-        self.option_id == "cancel"
+        matches!(self.outcome, OutcomeDetail::Cancelled)
     }
 
-    /// Returns `true` when this outcome means the tool should be allowed this
-    /// invocation AND all future same-tool invocations in the session.
+    /// Returns `true` when this outcome means the tool should be allowed for
+    /// all future same-tool invocations in the session.
     pub fn is_always_allow(&self) -> bool {
-        self.option_id == "proceed_always"
+        matches!(&self.outcome, OutcomeDetail::Selected { option_id } if option_id == "proceed_always")
+    }
+
+    /// Returns the selected `option_id`, or `None` if the outcome was cancelled.
+    pub fn option_id(&self) -> Option<&str> {
+        match &self.outcome {
+            OutcomeDetail::Selected { option_id } => Some(option_id.as_str()),
+            OutcomeDetail::Cancelled => None,
+        }
     }
 }
 
@@ -661,60 +690,88 @@ mod serialization_tests {
     fn test_request_permission_params_serialization() {
         let params = RequestPermissionParams::new(
             SessionId::new("sess-abc"),
-            "req-001",
             "tc-1",
-            "Run shell command",
-            "ls -la /tmp",
+            Some("Run shell command"),
             Some(ToolKind::Execute),
         );
 
         let json_val = serde_json::to_value(&params).unwrap();
 
-        // Verify camelCase field names
-        assert!(
-            json_val.get("sessionId").is_some(),
-            "sessionId field missing"
-        );
-        assert!(
-            json_val.get("requestId").is_some(),
-            "requestId field missing"
-        );
-        assert!(
-            json_val.get("toolCallId").is_some(),
-            "toolCallId field missing"
-        );
-        assert!(json_val.get("options").is_some(), "options field missing");
+        // Top-level ACP spec fields
+        assert!(json_val.get("sessionId").is_some(), "sessionId missing");
+        assert!(json_val.get("toolCall").is_some(), "toolCall missing");
+        assert!(json_val.get("options").is_some(), "options missing");
 
-        // Verify the three standard option ids are present in order
+        // requestId, title, message must NOT be top-level (spec does not have them)
+        assert!(
+            json_val.get("requestId").is_none(),
+            "requestId must be absent per spec"
+        );
+        assert!(
+            json_val.get("title").is_none(),
+            "title must be absent per spec"
+        );
+        assert!(
+            json_val.get("message").is_none(),
+            "message must be absent per spec"
+        );
+
+        // toolCall nesting
+        let tool_call = &json_val["toolCall"];
+        assert_eq!(tool_call["toolCallId"], "tc-1");
+        assert_eq!(tool_call["status"], "pending");
+
+        // Three standard options
         let options = json_val["options"].as_array().unwrap();
         assert_eq!(options.len(), 3);
         assert_eq!(options[0]["optionId"], "proceed_always");
         assert_eq!(options[1]["optionId"], "proceed_once");
         assert_eq!(options[2]["optionId"], "cancel");
 
-        // Verify kind values serialise as snake_case
+        // kind serialises as snake_case per spec
         assert_eq!(options[0]["kind"], "allow_always");
         assert_eq!(options[1]["kind"], "allow_once");
         assert_eq!(options[2]["kind"], "reject_once");
 
         // Round-trip
         let re: RequestPermissionParams = serde_json::from_value(json_val).unwrap();
-        assert_eq!(re.request_id, "req-001");
+        assert_eq!(re.tool_call.tool_call_id, "tc-1");
         assert_eq!(re.options[0].option_id, "proceed_always");
     }
 
     #[test]
     fn test_permission_outcome_helpers() {
-        let cancel = PermissionOutcome::cancel("req-001");
+        // Cancel outcome
+        let cancel = PermissionOutcome::cancel();
         assert!(cancel.is_cancelled());
         assert!(!cancel.is_always_allow());
+        assert_eq!(cancel.option_id(), None);
 
+        // Proceed-once outcome
+        let once = PermissionOutcome::proceed_once();
+        assert!(!once.is_cancelled());
+        assert!(!once.is_always_allow());
+        assert_eq!(once.option_id(), Some("proceed_once"));
+
+        // Always-allow outcome
         let always = PermissionOutcome {
-            request_id: "req-002".to_string(),
-            option_id: "proceed_always".to_string(),
+            outcome: OutcomeDetail::Selected {
+                option_id: "proceed_always".to_string(),
+            },
         };
         assert!(always.is_always_allow());
         assert!(!always.is_cancelled());
+
+        // ACP spec response shape: {"outcome":{"outcome":"selected","optionId":"proceed_always"}}
+        let json_val = serde_json::to_value(&always).unwrap();
+        let inner = &json_val["outcome"];
+        assert_eq!(inner["outcome"], "selected");
+        assert_eq!(inner["optionId"], "proceed_always");
+
+        // Cancelled shape: {"outcome":{"outcome":"cancelled"}}
+        let cancel_json = serde_json::to_value(&cancel).unwrap();
+        assert_eq!(cancel_json["outcome"]["outcome"], "cancelled");
+        assert!(cancel_json["outcome"].get("optionId").is_none());
     }
 
     #[test]
