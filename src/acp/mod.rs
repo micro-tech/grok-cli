@@ -8,7 +8,7 @@ use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::{mpsc, oneshot, RwLock};
+use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
@@ -25,20 +25,24 @@ pub mod tools;
 
 use crate::acp::protocol::{
     AGENT_METHOD_NAMES, AgentCapabilities, ContentBlock, ContentChunk, Implementation,
-    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse, PromptRequest,
-    PromptResponse, ProtocolVersion, SessionId as ProtocolSessionId, SessionNotification,
-    SessionUpdate, StopReason, TextContent, RequestPermissionParams, PermissionOutcome,
+    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
+    PermissionOutcome, PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionParams,
+    SessionId as ProtocolSessionId, SessionNotification, SessionUpdate, StopReason, TextContent,
 };
 use security::SecurityManager;
 
 /// Bridge for passing permission requests from the tool executor to the client writer task
 #[derive(Debug)]
 pub struct PermissionBridge {
-    pub outbound: mpsc::UnboundedSender<(RequestPermissionParams, oneshot::Sender<PermissionOutcome>)>,
+    pub outbound:
+        mpsc::UnboundedSender<(RequestPermissionParams, oneshot::Sender<PermissionOutcome>)>,
 }
 
 impl PermissionBridge {
-    pub fn new() -> (Self, mpsc::UnboundedReceiver<(RequestPermissionParams, oneshot::Sender<PermissionOutcome>)>) {
+    pub fn new() -> (
+        Self,
+        mpsc::UnboundedReceiver<(RequestPermissionParams, oneshot::Sender<PermissionOutcome>)>,
+    ) {
         let (tx, rx) = mpsc::unbounded_channel();
         (Self { outbound: tx }, rx)
     }
@@ -358,7 +362,9 @@ impl GrokAcpAgent {
         permission_bridge: Option<&Arc<PermissionBridge>>,
     ) -> Result<bool> {
         let mut sessions = self.sessions.write().await;
-        let session = sessions.get_mut(&session_id.0).ok_or_else(|| anyhow!("Session not found"))?;
+        let session = sessions
+            .get_mut(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found"))?;
 
         if !self.config.acp.require_permission || session.always_allow.contains(function_name) {
             return Ok(true);
@@ -367,7 +373,7 @@ impl GrokAcpAgent {
         if let Some(bridge) = permission_bridge {
             let req_id = uuid::Uuid::new_v4().to_string();
             let message_summary = serde_json::to_string_pretty(args).unwrap_or_default();
-            
+
             let params = RequestPermissionParams::new(
                 session_id.clone(),
                 req_id,
@@ -385,32 +391,36 @@ impl GrokAcpAgent {
                 drop(sessions);
 
                 let timeout_secs = self.config.acp.permission_timeout_secs;
-                let outcome_res = tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await;
+                let outcome_res =
+                    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await;
 
                 // Re-acquire lock to update session state
                 let mut sessions = self.sessions.write().await;
-                let session = sessions.get_mut(&session_id.0).ok_or_else(|| anyhow!("Session not found"))?;
+                let session = sessions
+                    .get_mut(&session_id.0)
+                    .ok_or_else(|| anyhow!("Session not found"))?;
 
                 match outcome_res {
-                    Ok(Ok(outcome)) => {
-                        match outcome.option_id.as_str() {
-                            "proceed_always" => {
-                                session.always_allow.insert(function_name.to_string());
-                                return Ok(true);
-                            }
-                            "proceed_once" => {
-                                return Ok(true);
-                            }
-                            "cancel" | _ => {
-                                return Ok(false);
-                            }
+                    Ok(Ok(outcome)) => match outcome.option_id.as_str() {
+                        "proceed_always" => {
+                            session.always_allow.insert(function_name.to_string());
+                            return Ok(true);
                         }
-                    }
+                        "proceed_once" => {
+                            return Ok(true);
+                        }
+                        _ => {
+                            return Ok(false);
+                        }
+                    },
                     Ok(Err(_)) => {
                         return Err(anyhow!("Permission bridge closed unexpectedly"));
                     }
                     Err(_) => {
-                        return Err(anyhow!("Timed out waiting for permission ({}s)", timeout_secs));
+                        return Err(anyhow!(
+                            "Timed out waiting for permission ({}s)",
+                            timeout_secs
+                        ));
                     }
                 }
             }
@@ -702,49 +712,55 @@ impl GrokAcpAgent {
                 }
 
                 // --- PERMISSION GATE ---
-                if self.config.acp.require_permission && !session.always_allow.contains(function_name.as_str()) {
-                    if let Some(bridge) = &permission_bridge {
-                        let req_id = uuid::Uuid::new_v4().to_string();
-                        let message_summary = serde_json::to_string_pretty(&args).unwrap_or_default();
-                        
-                        let params = RequestPermissionParams::new(
-                            session_id.clone(),
-                            req_id,
-                            tool_call.id.clone(),
-                            format!("Run {}", function_name),
-                            format!("Tool {}:\n{}", function_name, message_summary),
-                            Some(crate::acp::protocol::ToolKind::Execute),
-                        );
+                if self.config.acp.require_permission
+                    && !session.always_allow.contains(function_name.as_str())
+                    && let Some(bridge) = &permission_bridge
+                {
+                    let req_id = uuid::Uuid::new_v4().to_string();
+                    let message_summary = serde_json::to_string_pretty(&args).unwrap_or_default();
 
-                        let (tx, rx) = oneshot::channel();
-                        if bridge.outbound.send((params, tx)).is_ok() {
-                            let timeout_secs = self.config.acp.permission_timeout_secs;
-                            match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await {
-                                Ok(Ok(outcome)) => {
-                                    match outcome.option_id.as_str() {
-                                        "proceed_always" => {
-                                            session.always_allow.insert(function_name.clone());
-                                            // fall through
-                                        }
-                                        "proceed_once" => {
-                                            // fall through
-                                        }
-                                        "cancel" | _ => {
-                                            session.messages.push(json!({
-                                                "role": "tool",
-                                                "tool_call_id": tool_call.id,
-                                                "content": "User rejected the tool execution."
-                                            }));
-                                            continue;
-                                        }
+                    let params = RequestPermissionParams::new(
+                        session_id.clone(),
+                        req_id,
+                        tool_call.id.clone(),
+                        format!("Run {}", function_name),
+                        format!("Tool {}:\n{}", function_name, message_summary),
+                        Some(crate::acp::protocol::ToolKind::Execute),
+                    );
+
+                    let (tx, rx) = oneshot::channel();
+                    if bridge.outbound.send((params, tx)).is_ok() {
+                        let timeout_secs = self.config.acp.permission_timeout_secs;
+                        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx)
+                            .await
+                        {
+                            Ok(Ok(outcome)) => {
+                                match outcome.option_id.as_str() {
+                                    "proceed_always" => {
+                                        session.always_allow.insert(function_name.clone());
+                                        // fall through
+                                    }
+                                    "proceed_once" => {
+                                        // fall through
+                                    }
+                                    _ => {
+                                        session.messages.push(json!({
+                                            "role": "tool",
+                                            "tool_call_id": tool_call.id,
+                                            "content": "User rejected the tool execution."
+                                        }));
+                                        continue;
                                     }
                                 }
-                                Ok(Err(_)) => {
-                                    return Err(anyhow!("Permission bridge closed unexpectedly"));
-                                }
-                                Err(_) => {
-                                    return Err(anyhow!("Timed out waiting for permission ({}s)", timeout_secs));
-                                }
+                            }
+                            Ok(Err(_)) => {
+                                return Err(anyhow!("Permission bridge closed unexpectedly"));
+                            }
+                            Err(_) => {
+                                return Err(anyhow!(
+                                    "Timed out waiting for permission ({}s)",
+                                    timeout_secs
+                                ));
                             }
                         }
                     }
@@ -1280,7 +1296,10 @@ mod tests {
 
         let agent = GrokAcpAgent::new(config, None).await.unwrap();
         let session_id = SessionId::new("test-session-perm");
-        agent.initialize_session(session_id.clone(), None).await.unwrap();
+        agent
+            .initialize_session(session_id.clone(), None)
+            .await
+            .unwrap();
 
         let tool_name = "test_tool";
         let args = json!({"arg": "val"});
@@ -1290,7 +1309,7 @@ mod tests {
         {
             let (bridge, mut rx) = PermissionBridge::new();
             let bridge_arc = Arc::new(bridge);
-            
+
             // Spawn a task to act as the client and respond
             tokio::spawn(async move {
                 if let Some((_, reply_tx)) = rx.recv().await {
@@ -1301,15 +1320,30 @@ mod tests {
                 }
             });
 
-            let allowed = agent.check_tool_permission(&session_id, tool_name, &args, tool_call_id, Some(&bridge_arc)).await.unwrap();
+            let allowed = agent
+                .check_tool_permission(
+                    &session_id,
+                    tool_name,
+                    &args,
+                    tool_call_id,
+                    Some(&bridge_arc),
+                )
+                .await
+                .unwrap();
             assert!(allowed, "Tool should be allowed on proceed_always");
-            assert!(agent.is_always_allowed(&session_id, tool_name).await, "Tool should be in always_allow set");
+            assert!(
+                agent.is_always_allowed(&session_id, tool_name).await,
+                "Tool should be in always_allow set"
+            );
         }
 
         // Test 2: Always Allow Fast Path
         {
             // Tool is already in always_allow set from Test 1, so it should allow immediately without using bridge
-            let allowed = agent.check_tool_permission(&session_id, tool_name, &args, tool_call_id, None).await.unwrap();
+            let allowed = agent
+                .check_tool_permission(&session_id, tool_name, &args, tool_call_id, None)
+                .await
+                .unwrap();
             assert!(allowed, "Tool should be allowed immediately on fast path");
         }
 
@@ -1318,7 +1352,7 @@ mod tests {
             let tool_name_once = "test_tool_once";
             let (bridge, mut rx) = PermissionBridge::new();
             let bridge_arc = Arc::new(bridge);
-            
+
             tokio::spawn(async move {
                 if let Some((_, reply_tx)) = rx.recv().await {
                     let _ = reply_tx.send(PermissionOutcome {
@@ -1328,9 +1362,21 @@ mod tests {
                 }
             });
 
-            let allowed = agent.check_tool_permission(&session_id, tool_name_once, &args, tool_call_id, Some(&bridge_arc)).await.unwrap();
+            let allowed = agent
+                .check_tool_permission(
+                    &session_id,
+                    tool_name_once,
+                    &args,
+                    tool_call_id,
+                    Some(&bridge_arc),
+                )
+                .await
+                .unwrap();
             assert!(allowed, "Tool should be allowed on proceed_once");
-            assert!(!agent.is_always_allowed(&session_id, tool_name_once).await, "Tool should NOT be in always_allow set");
+            assert!(
+                !agent.is_always_allowed(&session_id, tool_name_once).await,
+                "Tool should NOT be in always_allow set"
+            );
         }
 
         // Test 4: Cancel
@@ -1338,7 +1384,7 @@ mod tests {
             let tool_name_cancel = "test_tool_cancel";
             let (bridge, mut rx) = PermissionBridge::new();
             let bridge_arc = Arc::new(bridge);
-            
+
             tokio::spawn(async move {
                 if let Some((_, reply_tx)) = rx.recv().await {
                     let _ = reply_tx.send(PermissionOutcome {
@@ -1348,7 +1394,16 @@ mod tests {
                 }
             });
 
-            let allowed = agent.check_tool_permission(&session_id, tool_name_cancel, &args, tool_call_id, Some(&bridge_arc)).await.unwrap();
+            let allowed = agent
+                .check_tool_permission(
+                    &session_id,
+                    tool_name_cancel,
+                    &args,
+                    tool_call_id,
+                    Some(&bridge_arc),
+                )
+                .await
+                .unwrap();
             assert!(!allowed, "Tool should be rejected on cancel");
         }
 
@@ -1357,8 +1412,16 @@ mod tests {
             let tool_name_timeout = "test_tool_timeout";
             let (bridge, mut _rx) = PermissionBridge::new(); // Never respond
             let bridge_arc = Arc::new(bridge);
-            
-            let result = agent.check_tool_permission(&session_id, tool_name_timeout, &args, tool_call_id, Some(&bridge_arc)).await;
+
+            let result = agent
+                .check_tool_permission(
+                    &session_id,
+                    tool_name_timeout,
+                    &args,
+                    tool_call_id,
+                    Some(&bridge_arc),
+                )
+                .await;
             assert!(result.is_err(), "Should timeout and return error");
             assert!(result.unwrap_err().to_string().contains("Timed out"));
         }

@@ -606,6 +606,17 @@ impl PermissionOutcome {
         }
     }
 
+    /// Build a proceed-once outcome — used when the client does not support
+    /// the `session/request_permission` protocol (e.g. Zed returning a
+    /// JSON-RPC error for an unknown method) so that tools still execute
+    /// rather than being silently blocked.
+    pub fn proceed_once(request_id: impl Into<String>) -> Self {
+        Self {
+            request_id: request_id.into(),
+            option_id: "proceed_once".to_string(),
+        }
+    }
+
     /// Returns `true` when this outcome represents a denial of the tool call.
     pub fn is_cancelled(&self) -> bool {
         self.option_id == "cancel"

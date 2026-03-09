@@ -63,18 +63,18 @@ pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
                     info!("External file access approved (once): {}", path.display());
 
                     // Log approval
-                    if security.is_external_access_logging_enabled() {
-                        if let Ok(logger) = AuditLogger::new(true) {
-                            let log = create_access_log(
-                                path_str,
-                                "read",
-                                "approved_once",
-                                &session_id,
-                                None,
-                                Some(config_source.to_string()),
-                            );
-                            let _ = logger.log_access(log);
-                        }
+                    if security.is_external_access_logging_enabled()
+                        && let Ok(logger) = AuditLogger::new(true)
+                    {
+                        let log = create_access_log(
+                            path_str,
+                            "read",
+                            "approved_once",
+                            &session_id,
+                            None,
+                            Some(config_source.to_string()),
+                        );
+                        let _ = logger.log_access(log);
                     }
 
                     path.clone()
@@ -86,18 +86,18 @@ pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
                     );
 
                     // Log approval
-                    if security.is_external_access_logging_enabled() {
-                        if let Ok(logger) = AuditLogger::new(true) {
-                            let log = create_access_log(
-                                path_str,
-                                "read",
-                                "approved_always",
-                                &session_id,
-                                None,
-                                Some(config_source.to_string()),
-                            );
-                            let _ = logger.log_access(log);
-                        }
+                    if security.is_external_access_logging_enabled()
+                        && let Ok(logger) = AuditLogger::new(true)
+                    {
+                        let log = create_access_log(
+                            path_str,
+                            "read",
+                            "approved_always",
+                            &session_id,
+                            None,
+                            Some(config_source.to_string()),
+                        );
+                        let _ = logger.log_access(log);
                     }
 
                     // Add to session-trusted paths
@@ -108,18 +108,18 @@ pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
                     warn!("External file access denied by user: {}", path.display());
 
                     // Log denial
-                    if security.is_external_access_logging_enabled() {
-                        if let Ok(logger) = AuditLogger::new(true) {
-                            let log = create_access_log(
-                                path_str,
-                                "read",
-                                "denied",
-                                &session_id,
-                                Some("User denied access".to_string()),
-                                Some(config_source.to_string()),
-                            );
-                            let _ = logger.log_access(log);
-                        }
+                    if security.is_external_access_logging_enabled()
+                        && let Ok(logger) = AuditLogger::new(true)
+                    {
+                        let log = create_access_log(
+                            path_str,
+                            "read",
+                            "denied",
+                            &session_id,
+                            Some("User denied access".to_string()),
+                            Some(config_source.to_string()),
+                        );
+                        let _ = logger.log_access(log);
                     }
 
                     return Err(anyhow!("Access denied by user"));
@@ -128,18 +128,18 @@ pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
                     warn!("External file access approval failed: {}", e);
 
                     // Log error
-                    if security.is_external_access_logging_enabled() {
-                        if let Ok(logger) = AuditLogger::new(true) {
-                            let log = create_access_log(
-                                path_str,
-                                "read",
-                                "error",
-                                &session_id,
-                                Some(format!("Approval prompt failed: {}", e)),
-                                Some(config_source.to_string()),
-                            );
-                            let _ = logger.log_access(log);
-                        }
+                    if security.is_external_access_logging_enabled()
+                        && let Ok(logger) = AuditLogger::new(true)
+                    {
+                        let log = create_access_log(
+                            path_str,
+                            "read",
+                            "error",
+                            &session_id,
+                            Some(format!("Approval prompt failed: {}", e)),
+                            Some(config_source.to_string()),
+                        );
+                        let _ = logger.log_access(log);
                     }
 
                     return Err(anyhow!("Approval prompt failed: {}", e));

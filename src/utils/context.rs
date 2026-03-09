@@ -125,25 +125,26 @@ pub fn load_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Option<Strin
     }
 
     // 2. Check global directory
-    if let Some(global_dir) = get_global_context_dir() {
-        if global_dir.exists() && global_dir.is_dir() {
-            for file_name in GLOBAL_CONTEXT_FILE_NAMES {
-                let file_path = global_dir.join(file_name);
+    if let Some(global_dir) = get_global_context_dir()
+        && global_dir.exists()
+        && global_dir.is_dir()
+    {
+        for file_name in GLOBAL_CONTEXT_FILE_NAMES {
+            let file_path = global_dir.join(file_name);
 
-                if file_path.exists() && file_path.is_file() {
-                    let metadata = fs::metadata(&file_path)?;
-                    if metadata.len() > MAX_CONTEXT_SIZE {
-                        continue;
-                    }
+            if file_path.exists() && file_path.is_file() {
+                let metadata = fs::metadata(&file_path)?;
+                if metadata.len() > MAX_CONTEXT_SIZE {
+                    continue;
+                }
 
-                    match fs::read_to_string(&file_path) {
-                        Ok(content) => {
-                            if !content.trim().is_empty() {
-                                return Ok(Some(content));
-                            }
+                match fs::read_to_string(&file_path) {
+                    Ok(content) => {
+                        if !content.trim().is_empty() {
+                            return Ok(Some(content));
                         }
-                        Err(_) => continue,
                     }
+                    Err(_) => continue,
                 }
             }
         }
@@ -215,36 +216,33 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Op
     }
 
     // 2. Load from global directory
-    if let Some(global_dir) = get_global_context_dir() {
-        if global_dir.exists() && global_dir.is_dir() {
-            for file_name in GLOBAL_CONTEXT_FILE_NAMES {
-                let file_path = global_dir.join(file_name);
+    if let Some(global_dir) = get_global_context_dir()
+        && global_dir.exists()
+        && global_dir.is_dir()
+    {
+        for file_name in GLOBAL_CONTEXT_FILE_NAMES {
+            let file_path = global_dir.join(file_name);
 
-                if file_path.exists() && file_path.is_file() {
-                    // Skip duplicates (same physical file, different name/case)
-                    let canonical =
-                        fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
-                    if !seen_canonical.insert(canonical) {
-                        continue;
-                    }
-                    let metadata = fs::metadata(&file_path)?;
-                    if metadata.len() > MAX_CONTEXT_SIZE {
-                        continue;
-                    }
+            if file_path.exists() && file_path.is_file() {
+                // Skip duplicates (same physical file, different name/case)
+                let canonical = fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
+                if !seen_canonical.insert(canonical) {
+                    continue;
+                }
+                let metadata = fs::metadata(&file_path)?;
+                if metadata.len() > MAX_CONTEXT_SIZE {
+                    continue;
+                }
 
-                    match fs::read_to_string(&file_path) {
-                        Ok(content) => {
-                            if !content.trim().is_empty() {
-                                let annotated = format!(
-                                    "## From: Global {}\n\n{}\n",
-                                    file_name,
-                                    content.trim()
-                                );
-                                merged_content.push(annotated);
-                            }
+                match fs::read_to_string(&file_path) {
+                    Ok(content) => {
+                        if !content.trim().is_empty() {
+                            let annotated =
+                                format!("## From: Global {}\n\n{}\n", file_name, content.trim());
+                            merged_content.push(annotated);
                         }
-                        Err(_) => continue,
                     }
+                    Err(_) => continue,
                 }
             }
         }
@@ -286,16 +284,16 @@ pub fn get_all_context_file_paths<P: AsRef<Path>>(start_dir: P) -> Vec<PathBuf> 
     }
 
     // 2. Check global directory
-    if let Some(global_dir) = get_global_context_dir() {
-        if global_dir.exists() && global_dir.is_dir() {
-            for file_name in GLOBAL_CONTEXT_FILE_NAMES {
-                let file_path = global_dir.join(file_name);
-                if file_path.exists() && file_path.is_file() {
-                    let canonical =
-                        fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
-                    if seen_canonical.insert(canonical) {
-                        found_paths.push(file_path);
-                    }
+    if let Some(global_dir) = get_global_context_dir()
+        && global_dir.exists()
+        && global_dir.is_dir()
+    {
+        for file_name in GLOBAL_CONTEXT_FILE_NAMES {
+            let file_path = global_dir.join(file_name);
+            if file_path.exists() && file_path.is_file() {
+                let canonical = fs::canonicalize(&file_path).unwrap_or_else(|_| file_path.clone());
+                if seen_canonical.insert(canonical) {
+                    found_paths.push(file_path);
                 }
             }
         }
@@ -326,13 +324,14 @@ pub fn get_context_file_path<P: AsRef<Path>>(start_dir: P) -> Option<PathBuf> {
     }
 
     // 2. Check global directory
-    if let Some(global_dir) = get_global_context_dir() {
-        if global_dir.exists() && global_dir.is_dir() {
-            for file_name in GLOBAL_CONTEXT_FILE_NAMES {
-                let file_path = global_dir.join(file_name);
-                if file_path.exists() && file_path.is_file() {
-                    return Some(file_path);
-                }
+    if let Some(global_dir) = get_global_context_dir()
+        && global_dir.exists()
+        && global_dir.is_dir()
+    {
+        for file_name in GLOBAL_CONTEXT_FILE_NAMES {
+            let file_path = global_dir.join(file_name);
+            if file_path.exists() && file_path.is_file() {
+                return Some(file_path);
             }
         }
     }

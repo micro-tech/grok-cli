@@ -167,6 +167,11 @@ bind_host = "127.0.0.1"
 protocol_version = "2024-11-05"
 dev_mode = false
 max_tool_loop_iterations = 25
+# Disable the session/request_permission gate by default.
+# Zed and most ACP clients do not yet implement the permission-dialog protocol,
+# so leaving this true causes every tool call to be silently blocked.
+# Set to true only when using a client that supports session/request_permission.
+require_permission = false
 
 [mcp.servers.github]
 type = "stdio"

@@ -160,7 +160,7 @@ pub async fn handle_health_check(
 
             // Test API key validity
             let api_spinner = create_spinner("Testing Grok API connection...");
-            let client_result = initialize_client(key, timeout_secs, 3, config.rate_limits.clone());
+            let client_result = initialize_client(key, timeout_secs, 3, config.rate_limits);
 
             match client_result {
                 Ok(client) => {
@@ -202,7 +202,7 @@ pub async fn handle_health_check(
             }
 
             // Test model availability
-            match initialize_client(key, timeout_secs, 3, config.rate_limits.clone()) {
+            match initialize_client(key, timeout_secs, 3, config.rate_limits) {
                 Ok(client) => {
                     let models_spinner = create_spinner("Checking model availability...");
                     let models_result = client.list_models().await;

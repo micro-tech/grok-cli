@@ -66,7 +66,7 @@ pub fn extract_text_content(content: &MessageContent) -> String {
 /// Helper function to convert Option<String> to String
 /// Kept for backwards compatibility with refactored code
 pub fn content_to_string(content: Option<&MessageContent>) -> String {
-    content.map(|c| extract_text_content(c)).unwrap_or_default()
+    content.map(extract_text_content).unwrap_or_default()
 }
 
 /// Helper function to create text content

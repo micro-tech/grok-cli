@@ -152,9 +152,11 @@ pub struct AcpConfig {
     #[serde(default = "default_max_tool_loop_iterations")]
     pub max_tool_loop_iterations: u32,
 
-    /// Require explicit user permission for tool execution
-    /// Default: true
-    #[serde(default = "default_true")]
+    /// Require explicit user permission for tool execution.
+    /// Default: false — most ACP clients (including Zed) do not yet implement
+    /// the session/request_permission protocol.  Set to true only when using a
+    /// client that explicitly supports permission dialogs.
+    #[serde(default)]
     pub require_permission: bool,
 
     /// Timeout in seconds to wait for user permission response
@@ -779,7 +781,7 @@ impl Default for AcpConfig {
             protocol_version: "1.0".to_string(),
             dev_mode: false,
             max_tool_loop_iterations: default_max_tool_loop_iterations(),
-            require_permission: default_true(),
+            require_permission: false,
             permission_timeout_secs: default_permission_timeout_secs(),
         }
     }
@@ -1113,6 +1115,7 @@ impl Config {
     ///    - Unix/Mac: ~/.config/grok-cli/config.toml and ~/.grok/.env
     /// 3. Built-in defaults
     /// 4. Environment variables (highest priority, applied last)
+    ///
     /// Load configuration with hierarchical priority: project → system → defaults
     ///
     /// Settings from higher priority sources override lower priority sources.
@@ -1472,61 +1475,61 @@ impl Config {
             self.default_model = model;
         }
 
-        if let Ok(temp) = std::env::var("GROK_TEMPERATURE") {
-            if let Ok(temp_val) = temp.parse::<f32>() {
-                self.default_temperature = temp_val;
-            }
+        if let Ok(temp) = std::env::var("GROK_TEMPERATURE")
+            && let Ok(temp_val) = temp.parse::<f32>()
+        {
+            self.default_temperature = temp_val;
         }
 
-        if let Ok(tokens) = std::env::var("GROK_MAX_TOKENS") {
-            if let Ok(tokens_val) = tokens.parse::<u32>() {
-                self.default_max_tokens = tokens_val;
-            }
+        if let Ok(tokens) = std::env::var("GROK_MAX_TOKENS")
+            && let Ok(tokens_val) = tokens.parse::<u32>()
+        {
+            self.default_max_tokens = tokens_val;
         }
 
         // Network configuration
-        if let Ok(timeout) = std::env::var("GROK_TIMEOUT") {
-            if let Ok(timeout_val) = timeout.parse::<u64>() {
-                self.timeout_secs = timeout_val;
-            }
+        if let Ok(timeout) = std::env::var("GROK_TIMEOUT")
+            && let Ok(timeout_val) = timeout.parse::<u64>()
+        {
+            self.timeout_secs = timeout_val;
         }
 
-        if let Ok(retries) = std::env::var("GROK_MAX_RETRIES") {
-            if let Ok(retries_val) = retries.parse::<u32>() {
-                self.max_retries = retries_val;
-            }
+        if let Ok(retries) = std::env::var("GROK_MAX_RETRIES")
+            && let Ok(retries_val) = retries.parse::<u32>()
+        {
+            self.max_retries = retries_val;
         }
 
         if let Ok(val) = std::env::var("GROK_STARLINK_OPTIMIZATIONS") {
             self.network.starlink_optimizations = val.parse::<bool>().unwrap_or(true);
         }
 
-        if let Ok(delay) = std::env::var("GROK_BASE_RETRY_DELAY") {
-            if let Ok(delay_val) = delay.parse::<u64>() {
-                self.network.base_retry_delay = delay_val;
-            }
+        if let Ok(delay) = std::env::var("GROK_BASE_RETRY_DELAY")
+            && let Ok(delay_val) = delay.parse::<u64>()
+        {
+            self.network.base_retry_delay = delay_val;
         }
 
-        if let Ok(delay) = std::env::var("GROK_MAX_RETRY_DELAY") {
-            if let Ok(delay_val) = delay.parse::<u64>() {
-                self.network.max_retry_delay = delay_val;
-            }
+        if let Ok(delay) = std::env::var("GROK_MAX_RETRY_DELAY")
+            && let Ok(delay_val) = delay.parse::<u64>()
+        {
+            self.network.max_retry_delay = delay_val;
         }
 
         if let Ok(val) = std::env::var("GROK_HEALTH_MONITORING") {
             self.network.health_monitoring = val.parse::<bool>().unwrap_or(true);
         }
 
-        if let Ok(timeout) = std::env::var("GROK_CONNECT_TIMEOUT") {
-            if let Ok(timeout_val) = timeout.parse::<u64>() {
-                self.network.connect_timeout = timeout_val;
-            }
+        if let Ok(timeout) = std::env::var("GROK_CONNECT_TIMEOUT")
+            && let Ok(timeout_val) = timeout.parse::<u64>()
+        {
+            self.network.connect_timeout = timeout_val;
         }
 
-        if let Ok(timeout) = std::env::var("GROK_READ_TIMEOUT") {
-            if let Ok(timeout_val) = timeout.parse::<u64>() {
-                self.network.read_timeout = timeout_val;
-            }
+        if let Ok(timeout) = std::env::var("GROK_READ_TIMEOUT")
+            && let Ok(timeout_val) = timeout.parse::<u64>()
+        {
+            self.network.read_timeout = timeout_val;
         }
 
         // UI configuration
@@ -1546,10 +1549,10 @@ impl Config {
             self.ui.verbose_errors = val.parse::<bool>().unwrap_or(false);
         }
 
-        if let Ok(width) = std::env::var("GROK_TERMINAL_WIDTH") {
-            if let Ok(width_val) = width.parse::<usize>() {
-                self.ui.terminal_width = width_val;
-            }
+        if let Ok(width) = std::env::var("GROK_TERMINAL_WIDTH")
+            && let Ok(width_val) = width.parse::<usize>()
+        {
+            self.ui.terminal_width = width_val;
         }
 
         // Disable colors if NO_COLOR is set
@@ -1570,16 +1573,16 @@ impl Config {
             self.logging.log_file = Some(PathBuf::from(path));
         }
 
-        if let Ok(size) = std::env::var("GROK_MAX_FILE_SIZE_MB") {
-            if let Ok(size_val) = size.parse::<u64>() {
-                self.logging.max_file_size_mb = size_val;
-            }
+        if let Ok(size) = std::env::var("GROK_MAX_FILE_SIZE_MB")
+            && let Ok(size_val) = size.parse::<u64>()
+        {
+            self.logging.max_file_size_mb = size_val;
         }
 
-        if let Ok(count) = std::env::var("GROK_ROTATION_COUNT") {
-            if let Ok(count_val) = count.parse::<u32>() {
-                self.logging.rotation_count = count_val;
-            }
+        if let Ok(count) = std::env::var("GROK_ROTATION_COUNT")
+            && let Ok(count_val) = count.parse::<u32>()
+        {
+            self.logging.rotation_count = count_val;
         }
 
         // ACP configuration
@@ -1591,10 +1594,10 @@ impl Config {
             self.acp.enabled = false;
         }
 
-        if let Ok(port) = std::env::var("GROK_ACP_PORT") {
-            if let Ok(port_val) = port.parse::<u16>() {
-                self.acp.default_port = Some(port_val);
-            }
+        if let Ok(port) = std::env::var("GROK_ACP_PORT")
+            && let Ok(port_val) = port.parse::<u16>()
+        {
+            self.acp.default_port = Some(port_val);
         }
 
         if let Ok(host) = std::env::var("GROK_ACP_BIND_HOST") {
@@ -1609,10 +1612,10 @@ impl Config {
             self.acp.dev_mode = val.parse::<bool>().unwrap_or(false);
         }
 
-        if let Ok(iterations) = std::env::var("GROK_ACP_MAX_TOOL_LOOP_ITERATIONS") {
-            if let Ok(iterations_val) = iterations.parse::<u32>() {
-                self.acp.max_tool_loop_iterations = iterations_val;
-            }
+        if let Ok(iterations) = std::env::var("GROK_ACP_MAX_TOOL_LOOP_ITERATIONS")
+            && let Ok(iterations_val) = iterations.parse::<u32>()
+        {
+            self.acp.max_tool_loop_iterations = iterations_val;
         }
 
         // Telemetry configuration
@@ -1702,13 +1705,13 @@ impl Config {
         }
 
         // Validate ACP port range
-        if let Some(port) = self.acp.default_port {
-            if port < 1024 {
-                warn!(
-                    "ACP port {} is below 1024, may require elevated privileges",
-                    port
-                );
-            }
+        if let Some(port) = self.acp.default_port
+            && port < 1024
+        {
+            warn!(
+                "ACP port {} is below 1024, may require elevated privileges",
+                port
+            );
         }
 
         Ok(())

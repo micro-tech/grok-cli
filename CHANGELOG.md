@@ -13,6 +13,35 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+### Fixed
+
+- **ACP file-reading broken in Zed** (`src/cli/commands/acp.rs`, `src/config/mod.rs`, `src/acp/protocol.rs`)
+  - **Root cause 1 — Permission gate silently blocked all tools**: `acp.require_permission` defaulted to
+    `true`, causing the agent to send a `session/request_permission` JSON-RPC request to Zed before every
+    tool call.  Zed does not implement this method and returns a JSON-RPC error response; the agent was
+    treating that error as a user "cancel", injecting `"User rejected the tool execution."` into every
+    tool result and preventing any file read or directory listing from completing.
+    - Changed `acp.require_permission` default to `false` (matches the documented intent for clients that
+      don't yet support the permission dialog).
+    - Updated `.grok/config.toml` to explicitly set `require_permission = false` with an explanatory
+      comment.
+    - When a client returns a JSON-RPC error for `session/request_permission`, the agent now auto-approves
+      the tool call (`proceed_once`) instead of silently cancelling it, and logs a `WARN` suggesting the
+      config flag.
+    - Added `PermissionOutcome::proceed_once()` convenience constructor (mirrors the existing `::cancel()`).
+    - Both the `handle_session_prompt` select-loop path and the `handle_json_rpc` outer-loop path received
+      the same fix so behaviour is consistent regardless of when the response arrives.
+    - Permission-response matching now accepts both string and numeric JSON-RPC response IDs for broader
+      client compatibility.
+  - **Root cause 2 — Windows `file:///` URI mis-parsed as UNC path**: `resolve_workspace_path` stripped
+    only 7 bytes from `file:///H:/GitHub/project` (removing `file://`, leaving `/H:/…`).  After replacing
+    `/` with `\` on Windows the result was `\H:\…`, which Windows treats as a UNC path prefix.
+    `PathBuf::canonicalize()` failed, the fallback path was never added to the trusted-directory list, and
+    every subsequent file access for that workspace was denied.
+    - The Windows normalisation block now also detects the `\X:\path` pattern (backslash + drive-letter +
+      colon) produced by decoding a Windows file URI and strips the leading backslash → `X:\path`.
+    - Git-bash / WSL `\x\path` → `X:\path` conversion is preserved as before.
+
 ### Added
 
 - **ACP Gemini-style permission UI** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`, `src/config/mod.rs`)

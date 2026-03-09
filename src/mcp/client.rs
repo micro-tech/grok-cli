@@ -148,11 +148,11 @@ impl McpClient {
         let response = self.read_response(connection).await?;
 
         // Parse response
-        if let Some(result) = response.get("result") {
-            if let Some(tools_val) = result.get("tools") {
-                let tools: Vec<Tool> = serde_json::from_value(tools_val.clone())?;
-                return Ok(tools);
-            }
+        if let Some(result) = response.get("result")
+            && let Some(tools_val) = result.get("tools")
+        {
+            let tools: Vec<Tool> = serde_json::from_value(tools_val.clone())?;
+            return Ok(tools);
         }
 
         Ok(Vec::new())

@@ -147,11 +147,11 @@ pub async fn detect_starlink_connection() -> bool {
     // This is a heuristic approach
 
     // Check if we can resolve starlink.com (indicates possible Starlink connection)
-    if let Ok(addrs) = tokio::net::lookup_host("starlink.com:80").await {
-        if addrs.count() > 0 {
-            info!("Starlink domain resolution successful - possible Starlink connection");
-            return true;
-        }
+    if let Ok(addrs) = tokio::net::lookup_host("starlink.com:80").await
+        && addrs.count() > 0
+    {
+        info!("Starlink domain resolution successful - possible Starlink connection");
+        return true;
     }
 
     // Additional heuristics could be added here:
