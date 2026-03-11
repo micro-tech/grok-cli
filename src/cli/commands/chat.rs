@@ -106,18 +106,18 @@ async fn handle_single_chat(
         Ok(response_with_finish) => {
             let response = response_with_finish.message;
             // Handle tool calls if present
-            if let Some(tool_calls) = &response.tool_calls {
-                if !tool_calls.is_empty() {
-                    print_info("Executing requested operations...");
-                    let mut security = SecurityPolicy::new();
-                    security.add_trusted_directory(&env::current_dir()?);
+            if let Some(tool_calls) = &response.tool_calls
+                && !tool_calls.is_empty()
+            {
+                print_info("Executing requested operations...");
+                let mut security = SecurityPolicy::new();
+                security.add_trusted_directory(&env::current_dir()?);
 
-                    for tool_call in tool_calls {
-                        execute_tool_call(tool_call, &security).await?;
-                    }
-                    print_success("All operations completed!");
-                    return Ok(());
+                for tool_call in tool_calls {
+                    execute_tool_call(tool_call, &security).await?;
                 }
+                print_success("All operations completed!");
+                return Ok(());
             }
 
             // Regular text response
@@ -351,25 +351,25 @@ async fn handle_interactive_chat(
                 spinner.finish_and_clear();
 
                 // Handle tool calls if present
-                if let Some(tool_calls) = &response_msg.tool_calls {
-                    if !tool_calls.is_empty() {
-                        println!("{}", "Grok is executing operations...".blue().dimmed());
+                if let Some(tool_calls) = &response_msg.tool_calls
+                    && !tool_calls.is_empty()
+                {
+                    println!("{}", "Grok is executing operations...".blue().dimmed());
 
-                        for tool_call in tool_calls {
-                            if let Err(e) = execute_tool_call(tool_call, &security).await {
-                                print_error(&format!("Tool execution failed: {}", e));
-                            }
+                    for tool_call in tool_calls {
+                        if let Err(e) = execute_tool_call(tool_call, &security).await {
+                            print_error(&format!("Tool execution failed: {}", e));
                         }
-
-                        // Add assistant's tool call response to history
-                        conversation_history.push(json!({
-                            "role": "assistant",
-                            "content": response_msg.content.clone(),
-                            "tool_calls": tool_calls
-                        }));
-
-                        continue;
                     }
+
+                    // Add assistant's tool call response to history
+                    conversation_history.push(json!({
+                        "role": "assistant",
+                        "content": response_msg.content.clone(),
+                        "tool_calls": tool_calls
+                    }));
+
+                    continue;
                 }
 
                 let response = content_to_string(response_msg.content.as_ref());
@@ -406,10 +406,10 @@ fn handle_interactive_command(
     conversation_history: &mut Vec<Value>,
 ) -> Result<Option<CommandResult>> {
     match lower_input {
-        "exit" | "quit" | "q" => return Ok(Some(CommandResult::Exit)),
+        "exit" | "quit" | "q" => Ok(Some(CommandResult::Exit)),
         "help" | "h" => {
             print_help();
-            return Ok(Some(CommandResult::Continue));
+            Ok(Some(CommandResult::Continue))
         }
         "clear" | "cls" => {
             // Clear conversation history but keep system message
@@ -426,11 +426,11 @@ fn handle_interactive_command(
                 conversation_history.clear();
             }
             print_success("Conversation history cleared!");
-            return Ok(Some(CommandResult::Continue));
+            Ok(Some(CommandResult::Continue))
         }
         "history" => {
             print_conversation_history(conversation_history);
-            return Ok(Some(CommandResult::Continue));
+            Ok(Some(CommandResult::Continue))
         }
         "ls" | "dir" => {
             match fs::read_dir(".") {
@@ -448,7 +448,7 @@ fn handle_interactive_command(
                 }
                 Err(e) => print_error(&format!("Failed to list directory: {}", e)),
             }
-            return Ok(Some(CommandResult::Continue));
+            Ok(Some(CommandResult::Continue))
         }
         _ if lower_input.starts_with("cd ") => {
             let path = input[3..].trim();
@@ -460,7 +460,7 @@ fn handle_interactive_command(
                     env::current_dir().unwrap_or_default().display()
                 ));
             }
-            return Ok(Some(CommandResult::Continue));
+            Ok(Some(CommandResult::Continue))
         }
         _ if input.starts_with('!') => {
             let command_line = input[1..].trim();
@@ -480,10 +480,10 @@ fn handle_interactive_command(
                     Err(e) => print_error(&format!("Failed to execute command: {}", e)),
                 }
             }
-            return Ok(Some(CommandResult::Continue));
+            Ok(Some(CommandResult::Continue))
         }
-        _ if input.is_empty() => return Ok(Some(CommandResult::Continue)),
-        _ => return Ok(None),
+        _ if input.is_empty() => Ok(Some(CommandResult::Continue)),
+        _ => Ok(None),
     }
 }
 

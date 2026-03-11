@@ -234,27 +234,27 @@ impl SkillSecurityValidator {
             Ok(entries) => {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file() {
-                        if let Some(ext) = path.extension() {
-                            let ext_str = ext.to_string_lossy();
+                    if path.is_file()
+                        && let Some(ext) = path.extension()
+                    {
+                        let ext_str = ext.to_string_lossy();
 
-                            // Check if it's an executable script
-                            if ext_str == "sh" || ext_str == "bash" || ext_str == "py" {
-                                suspicious.push(format!(
-                                    "Found executable script: {}",
-                                    path.file_name().unwrap().to_string_lossy()
-                                ));
+                        // Check if it's an executable script
+                        if ext_str == "sh" || ext_str == "bash" || ext_str == "py" {
+                            suspicious.push(format!(
+                                "Found executable script: {}",
+                                path.file_name().unwrap().to_string_lossy()
+                            ));
 
-                                // Read and validate script content
-                                if let Ok(content) = fs::read_to_string(&path) {
-                                    for pattern in &self.dangerous_patterns {
-                                        if pattern.is_match(&content) {
-                                            dangerous.push(format!(
-                                                "Script '{}' contains dangerous pattern: {}",
-                                                path.file_name().unwrap().to_string_lossy(),
-                                                pattern.as_str()
-                                            ));
-                                        }
+                            // Read and validate script content
+                            if let Ok(content) = fs::read_to_string(&path) {
+                                for pattern in &self.dangerous_patterns {
+                                    if pattern.is_match(&content) {
+                                        dangerous.push(format!(
+                                            "Script '{}' contains dangerous pattern: {}",
+                                            path.file_name().unwrap().to_string_lossy(),
+                                            pattern.as_str()
+                                        ));
                                     }
                                 }
                             }
@@ -288,14 +288,14 @@ impl SkillSecurityValidator {
                     let path = entry.path();
                     if path.is_file() {
                         // Check file size to prevent DoS
-                        if let Ok(metadata) = fs::metadata(&path) {
-                            if metadata.len() > 10 * 1024 * 1024 {
-                                // 10MB
-                                warnings.push(format!(
-                                    "Reference file is very large: {}",
-                                    path.file_name().unwrap().to_string_lossy()
-                                ));
-                            }
+                        if let Ok(metadata) = fs::metadata(&path)
+                            && metadata.len() > 10 * 1024 * 1024
+                        {
+                            // 10MB
+                            warnings.push(format!(
+                                "Reference file is very large: {}",
+                                path.file_name().unwrap().to_string_lossy()
+                            ));
                         }
                     }
                 }
@@ -351,15 +351,14 @@ impl SkillSecurityValidator {
 
     /// Check if a tool name is in the allowed-tools list
     pub fn validate_allowed_tools(&self, tools: &[String]) -> Result<Vec<String>> {
-        let known_safe_tools = vec![
+        let known_safe_tools = [
             "read_file",
             "list_directory",
             "glob_search",
             "search_file_content",
         ];
 
-        let known_dangerous_tools =
-            vec!["write_file", "run_shell_command", "web_search", "web_fetch"];
+        let known_dangerous_tools = ["write_file", "run_shell_command", "web_search", "web_fetch"];
 
         let mut warnings = Vec::new();
 

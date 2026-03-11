@@ -71,10 +71,10 @@ impl ShellPermissions {
         };
 
         // Load persistent allowlist from disk
-        if let Some(path) = &permissions.policy_path {
-            if let Ok(policy) = Self::load_policy(path) {
-                permissions.persistent_allowlist = policy.allowed_commands;
-            }
+        if let Some(path) = &permissions.policy_path
+            && let Ok(policy) = Self::load_policy(path)
+        {
+            permissions.persistent_allowlist = policy.allowed_commands;
         }
 
         permissions

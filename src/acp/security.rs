@@ -10,6 +10,12 @@ pub struct SecurityPolicy {
     external_access_config: ExternalAccessConfig,
 }
 
+impl Default for SecurityPolicy {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SecurityPolicy {
     pub fn new() -> Self {
         let working_directory = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -281,6 +287,12 @@ pub enum PathAccessType {
 
 pub struct SecurityManager {
     policy: Arc<Mutex<SecurityPolicy>>,
+}
+
+impl Default for SecurityManager {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl SecurityManager {

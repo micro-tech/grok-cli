@@ -30,11 +30,17 @@ impl GrokClient {
 
     /// Create a new GrokClient with custom timeout and retry settings
     pub fn with_settings(api_key: &str, timeout_secs: u64, max_retries: u32) -> Result<Self> {
-        let inner = grok_api::GrokClient::builder()
+        let mut builder = grok_api::GrokClient::builder()
             .api_key(api_key)
             .timeout_secs(timeout_secs)
-            .max_retries(max_retries)
-            .build()?;
+            .max_retries(max_retries);
+
+        // Allow overriding the base URL via environment variable for testing/mocking
+        if let Ok(base_url) = std::env::var("GROK_API_BASE_URL") {
+            builder = builder.base_url(base_url);
+        }
+
+        let inner = builder.build()?;
 
         Ok(Self {
             inner,

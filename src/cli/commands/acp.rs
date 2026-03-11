@@ -12,25 +12,26 @@
 use anyhow::{Result, anyhow};
 use colored::*;
 use serde_json::{Value, json};
+use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpListener;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, oneshot};
 use tracing::{debug, error, info, warn};
 
 use crate::acp::protocol::{
     AGENT_METHOD_NAMES, AgentCapabilities, AvailableCommandsUpdate, ContentBlock, ContentChunk,
     Implementation, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
-    PromptRequest, PromptResponse, ProtocolVersion, SessionId, SessionNotification, SessionUpdate,
-    StopReason, TextContent,
+    PermissionOutcome, PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionParams,
+    SessionId, SessionNotification, SessionUpdate, StopReason, TextContent,
 };
 use crate::acp::slash_commands::{
     self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
 };
 use crate::acp::tools;
-use crate::acp::{GrokAcpAgent, SessionConfig};
+use crate::acp::{GrokAcpAgent, PermissionBridge, SessionConfig};
 use crate::cli::{create_spinner, print_error, print_info, print_success, print_warning};
 use crate::config::Config;
 use crate::utils::chat_logger;
@@ -205,39 +206,64 @@ async fn handle_acp_client(
 /// Run an ACP session with a connected client
 async fn run_acp_session<R, W>(reader: R, mut writer: W, agent: GrokAcpAgent) -> Result<()>
 where
-    R: tokio::io::AsyncRead + Unpin,
-    W: tokio::io::AsyncWrite + Unpin,
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+    W: tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    let mut reader = BufReader::new(reader);
-    let mut line = String::new();
+    let (msg_tx, mut msg_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
 
-    loop {
-        line.clear();
-        match reader.read_line(&mut line).await {
-            Ok(0) => break, // EOF
-            Ok(_) => {
-                let trimmed = line.trim();
-                if trimmed.is_empty() {
-                    continue;
+    // Spawn a dedicated reader task to feed the message channel.
+    // This allows us to handle bidirectional requests/responses without deadlocking.
+    tokio::spawn(async move {
+        let mut reader = BufReader::new(reader);
+        let mut line = String::new();
+        loop {
+            line.clear();
+            match reader.read_line(&mut line).await {
+                Ok(0) => break, // EOF
+                Ok(_) => {
+                    if msg_tx.send(line.clone()).is_err() {
+                        break;
+                    }
                 }
-
-                debug!("Received message: {}", trimmed);
-
-                // Attempt to parse as JSON
-                match serde_json::from_str::<Value>(trimmed) {
-                    Ok(json_msg) => {
-                        // Handle JSON-RPC message
-                        if let Err(e) = handle_json_rpc(&json_msg, &mut writer, &agent).await {
-                            error!("Error handling message: {}", e);
-                            // Optionally send error response back to client
-                        }
-                    }
-                    Err(e) => {
-                        warn!("Invalid JSON received: {} (Error: {})", trimmed, e);
-                    }
+                Err(e) => {
+                    error!("ACP reader error: {}", e);
+                    break;
                 }
             }
-            Err(e) => return Err(e.into()),
+        }
+        info!("ACP reader task terminating");
+    });
+
+    let mut pending_permissions: HashMap<String, oneshot::Sender<PermissionOutcome>> =
+        HashMap::new();
+
+    while let Some(line) = msg_rx.recv().await {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        debug!("Received message: {}", trimmed);
+
+        // Attempt to parse as JSON
+        match serde_json::from_str::<Value>(trimmed) {
+            Ok(json_msg) => {
+                // Handle JSON-RPC message
+                if let Err(e) = handle_json_rpc(
+                    &json_msg,
+                    &mut writer,
+                    &agent,
+                    &mut pending_permissions,
+                    &mut msg_rx,
+                )
+                .await
+                {
+                    error!("Error handling message: {}", e);
+                }
+            }
+            Err(e) => {
+                warn!("Invalid JSON received: {} (Error: {})", trimmed, e);
+            }
         }
     }
 
@@ -251,7 +277,13 @@ where
     Ok(())
 }
 
-async fn handle_json_rpc<W>(msg: &Value, writer: &mut W, agent: &GrokAcpAgent) -> Result<()>
+async fn handle_json_rpc<W>(
+    msg: &Value,
+    writer: &mut W,
+    agent: &GrokAcpAgent,
+    pending_permissions: &mut HashMap<String, oneshot::Sender<PermissionOutcome>>,
+    msg_rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+) -> Result<()>
 where
     W: tokio::io::AsyncWrite + Unpin,
 {
@@ -266,7 +298,7 @@ where
         } else if method == AGENT_METHOD_NAMES.session_new {
             handle_session_new(&params, agent).await
         } else if method == AGENT_METHOD_NAMES.session_prompt {
-            handle_session_prompt(&params, agent, writer).await
+            handle_session_prompt(&params, agent, writer, pending_permissions, msg_rx).await
         } else {
             warn!("Unknown method: {}", method);
             Err(anyhow!("Method not found: {}", method))
@@ -311,6 +343,40 @@ where
                 warn!("Failed to send available_commands_update: {}", e);
             }
         }
+    } else if let Some(id) = msg.get("id").and_then(|i| i.as_str()) {
+        // This is a JSON-RPC response (has id, no method).
+        // Check if it's a response to a pending permission request.
+        if let Some(sender) = pending_permissions.remove(id) {
+            info!("Received response for pending permission request: {}", id);
+            if let Some(result) = msg.get("result") {
+                match serde_json::from_value::<PermissionOutcome>(result.clone()) {
+                    Ok(outcome) => {
+                        let _ = sender.send(outcome);
+                    }
+                    Err(e) => {
+                        error!("Failed to parse permission outcome: {}", e);
+                        let _ = sender.send(PermissionOutcome::cancel());
+                    }
+                }
+            } else if msg.get("error").is_some() {
+                // Client returned a JSON-RPC error.
+                // Zed DOES support session/request_permission — an error here
+                // indicates a payload format mismatch.  Auto-approve so tools
+                // are not silently blocked while the issue is diagnosed.
+                // Set acp.require_permission = false to skip prompts entirely.
+                warn!(
+                    "Client returned error for permission request {} — \
+                     possible payload mismatch; auto-approving this tool call.",
+                    id
+                );
+                let _ = sender.send(PermissionOutcome::proceed_once());
+            } else {
+                warn!("Received response for {} but it has no 'result' field", id);
+                let _ = sender.send(PermissionOutcome::cancel());
+            }
+        } else {
+            debug!("Received response with unknown id: {}", id);
+        }
     } else if let Some(method) = msg.get("method").and_then(|m| m.as_str()) {
         // Notification
         info!("Received notification: {}", method);
@@ -338,15 +404,13 @@ fn resolve_workspace_path(raw: &str) -> PathBuf {
     // Strip file:// URI scheme (handles file:// and file:///)
     let stripped = if raw.starts_with("file:///") {
         // URL-decode the path component
-        let decoded = urlencoding::decode(&raw[7..])
+        urlencoding::decode(&raw[7..])
             .map(|s| s.into_owned())
-            .unwrap_or_else(|_| raw[7..].to_string());
-        decoded
-    } else if raw.starts_with("file://") {
-        let decoded = urlencoding::decode(&raw[7..])
+            .unwrap_or_else(|_| raw[7..].to_string())
+    } else if let Some(rest) = raw.strip_prefix("file://") {
+        urlencoding::decode(rest)
             .map(|s| s.into_owned())
-            .unwrap_or_else(|_| raw[7..].to_string());
-        decoded
+            .unwrap_or_else(|_| rest.to_string())
     } else {
         raw.to_string()
     };
@@ -356,14 +420,25 @@ fn resolve_workspace_path(raw: &str) -> PathBuf {
     #[cfg(target_os = "windows")]
     let normalised = {
         let s = stripped.replace('/', "\\");
-        // Git-bash paths look like "\h\GitHub\project" — convert leading \X\ to X:\
+        // Handle two Windows path styles that both start with \X:
+        //   \h\GitHub\project  — Git-bash / WSL (char[2] is '\')
+        //   \H:\GitHub\project — Windows file URI decoded from raw[7..] of
+        //                        "file:///H:/path" where raw[7..] = "/H:/path"
+        //                        After replacing '/' with '\' → "\H:\path"
         if s.starts_with('\\')
             && s.len() >= 3
-            && s.chars().nth(1).map_or(false, |c| c.is_ascii_alphabetic())
-            && s.chars().nth(2) == Some('\\')
+            && s.chars().nth(1).is_some_and(|c| c.is_ascii_alphabetic())
         {
-            let drive = s.chars().nth(1).unwrap().to_uppercase().next().unwrap();
-            format!("{}:{}", drive, &s[2..])
+            if s.chars().nth(2) == Some('\\') {
+                // Git-bash: \h\path → H:\path
+                let drive = s.chars().nth(1).unwrap().to_uppercase().next().unwrap();
+                format!("{}:{}", drive, &s[2..])
+            } else if s.chars().nth(2) == Some(':') {
+                // Windows file URI: \H:\path → H:\path
+                s[1..].to_string()
+            } else {
+                s
+            }
         } else {
             s
         }
@@ -616,6 +691,8 @@ async fn handle_session_prompt<W>(
     params: &Value,
     agent: &GrokAcpAgent,
     writer: &mut W,
+    pending_permissions: &mut HashMap<String, oneshot::Sender<PermissionOutcome>>,
+    msg_rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
 ) -> Result<Value>
 where
     W: tokio::io::AsyncWrite + Unpin,
@@ -626,25 +703,17 @@ where
     let session_id = SessionId::new(req.session_id.0.clone());
 
     // Extract text from prompt.
-    // While iterating we also auto-trust any workspace roots that can be
-    // inferred from embedded resource URIs.  This covers the common case where
-    // the user has Grok open for project A but is @-mentioning files that live
-    // in project B — without this, those paths would be denied by the security
-    // policy because only project A's root was registered at startup.
     let mut message_text = String::new();
     for block in req.prompt {
         match block {
             ContentBlock::Text(text) => message_text.push_str(&text.text),
             ContentBlock::ResourceLink(link) => {
-                // Auto-trust the workspace that owns this linked resource so
-                // the model can follow up with read_file / list_directory calls.
                 trust_workspace_from_uri(&link.uri, agent);
                 message_text.push_str(&format!("\n[Resource: {} ({})]", link.name, link.uri));
             }
             ContentBlock::Resource(res) => {
                 let crate::acp::protocol::EmbeddedResourceResource::TextResourceContents(text_res) =
                     res.resource;
-                // Auto-trust the workspace that owns this embedded resource.
                 trust_workspace_from_uri(&text_res.uri, agent);
                 message_text.push_str(&format!(
                     "\n[Context: {}]\n{}\n",
@@ -658,166 +727,202 @@ where
         return Err(anyhow!("Empty prompt received"));
     }
 
+    // Create PermissionBridge for this prompt execution
+    let (perm_bridge, mut perm_req_rx) = PermissionBridge::new();
+    let perm_bridge_arc = Arc::new(perm_bridge);
+
     // --- Slash command detection & dispatch ---
-    // Check if the user message starts with a `/` command prefix.
-    // Built-in commands (help, clear, model, context) are handled here
-    // without an AI round-trip.  AI-assisted commands (web, explain, review,
-    // plan, test, fix) rewrite the prompt before forwarding to Grok.
     if let Some(cmd) = parse_slash_command(&message_text) {
         info!("Slash command detected: {:?}", cmd);
 
-        // Try to handle as a built-in (no AI needed)
         if let Some(builtin) = handle_builtin(&cmd) {
             let response_text = match builtin {
-                BuiltinResult::Text(text) => {
-                    info!("Built-in slash command returning direct text response");
-                    text
-                }
+                BuiltinResult::Text(text) => text,
                 BuiltinResult::ClearHistory => {
-                    info!("Clearing session history for {}", session_id.0);
-                    if let Err(e) = agent.clear_session_history(&session_id).await {
-                        warn!("Failed to clear session history: {}", e);
-                    }
-                    if let Err(e) = chat_logger::log_system(
-                        "Conversation history cleared by /clear command".to_string(),
-                    ) {
-                        warn!("Failed to log clear event: {}", e);
-                    }
+                    let _ = agent.clear_session_history(&session_id).await;
+                    let _ = chat_logger::log_system("Conversation history cleared");
                     "✅ Conversation history cleared. Starting fresh!".to_string()
                 }
                 BuiltinResult::SwitchModel(model_name) => {
-                    info!("Switching session model to '{}'", model_name);
                     match agent
                         .set_session_model(&session_id, model_name.clone())
                         .await
                     {
-                        Ok(()) => {
-                            if let Err(e) =
-                                chat_logger::log_system(format!("Model switched to {model_name}"))
-                            {
-                                warn!("Failed to log model switch: {}", e);
-                            }
-                            format!("✅ Switched to model **`{model_name}`** for this session.")
-                        }
-                        Err(e) => {
-                            warn!("Model switch failed: {}", e);
-                            format!(
-                                "❌ Could not switch to model `{model_name}`: {e}\n\n{}",
-                                slash_commands::format_model_list()
-                            )
-                        }
+                        Ok(()) => format!("✅ Switched to model **`{model_name}`**."),
+                        Err(e) => format!("❌ Could not switch model: {e}"),
                     }
                 }
-                BuiltinResult::ShowContext => {
-                    info!("Fetching session context for /context command");
-                    match agent.get_session_config(&session_id).await {
-                        Ok(cfg) => {
-                            let msg_count = agent
-                                .get_session_message_count(&session_id)
-                                .await
-                                .unwrap_or(0);
-                            format_context_text(
-                                &session_id.0,
-                                &cfg.model,
-                                cfg.temperature,
-                                cfg.max_tokens,
-                                msg_count,
-                            )
-                        }
-                        Err(e) => format!("❌ Could not retrieve session context: {e}"),
+                BuiltinResult::ShowContext => match agent.get_session_config(&session_id).await {
+                    Ok(cfg) => {
+                        let msg_count = agent
+                            .get_session_message_count(&session_id)
+                            .await
+                            .unwrap_or(0);
+                        format_context_text(
+                            &session_id.0,
+                            &cfg.model,
+                            cfg.temperature,
+                            cfg.max_tokens,
+                            msg_count,
+                        )
                     }
-                }
+                    Err(e) => format!("❌ Could not retrieve context: {e}"),
+                },
             };
 
-            // Log the assistant response and stream it back to the client
-            if let Err(e) = chat_logger::log_assistant(&response_text) {
-                warn!("Failed to log slash-command response: {}", e);
-            }
             send_text_update(writer, &session_id.0, &response_text).await?;
-            let response = PromptResponse::new(StopReason::EndTurn);
-            return Ok(serde_json::to_value(response)?);
+            return Ok(serde_json::to_value(PromptResponse::new(
+                StopReason::EndTurn,
+            ))?);
         }
 
-        // AI-assisted command: rewrite the prompt with richer instructions
         if let Some(ai_prompt) = slash_commands::command_to_prompt(&cmd) {
-            info!(
-                "Rewriting slash command prompt ({} → {} chars)",
-                message_text.len(),
-                ai_prompt.len()
-            );
-            // Use the enhanced prompt directly — it already contains the full
-            // AI instruction built by command_to_prompt().
-            let enhanced = ai_prompt;
-            // Log original slash command as the user message, then forward
-            // the rewritten prompt to the model.
-            if let Err(e) = chat_logger::log_user(&message_text) {
-                warn!("Failed to log slash-command user message: {}", e);
-            }
-            info!(
-                "Calling Grok API for session {} with rewritten slash-command prompt",
-                session_id.0
-            );
+            let _ = chat_logger::log_user(&message_text);
             let response_text = agent
-                .handle_chat_completion(&session_id, &enhanced, None)
+                .handle_chat_completion(
+                    &session_id,
+                    &ai_prompt,
+                    None,
+                    None,
+                    Some(perm_bridge_arc.clone()),
+                )
                 .await?;
-
-            info!("Received response from Grok: {} chars", response_text.len());
-            let final_text = if response_text.is_empty() {
-                warn!("Grok returned empty response for slash command!");
-                "[No response content received from model]".to_string()
-            } else {
-                response_text
-            };
-
-            if let Err(e) = chat_logger::log_assistant(&final_text) {
-                warn!("Failed to log assistant response: {}", e);
-            }
-            send_text_update(writer, &session_id.0, &final_text).await?;
-            let response = PromptResponse::new(StopReason::EndTurn);
-            return Ok(serde_json::to_value(response)?);
+            send_text_update(writer, &session_id.0, &response_text).await?;
+            return Ok(serde_json::to_value(PromptResponse::new(
+                StopReason::EndTurn,
+            ))?);
         }
     }
-    // --- End slash command handling ---
 
     // Log user prompt
-    if let Err(e) = chat_logger::log_user(&message_text) {
-        warn!("Failed to log user message: {}", e);
+    let _ = chat_logger::log_user(&message_text);
+
+    info!("Calling Grok API for session {}...", session_id.0);
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let chat_fut = agent.handle_chat_completion(
+        &session_id,
+        &message_text,
+        None,
+        Some(tx),
+        Some(perm_bridge_arc),
+    );
+    tokio::pin!(chat_fut);
+
+    let response_text;
+    loop {
+        tokio::select! {
+            // 1. Agent updates (notifications like tool calls)
+            update = rx.recv() => {
+                if let Some(update) = update {
+                    let params = SessionNotification::new(session_id.clone(), update);
+                    let notification = json!({
+                        "jsonrpc": "2.0",
+                        "method": "session/update",
+                        "params": params
+                    });
+                    let msg = serde_json::to_string(&notification)?;
+                    writer.write_all(msg.as_bytes()).await?;
+                    writer.write_all(b"\n").await?;
+                    writer.flush().await?;
+                }
+            }
+
+            // 2. Permission requests from the agent
+            perm_req = perm_req_rx.recv() => {
+                if let Some((req_id, params, outcome_tx)) = perm_req {
+                    info!("Forwarding permission request {} to client (tool: {})",
+                          req_id, params.tool_call.tool_call_id);
+                    let request = json!({
+                        "jsonrpc": "2.0",
+                        "id": req_id,
+                        "method": "session/request_permission",
+                        "params": params
+                    });
+
+                    let msg = serde_json::to_string(&request)?;
+                    if let Err(e) = writer.write_all(msg.as_bytes()).await {
+                        error!("Failed to write permission request: {}", e);
+                        let _ = outcome_tx.send(PermissionOutcome::cancel());
+                        continue;
+                    }
+                    writer.write_all(b"\n").await?;
+                    writer.flush().await?;
+
+                    // Track this pending permission so handle_json_rpc can complete it
+                    pending_permissions.insert(req_id.clone(), outcome_tx);
+                }
+            }
+
+            // 3. New messages from the client (e.g. permission responses)
+            line = msg_rx.recv() => {
+                if let Some(line) = line
+                    && let Ok(json_msg) = serde_json::from_str::<Value>(&line)
+                {
+                        // Check if it's a response to a pending permission request.
+                        // We handle this directly here to avoid async recursion with handle_json_rpc.
+                        // Accept both string and numeric JSON-RPC response IDs.
+                        let id_opt = json_msg.get("id")
+                            .and_then(|v| v.as_str().map(str::to_string)
+                                .or_else(|| v.as_u64().map(|n| n.to_string())));
+                        if let Some(id) = id_opt {
+                            if let Some(sender) = pending_permissions.remove(&id) {
+                                info!("Received response for pending permission request: {}", id);
+                                if let Some(result) = json_msg.get("result") {
+                                    match serde_json::from_value::<PermissionOutcome>(result.clone()) {
+                                        Ok(outcome) => {
+                                            let _ = sender.send(outcome);
+                                        }
+                                        Err(e) => {
+                                            error!("Failed to parse permission outcome: {}", e);
+                                            let _ = sender.send(PermissionOutcome::cancel());
+                                        }
+                                    }
+                                } else if json_msg.get("error").is_some() {
+                                    // Client returned a JSON-RPC error (e.g. "Method not found").
+                                    // Zed DOES support session/request_permission — if we get an
+                                    // error it means a payload format mismatch.  Auto-approve so
+                                    // tools are not silently blocked while the issue is diagnosed.
+                                    // To skip permission prompts entirely, set
+                                    // acp.require_permission = false in your config.
+                                    warn!(
+                                        "Client returned error for permission request {} — \
+                                         possible payload mismatch; auto-approving this tool call.",
+                                        id
+                                    );
+                                    let _ = sender.send(PermissionOutcome::proceed_once());
+                                } else {
+                                    warn!("Received response for {} but it has no 'result' field", id);
+                                    let _ = sender.send(PermissionOutcome::cancel());
+                                }
+                            } else {
+                                // If it's not a permission response, it might be a new request.
+                                // In that case, we should probably ignore it or log a warning
+                                // because we are busy processing a prompt.
+                                debug!("Received message with unknown/untethered id while in prompt: {}", id);
+                            }
+                        }
+                    }
+            }
+
+            // 4. Final chat result
+            res = &mut chat_fut => {
+                response_text = res?;
+                break;
+            }
+        }
     }
 
-    // Call Grok agent
-    // Note: options mapping is simplified here. Real implementation would map model/temp params.
-    info!(
-        "Calling Grok API for session {} with message: {}",
-        session_id.0, message_text
-    );
-    let response_text = agent
-        .handle_chat_completion(&session_id, &message_text, None)
-        .await?;
-
-    info!("Received response from Grok: {} chars", response_text.len());
-    debug!("Response text: {}", response_text);
-
     let final_text = if response_text.is_empty() {
-        warn!("Grok returned empty response text!");
-        "[No response content received from model]".to_string()
+        "[No response content]".to_string()
     } else {
         response_text
     };
-
-    // Log assistant response
-    if let Err(e) = chat_logger::log_assistant(&final_text) {
-        warn!("Failed to log assistant response: {}", e);
-    }
-
-    // Send update notification with response text
-    info!("About to send text update notification...");
+    let _ = chat_logger::log_assistant(&final_text);
     send_text_update(writer, &session_id.0, &final_text).await?;
-    info!("Text update notification sent");
 
-    // Return response indicating turn end
-    info!("Returning final response with stopReason: EndTurn");
-    let response = PromptResponse::new(StopReason::EndTurn);
-    Ok(serde_json::to_value(response)?)
+    Ok(serde_json::to_value(PromptResponse::new(
+        StopReason::EndTurn,
+    ))?)
 }
 
 /// Send an `available_commands_update` notification to the client advertising

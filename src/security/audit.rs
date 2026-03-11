@@ -165,7 +165,7 @@ impl AuditLogger {
         // Read all lines and parse
         let mut logs: Vec<ExternalAccessLog> = reader
             .lines()
-            .filter_map(|line| line.ok())
+            .map_while(Result::ok)
             .filter_map(|line| {
                 serde_json::from_str(&line)
                     .map_err(|e| {
@@ -177,7 +177,7 @@ impl AuditLogger {
             .collect();
 
         // Sort by timestamp (most recent first)
-        logs.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        logs.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
 
         // Take only the requested count
         logs.truncate(count);
@@ -202,11 +202,11 @@ impl AuditLogger {
 
         let mut logs: Vec<ExternalAccessLog> = reader
             .lines()
-            .filter_map(|line| line.ok())
+            .map_while(Result::ok)
             .filter_map(|line| serde_json::from_str(&line).ok())
             .collect();
 
-        logs.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        logs.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
 
         Ok(logs)
     }
@@ -301,7 +301,7 @@ impl AuditLogger {
 
         // Convert to vector and sort
         let mut sorted: Vec<(String, usize)> = path_counts.into_iter().collect();
-        sorted.sort_by(|a, b| b.1.cmp(&a.1));
+        sorted.sort_by_key(|b| std::cmp::Reverse(b.1));
         sorted.truncate(count);
 
         Ok(sorted)

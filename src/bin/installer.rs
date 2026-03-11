@@ -158,10 +158,10 @@ fn check_and_remove_old_cargo_install() {
             println!("Found old version at: {}", cargo_grok.display());
 
             // Try to get version
-            if let Ok(output) = Command::new(&cargo_grok).arg("--version").output() {
-                if let Ok(version) = String::from_utf8(output.stdout) {
-                    println!("Old version: {}", version.trim());
-                }
+            if let Ok(output) = Command::new(&cargo_grok).arg("--version").output()
+                && let Ok(version) = String::from_utf8(output.stdout)
+            {
+                println!("Old version: {}", version.trim());
             }
 
             print!(
@@ -213,11 +213,11 @@ fn check_and_remove_old_cargo_install() {
 fn setup_context(root_dir: &Path) {
     if let Some(home_dir) = dirs::home_dir() {
         let grok_dir = home_dir.join(".grok");
-        if !grok_dir.exists() {
-            if let Err(e) = fs::create_dir_all(&grok_dir) {
-                eprintln!("Failed to create .grok directory: {}", e);
-                return;
-            }
+        if !grok_dir.exists()
+            && let Err(e) = fs::create_dir_all(&grok_dir)
+        {
+            eprintln!("Failed to create .grok directory: {}", e);
+            return;
         }
 
         let source_context = root_dir.join("context.md");
@@ -421,10 +421,10 @@ fn install_additional_files(root_dir: &Path, install_dir: &Path) {
     // Install LICENSE
     let license_src = root_dir.join("LICENSE");
     let license_dst = base_install_dir.join("LICENSE");
-    if license_src.exists() {
-        if let Err(e) = fs::copy(&license_src, &license_dst) {
-            eprintln!("Failed to copy LICENSE: {}", e);
-        }
+    if license_src.exists()
+        && let Err(e) = fs::copy(&license_src, &license_dst)
+    {
+        eprintln!("Failed to copy LICENSE: {}", e);
     }
 
     // Create docs directory
@@ -466,30 +466,28 @@ fn install_additional_files(root_dir: &Path, install_dir: &Path) {
     for (src_path, dst_name) in core_docs {
         let src = root_dir.join(src_path);
         let dst = docs_dir.join(dst_name);
-        if src.exists() {
-            if let Err(e) = fs::copy(&src, &dst) {
-                eprintln!("Failed to copy {}: {}", src_path, e);
-            }
+        if src.exists()
+            && let Err(e) = fs::copy(&src, &dst)
+        {
+            eprintln!("Failed to copy {}: {}", src_path, e);
         }
     }
 
     // Install Doc/docs/ files
     let doc_docs_dir = root_dir.join("Doc").join("docs");
-    if doc_docs_dir.exists() {
-        if let Ok(entries) = fs::read_dir(&doc_docs_dir) {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.is_file() {
-                    if let Some(ext) = path.extension() {
-                        if ext == "md" {
-                            if let Some(filename) = path.file_name() {
-                                let dst = docs_dir.join(filename);
-                                if let Err(e) = fs::copy(&path, &dst) {
-                                    eprintln!("Failed to copy {}: {}", path.display(), e);
-                                }
-                            }
-                        }
-                    }
+    if doc_docs_dir.exists()
+        && let Ok(entries) = fs::read_dir(&doc_docs_dir)
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file()
+                && let Some(ext) = path.extension()
+                && ext == "md"
+                && let Some(filename) = path.file_name()
+            {
+                let dst = docs_dir.join(filename);
+                if let Err(e) = fs::copy(&path, &dst) {
+                    eprintln!("Failed to copy {}: {}", path.display(), e);
                 }
             }
         }
@@ -498,10 +496,10 @@ fn install_additional_files(root_dir: &Path, install_dir: &Path) {
     // Install example skills
     let skills_src = root_dir.join("examples").join("skills");
     let skills_dst = base_install_dir.join("examples").join("skills");
-    if skills_src.exists() {
-        if let Err(e) = copy_dir_recursive(&skills_src, &skills_dst) {
-            eprintln!("Failed to copy example skills: {}", e);
-        }
+    if skills_src.exists()
+        && let Err(e) = copy_dir_recursive(&skills_src, &skills_dst)
+    {
+        eprintln!("Failed to copy example skills: {}", e);
     }
 
     println!("Documentation and examples installed successfully.");

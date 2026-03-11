@@ -13,6 +13,63 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [0.1.6] - 2026-03-06
 
+### Fixed
+
+- **ACP permission outcome wire format fix** (`src/acp/protocol.rs`)
+  - **Root cause**: `OutcomeDetail::Selected { option_id }` was serializing to `{"outcome":"selected","option_id":"..."}` (snake_case) instead of `{"outcome":"selected","optionId":"..."}` (camelCase) as required by the ACP spec.
+  - Serde's `rename_all = "camelCase"` at the **enum** level only renames variant names, not fields inside struct variants. The field needed an explicit `#[serde(rename = "optionId")]` annotation.
+  - This was a silent bug: the agent correctly sent `session/request_permission` requests, but when a client echoed back `{"optionId":"proceed_always"}` the agent could not deserialize it, causing every "Always Allow" permission response to fall through to the cancel path.
+  - Fixed by adding `#[serde(rename = "optionId")]` to the `option_id` field in `OutcomeDetail::Selected`.
+  - All 132 unit + integration tests pass; Clippy reports zero warnings. (Source: AI)
+
+- **ACP file-reading broken in Zed** (`src/cli/commands/acp.rs`, `src/config/mod.rs`, `src/acp/protocol.rs`)
+  - **Root cause 1 — Permission gate silently blocked all tools**: `acp.require_permission` defaulted to
+    `true`, causing the agent to send a `session/request_permission` JSON-RPC request to Zed before every
+    tool call.  Zed does not implement this method and returns a JSON-RPC error response; the agent was
+    treating that error as a user "cancel", injecting `"User rejected the tool execution."` into every
+    tool result and preventing any file read or directory listing from completing.
+    - Changed `acp.require_permission` default to `false` (matches the documented intent for clients that
+      don't yet support the permission dialog).
+    - Updated `.grok/config.toml` to explicitly set `require_permission = false` with an explanatory
+      comment.
+    - When a client returns a JSON-RPC error for `session/request_permission`, the agent now auto-approves
+      the tool call (`proceed_once`) instead of silently cancelling it, and logs a `WARN` suggesting the
+      config flag.
+    - Added `PermissionOutcome::proceed_once()` convenience constructor (mirrors the existing `::cancel()`).
+    - Both the `handle_session_prompt` select-loop path and the `handle_json_rpc` outer-loop path received
+      the same fix so behaviour is consistent regardless of when the response arrives.
+    - Permission-response matching now accepts both string and numeric JSON-RPC response IDs for broader
+      client compatibility.
+  - **Root cause 2 — Windows `file:///` URI mis-parsed as UNC path**: `resolve_workspace_path` stripped
+    only 7 bytes from `file:///H:/GitHub/project` (removing `file://`, leaving `/H:/…`).  After replacing
+    `/` with `\` on Windows the result was `\H:\…`, which Windows treats as a UNC path prefix.
+    `PathBuf::canonicalize()` failed, the fallback path was never added to the trusted-directory list, and
+    every subsequent file access for that workspace was denied.
+    - The Windows normalisation block now also detects the `\X:\path` pattern (backslash + drive-letter +
+      colon) produced by decoding a Windows file URI and strips the leading backslash → `X:\path`.
+    - Git-bash / WSL `\x\path` → `X:\path` conversion is preserved as before.
+
+### Added
+
+- **ACP Gemini-style permission UI** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`, `src/config/mod.rs`)
+  - Implements the interactive `session/request_permission` RPC as specified in the ACP protocol.
+  - The agent now pauses before every tool execution to request explicit user permission via the client (e.g. Zed).
+  - Three outcome options are supported:
+    - **Proceed Once**: Executes the current tool call; subsequent calls for the same tool will prompt again.
+    - **Proceed Always**: Executes the current tool call and adds the tool to an `"always_allow"` set for the duration of the session, suppressing future prompts for that specific tool.
+    - **Cancel**: Rejects the tool execution; the agent receives a failure message and continues its loop gracefully.
+  - **Non-blocking Bidirectional Communication**: Refactored the ACP session handler to use a background reader task, allowing the agent to wait for user permission without deadlocking the JSON-RPC stream.
+  - **New Configuration Flags**:
+    - `acp.require_permission` (default: `true`): Enable or disable the permission gate.
+    - `acp.permission_timeout_secs` (default: `60`): How long to wait for a user response before failing the tool call.
+  - **Resilience**: Automatically cancels pending permissions on network drops or IO errors, preventing the agent from hanging.
+  - Comprehensive unit and integration tests covering all permission outcomes and timeout scenarios.
+  - Source: AI (Claude Sonnet 4.6) — implemented as Task #29 and #30 in the `.zed/task_list.json`.
+
+---
+
+## [0.1.61-pre] - 2026-03-06
+
 ### Added
 
 - **ACP Slash Commands** (`src/acp/slash_commands.rs`, `src/acp/protocol.rs`, `src/cli/commands/acp.rs`)
