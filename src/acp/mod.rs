@@ -62,8 +62,10 @@ impl PermissionBridge {
 
 /// Grok AI agent implementation for ACP
 pub struct GrokAcpAgent {
-    /// Grok API client
-    grok_client: GrokClient,
+    /// Grok API client — `None` when no API key is configured at startup.
+    /// The key is only required when making actual API calls; the agent can
+    /// still respond to `initialize` and declare its auth requirements.
+    grok_client: Option<GrokClient>,
 
     /// Agent configuration
     config: Config,
@@ -177,13 +179,29 @@ impl Default for SessionConfig {
 impl GrokAcpAgent {
     /// Create a new Grok ACP agent
     pub async fn new(config: Config, default_model: Option<String>) -> Result<Self> {
-        let api_key = config
-            .api_key
-            .as_ref()
-            .ok_or_else(|| anyhow!("API key not configured"))?;
-
-        let grok_client =
-            GrokClient::with_settings(api_key, config.timeout_secs, config.max_retries)?;
+        // Build the API client only when an API key is available.
+        // In ACP stdio mode the agent MUST be able to start up and respond to
+        // `initialize` (declaring its auth requirements) even before the user
+        // has supplied a key, so we defer the hard error to the first actual
+        // API call rather than failing here.
+        let grok_client = if let Some(ref api_key) = config.api_key {
+            match GrokClient::with_settings(api_key, config.timeout_secs, config.max_retries) {
+                Ok(client) => {
+                    info!("✓ Grok API client initialised");
+                    Some(client)
+                }
+                Err(e) => {
+                    warn!(
+                        "Failed to create Grok client (will retry on first API call): {}",
+                        e
+                    );
+                    None
+                }
+            }
+        } else {
+            info!("No API key configured at startup — set GROK_API_KEY to enable API calls");
+            None
+        };
 
         let capabilities = Self::create_capabilities();
 
@@ -202,6 +220,21 @@ impl GrokAcpAgent {
             security,
             hook_manager: Arc::new(RwLock::new(HookManager::new())),
             default_model,
+        })
+    }
+
+    /// Return a reference to the underlying [`GrokClient`], or a descriptive
+    /// error if no API key was configured when the agent was created.
+    ///
+    /// Call this inside any method that needs to reach the xAI API instead of
+    /// accessing `self.grok_client` directly.
+    fn get_client(&self) -> Result<&GrokClient> {
+        self.grok_client.as_ref().ok_or_else(|| {
+            anyhow!(
+                "API key not configured. \
+                 Set the GROK_API_KEY environment variable and restart the agent, \
+                 or use 'grok config set api_key <key>'."
+            )
         })
     }
 
@@ -537,7 +570,7 @@ impl GrokAcpAgent {
                 loop {
                     attempt += 1;
                     match self
-                        .grok_client
+                        .get_client()?
                         .chat_completion_with_history(
                             &session.messages,
                             temperature,
@@ -655,10 +688,11 @@ impl GrokAcpAgent {
                 .map(|tc| !tc.is_empty())
                 .unwrap_or(false);
 
+            let elapsed = start_time.elapsed();
+            let response_text = content_to_string(response_msg.content.as_ref());
+
             if !has_tool_calls {
                 // No tool calls and no explicit stop - return content
-                let elapsed = start_time.elapsed();
-                let response_text = content_to_string(response_msg.content.as_ref());
                 info!(
                     "✨ Chat completion finished in {:?} ({} loops, {} chars)",
                     elapsed,
@@ -669,7 +703,9 @@ impl GrokAcpAgent {
             }
 
             // We have tool calls to process
-            let tool_calls = response_msg.tool_calls.as_ref().unwrap();
+            let Some(tool_calls) = response_msg.tool_calls.as_ref() else {
+                return Ok(response_text);
+            };
             info!("🛠️  Processing {} tool calls", tool_calls.len());
 
             for (tool_idx, tool_call) in tool_calls.iter().enumerate() {
@@ -1022,7 +1058,7 @@ impl GrokAcpAgent {
             .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
 
         let response_with_finish = self
-            .grok_client
+            .get_client()?
             .chat_completion_with_history(
                 &messages,
                 session.config.temperature,

@@ -22,10 +22,11 @@ use tokio::sync::{RwLock, oneshot};
 use tracing::{debug, error, info, warn};
 
 use crate::acp::protocol::{
-    AGENT_METHOD_NAMES, AgentCapabilities, AvailableCommandsUpdate, ContentBlock, ContentChunk,
-    Implementation, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
-    PermissionOutcome, PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionParams,
-    SessionId, SessionNotification, SessionUpdate, StopReason, TextContent,
+    AGENT_METHOD_NAMES, AgentCapabilities, AuthEnvVar, AuthMethod, AvailableCommandsUpdate,
+    ContentBlock, ContentChunk, Implementation, InitializeRequest, InitializeResponse,
+    NewSessionRequest, NewSessionResponse, PermissionOutcome, PromptRequest, PromptResponse,
+    ProtocolVersion, RequestPermissionParams, SessionId, SessionNotification, SessionUpdate,
+    StopReason, TextContent,
 };
 use crate::acp::slash_commands::{
     self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
@@ -293,15 +294,18 @@ where
 
         let params = msg.get("params").cloned().unwrap_or(json!({}));
 
-        let response_result = if method == AGENT_METHOD_NAMES.initialize {
-            handle_initialize(&params, agent).await
+        let (response_result, is_method_not_found) = if method == AGENT_METHOD_NAMES.initialize {
+            (handle_initialize(&params, agent).await, false)
         } else if method == AGENT_METHOD_NAMES.session_new {
-            handle_session_new(&params, agent).await
+            (handle_session_new(&params, agent).await, false)
         } else if method == AGENT_METHOD_NAMES.session_prompt {
-            handle_session_prompt(&params, agent, writer, pending_permissions, msg_rx).await
+            (
+                handle_session_prompt(&params, agent, writer, pending_permissions, msg_rx).await,
+                false,
+            )
         } else {
             warn!("Unknown method: {}", method);
-            Err(anyhow!("Method not found: {}", method))
+            (Err(anyhow!("Method not found: {}", method)), true)
         };
 
         let response = match response_result {
@@ -314,7 +318,7 @@ where
                 "jsonrpc": "2.0",
                 "id": id,
                 "error": {
-                    "code": -32601,
+                    "code": if is_method_not_found { -32601 } else { -32603 },
                     "message": e.to_string()
                 }
             }),
@@ -431,7 +435,13 @@ fn resolve_workspace_path(raw: &str) -> PathBuf {
         {
             if s.chars().nth(2) == Some('\\') {
                 // Git-bash: \h\path → H:\path
-                let drive = s.chars().nth(1).unwrap().to_uppercase().next().unwrap();
+                let drive = s
+                    .chars()
+                    .nth(1)
+                    .unwrap_or('C')
+                    .to_uppercase()
+                    .next()
+                    .unwrap_or('C');
                 format!("{}:{}", drive, &s[2..])
             } else if s.chars().nth(2) == Some(':') {
                 // Windows file URI: \H:\path → H:\path
@@ -557,6 +567,27 @@ fn trust_workspace_from_uri(uri: &str, agent: &GrokAcpAgent) {
     agent.security.add_trusted_directory(&workspace_root);
 }
 
+/// Build the list of authentication methods that grok-cli supports.
+///
+/// The ACP registry verify script reads `authMethods` from the `initialize`
+/// response and reports them as `{id}({type})`.  Declaring the env-var auth
+/// method here lets the registry mark the agent as "Auth OK: xai-api-key(env_var)"
+/// even when no key is present in the sandbox environment.
+fn build_auth_methods() -> Vec<AuthMethod> {
+    vec![
+        AuthMethod::env_var(
+            "xai-api-key",
+            "xAI API Key",
+            vec![AuthEnvVar::new("GROK_API_KEY").with_label("xAI / Grok API Key")],
+        )
+        .with_description(
+            "API key from the xAI developer console. \
+             Set the GROK_API_KEY environment variable or run 'grok config set api_key <key>'.",
+        )
+        .with_link("https://console.x.ai/"),
+    ]
+}
+
 async fn handle_initialize(params: &Value, agent: &GrokAcpAgent) -> Result<Value> {
     info!("Received initialize request with params: {}", params);
 
@@ -609,10 +640,13 @@ async fn handle_initialize(params: &Value, agent: &GrokAcpAgent) -> Result<Value
     caps.session_capabilities = crate::acp::protocol::SessionCapabilities::new();
     // Configure other capabilities as needed
 
-    // Echo back the client's protocol version
+    // Echo back the client's protocol version and declare auth requirements so
+    // ACP clients (and the acp_registry verifier) know what credentials to
+    // request from the user before the first session/prompt.
     let response = InitializeResponse::new(&req.protocol_version)
         .agent_capabilities(caps)
-        .agent_info(Implementation::new("grok-cli", env!("CARGO_PKG_VERSION")));
+        .agent_info(Implementation::new("grok-cli", env!("CARGO_PKG_VERSION")))
+        .auth_methods(build_auth_methods());
 
     info!(
         "Sending initialize response: protocol_version={}",
@@ -855,53 +889,61 @@ where
 
             // 3. New messages from the client (e.g. permission responses)
             line = msg_rx.recv() => {
-                if let Some(line) = line
-                    && let Ok(json_msg) = serde_json::from_str::<Value>(&line)
-                {
-                        // Check if it's a response to a pending permission request.
-                        // We handle this directly here to avoid async recursion with handle_json_rpc.
-                        // Accept both string and numeric JSON-RPC response IDs.
-                        let id_opt = json_msg.get("id")
-                            .and_then(|v| v.as_str().map(str::to_string)
-                                .or_else(|| v.as_u64().map(|n| n.to_string())));
-                        if let Some(id) = id_opt {
-                            if let Some(sender) = pending_permissions.remove(&id) {
-                                info!("Received response for pending permission request: {}", id);
-                                if let Some(result) = json_msg.get("result") {
-                                    match serde_json::from_value::<PermissionOutcome>(result.clone()) {
-                                        Ok(outcome) => {
-                                            let _ = sender.send(outcome);
+                match line {
+                    Some(line) => {
+                        if let Ok(json_msg) = serde_json::from_str::<Value>(&line) {
+                            // Check if it's a response to a pending permission request.
+                            // We handle this directly here to avoid async recursion with handle_json_rpc.
+                            // Accept both string and numeric JSON-RPC response IDs.
+                            let id_opt = json_msg.get("id")
+                                .and_then(|v| v.as_str().map(str::to_string)
+                                    .or_else(|| v.as_u64().map(|n| n.to_string())));
+                            if let Some(id) = id_opt {
+                                if let Some(sender) = pending_permissions.remove(&id) {
+                                    info!("Received response for pending permission request: {}", id);
+                                    if let Some(result) = json_msg.get("result") {
+                                        match serde_json::from_value::<PermissionOutcome>(result.clone()) {
+                                            Ok(outcome) => {
+                                                let _ = sender.send(outcome);
+                                            }
+                                            Err(e) => {
+                                                error!("Failed to parse permission outcome: {}", e);
+                                                let _ = sender.send(PermissionOutcome::cancel());
+                                            }
                                         }
-                                        Err(e) => {
-                                            error!("Failed to parse permission outcome: {}", e);
-                                            let _ = sender.send(PermissionOutcome::cancel());
-                                        }
+                                    } else if json_msg.get("error").is_some() {
+                                        // Client returned a JSON-RPC error (e.g. "Method not found").
+                                        // Zed DOES support session/request_permission — if we get an
+                                        // error it means a payload format mismatch.  Auto-approve so
+                                        // tools are not silently blocked while the issue is diagnosed.
+                                        // To skip permission prompts entirely, set
+                                        // acp.require_permission = false in your config.
+                                        warn!(
+                                            "Client returned error for permission request {} — \
+                                             possible payload mismatch; auto-approving this tool call.",
+                                            id
+                                        );
+                                        let _ = sender.send(PermissionOutcome::proceed_once());
+                                    } else {
+                                        warn!("Received response for {} but it has no 'result' field", id);
+                                        let _ = sender.send(PermissionOutcome::cancel());
                                     }
-                                } else if json_msg.get("error").is_some() {
-                                    // Client returned a JSON-RPC error (e.g. "Method not found").
-                                    // Zed DOES support session/request_permission — if we get an
-                                    // error it means a payload format mismatch.  Auto-approve so
-                                    // tools are not silently blocked while the issue is diagnosed.
-                                    // To skip permission prompts entirely, set
-                                    // acp.require_permission = false in your config.
-                                    warn!(
-                                        "Client returned error for permission request {} — \
-                                         possible payload mismatch; auto-approving this tool call.",
-                                        id
-                                    );
-                                    let _ = sender.send(PermissionOutcome::proceed_once());
                                 } else {
-                                    warn!("Received response for {} but it has no 'result' field", id);
-                                    let _ = sender.send(PermissionOutcome::cancel());
+                                    // If it's not a permission response, it might be a new request.
+                                    // In that case, we should probably ignore it or log a warning
+                                    // because we are busy processing a prompt.
+                                    debug!("Received message with unknown/untethered id while in prompt: {}", id);
                                 }
-                            } else {
-                                // If it's not a permission response, it might be a new request.
-                                // In that case, we should probably ignore it or log a warning
-                                // because we are busy processing a prompt.
-                                debug!("Received message with unknown/untethered id while in prompt: {}", id);
                             }
                         }
                     }
+                    None => {
+                        // The channel was closed (e.g., client disconnected).
+                        // Break out of the loop to avoid an infinite spin.
+                        warn!("Client disconnected while processing prompt");
+                        return Err(anyhow!("Client disconnected during prompt"));
+                    }
+                }
             }
 
             // 4. Final chat result
