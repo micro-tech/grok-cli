@@ -172,6 +172,8 @@ max_tool_loop_iterations = 25
 # so leaving this true causes every tool call to be silently blocked.
 # Set to true only when using a client that supports session/request_permission.
 require_permission = false
+permission_timeout_secs = 300
+max_history_messages = 40
 
 [mcp.servers.github]
 type = "stdio"

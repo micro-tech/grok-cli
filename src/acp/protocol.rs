@@ -127,6 +127,99 @@ where
     }
 }
 
+/// A single environment-variable credential descriptor used inside an
+/// [`AuthMethod`] of type `env_var`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthEnvVar {
+    /// The name of the environment variable (e.g. `"GROK_API_KEY"`).
+    pub name: String,
+    /// Optional human-readable label for the variable shown in editor UI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub label: Option<String>,
+    /// Whether the value should be treated as a secret (default: `true`).
+    #[serde(default = "auth_env_var_default_secret")]
+    pub secret: bool,
+}
+
+fn auth_env_var_default_secret() -> bool {
+    true
+}
+
+impl AuthEnvVar {
+    /// Create a simple secret env-var descriptor.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            label: None,
+            secret: true,
+        }
+    }
+
+    /// Attach a human-readable label shown in the editor UI.
+    pub fn with_label(mut self, label: impl Into<String>) -> Self {
+        self.label = Some(label.into());
+        self
+    }
+}
+
+/// Declares one authentication method supported by this agent.
+///
+/// Serialised as:
+/// ```json
+/// {
+///   "id": "xai-api-key",
+///   "name": "xAI API Key",
+///   "type": "env_var",
+///   "vars": [{ "name": "GROK_API_KEY" }],
+///   "link": "https://console.x.ai/"
+/// }
+/// ```
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AuthMethod {
+    /// Stable identifier used by the client to reference this method.
+    pub id: String,
+    /// Human-readable display name.
+    pub name: String,
+    /// Optional description shown in editor UI.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+    /// Auth method type: `"env_var"` or `"agent"`.
+    #[serde(rename = "type")]
+    pub kind: String,
+    /// Required for `env_var` type — the environment variables to collect.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub vars: Vec<AuthEnvVar>,
+    /// Optional URL linking to a page where the user can obtain credentials.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub link: Option<String>,
+}
+
+impl AuthMethod {
+    /// Create an `env_var` auth method.
+    pub fn env_var(id: impl Into<String>, name: impl Into<String>, vars: Vec<AuthEnvVar>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            description: None,
+            kind: "env_var".to_string(),
+            vars,
+            link: None,
+        }
+    }
+
+    /// Attach an optional description.
+    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
+        self.description = Some(desc.into());
+        self
+    }
+
+    /// Attach an optional link to a credential page.
+    pub fn with_link(mut self, link: impl Into<String>) -> Self {
+        self.link = Some(link.into());
+        self
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct InitializeResponse {
     #[serde(
@@ -138,6 +231,11 @@ pub struct InitializeResponse {
     pub agent_capabilities: AgentCapabilities,
     #[serde(rename = "agentInfo")]
     pub agent_info: Implementation,
+    /// Authentication methods this agent supports.  Declared during
+    /// `initialize` so that ACP clients can show appropriate credential UI
+    /// before the first `session/prompt`.
+    #[serde(rename = "authMethods", skip_serializing_if = "Vec::is_empty", default)]
+    pub auth_methods: Vec<AuthMethod>,
 }
 
 impl InitializeResponse {
@@ -149,6 +247,7 @@ impl InitializeResponse {
                 name: "grok-cli".to_string(),
                 version: env!("CARGO_PKG_VERSION").to_string(),
             },
+            auth_methods: Vec::new(),
         }
     }
 
@@ -159,6 +258,12 @@ impl InitializeResponse {
 
     pub fn agent_info(mut self, info: Implementation) -> Self {
         self.agent_info = info;
+        self
+    }
+
+    /// Declare the authentication methods this agent supports.
+    pub fn auth_methods(mut self, methods: Vec<AuthMethod>) -> Self {
+        self.auth_methods = methods;
         self
     }
 }
@@ -182,21 +287,144 @@ impl Implementation {
 pub struct NewSessionRequest {
     #[serde(default, alias = "sessionCapabilities")]
     pub capabilities: Value,
+    /// Accepts `workspaceRoot` (Zed).
     #[serde(default, alias = "workspaceRoot")]
     pub workspace_root: Option<String>,
-    #[serde(default, alias = "workingDirectory")]
+    /// Accepts `workingDirectory` (Zed) or `cwd` (Gemini CLI).
+    #[serde(default, alias = "workingDirectory", alias = "cwd")]
     pub working_directory: Option<String>,
+    /// MCP server configurations forwarded by the client (Gemini CLI sends this).
+    /// Stored for future MCP bridging; ignored for now.
+    #[serde(default, rename = "mcpServers")]
+    pub mcp_servers: Vec<Value>,
 }
+
+// ---------------------------------------------------------------------------
+// ACP mode / model metadata returned in session/new response
+// (required by Gemini CLI to complete its initialisation handshake)
+// ---------------------------------------------------------------------------
+
+/// A single interaction mode advertised to the client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpModeInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl AcpModeInfo {
+    pub fn new(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            description: None,
+        }
+    }
+    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
+        self.description = Some(desc.into());
+        self
+    }
+}
+
+/// The full modes block returned inside session/new responses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpModesInfo {
+    #[serde(rename = "availableModes")]
+    pub available_modes: Vec<AcpModeInfo>,
+    #[serde(rename = "currentModeId")]
+    pub current_mode_id: String,
+}
+
+impl AcpModesInfo {
+    pub fn new(available_modes: Vec<AcpModeInfo>, current_mode_id: impl Into<String>) -> Self {
+        Self {
+            available_modes,
+            current_mode_id: current_mode_id.into(),
+        }
+    }
+}
+
+/// A single model entry advertised to the client.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpModelInfo {
+    #[serde(rename = "modelId")]
+    pub model_id: String,
+    pub name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub description: Option<String>,
+}
+
+impl AcpModelInfo {
+    pub fn new(model_id: impl Into<String>, name: impl Into<String>) -> Self {
+        let id = model_id.into();
+        let nm = name.into();
+        Self {
+            model_id: id,
+            name: nm,
+            description: None,
+        }
+    }
+    pub fn with_description(mut self, desc: impl Into<String>) -> Self {
+        self.description = Some(desc.into());
+        self
+    }
+}
+
+/// The full models block returned inside session/new responses.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AcpModelsInfo {
+    #[serde(rename = "availableModels")]
+    pub available_models: Vec<AcpModelInfo>,
+    #[serde(rename = "currentModelId")]
+    pub current_model_id: String,
+}
+
+impl AcpModelsInfo {
+    pub fn new(available_models: Vec<AcpModelInfo>, current_model_id: impl Into<String>) -> Self {
+        Self {
+            available_models,
+            current_model_id: current_model_id.into(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// session/new response
+// ---------------------------------------------------------------------------
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NewSessionResponse {
     #[serde(rename = "sessionId")]
     pub session_id: SessionId,
+    /// Available interaction modes (e.g. default / autoEdit / yolo / plan).
+    /// Optional so existing Zed integration is unaffected if omitted.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub modes: Option<AcpModesInfo>,
+    /// Available AI models and the currently active model.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub models: Option<AcpModelsInfo>,
 }
 
 impl NewSessionResponse {
     pub fn new(session_id: SessionId) -> Self {
-        Self { session_id }
+        Self {
+            session_id,
+            modes: None,
+            models: None,
+        }
+    }
+
+    /// Attach modes information to the response.
+    pub fn with_modes(mut self, modes: AcpModesInfo) -> Self {
+        self.modes = Some(modes);
+        self
+    }
+
+    /// Attach models information to the response.
+    pub fn with_models(mut self, models: AcpModelsInfo) -> Self {
+        self.models = Some(models);
+        self
     }
 }
 

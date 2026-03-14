@@ -16,13 +16,13 @@ static TELEMETRY_STATE: Mutex<TelemetryState> = Mutex::new(TelemetryState {
 });
 
 pub fn init(enabled: bool, log_path: Option<PathBuf>) {
-    let mut state = TELEMETRY_STATE.lock().unwrap();
+    let mut state = TELEMETRY_STATE.lock().unwrap_or_else(|e| e.into_inner());
     state.enabled = enabled;
     state.log_file = log_path;
 }
 
 pub fn track_event(event: &str, properties: Value) {
-    let state = TELEMETRY_STATE.lock().unwrap();
+    let state = TELEMETRY_STATE.lock().unwrap_or_else(|e| e.into_inner());
     if !state.enabled {
         return;
     }
