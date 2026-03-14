@@ -11,7 +11,7 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
-## [Unreleased]
+## [0.1.7-pre] - 2026-03-14
 
 ### Fixed
 
