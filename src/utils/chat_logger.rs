@@ -156,7 +156,10 @@ impl ChatLogger {
         }
 
         let session_id = session_id.into();
-        let mut current = self.current_session.lock().unwrap();
+        let mut current = self
+            .current_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
 
         // End previous session if exists
         if let Some(prev_session) = current.take() {
@@ -166,7 +169,10 @@ impl ChatLogger {
             );
             drop(current); // Release lock before saving
             self.save_session(&prev_session)?;
-            current = self.current_session.lock().unwrap();
+            current = self
+                .current_session
+                .lock()
+                .unwrap_or_else(|e| e.into_inner());
         }
 
         let session = ChatSession::new(&session_id);
@@ -205,7 +211,10 @@ impl ChatLogger {
             return Ok(());
         }
 
-        let mut current = self.current_session.lock().unwrap();
+        let mut current = self
+            .current_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(session) = current.as_mut() {
             let mut message = ChatMessage::new(role, content);
             if let Some(meta) = metadata {
@@ -229,7 +238,10 @@ impl ChatLogger {
             return Ok(());
         }
 
-        let mut current = self.current_session.lock().unwrap();
+        let mut current = self
+            .current_session
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
         if let Some(mut session) = current.take() {
             session.end_session();
             let session_id = session.session_id.clone();
@@ -444,14 +456,14 @@ static GLOBAL_LOGGER: Mutex<Option<ChatLogger>> = Mutex::new(None);
 /// Initialize the global chat logger
 pub fn init(config: ChatLoggerConfig) -> Result<()> {
     let logger = ChatLogger::new(config)?;
-    let mut global = GLOBAL_LOGGER.lock().unwrap();
+    let mut global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
     *global = Some(logger);
     Ok(())
 }
 
 /// Get a reference to the global logger (if initialized)
 pub fn get_logger() -> Option<ChatLogger> {
-    let global = GLOBAL_LOGGER.lock().unwrap();
+    let global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
     global.as_ref().map(|logger| ChatLogger {
         config: logger.config.clone(),
         current_session: Mutex::new(None),
@@ -460,7 +472,7 @@ pub fn get_logger() -> Option<ChatLogger> {
 
 /// Start a new session using the global logger
 pub fn start_session(session_id: impl Into<String>) -> Result<()> {
-    let global = GLOBAL_LOGGER.lock().unwrap();
+    let global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(logger) = global.as_ref() {
         logger.start_session(session_id)?;
     }
@@ -469,7 +481,7 @@ pub fn start_session(session_id: impl Into<String>) -> Result<()> {
 
 /// Log a user message using the global logger
 pub fn log_user(content: impl Into<String>) -> Result<()> {
-    let global = GLOBAL_LOGGER.lock().unwrap();
+    let global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(logger) = global.as_ref() {
         logger.log_user_message(content)?;
     }
@@ -478,7 +490,7 @@ pub fn log_user(content: impl Into<String>) -> Result<()> {
 
 /// Log an assistant message using the global logger
 pub fn log_assistant(content: impl Into<String>) -> Result<()> {
-    let global = GLOBAL_LOGGER.lock().unwrap();
+    let global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(logger) = global.as_ref() {
         logger.log_assistant_message(content)?;
     }
@@ -487,7 +499,7 @@ pub fn log_assistant(content: impl Into<String>) -> Result<()> {
 
 /// Log a system message using the global logger
 pub fn log_system(content: impl Into<String>) -> Result<()> {
-    let global = GLOBAL_LOGGER.lock().unwrap();
+    let global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(logger) = global.as_ref() {
         logger.log_system_message(content)?;
     }
@@ -496,7 +508,7 @@ pub fn log_system(content: impl Into<String>) -> Result<()> {
 
 /// End the current session using the global logger
 pub fn end_session() -> Result<()> {
-    let global = GLOBAL_LOGGER.lock().unwrap();
+    let global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(logger) = global.as_ref() {
         logger.end_session()?;
     }

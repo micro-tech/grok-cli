@@ -203,7 +203,7 @@ Write-Host "Current version: $version"
 Edit `Cargo.toml`:
 ```toml
 [package]
-version = "0.1.6-pre"  # Update this line
+version = "0.1.7-pre"  # Update this line
 ```
 
 ### Automated Version Bump

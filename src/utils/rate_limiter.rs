@@ -71,7 +71,7 @@ impl UsageStats {
     pub fn record_usage(&mut self, input_tokens: u32, output_tokens: u32) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         let total = input_tokens + output_tokens;
 
@@ -90,7 +90,7 @@ impl UsageStats {
     fn clean_old_history(&mut self, window: Duration) {
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
         let window_secs = window.as_secs();
 
@@ -114,7 +114,7 @@ mod tests {
         let mut stats = UsageStats::default();
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .unwrap()
+            .unwrap_or_default()
             .as_secs();
 
         // Add an old record (61 seconds ago)

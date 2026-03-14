@@ -156,7 +156,7 @@ impl SecurityPolicy {
                 .external_access_config
                 .session_trusted_paths
                 .lock()
-                .expect("Session trusted paths mutex poisoned");
+                .unwrap_or_else(|e| e.into_inner());
             session_paths
                 .iter()
                 .any(|trusted| resolved.starts_with(trusted))
@@ -251,7 +251,7 @@ impl SecurityPolicy {
                 .external_access_config
                 .session_trusted_paths
                 .lock()
-                .expect("Session trusted paths mutex poisoned");
+                .unwrap_or_else(|e| e.into_inner());
             if !session_paths.contains(&canonical) {
                 session_paths.push(canonical);
             }
@@ -312,21 +312,21 @@ impl SecurityManager {
     pub fn get_policy(&self) -> SecurityPolicy {
         self.policy
             .lock()
-            .expect("SecurityManager mutex poisoned - this is a bug")
+            .unwrap_or_else(|e| e.into_inner())
             .clone()
     }
 
     pub fn update_external_access_config(&self, config: ExternalAccessConfig) {
         self.policy
             .lock()
-            .expect("SecurityManager mutex poisoned - this is a bug")
+            .unwrap_or_else(|e| e.into_inner())
             .external_access_config = config;
     }
 
     pub fn add_trusted_directory<P: AsRef<Path>>(&self, path: P) {
         self.policy
             .lock()
-            .expect("SecurityManager mutex poisoned - this is a bug")
+            .unwrap_or_else(|e| e.into_inner())
             .add_trusted_directory(path);
     }
 
@@ -341,7 +341,7 @@ impl SecurityManager {
     pub fn add_session_trusted_path<P: AsRef<Path>>(&self, path: P) {
         self.policy
             .lock()
-            .expect("SecurityManager mutex poisoned - this is a bug")
+            .unwrap_or_else(|e| e.into_inner())
             .add_session_trusted_path(path);
     }
 }

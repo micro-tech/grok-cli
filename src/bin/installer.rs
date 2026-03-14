@@ -26,7 +26,7 @@ fn find_project_root() -> Option<PathBuf> {
 fn main() {
     println!(
         "{}",
-        "Grok CLI Installer v0.1.6-pre for Windows 11"
+        "Grok CLI Installer v0.1.7-pre for Windows 11"
             .green()
             .bold()
     );
@@ -126,7 +126,7 @@ fn install_windows() {
     setup_audit_directory();
 
     println!("\n{}", "Installation Complete!".green().bold());
-    println!("Version: 0.1.6-pre");
+    println!("Version: 0.1.7-pre");
     println!("\nNew features in this version:");
     println!("  • External file access with security controls");
     println!("  • Audit logging for compliance tracking");

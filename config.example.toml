@@ -50,8 +50,16 @@ require_permission = true
 
 # Timeout in seconds to wait for a user's response to a permission prompt.
 # If the user doesn't respond within this window, the tool call fails.
-# Default: 60
-permission_timeout_secs = 60
+# Increase this if you need more time to read the tool description before deciding.
+# Default: 300
+permission_timeout_secs = 300
+
+# Maximum number of conversation turns kept in session context.
+# Older messages beyond this limit are trimmed before each API call to
+# prevent unbounded context growth across long sessions.
+# Increase for longer multi-turn conversations; decrease to save tokens.
+# Default: 40
+max_history_messages = 40
 
 # ── Network (Starlink-optimised) ─────────────────────────────────────────────
 [network]

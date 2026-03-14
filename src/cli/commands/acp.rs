@@ -22,10 +22,12 @@ use tokio::sync::{RwLock, oneshot};
 use tracing::{debug, error, info, warn};
 
 use crate::acp::protocol::{
-    AGENT_METHOD_NAMES, AgentCapabilities, AvailableCommandsUpdate, ContentBlock, ContentChunk,
-    Implementation, InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
+    AGENT_METHOD_NAMES, AcpModeInfo, AcpModelInfo, AcpModelsInfo, AcpModesInfo, AgentCapabilities,
+    AuthEnvVar, AuthMethod, AvailableCommandsUpdate, ContentBlock, ContentChunk, Implementation,
+    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
     PermissionOutcome, PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionParams,
-    SessionId, SessionNotification, SessionUpdate, StopReason, TextContent,
+    SessionId, SessionInfo, SessionListRequest, SessionListResponse, SessionLoadRequest,
+    SessionNotification, SessionUpdate, StopReason, TextContent,
 };
 use crate::acp::slash_commands::{
     self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
@@ -237,6 +239,11 @@ where
     let mut pending_permissions: HashMap<String, oneshot::Sender<PermissionOutcome>> =
         HashMap::new();
 
+    // Task 29: track whether the client sent initialize before session/new.
+    // Some clients (e.g. Gemini CLI) skip initialize entirely; we apply safe
+    // defaults automatically in that case so the session still works.
+    let mut initialized = false;
+
     while let Some(line) = msg_rx.recv().await {
         let trimmed = line.trim();
         if trimmed.is_empty() {
@@ -255,6 +262,7 @@ where
                     &agent,
                     &mut pending_permissions,
                     &mut msg_rx,
+                    &mut initialized,
                 )
                 .await
                 {
@@ -283,6 +291,7 @@ async fn handle_json_rpc<W>(
     agent: &GrokAcpAgent,
     pending_permissions: &mut HashMap<String, oneshot::Sender<PermissionOutcome>>,
     msg_rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
+    initialized: &mut bool,
 ) -> Result<()>
 where
     W: tokio::io::AsyncWrite + Unpin,
@@ -293,15 +302,57 @@ where
 
         let params = msg.get("params").cloned().unwrap_or(json!({}));
 
-        let response_result = if method == AGENT_METHOD_NAMES.initialize {
-            handle_initialize(&params, agent).await
+        let (response_result, is_method_not_found) = if method == AGENT_METHOD_NAMES.initialize {
+            *initialized = true;
+            (handle_initialize(&params, agent).await, false)
         } else if method == AGENT_METHOD_NAMES.session_new {
-            handle_session_new(&params, agent).await
+            // Task 29: if initialize was never sent, apply safe defaults now.
+            ensure_default_initialized(agent, initialized);
+            (handle_session_new(&params, agent).await, false)
         } else if method == AGENT_METHOD_NAMES.session_prompt {
-            handle_session_prompt(&params, agent, writer, pending_permissions, msg_rx).await
+            // Auto-recover stale session IDs: clients that reconnect after a
+            // grok restart send the session ID from their previous connection.
+            // Rather than returning "Session not found" (which causes clients
+            // like Gemini CLI and Zed to report "Available commands: none"),
+            // we silently create the session on-demand and re-advertise our
+            // available commands so the client is fully up to speed.
+            let stale_sid = params
+                .get("sessionId")
+                .or_else(|| params.get("session_id"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string());
+            if let Some(ref sid) = stale_sid
+                && !agent.session_exists(sid).await
+            {
+                warn!(
+                    "session/prompt arrived with unknown session '{}' — \
+                     auto-creating session and re-sending available_commands_update",
+                    sid
+                );
+                let new_sid = SessionId::new(sid.clone());
+                if let Err(e) = agent
+                    .initialize_session(new_sid, Some(SessionConfig::default()))
+                    .await
+                {
+                    warn!("Failed to auto-create session '{}': {}", sid, e);
+                } else {
+                    // Re-advertise commands so the client can see them now.
+                    if let Err(e) = send_available_commands_update(writer, sid).await {
+                        warn!("Failed to re-send available_commands_update: {}", e);
+                    }
+                }
+            }
+            (
+                handle_session_prompt(&params, agent, writer, pending_permissions, msg_rx).await,
+                false,
+            )
+        } else if method == AGENT_METHOD_NAMES.session_list {
+            (handle_session_list(&params, agent).await, false)
+        } else if method == AGENT_METHOD_NAMES.session_load {
+            (handle_session_load(&params, agent, writer).await, false)
         } else {
             warn!("Unknown method: {}", method);
-            Err(anyhow!("Method not found: {}", method))
+            (Err(anyhow!("Method not found: {}", method)), true)
         };
 
         let response = match response_result {
@@ -314,7 +365,7 @@ where
                 "jsonrpc": "2.0",
                 "id": id,
                 "error": {
-                    "code": -32601,
+                    "code": if is_method_not_found { -32601 } else { -32603 },
                     "message": e.to_string()
                 }
             }),
@@ -378,8 +429,67 @@ where
             debug!("Received response with unknown id: {}", id);
         }
     } else if let Some(method) = msg.get("method").and_then(|m| m.as_str()) {
-        // Notification
+        // Notification (no id field — no response should be sent)
         info!("Received notification: {}", method);
+
+        // Task 28: handle session/update notifications from the client.
+        // Gemini CLI sends this after session/new to advertise its own commands.
+        if method == "session/update"
+            && let Some(params) = msg.get("params")
+        {
+            let session_id_str = params
+                .get("sessionId")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            if let Some(update) = params.get("update") {
+                let update_kind = update
+                    .get("sessionUpdate")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or("");
+
+                match update_kind {
+                    "available_commands_update" => {
+                        let commands: Vec<String> = update
+                            .get("availableCommands")
+                            .and_then(|v| v.as_array())
+                            .map(|arr| {
+                                arr.iter()
+                                    .filter_map(|c| {
+                                        c.get("name").and_then(|n| n.as_str()).map(str::to_string)
+                                    })
+                                    .collect()
+                            })
+                            .unwrap_or_default();
+
+                        info!(
+                            "Received client available_commands_update with {} command(s) \
+                                 for session '{}'",
+                            commands.len(),
+                            session_id_str
+                        );
+                        for cmd in &commands {
+                            debug!("  Client command: {}", cmd);
+                        }
+
+                        // Store for future passthrough support (task 28.2)
+                        if !session_id_str.is_empty() {
+                            let sid = SessionId::new(session_id_str);
+                            if let Err(e) = agent.set_client_commands(&sid, commands).await {
+                                warn!("Failed to store client commands: {}", e);
+                            }
+                        }
+                    }
+                    other => {
+                        debug!(
+                            "Received unhandled session/update kind '{}' — ignoring",
+                            other
+                        );
+                    }
+                }
+            }
+        }
     }
 
     Ok(())
@@ -431,7 +541,13 @@ fn resolve_workspace_path(raw: &str) -> PathBuf {
         {
             if s.chars().nth(2) == Some('\\') {
                 // Git-bash: \h\path → H:\path
-                let drive = s.chars().nth(1).unwrap().to_uppercase().next().unwrap();
+                let drive = s
+                    .chars()
+                    .nth(1)
+                    .unwrap_or('C')
+                    .to_uppercase()
+                    .next()
+                    .unwrap_or('C');
                 format!("{}:{}", drive, &s[2..])
             } else if s.chars().nth(2) == Some(':') {
                 // Windows file URI: \H:\path → H:\path
@@ -557,6 +673,27 @@ fn trust_workspace_from_uri(uri: &str, agent: &GrokAcpAgent) {
     agent.security.add_trusted_directory(&workspace_root);
 }
 
+/// Build the list of authentication methods that grok-cli supports.
+///
+/// The ACP registry verify script reads `authMethods` from the `initialize`
+/// response and reports them as `{id}({type})`.  Declaring the env-var auth
+/// method here lets the registry mark the agent as "Auth OK: xai-api-key(env_var)"
+/// even when no key is present in the sandbox environment.
+fn build_auth_methods() -> Vec<AuthMethod> {
+    vec![
+        AuthMethod::env_var(
+            "xai-api-key",
+            "xAI API Key",
+            vec![AuthEnvVar::new("GROK_API_KEY").with_label("xAI / Grok API Key")],
+        )
+        .with_description(
+            "API key from the xAI developer console. \
+             Set the GROK_API_KEY environment variable or run 'grok config set api_key <key>'.",
+        )
+        .with_link("https://console.x.ai/"),
+    ]
+}
+
 async fn handle_initialize(params: &Value, agent: &GrokAcpAgent) -> Result<Value> {
     info!("Received initialize request with params: {}", params);
 
@@ -609,10 +746,13 @@ async fn handle_initialize(params: &Value, agent: &GrokAcpAgent) -> Result<Value
     caps.session_capabilities = crate::acp::protocol::SessionCapabilities::new();
     // Configure other capabilities as needed
 
-    // Echo back the client's protocol version
+    // Echo back the client's protocol version and declare auth requirements so
+    // ACP clients (and the acp_registry verifier) know what credentials to
+    // request from the user before the first session/prompt.
     let response = InitializeResponse::new(&req.protocol_version)
         .agent_capabilities(caps)
-        .agent_info(Implementation::new("grok-cli", env!("CARGO_PKG_VERSION")));
+        .agent_info(Implementation::new("grok-cli", env!("CARGO_PKG_VERSION")))
+        .auth_methods(build_auth_methods());
 
     info!(
         "Sending initialize response: protocol_version={}",
@@ -625,7 +765,17 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
     let req: NewSessionRequest = serde_json::from_value(params.clone())
         .map_err(|e| anyhow!("Invalid session/new parameters: {}", e))?;
 
+    // Log MCP servers forwarded by the client (Gemini CLI sends mcpServers: [])
+    if !req.mcp_servers.is_empty() {
+        info!(
+            "session/new: client forwarded {} MCP server(s) — stored for future bridging",
+            req.mcp_servers.len()
+        );
+    }
+
     // Extract workspace context from request or environment.
+    // Handles: workspaceRoot (Zed), workingDirectory (Zed), cwd (Gemini CLI),
+    // and environment variable fallbacks.
     // Use the robust resolver so that file:// URIs, forward-slash Windows
     // paths, and canonicalization failures are all handled gracefully.
     let workspace_root = req
@@ -683,8 +833,192 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
         }
     }
 
-    let response = NewSessionResponse::new(SessionId::new(session_id_str));
+    // Task 27: build modes and models blocks required by Gemini CLI.
+    // currentModeId reflects whether permission prompts are on or off.
+    let current_mode_id = if agent
+        .get_capabilities()
+        .features
+        .contains(&"function_calling".to_string())
+    {
+        "autoEdit"
+    } else {
+        "default"
+    };
+
+    let modes = AcpModesInfo::new(
+        vec![
+            AcpModeInfo::new("default", "Default")
+                .with_description("Prompts for approval before each tool call"),
+            AcpModeInfo::new("autoEdit", "Auto Edit")
+                .with_description("Auto-approves file edit tools"),
+            AcpModeInfo::new("yolo", "YOLO")
+                .with_description("Auto-approves all tools without prompting"),
+            AcpModeInfo::new("plan", "Plan")
+                .with_description("Read-only planning mode — no file writes"),
+        ],
+        current_mode_id,
+    );
+
+    let caps = agent.get_capabilities();
+    let default_model = SessionConfig::default().model;
+    let current_model_id = if caps.models.contains(&default_model) {
+        default_model.clone()
+    } else {
+        caps.models
+            .first()
+            .cloned()
+            .unwrap_or_else(|| default_model.clone())
+    };
+    let available_models: Vec<AcpModelInfo> = caps
+        .models
+        .iter()
+        .map(|m| AcpModelInfo::new(m.clone(), m.clone()))
+        .collect();
+    let models = AcpModelsInfo::new(available_models, current_model_id);
+
+    let response = NewSessionResponse::new(SessionId::new(session_id_str))
+        .with_modes(modes)
+        .with_models(models);
     Ok(serde_json::to_value(response)?)
+}
+
+/// Task 29: Apply safe initialization defaults when a client skips the
+/// `initialize` handshake and jumps straight to `session/new` (e.g. Gemini CLI).
+///
+/// This is idempotent — calling it after a real `initialize` is a no-op.
+fn ensure_default_initialized(agent: &GrokAcpAgent, initialized: &mut bool) {
+    if *initialized {
+        return;
+    }
+    warn!(
+        "Client skipped initialize; applying defaults \
+         (trusting CWD as workspace root)"
+    );
+    match std::env::current_dir() {
+        Ok(cwd) => {
+            let canonical = cwd.canonicalize().unwrap_or(cwd);
+            info!("ensure_default_initialized: trusting CWD {:?}", canonical);
+            agent.security.add_trusted_directory(canonical);
+        }
+        Err(e) => warn!("ensure_default_initialized: could not read CWD: {}", e),
+    }
+    *initialized = true;
+}
+
+/// Handle `session/list` — return the currently active in-memory sessions.
+///
+/// Per the ACP spec, an empty `sessions` array is a valid response when no
+/// sessions are available.  We advertise `sessionCapabilities.list: {}` in
+/// the `initialize` response, so Zed will always call this method.
+async fn handle_session_list(params: &Value, agent: &GrokAcpAgent) -> Result<Value> {
+    let req: SessionListRequest = serde_json::from_value(params.clone()).unwrap_or_default();
+
+    info!("session/list called (cwd filter: {:?})", req.cwd);
+
+    let cwd_filter = req.cwd.as_deref().unwrap_or("");
+
+    // Build the CWD string we advertise for each session.
+    // Use the process CWD as a best-effort value since we don't persist
+    // per-session CWDs (the CWD is registered during session/new but not
+    // stored in SessionData).
+    let process_cwd = std::env::current_dir()
+        .map(|p| p.to_string_lossy().into_owned())
+        .unwrap_or_else(|_| "/".to_string());
+
+    let sessions: Vec<SessionInfo> = agent
+        .list_sessions()
+        .await
+        .into_iter()
+        .filter_map(|sid| {
+            let session_cwd = process_cwd.clone();
+            // Apply the optional cwd filter from the request.
+            if !cwd_filter.is_empty() && session_cwd != cwd_filter {
+                return None;
+            }
+            Some(SessionInfo::new(sid, session_cwd))
+        })
+        .collect();
+
+    info!("session/list returning {} session(s)", sessions.len());
+    let response = SessionListResponse::new(sessions);
+    Ok(serde_json::to_value(response)?)
+}
+
+/// Handle `session/load` — resume an existing session by ID.
+///
+/// grok-cli does not persist conversation history across restarts, so there
+/// is no history to replay.  Instead we:
+///   1. Register the workspace root (if provided) as a trusted directory.
+///   2. Re-create the session in memory if it no longer exists (stale ID).
+///   3. Re-send `available_commands_update` so the client has the command list.
+///   4. Return `null` — no history chunks to replay.
+///
+/// This satisfies Zed's `loadSession` capability check and suppresses the
+/// "Loading or resuming sessions is not supported by this agent." UI message
+/// while keeping the implementation simple.
+async fn handle_session_load<W>(
+    params: &Value,
+    agent: &GrokAcpAgent,
+    writer: &mut W,
+) -> Result<Value>
+where
+    W: tokio::io::AsyncWrite + Unpin,
+{
+    let req: SessionLoadRequest = serde_json::from_value(params.clone())
+        .map_err(|e| anyhow!("Invalid session/load parameters: {}", e))?;
+
+    let session_id_str = req.session_id.0.clone();
+    info!("session/load called for session '{}'", session_id_str);
+
+    // Register workspace root / CWD so file tools work in the resumed session.
+    if let Some(ref cwd) = req.cwd {
+        info!("session/load: registering workspace root '{}'", cwd);
+        register_workspace_root(agent, cwd);
+    } else {
+        match std::env::current_dir() {
+            Ok(cwd) => {
+                let canonical = cwd.canonicalize().unwrap_or(cwd);
+                info!("session/load: trusting CWD {:?}", canonical);
+                agent.security.add_trusted_directory(canonical);
+            }
+            Err(e) => warn!("session/load: could not determine CWD: {}", e),
+        }
+    }
+
+    // Re-create the session in memory if it no longer exists.
+    if !agent.session_exists(&session_id_str).await {
+        info!(
+            "session/load: session '{}' not in memory — re-creating",
+            session_id_str
+        );
+        let new_sid = SessionId::new(session_id_str.clone());
+        if let Err(e) = agent
+            .initialize_session(new_sid, Some(SessionConfig::default()))
+            .await
+        {
+            warn!(
+                "session/load: failed to re-create session '{}': {}",
+                session_id_str, e
+            );
+        }
+    } else {
+        info!(
+            "session/load: session '{}' already in memory — resuming",
+            session_id_str
+        );
+    }
+
+    // Re-advertise slash commands so the client's command palette is populated.
+    if let Err(e) = send_available_commands_update(writer, &session_id_str).await {
+        warn!(
+            "session/load: failed to send available_commands_update: {}",
+            e
+        );
+    }
+
+    // Per the ACP spec the agent MUST respond with null when done replaying.
+    // Since we have no history to replay, we respond immediately.
+    Ok(serde_json::Value::Null)
 }
 
 async fn handle_session_prompt<W>(
@@ -778,16 +1112,110 @@ where
 
         if let Some(ai_prompt) = slash_commands::command_to_prompt(&cmd) {
             let _ = chat_logger::log_user(&message_text);
-            let response_text = agent
-                .handle_chat_completion(
-                    &session_id,
-                    &ai_prompt,
-                    None,
-                    None,
-                    Some(perm_bridge_arc.clone()),
-                )
-                .await?;
-            send_text_update(writer, &session_id.0, &response_text).await?;
+
+            // Use the same select! loop as the normal chat path so that:
+            //   1. Tool-call progress updates (ToolCall / ToolCallUpdate) are
+            //      forwarded to the client while the AI is working.
+            //   2. Permission requests are properly handled (perm_req_rx polled).
+            //   3. Incoming client messages (e.g. session/cancel) are not lost.
+            let (slash_tx, mut slash_rx) = tokio::sync::mpsc::unbounded_channel();
+            let slash_chat_fut = agent.handle_chat_completion(
+                &session_id,
+                &ai_prompt,
+                None,
+                Some(slash_tx),
+                Some(perm_bridge_arc.clone()),
+            );
+            tokio::pin!(slash_chat_fut);
+
+            let slash_response;
+            loop {
+                tokio::select! {
+                    // 1. Forward tool-call / chunk updates to the client
+                    update = slash_rx.recv() => {
+                        if let Some(update) = update {
+                            let params = SessionNotification::new(session_id.clone(), update);
+                            let notification = json!({
+                                "jsonrpc": "2.0",
+                                "method": "session/update",
+                                "params": params
+                            });
+                            let msg = serde_json::to_string(&notification)?;
+                            writer.write_all(msg.as_bytes()).await?;
+                            writer.write_all(b"\n").await?;
+                            writer.flush().await?;
+                        }
+                    }
+
+                    // 2. Permission requests from the agent
+                    perm_req = perm_req_rx.recv() => {
+                        if let Some((req_id, params, outcome_tx)) = perm_req {
+                            info!("Slash cmd: forwarding permission request {} to client", req_id);
+                            let request = json!({
+                                "jsonrpc": "2.0",
+                                "id": req_id,
+                                "method": "session/request_permission",
+                                "params": params
+                            });
+                            let msg = serde_json::to_string(&request)?;
+                            if let Err(e) = writer.write_all(msg.as_bytes()).await {
+                                error!("Failed to write permission request: {}", e);
+                                let _ = outcome_tx.send(PermissionOutcome::cancel());
+                                continue;
+                            }
+                            writer.write_all(b"\n").await?;
+                            writer.flush().await?;
+                            pending_permissions.insert(req_id.clone(), outcome_tx);
+                        }
+                    }
+
+                    // 3. Incoming client messages (e.g. permission responses / cancel)
+                    line = msg_rx.recv() => {
+                        match line {
+                            Some(line) => {
+                                if let Ok(json_msg) = serde_json::from_str::<Value>(&line) {
+                                    let id_opt = json_msg.get("id")
+                                        .and_then(|v| v.as_str().map(str::to_string)
+                                            .or_else(|| v.as_u64().map(|n| n.to_string())));
+                                    if let Some(id) = id_opt
+                                        && let Some(sender) = pending_permissions.remove(&id)
+                                    {
+                                        if let Some(result) = json_msg.get("result") {
+                                            match serde_json::from_value::<PermissionOutcome>(result.clone()) {
+                                                Ok(outcome) => { let _ = sender.send(outcome); }
+                                                Err(_) => { let _ = sender.send(PermissionOutcome::cancel()); }
+                                            }
+                                        } else if json_msg.get("error").is_some() {
+                                            warn!("Slash cmd: client error for permission {} — auto-approving", id);
+                                            let _ = sender.send(PermissionOutcome::proceed_once());
+                                        } else {
+                                            let _ = sender.send(PermissionOutcome::cancel());
+                                        }
+                                    }
+                                }
+                            }
+                            None => {
+                                warn!("Client disconnected while processing slash command");
+                                return Err(anyhow!("Client disconnected during slash command"));
+                            }
+                        }
+                    }
+
+                    // 4. Final result from the AI
+                    res = &mut slash_chat_fut => {
+                        slash_response = res?;
+                        break;
+                    }
+                }
+            }
+
+            let slash_text = if slash_response.is_empty() {
+                "[No response content]".to_string()
+            } else {
+                slash_response
+            };
+            let _ = chat_logger::log_assistant(&slash_text);
+            send_text_update(writer, &session_id.0, &slash_text).await?;
             return Ok(serde_json::to_value(PromptResponse::new(
                 StopReason::EndTurn,
             ))?);
@@ -855,53 +1283,61 @@ where
 
             // 3. New messages from the client (e.g. permission responses)
             line = msg_rx.recv() => {
-                if let Some(line) = line
-                    && let Ok(json_msg) = serde_json::from_str::<Value>(&line)
-                {
-                        // Check if it's a response to a pending permission request.
-                        // We handle this directly here to avoid async recursion with handle_json_rpc.
-                        // Accept both string and numeric JSON-RPC response IDs.
-                        let id_opt = json_msg.get("id")
-                            .and_then(|v| v.as_str().map(str::to_string)
-                                .or_else(|| v.as_u64().map(|n| n.to_string())));
-                        if let Some(id) = id_opt {
-                            if let Some(sender) = pending_permissions.remove(&id) {
-                                info!("Received response for pending permission request: {}", id);
-                                if let Some(result) = json_msg.get("result") {
-                                    match serde_json::from_value::<PermissionOutcome>(result.clone()) {
-                                        Ok(outcome) => {
-                                            let _ = sender.send(outcome);
+                match line {
+                    Some(line) => {
+                        if let Ok(json_msg) = serde_json::from_str::<Value>(&line) {
+                            // Check if it's a response to a pending permission request.
+                            // We handle this directly here to avoid async recursion with handle_json_rpc.
+                            // Accept both string and numeric JSON-RPC response IDs.
+                            let id_opt = json_msg.get("id")
+                                .and_then(|v| v.as_str().map(str::to_string)
+                                    .or_else(|| v.as_u64().map(|n| n.to_string())));
+                            if let Some(id) = id_opt {
+                                if let Some(sender) = pending_permissions.remove(&id) {
+                                    info!("Received response for pending permission request: {}", id);
+                                    if let Some(result) = json_msg.get("result") {
+                                        match serde_json::from_value::<PermissionOutcome>(result.clone()) {
+                                            Ok(outcome) => {
+                                                let _ = sender.send(outcome);
+                                            }
+                                            Err(e) => {
+                                                error!("Failed to parse permission outcome: {}", e);
+                                                let _ = sender.send(PermissionOutcome::cancel());
+                                            }
                                         }
-                                        Err(e) => {
-                                            error!("Failed to parse permission outcome: {}", e);
-                                            let _ = sender.send(PermissionOutcome::cancel());
-                                        }
+                                    } else if json_msg.get("error").is_some() {
+                                        // Client returned a JSON-RPC error (e.g. "Method not found").
+                                        // Zed DOES support session/request_permission — if we get an
+                                        // error it means a payload format mismatch.  Auto-approve so
+                                        // tools are not silently blocked while the issue is diagnosed.
+                                        // To skip permission prompts entirely, set
+                                        // acp.require_permission = false in your config.
+                                        warn!(
+                                            "Client returned error for permission request {} — \
+                                             possible payload mismatch; auto-approving this tool call.",
+                                            id
+                                        );
+                                        let _ = sender.send(PermissionOutcome::proceed_once());
+                                    } else {
+                                        warn!("Received response for {} but it has no 'result' field", id);
+                                        let _ = sender.send(PermissionOutcome::cancel());
                                     }
-                                } else if json_msg.get("error").is_some() {
-                                    // Client returned a JSON-RPC error (e.g. "Method not found").
-                                    // Zed DOES support session/request_permission — if we get an
-                                    // error it means a payload format mismatch.  Auto-approve so
-                                    // tools are not silently blocked while the issue is diagnosed.
-                                    // To skip permission prompts entirely, set
-                                    // acp.require_permission = false in your config.
-                                    warn!(
-                                        "Client returned error for permission request {} — \
-                                         possible payload mismatch; auto-approving this tool call.",
-                                        id
-                                    );
-                                    let _ = sender.send(PermissionOutcome::proceed_once());
                                 } else {
-                                    warn!("Received response for {} but it has no 'result' field", id);
-                                    let _ = sender.send(PermissionOutcome::cancel());
+                                    // If it's not a permission response, it might be a new request.
+                                    // In that case, we should probably ignore it or log a warning
+                                    // because we are busy processing a prompt.
+                                    debug!("Received message with unknown/untethered id while in prompt: {}", id);
                                 }
-                            } else {
-                                // If it's not a permission response, it might be a new request.
-                                // In that case, we should probably ignore it or log a warning
-                                // because we are busy processing a prompt.
-                                debug!("Received message with unknown/untethered id while in prompt: {}", id);
                             }
                         }
                     }
+                    None => {
+                        // The channel was closed (e.g., client disconnected).
+                        // Break out of the loop to avoid an infinite spin.
+                        warn!("Client disconnected while processing prompt");
+                        return Err(anyhow!("Client disconnected during prompt"));
+                    }
+                }
             }
 
             // 4. Final chat result

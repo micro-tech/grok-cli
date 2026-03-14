@@ -11,7 +11,52 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
-## [Unreleased]
+## [0.1.7-pre] - 2026-03-14
+
+### Fixed
+
+- **Slash commands broken after grok restart** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`)
+  - **Root cause**: When grok-cli restarts, Zed re-uses the session ID from the previous
+    connection. The agent had no record of that session, so every `session/prompt` returned
+    `"Session not found: <id>"` and all slash commands silently failed.
+  - **Fix**: Added `GrokAcpAgent::session_exists()` helper. In `handle_json_rpc`, when a
+    `session/prompt` arrives with an unknown session ID the agent now auto-creates a fresh
+    session under that ID and immediately re-sends `available_commands_update` so the client's
+    command palette is repopulated.
+  - Source: AI (Claude Sonnet 4.6)
+
+- **"Loading or resuming sessions is not supported by this agent." message in Zed** (`src/acp/protocol.rs`, `src/cli/commands/acp.rs`)
+  - **Root cause**: The `initialize` response did not advertise `loadSession: true` or
+    `sessionCapabilities.list: {}`. Zed checks for these fields at startup and displays the
+    "not supported" banner when they are absent.
+  - **Fix**: `AgentCapabilities` now sets `loadSession: true` and `SessionCapabilities` now
+    includes `list: {}` by default.
+  - Implemented `session/list` handler — returns the currently active in-memory sessions
+    (empty list on a fresh start). Registered the new `list_sessions()` helper on
+    `GrokAcpAgent`.
+  - Implemented `session/load` handler — re-registers the workspace root as trusted,
+    re-creates the session in memory if it no longer exists, re-sends
+    `available_commands_update`, and responds with `null` (no history to replay since
+    grok-cli does not persist conversations across restarts). This satisfies the ACP spec
+    and suppresses Zed's warning banner.
+  - Source: AI (Claude Sonnet 4.6)
+
+### Changed
+
+- **AI-assisted slash commands now forward tool-call updates to the client**
+  (`src/cli/commands/acp.rs`)
+  - Previously, AI-powered slash commands (`/web`, `/explain`, `/review`, `/plan`, `/test`,
+    `/fix`) called `handle_chat_completion` with `event_sender = None`. This meant Zed saw
+    no activity while the model was running tools (e.g. `web_search`) and could appear to
+    hang.
+  - These commands now go through the same `tokio::select!` loop as normal chat prompts,
+    forwarding `ToolCall` / `ToolCallUpdate` notifications, permission requests, and client
+    messages (including `session/cancel`) in real time.
+  - Source: AI (Claude Sonnet 4.6)
+
+---
+
+## [0.1.6] - 2026-03-11
 
 ### Fixed
 
@@ -105,12 +150,6 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
     formatting helpers — all passing.
   - Source: AI (Claude Sonnet 4.6) — triggered by user request to implement ACP
     slash-command advertisement as specified in the ACP protocol documentation.
-
-
-
-## [0.1.6-pre] - 2026-03-05
-
-### Added
 
 - **Hooks settings exposed in `/settings` and `/hooks` command wired (Task 26)**
   - `tools.enable_hooks` is now visible and editable in the **Tools** category

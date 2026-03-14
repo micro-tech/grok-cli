@@ -166,6 +166,13 @@ pub struct AcpConfig {
     /// Default: 60
     #[serde(default = "default_permission_timeout_secs")]
     pub permission_timeout_secs: u64,
+
+    /// Maximum number of conversation turns kept in session context.
+    /// Older messages beyond this limit are trimmed before each API call
+    /// to prevent unbounded context growth.
+    /// Default: 40
+    #[serde(default = "default_max_history_messages")]
+    pub max_history_messages: usize,
 }
 
 /// Network configuration optimized for satellite connections
@@ -747,8 +754,12 @@ fn default_max_tool_loop_iterations() -> u32 {
     25
 }
 
+fn default_max_history_messages() -> usize {
+    40
+}
+
 fn default_permission_timeout_secs() -> u64 {
-    60
+    300
 }
 
 impl Default for Config {
@@ -790,6 +801,7 @@ impl Default for AcpConfig {
             max_tool_loop_iterations: default_max_tool_loop_iterations(),
             require_permission: true,
             permission_timeout_secs: default_permission_timeout_secs(),
+            max_history_messages: default_max_history_messages(),
         }
     }
 }
@@ -1882,6 +1894,10 @@ impl Config {
                 .default_port
                 .map(|p| p.to_string())
                 .unwrap_or_default()),
+            "acp.require_permission" => Ok(self.acp.require_permission.to_string()),
+            "acp.permission_timeout_secs" => Ok(self.acp.permission_timeout_secs.to_string()),
+            "acp.max_tool_loop_iterations" => Ok(self.acp.max_tool_loop_iterations.to_string()),
+            "acp.max_history_messages" => Ok(self.acp.max_history_messages.to_string()),
 
             // Network settings
             "network.starlink_optimizations" => Ok(self.network.starlink_optimizations.to_string()),
@@ -2310,6 +2326,40 @@ impl Config {
                             .map_err(|_| anyhow!("Invalid port value: {}", value))?,
                     )
                 };
+            }
+            "acp.require_permission" => {
+                self.acp.require_permission = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
+            }
+            "acp.permission_timeout_secs" => {
+                let secs: u64 = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid number: {}", value))?;
+                if secs < 10 {
+                    return Err(anyhow!(
+                        "permission_timeout_secs must be at least 10 seconds"
+                    ));
+                }
+                self.acp.permission_timeout_secs = secs;
+            }
+            "acp.max_tool_loop_iterations" => {
+                let n: u32 = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid number: {}", value))?;
+                if n == 0 {
+                    return Err(anyhow!("max_tool_loop_iterations must be at least 1"));
+                }
+                self.acp.max_tool_loop_iterations = n;
+            }
+            "acp.max_history_messages" => {
+                let n: usize = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid number: {}", value))?;
+                if n < 2 {
+                    return Err(anyhow!("max_history_messages must be at least 2"));
+                }
+                self.acp.max_history_messages = n;
             }
 
             // Network settings
