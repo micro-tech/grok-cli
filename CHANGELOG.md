@@ -54,6 +54,32 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
     messages (including `session/cancel`) in real time.
   - Source: AI (Claude Sonnet 4.6)
 
+### Added
+
+- **ACP Registry Authentication Requirements** (`src/acp/protocol.rs`, `src/cli/commands/acp.rs`, `src/cli/commands/setup.rs`, `src/cli/app.rs`)
+  - The ACP Registry requires agents to support at least one of **Agent Auth** or **Terminal Auth**.
+    grok-cli previously only declared `env_var` auth (API key via environment variable), which is
+    not accepted by the registry.
+  - Added **Terminal Auth** declaration to the `authMethods` array in the `initialize` response:
+    ```json
+    { "id": "grok-setup", "type": "terminal", "args": ["setup"] }
+    ```
+    When Zed (or any ACP client) detects the user has no API key configured, it launches
+    `grok setup` in its built-in terminal to run the interactive wizard.
+  - Added `args: Vec<String>` field to `AuthMethod` (serialised as `"args"`, skipped when empty)
+    and a new `AuthMethod::terminal()` constructor alongside the existing `env_var()` one.
+  - Implemented **`grok setup`** subcommand (`src/cli/commands/setup.rs`) — an interactive
+    terminal wizard that:
+    1. Checks whether `GROK_API_KEY` is already configured (env var or `~/.grok/.env`).
+    2. Prompts the user to paste their xAI API key (echo disabled on interactive terminals).
+    3. Validates the key format (length, no whitespace, warns if missing `xai-` prefix).
+    4. Tests the key against `https://api.x.ai/v1/models` with up to 3 Starlink-resilient
+       retries (3 → 6 → 12 s back-off). Auth errors (401) abort immediately.
+    5. Saves the key to `~/.grok/.env` as `GROK_API_KEY="<key>"`, preserving any other
+       existing lines. Sets `0600` permissions on Unix.
+    6. Prints a success summary with next-steps hints.
+  - Source: AI (Claude Sonnet 4.6) — triggered by ACP Registry auth requirements doc.
+
 ---
 
 ## [0.1.6] - 2026-03-11

@@ -681,6 +681,16 @@ fn trust_workspace_from_uri(uri: &str, agent: &GrokAcpAgent) {
 /// even when no key is present in the sandbox environment.
 fn build_auth_methods() -> Vec<AuthMethod> {
     vec![
+        // Terminal Auth — satisfies the ACP Registry requirement.
+        // The client launches `grok setup` which runs the interactive TUI
+        // API-key wizard.  Once the key is saved, the agent is ready for
+        // normal ACP communication.
+        AuthMethod::terminal("grok-setup", "Run in terminal", vec!["setup"]).with_description(
+            "Interactive terminal setup wizard — enter your xAI API key \
+             and grok-cli will save it automatically.",
+        ),
+        // env_var method kept for clients that prefer to inject the key
+        // directly (e.g. CI environments, Gemini CLI).
         AuthMethod::env_var(
             "xai-api-key",
             "xAI API Key",
@@ -688,7 +698,7 @@ fn build_auth_methods() -> Vec<AuthMethod> {
         )
         .with_description(
             "API key from the xAI developer console. \
-             Set the GROK_API_KEY environment variable or run 'grok config set api_key <key>'.",
+             Set the GROK_API_KEY environment variable or run 'grok setup'.",
         )
         .with_link("https://console.x.ai/"),
     ]

@@ -182,15 +182,12 @@ impl AuthEnvVar {
 
 /// Declares one authentication method supported by this agent.
 ///
-/// Serialised as:
+/// The ACP Registry requires at least one of `"terminal"` or `"agent"` type.
+///
+/// Serialised examples:
 /// ```json
-/// {
-///   "id": "xai-api-key",
-///   "name": "xAI API Key",
-///   "type": "env_var",
-///   "vars": [{ "name": "GROK_API_KEY" }],
-///   "link": "https://console.x.ai/"
-/// }
+/// { "id": "xai-api-key", "type": "env_var", "vars": [{ "name": "GROK_API_KEY" }] }
+/// { "id": "grok-setup",  "type": "terminal", "args": ["setup"] }
 /// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuthMethod {
@@ -201,12 +198,17 @@ pub struct AuthMethod {
     /// Optional description shown in editor UI.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
-    /// Auth method type: `"env_var"` or `"agent"`.
+    /// Auth method type: `"env_var"`, `"terminal"`, or `"agent"`.
     #[serde(rename = "type")]
     pub kind: String,
     /// Required for `env_var` type — the environment variables to collect.
     #[serde(skip_serializing_if = "Vec::is_empty", default)]
     pub vars: Vec<AuthEnvVar>,
+    /// Required for `terminal` type — the CLI arguments that invoke the setup
+    /// flow (e.g. `["setup"]`).  These **replace** the agent's default args
+    /// when the client launches the terminal setup binary.
+    #[serde(skip_serializing_if = "Vec::is_empty", default)]
+    pub args: Vec<String>,
     /// Optional URL linking to a page where the user can obtain credentials.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub link: Option<String>,
@@ -221,6 +223,43 @@ impl AuthMethod {
             description: None,
             kind: "env_var".to_string(),
             vars,
+            args: Vec::new(),
+            link: None,
+        }
+    }
+
+    /// Create a `terminal` auth method.
+    ///
+    /// `args` are the CLI arguments the client passes to the agent binary to
+    /// invoke the interactive setup flow (e.g. `vec!["setup"]`).
+    ///
+    /// Per the ACP Registry requirements this is one of the two accepted auth
+    /// methods (`"terminal"` or `"agent"`) that qualifies an agent for listing.
+    pub fn terminal(
+        id: impl Into<String>,
+        name: impl Into<String>,
+        args: Vec<impl Into<String>>,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            description: None,
+            kind: "terminal".to_string(),
+            vars: Vec::new(),
+            args: args.into_iter().map(Into::into).collect(),
+            link: None,
+        }
+    }
+
+    /// Create an `agent` auth method (agent manages its own OAuth flow).
+    pub fn agent(id: impl Into<String>, name: impl Into<String>) -> Self {
+        Self {
+            id: id.into(),
+            name: name.into(),
+            description: None,
+            kind: "agent".to_string(),
+            vars: Vec::new(),
+            args: Vec::new(),
             link: None,
         }
     }
