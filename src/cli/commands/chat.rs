@@ -19,6 +19,7 @@ use std::time::Duration;
 
 use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
+use crate::agent::router::{Router, RouterAction};
 use crate::cli::{create_spinner, format_grok_response, print_error, print_info, print_success};
 use crate::config::RateLimitConfig;
 use crate::utils::client::initialize_client;
@@ -35,6 +36,8 @@ pub struct ChatOptions<'a> {
     pub timeout_secs: u64,
     pub max_retries: u32,
     pub rate_limit_config: RateLimitConfig,
+    pub enable_bayesian_router: bool,
+    pub show_belief_graph: bool,
 }
 
 pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
@@ -52,6 +55,8 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
             options.temperature,
             options.max_tokens,
             options.model,
+            options.enable_bayesian_router,
+            options.show_belief_graph,
         )
         .await
     } else {
@@ -260,6 +265,8 @@ async fn handle_interactive_chat(
     temperature: f32,
     max_tokens: u32,
     model: &str,
+    enable_bayesian_router: bool,
+    mut show_belief_graph: bool,
 ) -> Result<()> {
     println!("{}", "🤖 Interactive Grok Chat Session".cyan().bold());
     println!("{}", format!("Model: {}", model).dimmed());
@@ -291,6 +298,8 @@ async fn handle_interactive_chat(
 
     // Get tool definitions for function calling
     let tools = tools::get_available_tool_definitions();
+
+    let mut router = Router::new();
 
     loop {
         // Prompt for input
@@ -326,10 +335,57 @@ async fn handle_interactive_chat(
                     }
                 }
 
+                if lower_input == "/bayes" || lower_input == "/beliefs" {
+                    show_belief_graph = !show_belief_graph;
+                    if show_belief_graph {
+                        println!("{} {}", "✓".green(), "Belief graph visualization enabled.");
+                        if enable_bayesian_router {
+                            println!("{}", router.visualize_beliefs());
+                        } else {
+                            println!("{}", "⚠ Bayesian router is disabled in config.".yellow());
+                        }
+                    } else {
+                        println!("{} {}", "✓".green(), "Belief graph visualization disabled.");
+                    }
+                    continue;
+                }
+
+                let mut actual_input = input.to_string();
+
+                if enable_bayesian_router {
+                    let action = router.route(&actual_input).await;
+                    match action {
+                        RouterAction::AskClarification(msg) => {
+                            println!("{} {}", "🤖 Grok Router:".cyan().bold(), msg.yellow());
+                            if show_belief_graph {
+                                println!("\n{}", router.visualize_beliefs());
+                            }
+                            continue;
+                        }
+                        RouterAction::UseSkill(skill) => {
+                            actual_input = format!(
+                                "{}\n[System: High probability of needing skill '{}'. Please use it if appropriate.]",
+                                actual_input, skill
+                            );
+                        }
+                        RouterAction::UseTool(tool) => {
+                            actual_input = format!(
+                                "{}\n[System: High probability of needing tool '{}'. Please use it if appropriate.]",
+                                actual_input, tool
+                            );
+                        }
+                        RouterAction::NormalChat => {}
+                    }
+
+                    if show_belief_graph {
+                        println!("\n{}", router.visualize_beliefs());
+                    }
+                }
+
                 // Add user message to history
                 conversation_history.push(json!({
                     "role": "user",
-                    "content": input
+                    "content": actual_input
                 }));
 
                 // Show spinner while waiting for response

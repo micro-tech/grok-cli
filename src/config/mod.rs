@@ -674,6 +674,10 @@ pub struct ExperimentalConfig {
     pub codebase_investigator_settings: CodebaseInvestigatorConfig,
     #[serde(default)]
     pub extensions: ExtensionsConfig,
+    #[serde(default)]
+    pub enable_bayesian_router: bool,
+    #[serde(default)]
+    pub show_belief_graph: bool,
 }
 
 /// Extensions configuration

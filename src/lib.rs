@@ -35,6 +35,8 @@
 use clap::Subcommand;
 
 pub mod acp;
+pub mod agent;
+pub mod bayes;
 pub mod cli;
 pub mod config;
 pub mod display;
