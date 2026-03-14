@@ -1165,7 +1165,14 @@ impl GrokAcpAgent {
             .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))
     }
 
-    /// Switch the model used for a session (used by the `/model` slash command).
+    /// Return `true` if a session with the given ID currently exists in the
+    /// active sessions map.  Used by the ACP request handler to detect stale
+    /// session IDs sent by clients that reconnected after a grok restart.
+    pub async fn session_exists(&self, session_id: &str) -> bool {
+        let sessions = self.sessions.read().await;
+        sessions.contains_key(session_id)
+    }
+
     /// Store the list of slash commands the client advertised in a
     /// `session/update { sessionUpdate: "available_commands_update" }` notification.
     ///
@@ -1187,6 +1194,7 @@ impl GrokAcpAgent {
         Ok(())
     }
 
+    /// Switch the model used for a session (used by the `/model` slash command).
     pub async fn set_session_model(&self, session_id: &SessionId, model: String) -> Result<()> {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(&session_id.0) {
@@ -1222,6 +1230,14 @@ impl GrokAcpAgent {
         }
 
         Ok(cleaned)
+    }
+
+    /// Return a list of currently active session IDs.
+    /// Used by the `session/list` ACP handler to advertise known sessions
+    /// to clients such as Zed.
+    pub async fn list_sessions(&self) -> Vec<String> {
+        let sessions = self.sessions.read().await;
+        sessions.keys().cloned().collect()
     }
 
     /// Get session statistics

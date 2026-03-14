@@ -14,6 +14,11 @@ impl SessionId {
 pub struct AgentCapabilities {
     #[serde(default, rename = "sessionCapabilities")]
     pub session_capabilities: SessionCapabilities,
+    /// Advertise that this agent supports `session/load` (resume a previous
+    /// conversation by ID).  Zed shows "Loading or resuming sessions is not
+    /// supported by this agent." when this is absent or false.
+    #[serde(default, rename = "loadSession")]
+    pub load_session: bool,
 }
 
 impl Default for AgentCapabilities {
@@ -26,6 +31,7 @@ impl AgentCapabilities {
     pub fn new() -> Self {
         Self {
             session_capabilities: SessionCapabilities::new(),
+            load_session: true,
         }
     }
 }
@@ -40,7 +46,18 @@ pub struct SessionCapabilities {
         rename = "supportsPermissionRequests"
     )]
     pub supports_permission_requests: bool,
+    /// Advertise `session/list` support.  The value is an empty object `{}`
+    /// per the ACP spec — presence of the field (not its contents) signals
+    /// that `session/list` is supported.  Use `Option<SessionListCapabilities>`
+    /// so that `None` serialises as absent (field omitted) and `Some({})`
+    /// serialises as `"list": {}`.
+    #[serde(default, rename = "list", skip_serializing_if = "Option::is_none")]
+    pub list: Option<SessionListCapabilities>,
 }
+
+/// Capability marker for `session/list`.  No fields — presence signals support.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SessionListCapabilities {}
 
 impl Default for SessionCapabilities {
     fn default() -> Self {
@@ -52,6 +69,7 @@ impl SessionCapabilities {
     pub fn new() -> Self {
         Self {
             supports_permission_requests: true,
+            list: Some(SessionListCapabilities::default()),
         }
     }
 }
@@ -900,6 +918,10 @@ pub struct MethodNames {
     pub session_prompt: &'static str,
     /// Gemini-style pre-tool-execution permission prompt sent by the agent.
     pub session_request_permission: &'static str,
+    /// List sessions known to this agent.
+    pub session_list: &'static str,
+    /// Load (resume) a previously created session.
+    pub session_load: &'static str,
 }
 
 pub const AGENT_METHOD_NAMES: MethodNames = MethodNames {
@@ -907,7 +929,93 @@ pub const AGENT_METHOD_NAMES: MethodNames = MethodNames {
     session_new: "session/new",
     session_prompt: "session/prompt",
     session_request_permission: "session/request_permission",
+    session_list: "session/list",
+    session_load: "session/load",
 };
+
+// ---------------------------------------------------------------------------
+// session/list types
+// ---------------------------------------------------------------------------
+
+/// Request body for `session/list`.  All fields are optional.
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SessionListRequest {
+    /// Filter sessions by working directory (absolute path).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
+    /// Cursor from a previous response for pagination.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cursor: Option<String>,
+}
+
+/// One entry in the `session/list` response.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionInfo {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    pub cwd: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(rename = "updatedAt", skip_serializing_if = "Option::is_none")]
+    pub updated_at: Option<String>,
+}
+
+impl SessionInfo {
+    pub fn new(session_id: impl Into<String>, cwd: impl Into<String>) -> Self {
+        Self {
+            session_id: session_id.into(),
+            cwd: cwd.into(),
+            title: None,
+            updated_at: None,
+        }
+    }
+
+    pub fn with_title(mut self, title: impl Into<String>) -> Self {
+        self.title = Some(title.into());
+        self
+    }
+
+    pub fn with_updated_at(mut self, ts: impl Into<String>) -> Self {
+        self.updated_at = Some(ts.into());
+        self
+    }
+}
+
+/// Response body for `session/list`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionListResponse {
+    pub sessions: Vec<SessionInfo>,
+    /// Present only when more pages are available.
+    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
+    pub next_cursor: Option<String>,
+}
+
+impl SessionListResponse {
+    pub fn new(sessions: Vec<SessionInfo>) -> Self {
+        Self {
+            sessions,
+            next_cursor: None,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// session/load types
+// ---------------------------------------------------------------------------
+
+/// Request body for `session/load`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionLoadRequest {
+    /// The session ID to resume.
+    #[serde(rename = "sessionId")]
+    pub session_id: SessionId,
+    /// Working directory for the resumed session.
+    #[serde(default, alias = "cwd", alias = "workspaceRoot")]
+    pub cwd: Option<String>,
+    /// MCP servers the client wants connected (may be empty).
+    #[serde(default, rename = "mcpServers")]
+    pub mcp_servers: Vec<Value>,
+}
 
 #[cfg(test)]
 mod serialization_tests {
