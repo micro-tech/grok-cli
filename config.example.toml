@@ -169,6 +169,8 @@ blocked = []
 [experimental]
 enable_agents = false
 extension_management = false
+enable_bayesian_router = false
+show_belief_graph = false
 
 [experimental.extensions]
 enabled = false

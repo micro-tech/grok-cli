@@ -147,6 +147,8 @@ enable_agents = false
 extension_management = false
 extension_reloading = false
 jit_context = false
+enable_bayesian_router = false
+show_belief_graph = false
 
 [experimental.codebase_investigator_settings]
 enabled = true
