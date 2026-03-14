@@ -15,6 +15,20 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Added
 
+- **Bayesian Intent Router** (`src/agent/router.rs`, `src/bayes/*`)
+  - Implemented a lightning-fast, pre-LLM Bayesian routing layer that intercepts user input before it hits the expensive model.
+  - Features:
+    - **Belief Graph** (`belief_graph.rs`): Tracks probabilities of different intents (`intent_edit`, `intent_shell`, `intent_search`, `intent_question`) and meta-states (`need_clarification`, `low_confidence`) that sum to 1.0.
+    - **Bayesian Updater** (`updater.rs`): Mathematically exact Bayesian updates (prior * likelihood / normalization) with a built-in decay factor (0.1) for unmatched hypotheses to ensure intended actions bubble up.
+    - **Text Heuristics** (`likelihoods.rs`): Maps keywords (e.g., "edit", "run", "careful") to high-weight likelihood spikes.
+    - **Clarification Gate**: If the probability of `need_clarification` exceeds 0.4 (e.g., user says "be careful, don't delete"), the router intercepts the chat loop, prevents the API call, and asks the user to clarify. It dynamically decays this probability (`reset_clarification`) once triggered so it doesn't get stuck in a loop.
+    - **System Hint Injection**: For high-probability intents (like editing or running a shell command), the router invisibly appends a system hint to the prompt (e.g., `[System: High probability of needing tool 'replace'. Please use it if appropriate.]`) guiding the LLM toward the correct tool.
+  - Added new configuration flags to `[experimental]` in `config.toml`:
+    - `enable_bayesian_router`: Master switch to turn the router on/off (defaults to `false`).
+    - `show_belief_graph`: Toggles real-time visual output of the engine's internal state.
+  - Added `/bayes` (or `/beliefs`) interactive chat command to toggle the ASCII bar chart visualization on the fly during a session.
+  - Full suite of unit tests covering Bayesian math, probability normalization, and router state transitions.
+
 - **Terminal Auth setup wizard** (`src/cli/commands/setup.rs`)
   - Implemented the ACP **Terminal Auth** entry point: `grok setup`
   - Declared in the ACP `initialize` response as `{ "type": "terminal", "args": ["setup"] }`
