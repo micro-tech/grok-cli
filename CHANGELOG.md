@@ -13,6 +13,29 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [0.1.7-pre] - 2026-03-14
 
+### Added
+
+- **Terminal Auth setup wizard** (`src/cli/commands/setup.rs`)
+  - Implemented the ACP **Terminal Auth** entry point: `grok setup`
+  - Declared in the ACP `initialize` response as `{ "type": "terminal", "args": ["setup"] }`
+  - ACP clients such as Zed automatically launch `grok setup` when no API key is configured,
+    presenting the interactive wizard inside their built-in terminal
+  - Features:
+    - Colorful welcome banner with link to `https://console.x.ai/`
+    - Detects and offers to replace an already-configured key (`GROK_API_KEY` env var or
+      `~/.grok/.env`)
+    - Masked input via **crossterm** raw mode — characters echo as `*` as you type, with
+      full Backspace and Ctrl-C support
+    - Falls back to plain `stdin` when raw mode is unavailable (CI / piped environments)
+    - Basic format validation (length ≥ 20 chars, no whitespace, `xai-` prefix warning)
+    - Live verification against `https://api.x.ai/v1/models` with **Starlink-resilient**
+      exponential back-off (up to 4 retries: 3 s → 6 s → 12 s); auth failures (HTTP 401)
+      are treated as fatal and abort immediately
+    - Persists the key to `~/.grok/.env` (in-place update preserves other entries)
+    - Unix: restricts `.env` file to mode `0600` (owner read/write only)
+    - Prints next-step instructions on success
+  - Source: AI (Claude Sonnet 4.6)
+
 ### Fixed
 
 - **Slash commands broken after grok restart** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`)

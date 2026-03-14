@@ -1,144 +1,159 @@
-//! Interactive setup wizard for grok-cli.
+//! Interactive setup wizard — the ACP **Terminal Auth** entry point.
 //!
-//! This module is the **Terminal Auth** entry point declared in the ACP
-//! `initialize` response:
-//!
+//! Declared in the ACP `initialize` response as:
 //! ```json
 //! { "id": "grok-setup", "type": "terminal", "args": ["setup"] }
 //! ```
 //!
-//! ACP clients such as Zed launch `grok setup` when the user has not yet
-//! configured an API key.  The wizard:
+//! ACP clients such as Zed invoke `grok setup` when no API key is configured.
+//! The wizard:
 //!
-//! 1. Displays a welcome banner
-//! 2. Checks whether `GROK_API_KEY` is already set
-//! 3. Prompts the user to paste their xAI API key (input hidden)
-//! 4. Validates the key looks well-formed
-//! 5. Tests the key against the xAI API (with Starlink-resilient retries)
-//! 6. Saves the key to `~/.grok/.env` so every future grok invocation picks
-//!    it up automatically
-//! 7. Prints a success summary and next-steps hint
+//! 1. Greets the user and explains what it does.
+//! 2. Checks whether a key is already configured.
+//! 3. Prompts for the xAI API key with masked (starred) input via crossterm.
+//! 4. Validates the key format.
+//! 5. Tests the key against the xAI API with Starlink-resilient retries.
+//! 6. Persists the key to `~/.grok/.env` (loaded on every startup).
+//! 7. Prints success message and next-step hints.
 
 use anyhow::{Context, Result, anyhow};
 use colored::*;
+use crossterm::{
+    cursor,
+    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
+    execute,
+    terminal::{self as crossterm_terminal, ClearType},
+};
 use std::io::{self, Write};
 use std::path::PathBuf;
+use std::time::Duration;
+use tracing::info;
 
-// ---------------------------------------------------------------------------
-// Public entry point
-// ---------------------------------------------------------------------------
+// ── Constants ─────────────────────────────────────────────────────────────────
 
-/// Run the interactive setup wizard.
+/// Maximum API verification retries (Starlink can drop for 20-30 s).
+const MAX_VERIFY_RETRIES: u32 = 4;
+
+/// Base delay between retries in seconds (doubles each attempt).
+const RETRY_BASE_SECS: u64 = 3;
+
+/// HTTP timeout per verification attempt.
+const VERIFY_TIMEOUT_SECS: u64 = 18;
+
+// ── Public entry point ────────────────────────────────────────────────────────
+
+/// Run the interactive Terminal Auth setup wizard.
 ///
 /// Called from `src/cli/app.rs` when the user runs `grok setup`.
 pub async fn handle_setup() -> Result<()> {
     print_banner();
 
-    // ------------------------------------------------------------------
-    // Step 1: Check if already configured
-    // ------------------------------------------------------------------
-    let existing_key = resolve_existing_key();
-    if let Some(ref key) = existing_key {
-        let masked = mask_key(key);
+    // ── Step 1: Check for an existing key ────────────────────────────────────
+    if let Some(existing_key) = resolve_existing_key() {
+        let masked = mask_key(&existing_key);
         println!(
             "{}  An API key is already configured: {}",
             "✓".green().bold(),
             masked.dimmed()
         );
         println!();
-        print!("{}", "Do you want to replace it? [y/N] ".yellow());
-        io::stdout().flush().ok();
 
-        let mut answer = String::new();
-        io::stdin()
-            .read_line(&mut answer)
-            .context("Failed to read user input")?;
-
-        if !answer.trim().eq_ignore_ascii_case("y") {
+        if !ask_yes_no("Replace it with a new key?")? {
             println!();
-            println!("{} Setup cancelled — using existing key.", "ℹ".cyan());
+            println!("{} Setup cancelled — existing key kept.", "ℹ".cyan());
             print_next_steps();
             return Ok(());
         }
         println!();
     }
 
-    // ------------------------------------------------------------------
-    // Step 2: Ask for the API key
-    // ------------------------------------------------------------------
+    // ── Step 2: Where to get the key ─────────────────────────────────────────
     println!("{}", "Where to get your API key:".bold());
     println!(
-        "  {}  Visit {} and create an API key.",
+        "  {} Visit {}",
         "→".cyan(),
         "https://console.x.ai/".underline().cyan()
     );
+    println!("    Sign in, open the API section, and create a new key.");
     println!();
 
-    let api_key = prompt_api_key()?;
+    // ── Step 3: Prompt for the key with masked input ──────────────────────────
+    let api_key = prompt_masked_key()?;
 
-    // ------------------------------------------------------------------
-    // Step 3: Basic format validation
-    // ------------------------------------------------------------------
-    if let Err(e) = validate_key_format(&api_key) {
-        println!();
-        println!("{} {}", "✗".red().bold(), e);
-        println!(
-            "  {}",
-            "xAI API keys usually start with 'xai-' and are at least 32 characters.".dimmed()
-        );
-        return Err(anyhow!("Invalid API key format"));
+    if api_key.is_empty() {
+        return Err(anyhow!("No API key entered. Setup cancelled."));
     }
 
-    // ------------------------------------------------------------------
-    // Step 4: Live API test (Starlink-resilient)
-    // ------------------------------------------------------------------
+    // ── Step 4: Basic format check ────────────────────────────────────────────
+    validate_key_format(&api_key)?;
+
+    // ── Step 5: Live verification (Starlink-resilient) ────────────────────────
     println!();
-    print!("{}", "  Testing API key against xAI… ".dimmed());
+    print!("[1/2] {}", "Verifying key with xAI API…".dimmed());
     io::stdout().flush().ok();
 
-    match test_api_key(&api_key).await {
-        Ok(model) => {
-            println!("{}", "✓ OK".green().bold());
+    match verify_api_key_with_retries(&api_key).await {
+        Ok(model_hint) => {
+            // Overwrite the line so progress text is replaced by success.
+            let _ = execute!(
+                io::stdout(),
+                cursor::MoveToColumn(0),
+                crossterm::terminal::Clear(ClearType::CurrentLine)
+            );
             println!(
-                "  {}",
-                format!("Connected to xAI — default model: {model}").dimmed()
+                "[1/2] {} {}",
+                "✓ Key verified!".green().bold(),
+                format!("(model: {})", model_hint).dimmed()
             );
         }
         Err(e) => {
-            println!("{}", "⚠ warning".yellow().bold());
+            println!();
             println!(
-                "  {} {}",
-                "Could not verify key online:".yellow(),
+                "  {} Could not verify key online: {}",
+                "⚠".yellow().bold(),
                 e.to_string().dimmed()
             );
+
+            // Fatal only for explicit auth failures; network errors are
+            // non-fatal so the user can still save and try later.
+            let msg = e.to_string().to_lowercase();
+            if msg.contains("401") || msg.contains("unauthori") || msg.contains("invalid api key") {
+                println!();
+                println!(
+                    "  {} The xAI API rejected this key. Please double-check it at {}",
+                    "✗".red().bold(),
+                    "https://console.x.ai/".cyan()
+                );
+                return Err(anyhow!("API key rejected by xAI."));
+            }
+
             println!(
                 "  {}",
-                "Key will be saved anyway — check your network or key if things don't work."
-                    .dimmed()
+                "Key will be saved anyway — check your network if issues persist.".dimmed()
             );
         }
     }
 
-    // ------------------------------------------------------------------
-    // Step 5: Save the key
-    // ------------------------------------------------------------------
-    println!();
-    print!("{}", "  Saving key… ".dimmed());
+    // ── Step 6: Save the key ──────────────────────────────────────────────────
+    print!("[2/2] {}", "Saving key to ~/.grok/.env…".dimmed());
     io::stdout().flush().ok();
 
     let saved_path = save_api_key(&api_key).context("Failed to save API key")?;
-    println!("{}", "✓ saved".green().bold());
+    let _ = execute!(
+        io::stdout(),
+        cursor::MoveToColumn(0),
+        crossterm::terminal::Clear(ClearType::CurrentLine)
+    );
     println!(
-        "  {}",
-        format!("Stored in: {}", saved_path.display()).dimmed()
+        "[2/2] {} {}",
+        "✓ Saved!".green().bold(),
+        format!("({})", saved_path.display()).dimmed()
     );
 
-    // ------------------------------------------------------------------
-    // Step 6: Success
-    // ------------------------------------------------------------------
+    // ── Done ──────────────────────────────────────────────────────────────────
     println!();
     println!("{}", "━".repeat(60).dimmed());
-    println!("{}", "  ✅  grok-cli is ready!".green().bold());
+    println!("{}", "  ✅  grok-cli is ready to use!".green().bold());
     println!("{}", "━".repeat(60).dimmed());
     println!();
     print_next_steps();
@@ -146,150 +161,135 @@ pub async fn handle_setup() -> Result<()> {
     Ok(())
 }
 
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
+// ── Prompts ───────────────────────────────────────────────────────────────────
 
-/// Print the setup wizard banner.
-fn print_banner() {
-    println!();
-    println!("{}", "━".repeat(60).cyan());
-    println!("{}", "  grok-cli  ·  Interactive Setup Wizard".bold());
-    println!("{}", "━".repeat(60).cyan());
-    println!();
-    println!(
-        "  This wizard will configure your {} so that",
-        "xAI API key".bold()
-    );
-    println!("  grok-cli and the Zed editor integration work correctly.");
-    println!();
-}
-
-/// Check all the places grok-cli looks for an API key and return the first
-/// non-empty value found, without loading the full Config (setup runs before
-/// any config is guaranteed to be valid).
-fn resolve_existing_key() -> Option<String> {
-    // 1. Environment variable already set by the shell or a loaded .env
-    if let Ok(k) = std::env::var("GROK_API_KEY")
-        && !k.trim().is_empty()
-    {
-        return Some(k.trim().to_string());
-    }
-
-    // 2. ~/.grok/.env file
-    if let Some(home) = dirs::home_dir() {
-        let env_path = home.join(".grok").join(".env");
-        if env_path.exists()
-            && let Ok(content) = std::fs::read_to_string(&env_path)
-        {
-            for line in content.lines() {
-                let line = line.trim();
-                if let Some(rest) = line.strip_prefix("GROK_API_KEY=") {
-                    let value = rest.trim().trim_matches('"');
-                    if !value.is_empty() {
-                        return Some(value.to_string());
-                    }
-                }
-            }
-        }
-    }
-
-    None
-}
-
-/// Prompt the user to paste an API key.  The input is read as plain text
-/// (terminals used inside editors like Zed may not support hidden input),
-/// but we do not echo it back in any summary line.
-fn prompt_api_key() -> Result<String> {
-    println!("{}", "Paste your xAI API key below and press Enter.".bold());
+/// Prompt the user to paste their API key.  The input is masked with `*`
+/// characters using crossterm raw mode so the key is never echoed.
+///
+/// Falls back to plain `read_line` if raw mode cannot be enabled (e.g. when
+/// stdin is a pipe in a non-interactive environment).
+fn prompt_masked_key() -> Result<String> {
+    println!("{}", "Paste your xAI API key and press Enter.".bold());
     println!(
         "  {}",
-        "(The key will not be displayed as you type on most terminals)".dimmed()
+        "(Characters will be shown as  *  as you type)".dimmed()
     );
     println!();
-    print!("  API key: ");
-    io::stdout().flush().ok();
+    print!("  {} ", "API key:".bold());
+    io::stdout().flush()?;
 
-    // Attempt to read without echo using the `rpassword` approach.
-    // Fall back to plain stdin if that's not available (e.g. inside a pipe).
-    let key = read_secret_line()?;
-
-    let key = key.trim().to_string();
-    if key.is_empty() {
-        return Err(anyhow!("No API key entered."));
-    }
-
-    Ok(key)
-}
-
-/// Read a line from stdin.  On interactive terminals we disable echo so the
-/// key is not shown; inside pipes / non-TTY environments we fall back to a
-/// normal `read_line`.
-fn read_secret_line() -> Result<String> {
-    // Try the cross-platform "disable echo" approach.
-    #[cfg(unix)]
-    {
-        use std::os::unix::io::AsRawFd;
-        // Only try to disable echo if stdin is actually a TTY.
-        if unsafe { libc_isatty(io::stdin().as_raw_fd()) } {
-            if let Ok(key) = read_without_echo_unix() {
-                println!(); // newline after hidden input
-                return Ok(key);
-            }
+    // Attempt raw-mode masked input.
+    match read_masked() {
+        Ok(key) => Ok(key.trim().to_string()),
+        Err(_) => {
+            // Raw mode unavailable (CI / pipe) — fall back to plain stdin.
+            eprintln!();
+            eprintln!(
+                "  {}",
+                "(Raw mode unavailable — key will be visible as you type)".yellow()
+            );
+            print!("  API key: ");
+            io::stdout().flush()?;
+            let mut buf = String::new();
+            io::stdin()
+                .read_line(&mut buf)
+                .context("Failed to read API key from stdin")?;
+            Ok(buf.trim().to_string())
         }
     }
+}
 
-    // Fallback: plain read_line (works in all environments).
-    let mut line = String::new();
+/// Read a single line from stdin using crossterm raw mode, echoing `*` for
+/// each character typed.  Supports Backspace and Ctrl-C.
+fn read_masked() -> Result<String> {
+    crossterm_terminal::enable_raw_mode()?;
+
+    let mut key = String::new();
+    let mut stdout = io::stdout();
+
+    let result: Result<String> = loop {
+        // poll with a short timeout so we don't spin forever
+        if event::poll(Duration::from_millis(200))?
+            && let Event::Key(KeyEvent {
+                code, modifiers, ..
+            }) = event::read()?
+        {
+            match code {
+                // Finish on Enter
+                KeyCode::Enter => {
+                    break Ok(key);
+                }
+                // Abort on Ctrl-C / Ctrl-D
+                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    break Err(anyhow!("Setup cancelled (Ctrl-C)."));
+                }
+                KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    break Err(anyhow!("Setup cancelled (Ctrl-D)."));
+                }
+                // Backspace: erase last char
+                KeyCode::Backspace | KeyCode::Delete => {
+                    if key.pop().is_some() {
+                        // Move back, overwrite with space, move back again
+                        write!(stdout, "\x08 \x08")?;
+                        stdout.flush()?;
+                    }
+                }
+                // Regular character
+                KeyCode::Char(c) => {
+                    key.push(c);
+                    write!(stdout, "*")?;
+                    stdout.flush()?;
+                }
+                _ => {}
+            }
+        }
+    };
+
+    // Always restore terminal before returning, even on error.
+    let _ = crossterm_terminal::disable_raw_mode();
+    // Move to next line after the masked field.
+    writeln!(stdout)?;
+    stdout.flush()?;
+
+    result
+}
+
+/// Ask a simple yes/no question.  Returns `true` for "y" / "yes".
+fn ask_yes_no(question: &str) -> Result<bool> {
+    print!("{} {} [y/N]: ", "?".cyan().bold(), question);
+    io::stdout().flush()?;
+    let mut buf = String::new();
     io::stdin()
-        .read_line(&mut line)
-        .context("Failed to read API key from stdin")?;
-    Ok(line)
+        .read_line(&mut buf)
+        .context("Failed to read user input")?;
+    Ok(matches!(buf.trim().to_lowercase().as_str(), "y" | "yes"))
 }
 
-/// On Unix, temporarily disable terminal echo to hide the key as it's typed.
-#[cfg(unix)]
-fn read_without_echo_unix() -> Result<String> {
-    use std::io::BufRead;
-
-    // Use `stty -echo` / `stty echo` around the read.
-    let _ = std::process::Command::new("stty").arg("-echo").status();
-
-    let mut line = String::new();
-    let result = io::BufReader::new(io::stdin()).read_line(&mut line);
-
-    let _ = std::process::Command::new("stty").arg("echo").status();
-
-    result.context("Failed to read API key")?;
-    Ok(line)
-}
-
-#[cfg(unix)]
-fn libc_isatty(fd: std::os::unix::io::RawFd) -> bool {
-    // SAFETY: isatty is well-defined for all fd values; it simply returns 0
-    // for non-TTY file descriptors.
-    unsafe { libc::isatty(fd) != 0 }
-}
+// ── Validation ────────────────────────────────────────────────────────────────
 
 /// Light format check — rejects obviously wrong values without a network call.
 fn validate_key_format(key: &str) -> Result<()> {
     let key = key.trim();
 
-    if key.len() < 32 {
+    if key.len() < 20 {
         return Err(anyhow!(
-            "Key is too short ({} chars). Expected at least 32 characters.",
+            "Key looks too short ({} chars, expected ≥ 20). \
+             Make sure you copied the full key from https://console.x.ai/",
             key.len()
         ));
     }
 
     if key.contains(char::is_whitespace) {
-        return Err(anyhow!("Key must not contain whitespace."));
+        return Err(anyhow!(
+            "Key contains whitespace. Paste the key exactly as shown in the console."
+        ));
     }
 
-    // xAI keys currently start with "xai-" — warn but don't block.
     if !key.starts_with("xai-") {
+        // Warn but don't block — key format could change.
         eprintln!(
-            "  {} Key does not start with 'xai-'. Double-check it is an xAI key.",
+            "  {} Key does not start with 'xai-'. \
+             Double-check it is an xAI key from https://console.x.ai/",
             "⚠".yellow()
         );
     }
@@ -297,44 +297,51 @@ fn validate_key_format(key: &str) -> Result<()> {
     Ok(())
 }
 
-/// Attempt a minimal API call to verify the key works.
+// ── API Verification ──────────────────────────────────────────────────────────
+
+/// Verify the key against the xAI `/v1/models` endpoint.
 ///
-/// Uses exponential back-off so a Starlink satellite handover during setup
-/// does not permanently fail validation.
-async fn test_api_key(api_key: &str) -> Result<String> {
-    const MAX_RETRIES: u32 = 3;
-    const BASE_DELAY_SECS: u64 = 3;
+/// Uses exponential back-off to handle Starlink satellite handovers which
+/// can cause 20-30 second connection drops.  Returns the first model ID as
+/// a friendly confirmation string.
+async fn verify_api_key_with_retries(api_key: &str) -> Result<String> {
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_secs(VERIFY_TIMEOUT_SECS))
+        .build()
+        .context("Failed to build HTTP client")?;
 
-    let mut last_err = anyhow!("No attempts made");
+    let mut last_err = anyhow!("No verification attempts made");
 
-    for attempt in 1..=MAX_RETRIES {
-        match try_api_call(api_key).await {
+    for attempt in 1..=MAX_VERIFY_RETRIES {
+        match try_verify_once(&client, api_key).await {
             Ok(model) => return Ok(model),
             Err(e) => {
-                last_err = e;
-                let is_auth_error = last_err.to_string().to_lowercase().contains("401")
-                    || last_err.to_string().to_lowercase().contains("unauthorized")
-                    || last_err.to_string().to_lowercase().contains("forbidden");
+                let msg = e.to_string().to_lowercase();
 
-                // Authentication errors are permanent — no point retrying.
-                if is_auth_error {
-                    return Err(anyhow!(
-                        "API key rejected (401 Unauthorized). \
-                         Please double-check the key at https://console.x.ai/"
-                    ));
+                // Auth errors are permanent — bail immediately.
+                if msg.contains("401") || msg.contains("unauthori") {
+                    return Err(anyhow!("401 Unauthorized — API key rejected by xAI."));
                 }
 
-                if attempt < MAX_RETRIES {
-                    let delay = BASE_DELAY_SECS * (1 << (attempt - 1)); // 3 → 6 → 12 s
+                last_err = e;
+                info!(
+                    "API key verification attempt {}/{} failed: {}",
+                    attempt, MAX_VERIFY_RETRIES, last_err
+                );
+
+                if attempt < MAX_VERIFY_RETRIES {
+                    let delay_secs = RETRY_BASE_SECS * (1 << (attempt - 1)); // 3, 6, 12
                     eprintln!(
-                        "\n  {} Attempt {}/{} failed ({}). Retrying in {}s…",
+                        "\n  {} Attempt {}/{} failed. Retrying in {}s… (network drop?)",
                         "⚠".yellow(),
                         attempt,
-                        MAX_RETRIES,
-                        last_err,
-                        delay
+                        MAX_VERIFY_RETRIES,
+                        delay_secs
                     );
-                    tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                    tokio::time::sleep(Duration::from_secs(delay_secs)).await;
+                    // Reprint the progress indicator on the next line.
+                    print!("  {}", "Re-verifying…".dimmed());
+                    io::stdout().flush().ok();
                 }
             }
         }
@@ -343,37 +350,34 @@ async fn test_api_key(api_key: &str) -> Result<String> {
     Err(last_err)
 }
 
-/// Single attempt at the xAI models endpoint — cheap, no tokens consumed.
-async fn try_api_call(api_key: &str) -> Result<String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(20))
-        .build()
-        .context("Failed to create HTTP client")?;
-
+/// Single attempt: GET `/v1/models` with the Bearer token.
+async fn try_verify_once(client: &reqwest::Client, api_key: &str) -> Result<String> {
     let resp = client
         .get("https://api.x.ai/v1/models")
         .header("Authorization", format!("Bearer {}", api_key))
-        .header("Content-Type", "application/json")
+        .header("Accept", "application/json")
         .send()
         .await
-        .context("Network request failed")?;
+        .context("Network request to api.x.ai failed")?;
 
     let status = resp.status();
+
     if status == reqwest::StatusCode::UNAUTHORIZED {
         return Err(anyhow!("401 Unauthorized"));
     }
+
     if !status.is_success() {
         let body = resp.text().await.unwrap_or_default();
         return Err(anyhow!(
-            "API error {}: {}",
+            "HTTP {} — {}",
             status,
             body.chars().take(120).collect::<String>()
         ));
     }
 
-    // Parse the model list and return the first model ID as a friendly hint.
-    let body: serde_json::Value = resp.json().await.context("Failed to parse API response")?;
-    let first_model = body
+    // Pull the first model ID as a user-friendly confirmation.
+    let payload: serde_json::Value = resp.json().await.context("Failed to parse API response")?;
+    let first_model = payload
         .get("data")
         .and_then(|d| d.as_array())
         .and_then(|arr| arr.first())
@@ -385,7 +389,115 @@ async fn try_api_call(api_key: &str) -> Result<String> {
     Ok(first_model)
 }
 
-/// Mask the key for display: show only the first 8 and last 4 characters.
+// ── Key persistence ───────────────────────────────────────────────────────────
+
+/// Write `GROK_API_KEY="<key>"` to `~/.grok/.env`.
+///
+/// Creates the directory and file if they do not exist.  Any existing
+/// `GROK_API_KEY=` line is replaced in-place; all other lines are preserved.
+///
+/// On Unix the file is chmod'd to 0600 so the key is not world-readable.
+fn save_api_key(api_key: &str) -> Result<PathBuf> {
+    let home = dirs::home_dir().context("Could not determine home directory")?;
+    let grok_dir = home.join(".grok");
+
+    std::fs::create_dir_all(&grok_dir)
+        .with_context(|| format!("Failed to create directory: {}", grok_dir.display()))?;
+
+    let env_path = grok_dir.join(".env");
+    let new_line = format!("GROK_API_KEY=\"{}\"", api_key);
+
+    // Read and rewrite, replacing any existing GROK_API_KEY line.
+    let existing = if env_path.exists() {
+        std::fs::read_to_string(&env_path)
+            .with_context(|| format!("Failed to read {}", env_path.display()))?
+    } else {
+        "# grok-cli environment — generated by `grok setup`\n".to_string()
+    };
+
+    let mut replaced = false;
+    let mut lines: Vec<String> = existing
+        .lines()
+        .map(|l| {
+            if l.trim_start().starts_with("GROK_API_KEY=") {
+                replaced = true;
+                new_line.clone()
+            } else {
+                l.to_string()
+            }
+        })
+        .collect();
+
+    if !replaced {
+        lines.push(new_line);
+    }
+
+    let mut content = lines.join("\n");
+    content.push('\n');
+
+    std::fs::write(&env_path, &content)
+        .with_context(|| format!("Failed to write {}", env_path.display()))?;
+
+    // Restrict permissions on Unix (no-op on Windows).
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let perms = std::fs::Permissions::from_mode(0o600);
+        std::fs::set_permissions(&env_path, perms)
+            .with_context(|| format!("Failed to set permissions on {}", env_path.display()))?;
+    }
+
+    info!("API key saved to {}", env_path.display());
+    Ok(env_path)
+}
+
+// ── Existing-key detection ────────────────────────────────────────────────────
+
+/// Check all standard locations for an existing API key without loading the
+/// full Config stack (the wizard may run before any config exists).
+fn resolve_existing_key() -> Option<String> {
+    // 1. Environment variable
+    if let Ok(k) = std::env::var("GROK_API_KEY") {
+        let k = k.trim().to_string();
+        if !k.is_empty() {
+            return Some(k);
+        }
+    }
+
+    // 2. ~/.grok/.env
+    let env_path = dirs::home_dir()?.join(".grok").join(".env");
+    if let Ok(content) = std::fs::read_to_string(&env_path) {
+        for line in content.lines() {
+            let line = line.trim();
+            if let Some(val) = line.strip_prefix("GROK_API_KEY=") {
+                let val = val.trim().trim_matches('"');
+                if !val.is_empty() {
+                    return Some(val.to_string());
+                }
+            }
+        }
+    }
+
+    None
+}
+
+// ── Display helpers ───────────────────────────────────────────────────────────
+
+fn print_banner() {
+    println!();
+    println!("{}", "━".repeat(60).cyan());
+    println!("{}", "  🤖  grok-cli · Setup Wizard".bold());
+    println!("{}", "━".repeat(60).cyan());
+    println!();
+    println!(
+        "  This wizard configures your {} so that",
+        "xAI API key".bold()
+    );
+    println!("  grok-cli (and the Zed Grok agent) can authenticate.");
+    println!();
+}
+
+/// Mask a key: show first 8 chars, stars for the middle, last 4 chars.
 fn mask_key(key: &str) -> String {
     let key = key.trim();
     if key.len() <= 16 {
@@ -393,73 +505,23 @@ fn mask_key(key: &str) -> String {
     }
     let prefix = &key[..8];
     let suffix = &key[key.len() - 4..];
-    let masked = "*".repeat(key.len().saturating_sub(12));
-    format!("{prefix}{masked}{suffix}")
+    let stars = "*".repeat(key.len().saturating_sub(12));
+    format!("{}{}{}", prefix, stars, suffix)
 }
 
-/// Write `GROK_API_KEY=<key>` to `~/.grok/.env`, creating the directory and
-/// file if necessary.  Any existing `GROK_API_KEY=` line is replaced; other
-/// lines are preserved.
-fn save_api_key(api_key: &str) -> Result<PathBuf> {
-    let home = dirs::home_dir().context("Could not determine home directory")?;
-    let grok_dir = home.join(".grok");
-
-    // Ensure ~/.grok/ exists.
-    std::fs::create_dir_all(&grok_dir)
-        .with_context(|| format!("Failed to create directory: {}", grok_dir.display()))?;
-
-    let env_path = grok_dir.join(".env");
-    let key_line = format!("GROK_API_KEY=\"{}\"", api_key);
-
-    // Read existing content (if any) and replace/append the key line.
-    let existing = if env_path.exists() {
-        std::fs::read_to_string(&env_path)
-            .with_context(|| format!("Failed to read: {}", env_path.display()))?
-    } else {
-        String::new()
-    };
-
-    let mut lines: Vec<String> = existing
-        .lines()
-        .filter(|l| !l.trim_start().starts_with("GROK_API_KEY="))
-        .map(str::to_string)
-        .collect();
-
-    lines.push(key_line);
-
-    // Ensure trailing newline.
-    let mut content = lines.join("\n");
-    content.push('\n');
-
-    std::fs::write(&env_path, &content)
-        .with_context(|| format!("Failed to write: {}", env_path.display()))?;
-
-    // Restrict permissions on Unix so the key is not world-readable.
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let perms = std::fs::Permissions::from_mode(0o600);
-        std::fs::set_permissions(&env_path, perms)
-            .with_context(|| format!("Failed to set permissions on: {}", env_path.display()))?;
-    }
-
-    Ok(env_path)
-}
-
-/// Print the "what to do next" hint shown at the end of a successful setup.
 fn print_next_steps() {
     println!("{}", "Next steps:".bold());
     println!(
-        "  {}  Open a project in Zed — grok-cli is ready as your AI agent.",
+        "  {} Open a project in Zed — the Grok agent is ready.",
         "→".cyan()
     );
     println!(
-        "  {}  Or run {} for interactive AI chat in the terminal.",
+        "  {} Run {} for interactive AI chat in the terminal.",
         "→".cyan(),
         "grok".bold()
     );
     println!(
-        "  {}  Run {} to verify everything is working.",
+        "  {} Run {} to verify everything works.",
         "→".cyan(),
         "grok health --all".bold()
     );
@@ -473,7 +535,7 @@ fn print_next_steps() {
     );
     println!(
         "  {} {}",
-        "Buy me a coffee:".dimmed(),
+        "☕ Buy me a coffee:".dimmed(),
         "https://buymeacoffee.com/micro.tech".underline().dimmed()
     );
     println!();
