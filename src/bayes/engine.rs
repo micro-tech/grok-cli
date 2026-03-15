@@ -5,6 +5,7 @@ use crate::bayes::likelihoods::{
     likelihood_from_model_confidence, likelihood_from_text, likelihood_from_tool_failure,
 };
 use crate::bayes::priors::default_priors;
+use crate::bayes::profile::{load_profile, save_profile};
 use crate::bayes::updater::bayes_update;
 
 pub struct BayesianEngine {
@@ -14,12 +15,39 @@ pub struct BayesianEngine {
 
 impl BayesianEngine {
     pub fn new() -> Self {
-        let priors = default_priors();
+        let priors = load_profile().unwrap_or_else(default_priors);
         let mut graph = BeliefGraph::new();
         for (k, v) in &priors {
             graph.set(k, *v);
         }
         Self { priors, graph }
+    }
+
+    pub fn update_profile(&mut self, executed_intent: &str) {
+        // Find the intent that corresponds to the executed action
+        let intent_key = match executed_intent {
+            "replace" | "write_file" => "intent_edit",
+            "run_shell_command" => "intent_shell",
+            "web_search" | "web_fetch" => "intent_search",
+            _ => "intent_question",
+        };
+
+        // Slightly nudge the prior for the chosen intent
+        if let Some(prior) = self.priors.get_mut(intent_key) {
+            *prior *= 1.1; // 10% boost to the baseline prior
+        }
+
+        // Renormalize the baseline priors
+        let total: f32 = self.priors.values().sum();
+        if total > f32::EPSILON {
+            for value in self.priors.values_mut() {
+                *value /= total;
+            }
+        }
+
+        // Sync graph and save to disk
+        self.sync_graph();
+        let _ = save_profile(&self.priors);
     }
 
     pub fn update_from_text(&mut self, text: &str) {

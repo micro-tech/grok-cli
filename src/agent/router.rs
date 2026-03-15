@@ -1,4 +1,5 @@
 use crate::bayes::BayesianEngine;
+use serde_json::Value;
 
 pub enum RouterAction {
     UseSkill(String),
@@ -49,8 +50,64 @@ impl Router {
     pub fn visualize_beliefs(&self) -> String {
         self.bayes.visualize()
     }
-}
 
+    pub fn learn_from_tool(&mut self, tool_name: &str) {
+        self.bayes.update_profile(tool_name);
+    }
+
+    pub fn get_contextual_tools(&self, all_tools: Vec<Value>) -> Vec<Value> {
+        let best = self
+            .bayes
+            .best_intent()
+            .unwrap_or_else(|| "intent_question".to_string());
+
+        // Base tools that are almost always safe/useful
+        let mut keep = vec!["read_file", "list_directory", "glob_search"];
+
+        match best.as_str() {
+            "intent_edit" => {
+                keep.extend(vec!["write_file", "replace", "run_shell_command"]);
+            }
+            "intent_shell" => {
+                keep.extend(vec!["run_shell_command", "replace", "write_file"]);
+            }
+            "intent_search" => {
+                keep.extend(vec!["web_search", "web_fetch"]);
+            }
+            _ => {
+                // Return all tools for general intent
+                return all_tools;
+            }
+        }
+
+        all_tools
+            .into_iter()
+            .filter(|t| {
+                if let Some(function) = t.get("function") {
+                    if let Some(name) = function.get("name").and_then(|n| n.as_str()) {
+                        return keep.contains(&name);
+                    }
+                }
+                true
+            })
+            .collect()
+    }
+
+    pub fn get_adaptive_system_prompt(&self) -> Option<String> {
+        let best = self.bayes.best_intent()?;
+
+        match best.as_str() {
+            "intent_edit" => Some("System Persona: You are an expert Software Engineer. Focus on writing clean, idiomatic code and precise file replacements. Double-check indentation and scope bounds.".to_string()),
+            "intent_shell" => Some("System Persona: You are a Senior DevOps Engineer. Focus on writing safe, cross-platform, one-line shell commands. Prefer silent/quiet flags to minimize output noise.".to_string()),
+            "intent_search" => Some("System Persona: You are an exhaustive Research Assistant. Focus on finding authoritative documentation, extracting citations, and synthesizing the best answer without making assumptions.".to_string()),
+            _ => None,
+        }
+    }
+
+    pub fn is_low_confidence(&self) -> bool {
+        self.bayes.probability("low_confidence") > 0.5
+    }
+}
 #[cfg(test)]
 mod tests {
     use super::*;

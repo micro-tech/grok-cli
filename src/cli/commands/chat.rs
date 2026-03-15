@@ -380,6 +380,15 @@ async fn handle_interactive_chat(
                     if show_belief_graph {
                         println!("\n{}", router.visualize_beliefs());
                     }
+
+                    if router.is_low_confidence() {
+                        actual_input = format!(
+                            "{}\n[System Alert: The intent probability is below threshold (low_confidence). Do NOT call any tools yet. Output a brief 3-step Markdown plan and ask the user if it looks correct before proceeding.]",
+                            actual_input
+                        );
+                    } else if let Some(persona) = router.get_adaptive_system_prompt() {
+                        actual_input = format!("{}\n[{}]", actual_input, persona);
+                    }
                 }
 
                 // Add user message to history
@@ -392,13 +401,19 @@ async fn handle_interactive_chat(
                 let spinner = create_spinner("Grok is thinking...");
 
                 // Get response with timeout and retries (including tool definitions)
+                let active_tools = if enable_bayesian_router {
+                    router.get_contextual_tools(tools.clone())
+                } else {
+                    tools.clone()
+                };
+
                 let response_with_finish = client
                     .chat_completion_with_history(
                         &conversation_history,
                         temperature,
                         max_tokens,
                         model,
-                        Some(tools.clone()),
+                        Some(active_tools),
                     )
                     .await?;
 
@@ -415,6 +430,10 @@ async fn handle_interactive_chat(
                     for tool_call in tool_calls {
                         if let Err(e) = execute_tool_call(tool_call, &security).await {
                             print_error(&format!("Tool execution failed: {}", e));
+                        } else {
+                            if enable_bayesian_router {
+                                router.learn_from_tool(&tool_call.function.name);
+                            }
                         }
                     }
 
