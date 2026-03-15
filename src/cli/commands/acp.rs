@@ -330,8 +330,12 @@ where
                     sid
                 );
                 let new_sid = SessionId::new(sid.clone());
+                let fallback_cwd = std::env::current_dir()
+                    .unwrap_or_default()
+                    .to_string_lossy()
+                    .to_string();
                 if let Err(e) = agent
-                    .initialize_session(new_sid, Some(SessionConfig::default()))
+                    .initialize_session(new_sid, fallback_cwd, Some(SessionConfig::default()))
                     .await
                 {
                     warn!("Failed to auto-create session '{}': {}", sid, e);
@@ -350,6 +354,8 @@ where
             (handle_session_list(&params, agent).await, false)
         } else if method == AGENT_METHOD_NAMES.session_load {
             (handle_session_load(&params, agent, writer).await, false)
+        } else if method == "session/set_model" {
+            (handle_session_set_model(&params, agent).await, false)
         } else {
             warn!("Unknown method: {}", method);
             (Err(anyhow!("Method not found: {}", method)), true)
@@ -824,9 +830,19 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
     let session_id_str = uuid::Uuid::new_v4().to_string();
     let session_id = SessionId::new(session_id_str.clone());
 
+    let fallback_cwd = std::env::current_dir()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .to_string();
+    let initial_cwd = params
+        .get("cwd")
+        .and_then(|c| c.as_str())
+        .map(|s| s.to_string())
+        .unwrap_or(fallback_cwd);
+
     // Initialize session in GrokAcpAgent
     agent
-        .initialize_session(session_id, Some(SessionConfig::default()))
+        .initialize_session(session_id, initial_cwd, Some(SessionConfig::default()))
         .await?;
 
     // Start chat logging for this session
@@ -927,34 +943,38 @@ async fn handle_session_list(params: &Value, agent: &GrokAcpAgent) -> Result<Val
 
     let cwd_filter = req.cwd.as_deref().unwrap_or("");
 
-    // Build the CWD string we advertise for each session.
-    // Use the process CWD as a best-effort value since we don't persist
-    // per-session CWDs (the CWD is registered during session/new but not
-    // stored in SessionData).
-    let process_cwd = std::env::current_dir()
-        .map(|p| p.to_string_lossy().into_owned())
-        .unwrap_or_else(|_| "/".to_string());
+    let agent_sids = agent.list_sessions().await;
+    let mut sessions = Vec::new();
 
-    let sessions: Vec<SessionInfo> = agent
-        .list_sessions()
-        .await
-        .into_iter()
-        .filter_map(|sid| {
-            let session_cwd = process_cwd.clone();
-            // Apply the optional cwd filter from the request.
-            if !cwd_filter.is_empty() && session_cwd != cwd_filter {
-                return None;
-            }
-            Some(SessionInfo::new(sid, session_cwd))
-        })
-        .collect();
+    for sid in agent_sids {
+        let stored_cwd = agent.get_session_cwd(&sid).await.unwrap_or_default();
+        if cwd_filter.is_empty() || stored_cwd == cwd_filter {
+            sessions.push(SessionInfo::new(sid, stored_cwd));
+        }
+    }
 
     info!("session/list returning {} session(s)", sessions.len());
     let response = SessionListResponse::new(sessions);
     Ok(serde_json::to_value(response)?)
 }
 
-/// Handle `session/load` — resume an existing session by ID.
+async fn handle_session_set_model(params: &Value, agent: &GrokAcpAgent) -> Result<Value> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct SetModelRequest {
+        session_id: String,
+        model_id: String,
+    }
+
+    let req: SetModelRequest = serde_json::from_value(params.clone())?;
+    info!(
+        "session/set_model called (session: {}, model: {})",
+        req.session_id, req.model_id
+    );
+    agent.set_model(&req.session_id, &req.model_id).await?;
+
+    Ok(serde_json::Value::Null)
+}
 ///
 /// grok-cli does not persist conversation history across restarts, so there
 /// is no history to replay.  Instead we:
@@ -1002,8 +1022,12 @@ where
             session_id_str
         );
         let new_sid = SessionId::new(session_id_str.clone());
+        let fallback_cwd = std::env::current_dir()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string();
         if let Err(e) = agent
-            .initialize_session(new_sid, Some(SessionConfig::default()))
+            .initialize_session(new_sid, fallback_cwd, Some(SessionConfig::default()))
             .await
         {
             warn!(

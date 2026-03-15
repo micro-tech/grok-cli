@@ -89,6 +89,9 @@ pub struct GrokAcpAgent {
 /// Session data for tracking conversation state
 #[derive(Debug, Clone)]
 struct SessionData {
+    /// The client-provided working directory for this session
+    cwd: String,
+
     /// Conversation history
     messages: Vec<Value>,
 
@@ -378,6 +381,7 @@ impl GrokAcpAgent {
     pub async fn initialize_session(
         &self,
         session_id: SessionId,
+        cwd: String,
         config: Option<SessionConfig>,
     ) -> Result<()> {
         let mut session_config = config.unwrap_or_default();
@@ -388,6 +392,7 @@ impl GrokAcpAgent {
         }
 
         let session_data = SessionData {
+            cwd,
             messages: Vec::new(),
             config: session_config,
             created_at: std::time::Instant::now(),
@@ -1173,6 +1178,21 @@ impl GrokAcpAgent {
         sessions.contains_key(session_id)
     }
 
+    pub async fn set_model(&self, session_id: &str, model: &str) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(session_id) {
+            session.config.model = model.to_string();
+            Ok(())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id))
+        }
+    }
+
+    pub async fn get_session_cwd(&self, session_id: &str) -> Option<String> {
+        let sessions = self.sessions.read().await;
+        sessions.get(session_id).map(|s| s.cwd.clone())
+    }
+
     /// Store the list of slash commands the client advertised in a
     /// `session/update { sessionUpdate: "available_commands_update" }` notification.
     ///
@@ -1315,6 +1335,7 @@ mod tests {
         // Build a minimal sessions map with one session entry.
         let session_id = SessionId::new("sess-perm-test");
         let session_data = SessionData {
+            cwd: String::new(),
             messages: Vec::new(),
             config: SessionConfig::default(),
             created_at: std::time::Instant::now(),
