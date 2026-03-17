@@ -594,12 +594,10 @@ async fn run_interactive_loop(
     }
 }
 
-/// Display the input prompt
+/// Display the input prompt with proper cursor positioning
 fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> Result<()> {
-    match config.prompt_style {
-        PromptStyle::Simple => {
-            print!("{} ", ">".bright_cyan());
-        }
+    let prompt = match config.prompt_style {
+        PromptStyle::Simple => "> ".to_string(),
         PromptStyle::Rich => {
             let context_info = if session.show_context_usage {
                 format!(" | {}", session.get_context_info())
@@ -607,7 +605,7 @@ fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> R
                 String::new()
             };
 
-            print!(
+            format!(
                 "{} {} ",
                 format!("Grok ({})", session.model).bright_cyan(),
                 format!(
@@ -620,22 +618,24 @@ fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> R
                     context_info
                 )
                 .dimmed()
-            );
+            )
         }
-        PromptStyle::Minimal => {
-            print!("» ");
-        }
-    }
+        PromptStyle::Minimal => "» ".to_string(),
+    };
 
+    print!("{}", prompt);
     io::stdout().flush()?;
     Ok(())
 }
 
-/// Read user input from stdin
+/// Read user input from stdin with cursor cleanup
 fn read_user_input() -> Result<String> {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
-    Ok(input)
+
+    // Clean up any ANSI escape sequences that might affect cursor position
+    let cleaned = input.trim_end_matches('\n').trim_end_matches('\r').to_string();
+    Ok(cleaned)
 }
 
 /// Handle shell commands (those starting with !)
