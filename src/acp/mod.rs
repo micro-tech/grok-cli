@@ -1413,7 +1413,7 @@ mod tests {
         let agent = GrokAcpAgent::new(config, None).await.unwrap();
         let session_id = SessionId::new("test-session-perm");
         agent
-            .initialize_session(session_id.clone(), None)
+            .initialize_session(session_id.clone(), ".".to_string(), None)
             .await
             .unwrap();
 

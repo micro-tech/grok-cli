@@ -48,7 +48,9 @@ async fn test_permission_proceed_once() -> Result<()> {
 
     let agent = GrokAcpAgent::new(config, None).await.unwrap();
     let session_id = SessionId::new("test-session-once");
-    agent.initialize_session(session_id.clone(), None).await?;
+    agent
+        .initialize_session(session_id.clone(), ".".to_string(), None)
+        .await?;
 
     let tool_calls = json!([{
         "id": "call_1",
@@ -117,7 +119,9 @@ async fn test_permission_cancel() -> Result<()> {
 
     let agent = GrokAcpAgent::new(config, None).await.unwrap();
     let session_id = SessionId::new("test-session-cancel");
-    agent.initialize_session(session_id.clone(), None).await?;
+    agent
+        .initialize_session(session_id.clone(), ".".to_string(), None)
+        .await?;
 
     let tool_calls = json!([{
         "id": "call_cancel",
@@ -186,7 +190,9 @@ async fn test_permission_always_allow_persists() -> Result<()> {
 
     let agent = GrokAcpAgent::new(config, None).await.unwrap();
     let session_id = SessionId::new("test-session-always");
-    agent.initialize_session(session_id.clone(), None).await?;
+    agent
+        .initialize_session(session_id.clone(), ".".to_string(), None)
+        .await?;
 
     let tool_calls = json!([{
         "id": "call_always",
@@ -260,7 +266,9 @@ async fn test_permission_timeout() -> Result<()> {
 
     let agent = GrokAcpAgent::new(config, None).await.unwrap();
     let session_id = SessionId::new("test-session-timeout");
-    agent.initialize_session(session_id.clone(), None).await?;
+    agent
+        .initialize_session(session_id.clone(), ".".to_string(), None)
+        .await?;
 
     let tool_calls = json!([{
         "id": "call_timeout",
@@ -305,7 +313,9 @@ async fn test_permission_gate_disabled() -> Result<()> {
 
     let agent = GrokAcpAgent::new(config, None).await.unwrap();
     let session_id = SessionId::new("test-session-disabled");
-    agent.initialize_session(session_id.clone(), None).await?;
+    agent
+        .initialize_session(session_id.clone(), ".".to_string(), None)
+        .await?;
 
     let tool_calls = json!([{
         "id": "call_no_perm",

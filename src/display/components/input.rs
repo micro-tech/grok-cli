@@ -63,9 +63,6 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
         }
         is_first_render = false;
 
-        // Capture start position (Top of box)
-        let (_, start_row) = cursor::position()?;
-
         // 2. Render Box
         // Top Border
         let top_border_len = box_width.saturating_sub(2);
@@ -116,6 +113,8 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
         stdout.execute(MoveToNextLine(1))?;
         stdout.execute(MoveToColumn(0))?;
 
+        let mut lines_below_middle = 1;
+
         // Bottom Border
         let bottom_border = format!(
             "{}{}{}",
@@ -126,6 +125,7 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
         stdout.execute(Print(bottom_border))?;
         stdout.execute(MoveToNextLine(1))?;
         stdout.execute(MoveToColumn(0))?;
+        lines_below_middle += 1;
 
         // 3. Render Suggestions
         let filtered_suggestions: Vec<&Suggestion> = if let Some(search) = buffer.strip_prefix('/')
@@ -169,6 +169,7 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
                 stdout.queue(Print("▲"))?;
                 stdout.queue(ResetColor)?;
                 stdout.queue(MoveToNextLine(1))?;
+                lines_below_middle += 1;
             }
 
             // Render Items
@@ -200,6 +201,7 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
                 stdout.queue(Print(text_preview))?;
                 stdout.queue(ResetColor)?;
                 stdout.queue(MoveToNextLine(1))?;
+                lines_below_middle += 1;
             }
 
             // Render Down Arrow
@@ -216,14 +218,12 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
 
         // 4. Position Cursor
         // We want cursor at Middle Line of box.
-        // Start row was Top Line.
-        // Middle Line is start_row + 1.
-        let cursor_row = start_row + 1;
         // Col: "│ " (2 chars) + prompt_width + (cursor_pos - horizontal_scroll)
         let visible_cursor_pos = cursor_pos.saturating_sub(horizontal_scroll);
         let cursor_col = 2 + prompt_width + visible_cursor_pos;
 
-        stdout.execute(MoveTo(cursor_col as u16, cursor_row))?;
+        stdout.execute(MoveToPreviousLine(lines_below_middle))?;
+        stdout.execute(MoveToColumn(cursor_col as u16))?;
         stdout.flush()?;
 
         // 5. Handle Input
