@@ -23,46 +23,53 @@ async fn main() -> Result<()> {
         .with(tracing_subscriber::fmt::layer().with_writer(std::io::stderr))
         .init();
 
-    // Initialize chat logger
-    let chat_logger_enabled = std::env::var("GROK_CHAT_LOGGING_ENABLED")
-        .unwrap_or_else(|_| "true".to_string())
-        .parse::<bool>()
-        .unwrap_or(true);
-
-    let chat_log_dir = std::env::var("GROK_CHAT_LOG_DIR")
-        .ok()
-        .map(PathBuf::from)
-        .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".grok")
-                .join("logs")
-                .join("chat_sessions")
-        });
-
-    let config = chat_logger::ChatLoggerConfig {
-        enabled: chat_logger_enabled,
-        log_dir: chat_log_dir,
-        json_format: true,
-        text_format: true,
-        max_file_size_mb: std::env::var("GROK_CHAT_LOG_MAX_SIZE_MB")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(10),
-        rotation_count: std::env::var("GROK_CHAT_LOG_ROTATION_COUNT")
-            .ok()
-            .and_then(|s| s.parse().ok())
-            .unwrap_or(5),
-        include_system: std::env::var("GROK_CHAT_LOG_INCLUDE_SYSTEM")
+    // Initialize chat logger in the background
+    let chat_logger_task = tokio::task::spawn_blocking(|| {
+        let chat_logger_enabled = std::env::var("GROK_CHAT_LOGGING_ENABLED")
             .unwrap_or_else(|_| "true".to_string())
             .parse::<bool>()
-            .unwrap_or(true),
-    };
+            .unwrap_or(true);
 
-    if let Err(e) = chat_logger::init(config) {
-        eprintln!("Warning: Failed to initialize chat logger: {}", e);
-    }
+        let chat_log_dir = std::env::var("GROK_CHAT_LOG_DIR")
+            .ok()
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                dirs::home_dir()
+                    .unwrap_or_else(|| PathBuf::from("."))
+                    .join(".grok")
+                    .join("logs")
+                    .join("chat_sessions")
+            });
+
+        let config = chat_logger::ChatLoggerConfig {
+            enabled: chat_logger_enabled,
+            log_dir: chat_log_dir,
+            json_format: true,
+            text_format: true,
+            max_file_size_mb: std::env::var("GROK_CHAT_LOG_MAX_SIZE_MB")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(10),
+            rotation_count: std::env::var("GROK_CHAT_LOG_ROTATION_COUNT")
+                .ok()
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(5),
+            include_system: std::env::var("GROK_CHAT_LOG_INCLUDE_SYSTEM")
+                .unwrap_or_else(|_| "true".to_string())
+                .parse::<bool>()
+                .unwrap_or(true),
+        };
+
+        if let Err(e) = chat_logger::init(config) {
+            eprintln!("Warning: Failed to initialize chat logger: {}", e);
+        }
+    });
 
     // Run the application
-    cli::app::run().await
+    let result = cli::app::run().await;
+
+    // Await the logger task to ensure any pending file ops complete before exit
+    let _ = chat_logger_task.await;
+
+    result
 }

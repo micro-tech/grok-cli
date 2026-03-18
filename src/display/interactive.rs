@@ -634,7 +634,10 @@ fn read_user_input() -> Result<String> {
     std::io::stdin().read_line(&mut input)?;
 
     // Clean up any ANSI escape sequences that might affect cursor position
-    let cleaned = input.trim_end_matches('\n').trim_end_matches('\r').to_string();
+    let cleaned = input
+        .trim_end_matches('\n')
+        .trim_end_matches('\r')
+        .to_string();
     Ok(cleaned)
 }
 
