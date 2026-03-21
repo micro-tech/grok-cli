@@ -113,6 +113,62 @@ struct SessionData {
     /// back in a session/update notification after session/new).
     /// Stored for future passthrough / forwarding support.
     client_commands: Vec<String>,
+
+    /// Bayesian inference engine for this session
+    bayes_engine: crate::bayes::BayesianEngine,
+}
+
+impl SessionData {
+    /// Refines the user prompt by checking Bayesian state for vagueness, repetition,
+    /// and uncertainty to shape the LLM's response appropriately.
+    pub fn refine_prompt(&mut self, message: &str) -> String {
+        self.bayes_engine.update_from_text(message);
+
+        let mut refined_message = message.to_string();
+
+        // 1. Detect Repetition (Intent Drift)
+        let mut is_repetition = false;
+        if let Some(prev) = self
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .and_then(|m| m["content"].as_str())
+        {
+            // Strip any system notes we previously appended to accurately compare
+            let prev_clean = prev.split("\n\n[System Note:").next().unwrap_or(prev);
+            if prev_clean.trim().to_lowercase() == message.trim().to_lowercase() {
+                is_repetition = true;
+            }
+        }
+
+        if is_repetition {
+            refined_message = format!(
+                "{}\n\n[System Note: The user seems to be repeating themselves. They might be experiencing intent drift or frustration. Propose alternative interpretations or check if they need a different approach.]",
+                refined_message
+            );
+        }
+
+        // 2. High Uncertainty (Clarification)
+        if self.bayes_engine.probability("need_clarification") > 0.6
+            || self.bayes_engine.probability("low_confidence") > 0.6
+        {
+            refined_message = format!(
+                "{}\n\n[System Note: Bayesian uncertainty is high. Please ask a clarifying question before proceeding if you are not sure what to do.]",
+                refined_message
+            );
+        }
+
+        // 3. Vagueness
+        if self.bayes_engine.probability("is_vague") > 0.6 {
+            refined_message = format!(
+                "{}\n\n[System Note: The user's request is vague. Propose possible interpretations to help clarify their goal.]",
+                refined_message
+            );
+        }
+
+        refined_message
+    }
 }
 
 /// Session-specific configuration
@@ -399,6 +455,7 @@ impl GrokAcpAgent {
             last_activity: std::time::Instant::now(),
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
+            bayes_engine: crate::bayes::BayesianEngine::new(),
         };
 
         let mut sessions = self.sessions.write().await;
@@ -505,10 +562,12 @@ impl GrokAcpAgent {
         // Update last activity
         session.last_activity = std::time::Instant::now();
 
+        let refined_message = session.refine_prompt(message);
+
         // Add user message to history
         session.messages.push(json!({
             "role": "user",
-            "content": message
+            "content": refined_message
         }));
 
         info!("📚 Session history: {} messages", session.messages.len());
@@ -918,11 +977,23 @@ impl GrokAcpAgent {
                     }
                     Err(e) => {
                         let tool_duration = tool_start.elapsed();
-                        warn!("⚠️  Tool failed in {:?}: {}", tool_duration, e);
-                        (
-                            format!("Error executing tool {}: {}", function_name, e),
-                            crate::acp::protocol::ToolCallStatus::Failed,
-                        )
+                        warn!("⚠️ Tool failed in {:?}: {}", tool_duration, e);
+
+                        // 4. Update Bayesian Engine for Tool Failure
+                        session.bayes_engine.update_from_tool_failure();
+
+                        let mut error_content =
+                            format!("Error executing tool {}: {}", function_name, e);
+
+                        // If confidence drops significantly due to failure, add a recovery system prompt
+                        if session.bayes_engine.probability("low_confidence") > 0.6 {
+                            error_content = format!(
+                                "{}\n\n[System Note: This tool failed and Bayesian confidence is low. Please rewrite your approach, verify your assumptions, or ask the user for clarification instead of repeating the same action.]",
+                                error_content
+                            );
+                        }
+
+                        (error_content, crate::acp::protocol::ToolCallStatus::Failed)
                     }
                 };
 
@@ -1342,6 +1413,7 @@ mod tests {
             last_activity: std::time::Instant::now(),
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
+            bayes_engine: crate::bayes::BayesianEngine::new(),
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);

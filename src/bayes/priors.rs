@@ -12,6 +12,7 @@ pub fn default_priors() -> HashMap<String, f32> {
     // meta
     map.insert("need_clarification".into(), 0.1);
     map.insert("low_confidence".into(), 0.2);
+    map.insert("is_vague".into(), 0.1);
 
     map
 }

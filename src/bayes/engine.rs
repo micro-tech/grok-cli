@@ -8,6 +8,7 @@ use crate::bayes::priors::default_priors;
 use crate::bayes::profile::{load_profile, save_profile};
 use crate::bayes::updater::bayes_update;
 
+#[derive(Debug, Clone)]
 pub struct BayesianEngine {
     priors: HashMap<String, f32>,
     graph: BeliefGraph,

@@ -18,9 +18,17 @@ pub fn likelihood_from_text(text: &str) -> HashMap<String, f32> {
     }
 
     // ambiguity / risk
-    if t.contains("careful") || t.contains("don’t delete") || t.contains("don't delete") {
+    if t.contains("careful") || t.contains("don't delete") {
         map.insert("need_clarification".into(), 10.0);
         map.insert("low_confidence".into(), 5.0);
+    }
+
+    // Vagueness heuristic
+    let word_count = t.split_whitespace().count();
+    if word_count < 3 && !t.contains("edit") && !t.contains("run") && !t.contains("search") {
+        map.insert("is_vague".into(), 8.0);
+    } else if word_count > 10 {
+        map.insert("is_vague".into(), 0.1);
     }
 
     if t == "reset_clarification" {
