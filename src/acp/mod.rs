@@ -219,7 +219,7 @@ pub struct ToolDefinition {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            model: "grok-4-1-fast-reasoning".to_string(),
+            model: "grok-code-fast-1".to_string(),
             temperature: 0.5, // Lower temperature for more deterministic coding output
             max_tokens: 4096,
             system_prompt: Some(
