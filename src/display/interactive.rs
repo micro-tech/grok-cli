@@ -1632,38 +1632,87 @@ fn is_home_directory(current_dir: &PathBuf) -> bool {
 
 /// Print available skills and their activation status
 fn print_available_skills(session: &InteractiveSession) {
+    use crate::skills::SkillRegistry;
+
     if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
-        match crate::skills::list_skills(&skills_dir) {
-            Ok(skills) => {
-                if skills.is_empty() {
+        match SkillRegistry::load(&skills_dir) {
+            Ok(registry) => {
+                if registry.is_empty() {
                     println!("{} No skills available", "ℹ".bright_blue());
-                    println!("  Create a skill with: grok skills new <name>");
+                    println!(
+                        "  Create a skill with: {}",
+                        "grok skills new <name>".bright_cyan()
+                    );
                 } else {
                     println!("{}", "Available Skills:".bright_cyan().bold());
+                    println!(
+                        "  {}",
+                        format!(
+                            "{} skill(s) found — sorted by arbitration score",
+                            registry.len()
+                        )
+                        .dimmed()
+                    );
                     println!();
-                    for skill in skills {
-                        let is_active = session.active_skills.contains(&skill.config.name);
-                        let status = if is_active {
+
+                    for entry in registry.entries() {
+                        let is_active = session.active_skills.contains(&entry.name().to_string());
+                        let is_enabled = entry.is_enabled();
+
+                        let status = if !is_enabled {
+                            "✗ DISABLED".bright_red()
+                        } else if is_active {
                             "✓ ACTIVE".bright_green()
                         } else {
                             "○ inactive".dimmed()
                         };
+
+                        let score_badge = format!("[score:{}]", entry.arbitration_score());
+                        let version_str = format!("v{}", entry.version());
+
                         println!(
-                            "  [{}] {} - {}",
+                            "  [{}] {}  {}  {}",
                             status,
-                            skill.config.name.bright_yellow(),
-                            skill.config.description.dimmed()
+                            entry.name().bright_yellow(),
+                            score_badge.dimmed(),
+                            version_str.dimmed()
                         );
+                        println!("       {}", entry.description().dimmed());
+
+                        // Show tags if present
+                        let tags = entry.tags();
+                        if !tags.is_empty() {
+                            println!("       {} {}", "tags:".dimmed(), tags.join(", ").dimmed());
+                        }
+
+                        // Show author if present
+                        if let Some(author) = entry.author() {
+                            println!("       {} {}", "author:".dimmed(), author.dimmed());
+                        }
+
+                        // Show dependencies if present
+                        let deps = entry.dependencies();
+                        if !deps.is_empty() {
+                            println!("       {} {}", "deps:".dimmed(), deps.join(", ").dimmed());
+                        }
+
+                        println!();
                     }
-                    println!();
+
                     println!(
-                        "  Use {} to enable a skill",
-                        "/activate <skill-name>".bright_cyan()
+                        "  Use {} to enable a skill  |  {} to disable",
+                        "/activate <skill-name>".bright_cyan(),
+                        "/deactivate <skill-name>".bright_cyan()
+                    );
+                    println!(
+                        "  Use {} / {} to globally enable/disable a skill",
+                        "grok skills enable <name>".bright_cyan(),
+                        "grok skills disable <name>".bright_cyan()
                     );
                 }
             }
             Err(e) => {
-                println!("{} Failed to list skills: {}", "✗".bright_red(), e);
+                println!("{} Failed to load skill registry: {}", "✗".bright_red(), e);
             }
         }
     } else {
@@ -1683,8 +1732,32 @@ fn activate_skill(session: &mut InteractiveSession, skill_name: &str) -> Result<
         return Ok(());
     }
 
-    // Verify skill exists
+    // Verify skill exists and check global enabled flag via registry
     if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
+        // Registry check: block globally-disabled skills before anything else
+        if let Ok(registry) = crate::skills::SkillRegistry::load(&skills_dir) {
+            match registry.find(skill_name) {
+                None => {
+                    println!("{} Skill '{}' not found", "✗".bright_red(), skill_name);
+                    println!("  Use {} to see available skills", "/skills".bright_cyan());
+                    return Ok(());
+                }
+                Some(entry) if !entry.is_enabled() => {
+                    println!(
+                        "{} Skill '{}' is globally disabled and cannot be activated",
+                        "✗".bright_red(),
+                        skill_name.bright_yellow()
+                    );
+                    println!(
+                        "  Re-enable it first with: {}",
+                        format!("grok skills enable {}", skill_name).bright_cyan()
+                    );
+                    return Ok(());
+                }
+                Some(_) => {} // enabled — fall through to security check
+            }
+        }
+
         if let Some(skill) = crate::skills::find_skill(skill_name, &skills_dir) {
             // Validate skill security before activating
             let validator = crate::skills::SkillSecurityValidator::new();
@@ -1783,27 +1856,38 @@ fn deactivate_skill(session: &mut InteractiveSession, skill_name: &str) -> Resul
     Ok(())
 }
 
-/// Get the context string for currently active skills
+/// Get the ranked context string for currently active skills.
+///
+/// Uses the [`SkillRegistry`] so skills are injected in descending
+/// arbitration-score order, giving higher-priority skills more influence.
 fn get_active_skills_context(session: &InteractiveSession) -> Option<String> {
+    use crate::skills::SkillRegistry;
+
     if session.active_skills.is_empty() {
         return None;
     }
 
     let skills_dir = crate::skills::get_default_skills_dir()?;
-    let mut context =
-        String::from("\n\n## Active Skills\n\nThe following skills are currently active:\n\n");
 
-    for skill_name in &session.active_skills {
-        if let Some(skill) = crate::skills::find_skill(skill_name, &skills_dir) {
-            context.push_str(&format!("### Skill: {}\n", skill.config.name));
-            context.push_str(&format!("Description: {}\n", skill.config.description));
-            context.push_str("\nInstructions:\n");
-            context.push_str(&skill.instructions);
-            context.push_str("\n\n---\n\n");
+    match SkillRegistry::load(&skills_dir) {
+        Ok(registry) => registry.ranked_context(&session.active_skills),
+        Err(_) => {
+            // Fallback: plain unranked context using the legacy loader
+            let mut context = String::from(
+                "\n\n## Active Skills\n\nThe following skills are currently active:\n\n",
+            );
+            for skill_name in &session.active_skills {
+                if let Some(skill) = crate::skills::find_skill(skill_name, &skills_dir) {
+                    context.push_str(&format!("### Skill: {}\n", skill.config.name));
+                    context.push_str(&format!("Description: {}\n", skill.config.description));
+                    context.push_str("\nInstructions:\n");
+                    context.push_str(&skill.instructions);
+                    context.push_str("\n\n---\n\n");
+                }
+            }
+            Some(context)
         }
     }
-
-    Some(context)
 }
 
 fn print_hooks_info(config: &Config) {
