@@ -1,7 +1,7 @@
 use crate::display::interactive::InteractiveSession;
 use anyhow::{Result, anyhow};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 /// Get the sessions directory path
 fn get_sessions_dir() -> Result<PathBuf> {

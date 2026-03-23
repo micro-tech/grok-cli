@@ -15,7 +15,7 @@ use std::fs::File;
 use std::io::Write;
 
 use crate::AuditAction;
-use crate::cli::{confirm, print_error, print_info, print_success};
+use crate::cli::{confirm, print_info, print_success};
 use crate::security::audit::AuditLogger;
 
 /// Handle audit-related commands

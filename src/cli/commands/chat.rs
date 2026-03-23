@@ -13,9 +13,7 @@ use serde_json::{Value, json};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
-use std::path::Path;
 use std::process::Command;
-use std::time::Duration;
 
 use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
@@ -218,7 +216,7 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
                 .as_str()
                 .ok_or_else(|| anyhow!("Missing command"))?;
             println!("  {} Executing: {}", "⚙".cyan(), command);
-            let result = tools::run_shell_command(command, security)?;
+            let result = tools::run_shell_command(command, security).await?;
             println!("  {} Command output:", "✓".green());
             for line in result.lines() {
                 println!("    {}", line);

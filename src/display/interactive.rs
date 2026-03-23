@@ -29,7 +29,7 @@ use crate::utils::context::{
 };
 use crate::utils::session::{list_sessions, load_session, save_session};
 use crate::utils::shell_permissions::{ApprovalMode, ShellPermissions};
-use crate::{content_to_string, extract_text_content, text_content};
+use crate::content_to_string;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -1580,7 +1580,7 @@ async fn execute_tool_call_interactive(
                 .as_str()
                 .ok_or_else(|| anyhow!("Missing command"))?;
             println!("  {} Executing: {}", "⚙".cyan(), command);
-            let result = tools::run_shell_command(command, security)?;
+            let result = tools::run_shell_command(command, security).await?;
             println!("  {} Command output:", "✓".green());
             for line in result.lines() {
                 println!("    {}", line);

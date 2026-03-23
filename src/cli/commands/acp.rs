@@ -25,14 +25,13 @@ use crate::acp::protocol::{
     AGENT_METHOD_NAMES, AcpModeInfo, AcpModelInfo, AcpModelsInfo, AcpModesInfo, AgentCapabilities,
     AuthEnvVar, AuthMethod, AvailableCommandsUpdate, ContentBlock, ContentChunk, Implementation,
     InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
-    PermissionOutcome, PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionParams,
+    PermissionOutcome, PromptRequest, PromptResponse,
     SessionId, SessionInfo, SessionListRequest, SessionListResponse, SessionLoadRequest,
     SessionNotification, SessionUpdate, StopReason, TextContent,
 };
 use crate::acp::slash_commands::{
     self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
 };
-use crate::acp::tools;
 use crate::acp::{GrokAcpAgent, PermissionBridge, SessionConfig};
 use crate::cli::{create_spinner, print_error, print_info, print_success, print_warning};
 use crate::config::Config;

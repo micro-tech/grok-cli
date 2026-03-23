@@ -2,6 +2,7 @@ use crate::config::ExternalAccessConfig;
 use anyhow::{Result, anyhow};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+use tracing::warn;
 
 #[derive(Debug, Clone)]
 pub struct SecurityPolicy {
@@ -258,13 +259,119 @@ impl SecurityPolicy {
         }
     }
 
+    /// Validate a shell command against a denylist of dangerous patterns.
+    ///
+    /// This is a defence-in-depth measure on top of the user-approval gate.
+    /// It blocks the most commonly exploited shell patterns regardless of
+    /// whether the user has pre-approved the tool.
+    ///
+    /// # Blocked categories
+    ///
+    /// | Category | Examples |
+    /// |---|---|
+    /// | Catastrophic filesystem destruction | `rm -rf /`, `Remove-Item C:\ -Recurse` |
+    /// | Block device / disk wipe | `dd if=… of=/dev/sda`, `> /dev/sda` |
+    /// | Remote code execution via pipe | `curl … \| bash`, `wget … \| sh` |
+    /// | Reverse shells | `/dev/tcp/`, `nc -e`, `ncat --exec` |
+    /// | Base64 obfuscation + execute | `base64 -d \| bash`, `echo … \| base64 -d \| sh` |
+    /// | PowerShell encoded commands | `powershell -enc`, `powershell -EncodedCommand` |
+    /// | PowerShell download + execute | `IEX`, `Invoke-Expression`, `iwr \| iex` |
+    /// | Fork bombs | `:(){ :\|:& };:` |
+    /// | Disk formatting | `mkfs`, `Format-Volume` |
     pub fn validate_shell_command(&self, command: &str) -> Result<()> {
-        // Basic blacklist for really dangerous things if needed,
-        // but mostly we rely on user confirmation + trusted scope.
-        // For now, allow all if confirmed.
         if command.trim().is_empty() {
             return Err(anyhow!("Command cannot be empty"));
         }
+
+        // Normalise: lowercase for case-insensitive matching, collapse whitespace
+        let normalised = command.to_lowercase();
+        let collapsed: String = normalised.split_whitespace().collect::<Vec<_>>().join(" ");
+
+        // ── Denylist entries ─────────────────────────────────────────────────
+        // Each entry is (pattern_substring, human_reason).
+        // We match against both the original (for symbol patterns) and the
+        // collapsed-whitespace lowercase version (for keyword patterns).
+        let denied: &[(&str, &str)] = &[
+            // Catastrophic recursive deletes
+            ("rm -rf /", "recursive deletion of filesystem root"),
+            ("rm -rf ~", "recursive deletion of home directory"),
+            ("rm -rf *", "recursive deletion of all files in directory"),
+            (
+                "rm --no-preserve-root",
+                "deletion of filesystem root without guard",
+            ),
+            // PowerShell catastrophic deletes
+            (
+                "remove-item c:\\ -recurse",
+                "recursive deletion of C: drive",
+            ),
+            (
+                "remove-item / -recurse",
+                "recursive deletion of filesystem root",
+            ),
+            // Disk / block device wipes
+            ("of=/dev/sda", "writing directly to block device sda"),
+            ("of=/dev/sdb", "writing directly to block device sdb"),
+            ("of=/dev/nvme", "writing directly to NVMe block device"),
+            ("> /dev/sda", "overwriting block device sda"),
+            // Disk formatting
+            ("mkfs", "filesystem formatting command"),
+            ("format-volume", "PowerShell disk format command"),
+            // Remote code execution via pipe-to-shell
+            ("| bash", "piping remote content directly to bash"),
+            ("| sh", "piping remote content directly to sh"),
+            ("| zsh", "piping remote content directly to zsh"),
+            ("|bash", "piping remote content directly to bash"),
+            ("|sh", "piping remote content directly to sh"),
+            // Base64 decode + execute
+            ("base64 -d | ", "base64-decode piped to shell execution"),
+            ("base64 -d|", "base64-decode piped to shell execution"),
+            // Reverse shell patterns
+            ("/dev/tcp/", "bash /dev/tcp reverse shell"),
+            ("/dev/udp/", "bash /dev/udp reverse shell"),
+            ("nc -e ", "netcat execute reverse shell"),
+            ("nc -e\t", "netcat execute reverse shell"),
+            ("ncat --exec", "ncat execute reverse shell"),
+            ("ncat -e ", "ncat execute reverse shell"),
+            // PowerShell encoded command (common obfuscation)
+            ("-enc ", "PowerShell base64-encoded command (obfuscation)"),
+            (
+                "-encodedcommand",
+                "PowerShell base64-encoded command (obfuscation)",
+            ),
+            // PowerShell download + execute
+            (
+                "invoke-expression",
+                "PowerShell Invoke-Expression (remote code execution)",
+            ),
+            (" iex ", "PowerShell IEX alias (remote code execution)"),
+            ("(iex ", "PowerShell IEX alias (remote code execution)"),
+            // Fork bomb
+            (":(){ :|:& };:", "shell fork bomb"),
+            // Crontab injection
+            ("crontab -", "crontab modification"),
+            // LD_PRELOAD / library injection
+            ("ld_preload=", "LD_PRELOAD library injection"),
+        ];
+
+        for (pattern, reason) in denied {
+            if collapsed.contains(pattern) || command.to_lowercase().contains(pattern) {
+                warn!(
+                    command = %command,
+                    pattern = %pattern,
+                    reason  = %reason,
+                    "Shell command blocked by security denylist"
+                );
+                return Err(anyhow!(
+                    "Command blocked for security reasons: {} \
+                     (matched pattern '{}').\n\
+                     If this is a legitimate operation, run it directly in your terminal.",
+                    reason,
+                    pattern
+                ));
+            }
+        }
+
         Ok(())
     }
 }

@@ -64,8 +64,11 @@ Describe the purpose of this skill.
 "#;
 
 pub async fn handle_skills_command(command: SkillsCommand) -> Result<()> {
-    let skills_dir = get_default_skills_dir()
-        .unwrap_or_else(|| std::env::current_dir().unwrap().join(".grok/skills"));
+    let skills_dir = get_default_skills_dir().unwrap_or_else(|| {
+        std::env::current_dir()
+            .unwrap_or_else(|_| std::path::PathBuf::from("."))
+            .join(".grok/skills")
+    });
 
     match command {
         // ── List ─────────────────────────────────────────────────────────────

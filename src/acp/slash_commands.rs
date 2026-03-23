@@ -24,7 +24,7 @@
 //! 3. Add an [`AvailableCommand`] entry in [`get_available_commands`].
 //! 4. Handle it in [`command_to_prompt`] (AI) **or** [`handle_builtin`] (direct).
 
-use super::protocol::{AvailableCommand, AvailableCommandInput};
+use super::protocol::AvailableCommand;
 
 // ---------------------------------------------------------------------------
 // Command enum

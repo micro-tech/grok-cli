@@ -20,7 +20,7 @@
 //! - Skills are sandboxed to their directory
 //! - Tool permissions are strictly validated
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use regex::Regex;
 use std::collections::HashSet;
 use std::fs;

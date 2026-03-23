@@ -14,9 +14,8 @@ use tracing::{debug, error, info, warn};
 
 use crate::GrokClient;
 use crate::config::Config;
-use crate::grok_client_ext::MessageWithFinishReason;
 use crate::hooks::HookManager;
-use crate::{content_to_string, extract_text_content};
+use crate::content_to_string;
 
 pub mod protocol;
 pub mod security;
@@ -24,10 +23,7 @@ pub mod slash_commands;
 pub mod tools;
 
 use crate::acp::protocol::{
-    AGENT_METHOD_NAMES, AgentCapabilities, ContentBlock, ContentChunk, Implementation,
-    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
-    PermissionOutcome, PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionParams,
-    SessionId as ProtocolSessionId, SessionNotification, SessionUpdate, StopReason, TextContent,
+    PermissionOutcome, RequestPermissionParams,
 };
 use security::SecurityManager;
 
@@ -470,7 +466,7 @@ impl GrokAcpAgent {
         &self,
         session_id: &SessionId,
         function_name: &str,
-        args: &Value,
+        _args: &Value,
         tool_call_id: &str,
         permission_bridge: Option<&Arc<PermissionBridge>>,
     ) -> Result<bool> {
@@ -888,32 +884,35 @@ impl GrokAcpAgent {
                 }
                 // --- END PERMISSION GATE ---
 
+                // Acquire the policy once so we don't clone it for every arm.
+                let policy = self.security.get_policy();
+
                 let result = match function_name.as_str() {
                     "read_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::read_file(path, &self.security.get_policy())
+                        tools::read_file(path, &policy)
                     }
                     "write_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
-                        tools::write_file(path, content, &self.security.get_policy())
+                        tools::write_file(path, content, &policy)
                     }
                     "list_directory" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_directory(path, &self.security.get_policy())
+                        tools::list_directory(path, &policy)
                     }
                     "glob_search" => {
                         let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                        tools::glob_search(pattern, &self.security.get_policy())
+                        tools::glob_search(pattern, &policy)
                     }
                     "search_file_content" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                        tools::search_file_content(path, pattern, &self.security.get_policy())
+                        tools::search_file_content(path, pattern, &policy)
                     }
                     "run_shell_command" => {
                         let command = args["command"].as_str().ok_or(anyhow!("Missing command"))?;
-                        tools::run_shell_command(command, &self.security.get_policy())
+                        tools::run_shell_command(command, &policy).await
                     }
                     "replace" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
@@ -925,13 +924,7 @@ impl GrokAcpAgent {
                             .ok_or(anyhow!("Missing new_string"))?;
                         let expected_replacements =
                             args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(
-                            path,
-                            old_string,
-                            new_string,
-                            expected_replacements,
-                            &self.security.get_policy(),
-                        )
+                        tools::replace(path, old_string, new_string, expected_replacements, &policy)
                     }
                     "save_memory" => {
                         let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
@@ -956,11 +949,11 @@ impl GrokAcpAgent {
                                     .map(|s| s.to_string())
                             })
                             .collect();
-                        tools::read_multiple_files(paths?, &self.security.get_policy())
+                        tools::read_multiple_files(paths?, &policy)
                     }
                     "list_code_definitions" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_code_definitions(path, &self.security.get_policy())
+                        tools::list_code_definitions(path, &policy)
                     }
                     _ => Err(anyhow!("Unknown tool: {}", function_name)),
                 };

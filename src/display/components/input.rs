@@ -1,11 +1,16 @@
 use anyhow::Result;
-use crossterm::cursor::{self, MoveTo, MoveToColumn, MoveToNextLine, MoveToPreviousLine};
+use crossterm::cursor::{MoveToColumn, MoveToNextLine, MoveToPreviousLine};
 use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, read};
 use crossterm::style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor};
 use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::{ExecutableCommand, QueueableCommand};
+use once_cell::sync::Lazy;
 use regex::Regex;
 use std::io::{Write, stdout};
+
+/// ANSI escape sequence pattern — compiled once, reused on every render tick.
+static RE_ANSI: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"\x1b\[[0-9;]*m").expect("BUG: invalid static RE_ANSI pattern"));
 
 pub struct Suggestion {
     pub text: String,
@@ -13,8 +18,7 @@ pub struct Suggestion {
 }
 
 fn strip_ansi(s: &str) -> String {
-    let re = Regex::new(r"\x1b\[[0-9;]*m").unwrap();
-    re.replace_all(s, "").to_string()
+    RE_ANSI.replace_all(s, "").to_string()
 }
 
 pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> Result<String> {
@@ -148,7 +152,15 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
                 suggestion_index = Some(0);
             }
 
-            let idx = suggestion_index.unwrap();
+            // SAFETY: the block above guarantees suggestion_index is Some(_).
+            let idx = match suggestion_index {
+                Some(i) => i,
+                None => {
+                    // Should never happen; defensive fallback.
+                    suggestion_index = Some(0);
+                    0
+                }
+            };
             let list_height = 8; // Max visible suggestions
 
             // Adjust scroll
