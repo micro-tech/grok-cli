@@ -151,7 +151,7 @@ jit_context = false
 
 [bayesian]
 # Master on/off switch. When false the router is fully bypassed.
-enabled = false
+enabled = true
 
 # Show the real-time ASCII belief-graph after each message.
 show_belief_graph = false
