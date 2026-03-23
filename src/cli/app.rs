@@ -209,8 +209,7 @@ pub async fn run() -> Result<()> {
                 timeout_secs: config.timeout_secs,
                 max_retries: config.max_retries,
                 rate_limit_config: config.rate_limits,
-                enable_bayesian_router: config.experimental.enable_bayesian_router,
-                show_belief_graph: config.experimental.show_belief_graph,
+                bayesian: config.bayesian.clone(),
             })
             .await?;
         }
@@ -261,8 +260,7 @@ pub async fn run() -> Result<()> {
                 timeout_secs: config.timeout_secs,
                 max_retries: config.max_retries,
                 rate_limit_config: config.rate_limits,
-                enable_bayesian_router: config.experimental.enable_bayesian_router,
-                show_belief_graph: config.experimental.show_belief_graph,
+                bayesian: config.bayesian.clone(),
             })
             .await?;
         }

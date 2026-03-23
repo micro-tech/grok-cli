@@ -14,17 +14,15 @@ use tracing::{debug, error, info, warn};
 
 use crate::GrokClient;
 use crate::config::Config;
-use crate::hooks::HookManager;
 use crate::content_to_string;
+use crate::hooks::HookManager;
 
 pub mod protocol;
 pub mod security;
 pub mod slash_commands;
 pub mod tools;
 
-use crate::acp::protocol::{
-    PermissionOutcome, RequestPermissionParams,
-};
+use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams};
 use security::SecurityManager;
 
 /// Bridge for passing permission requests from the tool executor to the client writer task
@@ -146,9 +144,7 @@ impl SessionData {
         }
 
         // 2. High Uncertainty (Clarification)
-        if self.bayes_engine.probability("need_clarification") > 0.6
-            || self.bayes_engine.probability("low_confidence") > 0.6
-        {
+        if self.bayes_engine.is_high_uncertainty() {
             refined_message = format!(
                 "{}\n\n[System Note: Bayesian uncertainty is high. Please ask a clarifying question before proceeding if you are not sure what to do.]",
                 refined_message
@@ -156,7 +152,7 @@ impl SessionData {
         }
 
         // 3. Vagueness
-        if self.bayes_engine.probability("is_vague") > 0.6 {
+        if self.bayes_engine.is_vague() {
             refined_message = format!(
                 "{}\n\n[System Note: The user's request is vague. Propose possible interpretations to help clarify their goal.]",
                 refined_message
@@ -451,7 +447,7 @@ impl GrokAcpAgent {
             last_activity: std::time::Instant::now(),
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
-            bayes_engine: crate::bayes::BayesianEngine::new(),
+            bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
         };
 
         let mut sessions = self.sessions.write().await;
@@ -979,7 +975,7 @@ impl GrokAcpAgent {
                             format!("Error executing tool {}: {}", function_name, e);
 
                         // If confidence drops significantly due to failure, add a recovery system prompt
-                        if session.bayes_engine.probability("low_confidence") > 0.6 {
+                        if session.bayes_engine.is_low_confidence() {
                             error_content = format!(
                                 "{}\n\n[System Note: This tool failed and Bayesian confidence is low. Please rewrite your approach, verify your assumptions, or ask the user for clarification instead of repeating the same action.]",
                                 error_content

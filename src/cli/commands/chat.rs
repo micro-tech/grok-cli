@@ -19,7 +19,7 @@ use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
 use crate::cli::{create_spinner, format_grok_response, print_error, print_info, print_success};
-use crate::config::RateLimitConfig;
+use crate::config::{BayesianConfig, RateLimitConfig};
 use crate::utils::client::initialize_client;
 use crate::{GrokClient, ToolCall, content_to_string, extract_text_content};
 
@@ -34,8 +34,7 @@ pub struct ChatOptions<'a> {
     pub timeout_secs: u64,
     pub max_retries: u32,
     pub rate_limit_config: RateLimitConfig,
-    pub enable_bayesian_router: bool,
-    pub show_belief_graph: bool,
+    pub bayesian: BayesianConfig,
 }
 
 pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
@@ -53,8 +52,7 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
             options.temperature,
             options.max_tokens,
             options.model,
-            options.enable_bayesian_router,
-            options.show_belief_graph,
+            options.bayesian,
         )
         .await
     } else {
@@ -263,8 +261,7 @@ async fn handle_interactive_chat(
     temperature: f32,
     max_tokens: u32,
     model: &str,
-    enable_bayesian_router: bool,
-    mut show_belief_graph: bool,
+    bayesian_config: BayesianConfig,
 ) -> Result<()> {
     println!("{}", "🤖 Interactive Grok Chat Session".cyan().bold());
     println!("{}", format!("Model: {}", model).dimmed());
@@ -297,7 +294,9 @@ async fn handle_interactive_chat(
     // Get tool definitions for function calling
     let tools = tools::get_available_tool_definitions();
 
-    let mut router = Router::new();
+    let enable_bayesian_router = bayesian_config.enabled;
+    let mut show_belief_graph = bayesian_config.show_belief_graph;
+    let mut router = Router::new_with_config(&bayesian_config);
 
     loop {
         // Prompt for input

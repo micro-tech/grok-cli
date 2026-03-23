@@ -21,6 +21,10 @@ pub struct Config {
     #[serde(skip)]
     pub config_source: Option<ConfigSource>,
 
+    /// Bayesian intent router configuration
+    #[serde(default)]
+    pub bayesian: BayesianConfig,
+
     /// X API key for Grok access
     #[serde(skip)]
     pub api_key: Option<String>,
@@ -674,10 +678,153 @@ pub struct ExperimentalConfig {
     pub codebase_investigator_settings: CodebaseInvestigatorConfig,
     #[serde(default)]
     pub extensions: ExtensionsConfig,
+}
+
+// ── Bayesian Router Configuration ─────────────────────────────────────────────
+
+/// Top-level configuration for the Bayesian intent router.
+///
+/// All thresholds are probabilities in the range `[0.0, 1.0]`.
+/// Lowering a threshold makes the corresponding behaviour fire more readily;
+/// raising it makes it more conservative.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BayesianConfig {
+    /// Master on/off switch.  When `false` the router is bypassed entirely.
     #[serde(default)]
-    pub enable_bayesian_router: bool,
+    pub enabled: bool,
+
+    /// Show the real-time ASCII belief-graph after each message.
     #[serde(default)]
     pub show_belief_graph: bool,
+
+    /// The router asks for clarification when `P(need_clarification)` exceeds
+    /// this value.  Default: `0.4`.  Lower → more cautious; higher → more
+    /// permissive.
+    #[serde(default = "default_clarification_threshold")]
+    pub clarification_threshold: f32,
+
+    /// System uncertainty notes are injected into the prompt when
+    /// `P(need_clarification)` or `P(low_confidence)` exceeds this value.
+    /// Default: `0.6`.
+    #[serde(default = "default_uncertainty_threshold")]
+    pub uncertainty_threshold: f32,
+
+    /// A "request is vague" note is injected when `P(is_vague)` exceeds this
+    /// value.  Default: `0.6`.
+    #[serde(default = "default_vagueness_threshold")]
+    pub vagueness_threshold: f32,
+
+    /// Strength of keyword → intent likelihood spikes.  Higher values make the
+    /// router commit to an intent more decisively on a keyword match.
+    /// Default: `5.0`.
+    #[serde(default = "default_intent_likelihood_weight")]
+    pub intent_likelihood_weight: f32,
+
+    /// Fractional boost applied to a prior each time the corresponding tool
+    /// is used successfully.  `0.1` = 10 % boost per call.  Default: `0.1`.
+    #[serde(default = "default_profile_learning_rate")]
+    pub profile_learning_rate: f32,
+
+    /// Starting prior weights used when no saved profile exists on disk.
+    #[serde(default)]
+    pub priors: BayesianPriorsConfig,
+}
+
+fn default_clarification_threshold() -> f32 {
+    0.4
+}
+fn default_uncertainty_threshold() -> f32 {
+    0.6
+}
+fn default_vagueness_threshold() -> f32 {
+    0.6
+}
+fn default_intent_likelihood_weight() -> f32 {
+    5.0
+}
+fn default_profile_learning_rate() -> f32 {
+    0.1
+}
+
+impl Default for BayesianConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            show_belief_graph: false,
+            clarification_threshold: default_clarification_threshold(),
+            uncertainty_threshold: default_uncertainty_threshold(),
+            vagueness_threshold: default_vagueness_threshold(),
+            intent_likelihood_weight: default_intent_likelihood_weight(),
+            profile_learning_rate: default_profile_learning_rate(),
+            priors: BayesianPriorsConfig::default(),
+        }
+    }
+}
+
+/// Default prior weights (starting beliefs before any input is seen).
+///
+/// These are used only when no saved profile exists at
+/// `~/.grok/bayes_profile.json`.  Once the engine learns from the user's
+/// tool usage, the learned values take over.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct BayesianPriorsConfig {
+    /// Prior probability of an edit/write intent.  Default: `0.2`.
+    #[serde(default = "prior_intent_edit")]
+    pub intent_edit: f32,
+    /// Prior probability of a shell/run intent.  Default: `0.2`.
+    #[serde(default = "prior_intent_shell")]
+    pub intent_shell: f32,
+    /// Prior probability of a search/web intent.  Default: `0.2`.
+    #[serde(default = "prior_intent_search")]
+    pub intent_search: f32,
+    /// Prior probability of a question/chat intent.  Default: `0.3`.
+    #[serde(default = "prior_intent_question")]
+    pub intent_question: f32,
+    /// Prior probability that the input needs clarification.  Default: `0.1`.
+    #[serde(default = "prior_need_clarification")]
+    pub need_clarification: f32,
+    /// Prior probability of low model confidence.  Default: `0.2`.
+    #[serde(default = "prior_low_confidence")]
+    pub low_confidence: f32,
+    /// Prior probability that the input is vague.  Default: `0.1`.
+    #[serde(default = "prior_is_vague")]
+    pub is_vague: f32,
+}
+
+fn prior_intent_edit() -> f32 {
+    0.2
+}
+fn prior_intent_shell() -> f32 {
+    0.2
+}
+fn prior_intent_search() -> f32 {
+    0.2
+}
+fn prior_intent_question() -> f32 {
+    0.3
+}
+fn prior_need_clarification() -> f32 {
+    0.1
+}
+fn prior_low_confidence() -> f32 {
+    0.2
+}
+fn prior_is_vague() -> f32 {
+    0.1
+}
+
+impl Default for BayesianPriorsConfig {
+    fn default() -> Self {
+        Self {
+            intent_edit: prior_intent_edit(),
+            intent_shell: prior_intent_shell(),
+            intent_search: prior_intent_search(),
+            intent_question: prior_intent_question(),
+            need_clarification: prior_need_clarification(),
+            low_confidence: prior_low_confidence(),
+            is_vague: prior_is_vague(),
+        }
+    }
 }
 
 /// Extensions configuration
@@ -784,6 +931,7 @@ impl Default for Config {
             tools: ToolsConfig::default(),
             security: SecurityConfig::default(),
             experimental: ExperimentalConfig::default(),
+            bayesian: BayesianConfig::default(),
             acp: AcpConfig::default(),
             mcp: McpConfig::default(),
             network: NetworkConfig::default(),
@@ -1888,6 +2036,30 @@ impl Config {
                 Ok(self.experimental.extensions.enabled_extensions.join(", "))
             }
 
+            // Bayesian router settings
+            "bayesian.enabled" => Ok(self.bayesian.enabled.to_string()),
+            "bayesian.show_belief_graph" => Ok(self.bayesian.show_belief_graph.to_string()),
+            "bayesian.clarification_threshold" => {
+                Ok(self.bayesian.clarification_threshold.to_string())
+            }
+            "bayesian.uncertainty_threshold" => Ok(self.bayesian.uncertainty_threshold.to_string()),
+            "bayesian.vagueness_threshold" => Ok(self.bayesian.vagueness_threshold.to_string()),
+            "bayesian.intent_likelihood_weight" => {
+                Ok(self.bayesian.intent_likelihood_weight.to_string())
+            }
+            "bayesian.profile_learning_rate" => Ok(self.bayesian.profile_learning_rate.to_string()),
+            "bayesian.priors.intent_edit" => Ok(self.bayesian.priors.intent_edit.to_string()),
+            "bayesian.priors.intent_shell" => Ok(self.bayesian.priors.intent_shell.to_string()),
+            "bayesian.priors.intent_search" => Ok(self.bayesian.priors.intent_search.to_string()),
+            "bayesian.priors.intent_question" => {
+                Ok(self.bayesian.priors.intent_question.to_string())
+            }
+            "bayesian.priors.need_clarification" => {
+                Ok(self.bayesian.priors.need_clarification.to_string())
+            }
+            "bayesian.priors.low_confidence" => Ok(self.bayesian.priors.low_confidence.to_string()),
+            "bayesian.priors.is_vague" => Ok(self.bayesian.priors.is_vague.to_string()),
+
             // ACP settings
             "acp.enabled" => Ok(self.acp.enabled.to_string()),
             "acp.bind_host" => Ok(self.acp.bind_host.clone()),
@@ -2301,6 +2473,94 @@ impl Config {
                 } else {
                     value.split(',').map(|s| s.trim().to_string()).collect()
                 };
+            }
+
+            // Bayesian router settings
+            "bayesian.enabled" => {
+                self.bayesian.enabled = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean: {}", value))?;
+            }
+            "bayesian.show_belief_graph" => {
+                self.bayesian.show_belief_graph = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean: {}", value))?;
+            }
+            "bayesian.clarification_threshold" => {
+                let v: f32 = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+                if !(0.0..=1.0).contains(&v) {
+                    return Err(anyhow!("clarification_threshold must be in [0.0, 1.0]"));
+                }
+                self.bayesian.clarification_threshold = v;
+            }
+            "bayesian.uncertainty_threshold" => {
+                let v: f32 = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+                if !(0.0..=1.0).contains(&v) {
+                    return Err(anyhow!("uncertainty_threshold must be in [0.0, 1.0]"));
+                }
+                self.bayesian.uncertainty_threshold = v;
+            }
+            "bayesian.vagueness_threshold" => {
+                let v: f32 = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+                if !(0.0..=1.0).contains(&v) {
+                    return Err(anyhow!("vagueness_threshold must be in [0.0, 1.0]"));
+                }
+                self.bayesian.vagueness_threshold = v;
+            }
+            "bayesian.intent_likelihood_weight" => {
+                self.bayesian.intent_likelihood_weight = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+            }
+            "bayesian.profile_learning_rate" => {
+                let v: f32 = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+                if !(0.0..=1.0).contains(&v) {
+                    return Err(anyhow!("profile_learning_rate must be in [0.0, 1.0]"));
+                }
+                self.bayesian.profile_learning_rate = v;
+            }
+            "bayesian.priors.intent_edit" => {
+                self.bayesian.priors.intent_edit = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+            }
+            "bayesian.priors.intent_shell" => {
+                self.bayesian.priors.intent_shell = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+            }
+            "bayesian.priors.intent_search" => {
+                self.bayesian.priors.intent_search = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+            }
+            "bayesian.priors.intent_question" => {
+                self.bayesian.priors.intent_question = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+            }
+            "bayesian.priors.need_clarification" => {
+                self.bayesian.priors.need_clarification = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+            }
+            "bayesian.priors.low_confidence" => {
+                self.bayesian.priors.low_confidence = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
+            }
+            "bayesian.priors.is_vague" => {
+                self.bayesian.priors.is_vague = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid float: {}", value))?;
             }
 
             // ACP settings
