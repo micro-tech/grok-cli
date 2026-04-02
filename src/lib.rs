@@ -43,6 +43,7 @@ pub mod display;
 pub mod grok_client_ext;
 pub mod hooks;
 pub mod mcp;
+pub mod memory;
 pub mod router;
 pub mod security;
 pub mod skills;

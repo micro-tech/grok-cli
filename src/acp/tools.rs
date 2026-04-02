@@ -323,26 +323,16 @@ pub fn replace(
     ))
 }
 
-/// Save a fact to long-term memory
+/// Save a fact to long-term memory.
+///
+/// Delegates to [`crate::memory::long_term::save_fact_to_default_store`] which
+/// writes both a structured `memory.json` and a human-readable `memory.md`
+/// mirror atomically so a Starlink drop mid-write cannot corrupt the store.
+/// Duplicate facts are silently deduplicated.
 pub fn save_memory(fact: &str) -> Result<String> {
-    let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-    let grok_dir = home_dir.join(".grok");
-
-    if !grok_dir.exists() {
-        fs::create_dir_all(&grok_dir)
-            .map_err(|e| anyhow!("Failed to create .grok directory: {}", e))?;
-    }
-
-    let memory_file = grok_dir.join("memory.md");
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&memory_file)
-        .map_err(|e| anyhow!("Failed to open memory file: {}", e))?;
-
-    writeln!(file, "- {}", fact).map_err(|e| anyhow!("Failed to write to memory file: {}", e))?;
-
-    Ok("Fact saved to memory.".to_string())
+    crate::memory::long_term::save_fact_to_default_store(fact)
+        .map(|_id| "Fact saved to memory.".to_string())
+        .map_err(|e| anyhow!("Failed to save memory: {}", e))
 }
 
 /// List directory contents

@@ -15,6 +15,99 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Added
 
+- **Unified memory module** (`src/memory/`)
+  - New four-tier memory hierarchy replacing the scattered `Vec<Value>`,
+    `Vec<ConversationItem>`, and bare file-append patterns that existed before.
+  - **`types.rs`** — shared types used across all tiers: `ChatMessage` (with
+    `to_api_value()`, token estimation, builder constructors for system/user/
+    assistant/tool roles), `MemoryEntry` (UUID-keyed persistent fact with tags
+    and `MemorySource`), `EpisodeSummary` (completed-session metadata),
+    `MemoryKind` enum, and the `estimate_tokens` helper (1 token ≈ 4 chars).
+  - **`short_term.rs`** — `ShortTermMemory`: bounded, auto-trimming conversation
+    buffer.
+    - Configurable limits: `max_messages` (default 50) and `max_tokens` (default
+      6 000 estimated tokens).
+    - System messages are pinned at index 0 and never trimmed; `push_system()`
+      replaces an existing system message rather than appending.
+    - `push_tool_result(tool_call_id, content)` for OpenAI-compatible tool
+      messages.
+    - `clear_keep_system()` mirrors the `/clear` slash-command behaviour.
+    - `to_json_messages()` / `From<&ShortTermMemory>` emit the
+      `Vec<serde_json::Value>` format expected by `AppRouter` and all legacy
+      `chat_completion_with_history` call sites — **zero changes needed at call
+      sites**.
+    - `recent(n)` for sliding-window summarisation.
+    - 22 unit tests.
+  - **`long_term.rs`** — `LongTermMemory`: structured, persistent fact store.
+    - Dual-file storage: `~/.grok/memory.json` (canonical, machine-readable) +
+      `~/.grok/memory.md` (human-readable mirror regenerated on every save).
+    - Atomic write-then-rename on every flush — a Starlink drop mid-write never
+      corrupts the live store.
+    - Exact-text deduplication: saving an identical fact returns the existing ID.
+    - `search(query)` — case-insensitive substring match across fact text and
+      tags; results sorted newest-first.
+    - `by_tags(&[&str])` — filter facts that carry **all** of the supplied tags.
+    - `by_source(source)` — filter by `MemorySource` (User / Inferred / System).
+    - `to_prompt_section(max_facts)` — Markdown block ready for system-prompt
+      injection, capped at 20 facts by default.
+    - Free functions `save_fact_to_default_store` and `load_prompt_section` for
+      call sites that don't hold a `LongTermMemory` instance.
+    - 19 unit tests.
+  - **`episodic.rs`** — `EpisodicMemory`: archive of completed sessions.
+    - Each session stored in `~/.grok/sessions/<session_id>/` with
+      `episode.json` (summary + key facts) and `transcript.json` (full
+      `Vec<ChatMessage>`).
+    - `save(summary, transcript)` — atomic write for both files.
+    - `update_summary(summary)` — patch key facts after AI summarisation without
+      re-writing the transcript.
+    - `list()` / `refresh()` — sorted most-recent-first; result cached in
+      memory between calls.
+    - `recent(n)`, `exists(id)`, `delete(id)`.
+    - `to_prompt_context(max_episodes)` — Markdown section of recent episodes
+      with key facts for system-prompt injection.
+    - Backward-compat free functions `save_episode_from_session` and
+      `list_episode_ids` so `utils/session.rs` callers keep working.
+    - 17 unit tests.
+  - **`working.rs`** — `WorkingMemory`: project context injection.
+    - Thin typed wrapper over `utils::context` (no duplicated file-discovery
+      logic).
+    - `load_for_project(dir)` — highest-priority single context file.
+    - `load_and_merge(dir)` — all context files merged, deduplicated.
+    - `from_content(str)` — construct from pre-loaded text (tests / templates).
+    - `to_prompt_section()` — returns the formatted block or an empty string
+      when no context is loaded (safe to unconditionally append).
+    - `reload()` — re-reads from disk mid-session for `/reload-context`.
+    - `append(extra)` / `set_content(content)` — runtime enrichment with skill
+      definitions or per-session rules.
+    - `display_summary()` — one-liner for the `/context` command.
+    - 17 unit tests.
+  - **`mod.rs`** — `MemoryStore` unified facade.
+    - `new_for_session(model, project_dir, base_system_prompt)` — boots all
+      four tiers, builds an enriched system prompt (base + working context +
+      long-term facts) and pushes it into short-term memory.
+    - `remember(fact, tags)` / `remember_inferred(fact, tags)` — convenience
+      wrappers around `LongTermMemory::save_fact`.
+    - `save_episode(title)` — archives the current short-term transcript to
+      episodic memory.
+    - `reload_context()` — reloads working memory and rebuilds the system
+      prompt in-place.
+    - `build_system_prompt()` — returns the assembled prompt string without
+      mutating state (for logging / display).
+    - `status_line()` — one-liner suitable for the session footer.
+    - `recent_episode_context(n)` — pulls recent episode summaries for
+      system-prompt injection.
+    - `minimal()` — isolated per-call temp-dir store for unit tests and
+      single-shot command handlers.
+    - 13 unit tests.
+  - **Total: 97 / 97 new memory unit tests pass** (`cargo test --lib memory`).
+
+- **`acp/tools.rs` — `save_memory` migrated to `LongTermMemory`**
+  - The bare `OpenOptions::append` implementation is replaced with a call to
+    `memory::long_term::save_fact_to_default_store`.
+  - Gains atomic writes, deduplication, structured JSON storage, and the
+    Markdown mirror — all transparently, with no change to the tool's public
+    interface or the model's function-calling schema.
+
 - **CPU Router module** (`src/router/`)
   - New unified AI dispatch layer that routes every inference request through a
     single `CpuRouter` + `GrokBackend` stack instead of talking to the Grok API
