@@ -1,0 +1,18 @@
+/// Operational modes for the application
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OperationalMode {
+    /// Research mode - expand with citations and depth
+    Research,
+    /// Coder mode - keep it concise and tool-focused
+    Coder,
+    /// Shell mode - terse and command-oriented
+    Shell,
+    /// Creative mode - open-ended and exploratory
+    Creative,
+}
+
+impl Default for OperationalMode {
+    fn default() -> Self {
+        OperationalMode::Coder
+    }
+}

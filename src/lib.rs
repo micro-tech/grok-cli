@@ -265,7 +265,7 @@ pub enum AuditAction {
 }
 
 // Re-export commonly used types and functions
-pub use config::{Config, ConfigSource, RateLimitConfig};
+pub use config::{Config, ConfigSource, RateLimitConfig, OperationalMode};
 #[allow(deprecated)]
 pub use display::{
     ascii_art::print_grok_logo,

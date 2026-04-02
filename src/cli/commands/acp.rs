@@ -35,6 +35,7 @@ use crate::acp::slash_commands::{
 use crate::acp::{GrokAcpAgent, PermissionBridge, SessionConfig};
 use crate::cli::{create_spinner, print_error, print_info, print_success, print_warning};
 use crate::config::Config;
+
 use crate::utils::chat_logger;
 
 /// Handle ACP-related commands
