@@ -15,7 +15,81 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Added
 
-- *(next pre-release features will be listed here)*
+- **CPU Router module** (`src/router/`)
+  - New unified AI dispatch layer that routes every inference request through a
+    single `CpuRouter` + `GrokBackend` stack instead of talking to the Grok API
+    directly at each call site.
+  - **`backend.rs`** — async `Backend` trait (via `async-trait`) with `kind()`,
+    `is_available()`, and `async send()`. `BackendKind` enum (`Grok`) derives
+    `PartialEq`/`Eq` for pattern-matching in the router.
+  - **`cpu_router.rs`** — `CpuRouter` dispatches requests to the matching backend
+    based on the model-name prefix (`"grok-*"` → `GrokBackend`). Falls back to
+    the first available backend for unrecognised prefixes. Manual `Debug` impl so
+    `Arc<CpuRouter>` can be used inside `AppRouter`.
+  - **`request.rs`** — `RouterRequest` with typed `Vec<grok_api::Message>` and
+    `Vec<ToolDefinition>` fields. Builder helpers: `with_temperature()`,
+    `with_max_tokens()`, `with_tools()`, `with_json_tools()` (accepts raw
+    `Vec<Value>` from existing call sites without a double-serde round-trip).
+    `ToolDefinition` / `FunctionDefinition` match the OpenAI/xAI function-calling
+    schema so they serialise cleanly to the wire format.
+  - **`response.rs`** — `RouterResponse` with `text`, `tool_calls`, `raw` JSON,
+    `model`, and `usage` (`UsageStats`). Convenience helpers `has_tool_calls()`,
+    `text_or_empty()`, and `into_message_with_finish_reason()` — the last one
+    converts a `RouterResponse` back into the `MessageWithFinishReason` type used
+    throughout the rest of the codebase, enabling zero-change call sites.
+  - **`router_error.rs`** — `RouterError` enum with variants:
+    `BackendUnavailable`, `BackendError`, `Serialization`, `Network` (Starlink
+    drop / timeout), `Auth` (HTTP 401 — fatal, never retried), `RateLimit`
+    (HTTP 429 — retried with back-off), `Unknown`.
+  - **`backends/grok.rs`** — `GrokBackend` wraps the existing `GrokClient`:
+    - `new(api_key)` and `new_with_timeout(api_key, timeout_secs)` constructors.
+    - **Starlink-resilient retry loop**: up to 4 retries with exponential
+      back-off (`BASE * 2^attempt`) capped at 30 s plus random jitter (0–500 ms)
+      to avoid thundering-herd on reconnect.
+    - Smart error classification: auth errors abort immediately; network errors
+      and rate-limits are retried; backend/serialisation errors are not.
+    - Inner `GrokClient` is configured with `max_retries = 1` so retry logic
+      lives entirely in `GrokBackend::send`, not in two layers at once.
+    - 12 unit tests covering construction, back-off math, error classification,
+      and retryability decisions.
+  - **`app_router.rs`** — `AppRouter`: a `Clone`-able (`Arc<CpuRouter>`) shim
+    that exposes the **same async method signatures as `GrokClient`**:
+    - `chat_completion(message, system_prompt, temperature, max_tokens, model)`
+    - `chat_completion_with_history(messages, temperature, max_tokens, model, tools)`
+    - Accepts `&[serde_json::Value]` messages and `Option<Vec<Value>>` tools so
+      existing call sites compile without touching their method bodies.
+    - 3 unit tests: rejects empty key, accepts placeholder key, clone shares Arc.
+  - Added `async-trait = "0.1"` to `Cargo.toml`.
+  - Registered `pub mod router` in `src/lib.rs`.
+  - **19 / 19** new router unit tests pass (`cargo test --lib router`).
+
+- **AppRouter wired into all CLI and display call sites**
+  (`src/cli/commands/chat.rs`, `src/cli/commands/code.rs`,
+  `src/display/interactive.rs`, `src/utils/client.rs`)
+  - Added `initialize_router(api_key, timeout_secs) -> Result<AppRouter>` to
+    `utils/client.rs` alongside the legacy `initialize_client` (kept for
+    `acp/mod.rs` which has not yet been migrated).
+  - **`cli/commands/chat.rs`** — `handle_chat`, `handle_single_chat`, and
+    `handle_interactive_chat` now use `AppRouter` instead of `GrokClient`.
+    Constructor changed from `initialize_client(key, timeout, retries, limits)`
+    to `initialize_router(key, timeout)`. Method call bodies are unchanged.
+  - **`cli/commands/code.rs`** — `handle_code_action` and all four inner
+    handlers (`handle_code_explain`, `handle_code_review`, `handle_code_generate`,
+    `handle_code_fix`) use `AppRouter`. Unused `RateLimitConfig` and
+    `initialize_client` imports removed.
+  - **`display/interactive.rs`** — `start_interactive_mode` constructs
+    `AppRouter::new(api_key, 30)` instead of `GrokClient::new(api_key)`.
+    `run_interactive_loop`, `send_to_grok`, and `run_simulation` updated to
+    accept `&AppRouter`.
+
+### Pending
+
+- `acp/mod.rs` migration to `AppRouter` (tracked as Task 83) — the ACP session
+  handler still constructs `GrokClient` directly; it will be migrated in the
+  next pre-release cycle once the session-state refactor is complete.
+
+### Source
+- AI (Claude Sonnet 4.6)
 
 ---
 
