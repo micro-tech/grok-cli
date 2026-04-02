@@ -5,8 +5,6 @@
 
 use anyhow::Result;
 use colored::*;
-use crossterm::execute;
-use crossterm::terminal::{Clear, ClearType};
 use std::io::{self, Write};
 use std::path::Path;
 

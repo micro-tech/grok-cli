@@ -11,7 +11,7 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
-## [0.1.7] - 2026-03-14
+## [0.1.8] - 2026-04-02
 
 ### Added
 

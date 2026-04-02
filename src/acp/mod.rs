@@ -14,21 +14,15 @@ use tracing::{debug, error, info, warn};
 
 use crate::GrokClient;
 use crate::config::Config;
-use crate::grok_client_ext::MessageWithFinishReason;
+use crate::content_to_string;
 use crate::hooks::HookManager;
-use crate::{content_to_string, extract_text_content};
 
 pub mod protocol;
 pub mod security;
 pub mod slash_commands;
 pub mod tools;
 
-use crate::acp::protocol::{
-    AGENT_METHOD_NAMES, AgentCapabilities, ContentBlock, ContentChunk, Implementation,
-    InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
-    PermissionOutcome, PromptRequest, PromptResponse, ProtocolVersion, RequestPermissionParams,
-    SessionId as ProtocolSessionId, SessionNotification, SessionUpdate, StopReason, TextContent,
-};
+use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams};
 use security::SecurityManager;
 
 /// Bridge for passing permission requests from the tool executor to the client writer task
@@ -113,6 +107,60 @@ struct SessionData {
     /// back in a session/update notification after session/new).
     /// Stored for future passthrough / forwarding support.
     client_commands: Vec<String>,
+
+    /// Bayesian inference engine for this session
+    bayes_engine: crate::bayes::BayesianEngine,
+}
+
+impl SessionData {
+    /// Refines the user prompt by checking Bayesian state for vagueness, repetition,
+    /// and uncertainty to shape the LLM's response appropriately.
+    pub fn refine_prompt(&mut self, message: &str) -> String {
+        self.bayes_engine.update_from_text(message);
+
+        let mut refined_message = message.to_string();
+
+        // 1. Detect Repetition (Intent Drift)
+        let mut is_repetition = false;
+        if let Some(prev) = self
+            .messages
+            .iter()
+            .rev()
+            .find(|m| m["role"] == "user")
+            .and_then(|m| m["content"].as_str())
+        {
+            // Strip any system notes we previously appended to accurately compare
+            let prev_clean = prev.split("\n\n[System Note:").next().unwrap_or(prev);
+            if prev_clean.trim().to_lowercase() == message.trim().to_lowercase() {
+                is_repetition = true;
+            }
+        }
+
+        if is_repetition {
+            refined_message = format!(
+                "{}\n\n[System Note: The user seems to be repeating themselves. They might be experiencing intent drift or frustration. Propose alternative interpretations or check if they need a different approach.]",
+                refined_message
+            );
+        }
+
+        // 2. High Uncertainty (Clarification)
+        if self.bayes_engine.is_high_uncertainty() {
+            refined_message = format!(
+                "{}\n\n[System Note: Bayesian uncertainty is high. Please ask a clarifying question before proceeding if you are not sure what to do.]",
+                refined_message
+            );
+        }
+
+        // 3. Vagueness
+        if self.bayes_engine.is_vague() {
+            refined_message = format!(
+                "{}\n\n[System Note: The user's request is vague. Propose possible interpretations to help clarify their goal.]",
+                refined_message
+            );
+        }
+
+        refined_message
+    }
 }
 
 /// Session-specific configuration
@@ -163,7 +211,7 @@ pub struct ToolDefinition {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            model: "grok-4-1-fast-reasoning".to_string(),
+            model: "grok-code-fast-1".to_string(),
             temperature: 0.5, // Lower temperature for more deterministic coding output
             max_tokens: 4096,
             system_prompt: Some(
@@ -399,6 +447,7 @@ impl GrokAcpAgent {
             last_activity: std::time::Instant::now(),
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
+            bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
         };
 
         let mut sessions = self.sessions.write().await;
@@ -413,7 +462,7 @@ impl GrokAcpAgent {
         &self,
         session_id: &SessionId,
         function_name: &str,
-        args: &Value,
+        _args: &Value,
         tool_call_id: &str,
         permission_bridge: Option<&Arc<PermissionBridge>>,
     ) -> Result<bool> {
@@ -505,10 +554,12 @@ impl GrokAcpAgent {
         // Update last activity
         session.last_activity = std::time::Instant::now();
 
+        let refined_message = session.refine_prompt(message);
+
         // Add user message to history
         session.messages.push(json!({
             "role": "user",
-            "content": message
+            "content": refined_message
         }));
 
         info!("📚 Session history: {} messages", session.messages.len());
@@ -829,32 +880,35 @@ impl GrokAcpAgent {
                 }
                 // --- END PERMISSION GATE ---
 
+                // Acquire the policy once so we don't clone it for every arm.
+                let policy = self.security.get_policy();
+
                 let result = match function_name.as_str() {
                     "read_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::read_file(path, &self.security.get_policy())
+                        tools::read_file(path, &policy)
                     }
                     "write_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
-                        tools::write_file(path, content, &self.security.get_policy())
+                        tools::write_file(path, content, &policy)
                     }
                     "list_directory" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_directory(path, &self.security.get_policy())
+                        tools::list_directory(path, &policy)
                     }
                     "glob_search" => {
                         let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                        tools::glob_search(pattern, &self.security.get_policy())
+                        tools::glob_search(pattern, &policy)
                     }
                     "search_file_content" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                        tools::search_file_content(path, pattern, &self.security.get_policy())
+                        tools::search_file_content(path, pattern, &policy)
                     }
                     "run_shell_command" => {
                         let command = args["command"].as_str().ok_or(anyhow!("Missing command"))?;
-                        tools::run_shell_command(command, &self.security.get_policy())
+                        tools::run_shell_command(command, &policy).await
                     }
                     "replace" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
@@ -866,13 +920,7 @@ impl GrokAcpAgent {
                             .ok_or(anyhow!("Missing new_string"))?;
                         let expected_replacements =
                             args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(
-                            path,
-                            old_string,
-                            new_string,
-                            expected_replacements,
-                            &self.security.get_policy(),
-                        )
+                        tools::replace(path, old_string, new_string, expected_replacements, &policy)
                     }
                     "save_memory" => {
                         let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
@@ -897,11 +945,11 @@ impl GrokAcpAgent {
                                     .map(|s| s.to_string())
                             })
                             .collect();
-                        tools::read_multiple_files(paths?, &self.security.get_policy())
+                        tools::read_multiple_files(paths?, &policy)
                     }
                     "list_code_definitions" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_code_definitions(path, &self.security.get_policy())
+                        tools::list_code_definitions(path, &policy)
                     }
                     _ => Err(anyhow!("Unknown tool: {}", function_name)),
                 };
@@ -918,11 +966,23 @@ impl GrokAcpAgent {
                     }
                     Err(e) => {
                         let tool_duration = tool_start.elapsed();
-                        warn!("⚠️  Tool failed in {:?}: {}", tool_duration, e);
-                        (
-                            format!("Error executing tool {}: {}", function_name, e),
-                            crate::acp::protocol::ToolCallStatus::Failed,
-                        )
+                        warn!("⚠️ Tool failed in {:?}: {}", tool_duration, e);
+
+                        // 4. Update Bayesian Engine for Tool Failure
+                        session.bayes_engine.update_from_tool_failure();
+
+                        let mut error_content =
+                            format!("Error executing tool {}: {}", function_name, e);
+
+                        // If confidence drops significantly due to failure, add a recovery system prompt
+                        if session.bayes_engine.is_low_confidence() {
+                            error_content = format!(
+                                "{}\n\n[System Note: This tool failed and Bayesian confidence is low. Please rewrite your approach, verify your assumptions, or ask the user for clarification instead of repeating the same action.]",
+                                error_content
+                            );
+                        }
+
+                        (error_content, crate::acp::protocol::ToolCallStatus::Failed)
                     }
                 };
 
@@ -1342,6 +1402,7 @@ mod tests {
             last_activity: std::time::Instant::now(),
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
+            bayes_engine: crate::bayes::BayesianEngine::new(),
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);

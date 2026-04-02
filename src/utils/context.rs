@@ -6,9 +6,9 @@
 
 use anyhow::{Result, anyhow};
 use std::collections::HashSet;
-use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+use tracing::warn;
 
 /// Standard context file names to search for, in order of preference
 const CONTEXT_FILE_NAMES: &[&str] = &[
@@ -93,12 +93,19 @@ pub fn load_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Option<Strin
 
             if file_path.exists() && file_path.is_file() {
                 // Check file size before reading
-                let metadata = fs::metadata(&file_path)?;
+                let metadata = match fs::metadata(&file_path) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        warn!(path = %file_path.display(), error = %e, "Failed to read context file metadata");
+                        continue;
+                    }
+                };
                 if metadata.len() > MAX_CONTEXT_SIZE {
-                    eprintln!(
-                        "Warning: Context file {} is too large ({} bytes), skipping",
-                        file_path.display(),
-                        metadata.len()
+                    warn!(
+                        path = %file_path.display(),
+                        size = metadata.len(),
+                        max  = MAX_CONTEXT_SIZE,
+                        "Context file is too large, skipping"
                     );
                     continue;
                 }
@@ -112,11 +119,7 @@ pub fn load_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Option<Strin
                         return Ok(Some(content));
                     }
                     Err(e) => {
-                        eprintln!(
-                            "Warning: Failed to read context file {}: {}",
-                            file_path.display(),
-                            e
-                        );
+                        warn!(path = %file_path.display(), error = %e, "Failed to read context file");
                         continue;
                     }
                 }
@@ -133,8 +136,20 @@ pub fn load_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Option<Strin
             let file_path = global_dir.join(file_name);
 
             if file_path.exists() && file_path.is_file() {
-                let metadata = fs::metadata(&file_path)?;
+                let metadata = match fs::metadata(&file_path) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        warn!(path = %file_path.display(), error = %e, "Failed to read global context file metadata");
+                        continue;
+                    }
+                };
                 if metadata.len() > MAX_CONTEXT_SIZE {
+                    warn!(
+                        path = %file_path.display(),
+                        size = metadata.len(),
+                        max  = MAX_CONTEXT_SIZE,
+                        "Global context file is too large, skipping"
+                    );
                     continue;
                 }
 
@@ -144,7 +159,10 @@ pub fn load_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Option<Strin
                             return Ok(Some(content));
                         }
                     }
-                    Err(_) => continue,
+                    Err(e) => {
+                        warn!(path = %file_path.display(), error = %e, "Failed to read global context file");
+                        continue;
+                    }
                 }
             }
         }
@@ -183,12 +201,19 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Op
                     continue;
                 }
                 // Check file size before reading
-                let metadata = fs::metadata(&file_path)?;
+                let metadata = match fs::metadata(&file_path) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        warn!(path = %file_path.display(), error = %e, "Failed to read context file metadata (merge)");
+                        continue;
+                    }
+                };
                 if metadata.len() > MAX_CONTEXT_SIZE {
-                    eprintln!(
-                        "Warning: Context file {} is too large ({} bytes), skipping",
-                        file_path.display(),
-                        metadata.len()
+                    warn!(
+                        path = %file_path.display(),
+                        size = metadata.len(),
+                        max  = MAX_CONTEXT_SIZE,
+                        "Context file is too large, skipping (merge)"
                     );
                     continue;
                 }
@@ -203,11 +228,7 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Op
                         }
                     }
                     Err(e) => {
-                        eprintln!(
-                            "Warning: Failed to read context file {}: {}",
-                            file_path.display(),
-                            e
-                        );
+                        warn!(path = %file_path.display(), error = %e, "Failed to read context file (merge)");
                         continue;
                     }
                 }
@@ -229,8 +250,20 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Op
                 if !seen_canonical.insert(canonical) {
                     continue;
                 }
-                let metadata = fs::metadata(&file_path)?;
+                let metadata = match fs::metadata(&file_path) {
+                    Ok(m) => m,
+                    Err(e) => {
+                        warn!(path = %file_path.display(), error = %e, "Failed to read global context file metadata (merge)");
+                        continue;
+                    }
+                };
                 if metadata.len() > MAX_CONTEXT_SIZE {
+                    warn!(
+                        path = %file_path.display(),
+                        size = metadata.len(),
+                        max  = MAX_CONTEXT_SIZE,
+                        "Global context file is too large, skipping (merge)"
+                    );
                     continue;
                 }
 
@@ -242,7 +275,10 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Op
                             merged_content.push(annotated);
                         }
                     }
-                    Err(_) => continue,
+                    Err(e) => {
+                        warn!(path = %file_path.display(), error = %e, "Failed to read global context file (merge)");
+                        continue;
+                    }
                 }
             }
         }

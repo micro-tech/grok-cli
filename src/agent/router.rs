@@ -1,4 +1,5 @@
 use crate::bayes::BayesianEngine;
+use crate::config::BayesianConfig;
 use serde_json::Value;
 
 pub enum RouterAction {
@@ -12,21 +13,38 @@ pub struct Router {
     bayes: BayesianEngine,
 }
 
+impl Default for Router {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Router {
+    /// Create a router using compiled-in defaults.
     pub fn new() -> Self {
         Self {
             bayes: BayesianEngine::new(),
         }
     }
 
+    /// Create a router whose engine is initialised from `[bayesian]` config.
+    ///
+    /// This applies configured priors, thresholds, likelihood weights, and
+    /// the profile learning rate to the underlying [`BayesianEngine`].
+    pub fn new_with_config(config: &BayesianConfig) -> Self {
+        Self {
+            bayes: BayesianEngine::new_with_config(config),
+        }
+    }
+
     pub async fn route(&mut self, user_input: &str) -> RouterAction {
-        // 1) update beliefs from text
+        // 1) Update beliefs from the user's text.
         self.bayes.update_from_text(user_input);
 
-        // 2) clarification gate
-        let clarification_prob = self.bayes.probability("need_clarification");
-        if clarification_prob > 0.4 {
-            // we decay the clarification need so it doesn't stay stuck forever
+        // 2) Clarification gate — threshold comes from the engine's config.
+        if self.bayes.needs_clarification() {
+            // Decay the clarification probability so the gate doesn't stay
+            // stuck in a loop after firing once.
             self.bayes.update_from_text("reset_clarification");
             return RouterAction::AskClarification(
                 "I want to make sure I do this safely. Could you clarify exactly what you want me to do?".to_string(),
@@ -51,8 +69,18 @@ impl Router {
         self.bayes.visualize()
     }
 
+    /// Return the clarification threshold currently used by this router.
+    pub fn clarification_threshold(&self) -> f32 {
+        self.bayes.clarification_threshold()
+    }
+
     pub fn learn_from_tool(&mut self, tool_name: &str) {
         self.bayes.update_profile(tool_name);
+    }
+
+    /// Return the uncertainty threshold used for the low-confidence check.
+    pub fn uncertainty_threshold(&self) -> f32 {
+        self.bayes.uncertainty_threshold()
     }
 
     pub fn get_contextual_tools(&self, all_tools: Vec<Value>) -> Vec<Value> {
@@ -104,8 +132,10 @@ impl Router {
         }
     }
 
+    /// Returns `true` when `P(low_confidence)` exceeds the configured
+    /// uncertainty threshold (replaces the former hardcoded `> 0.5` check).
     pub fn is_low_confidence(&self) -> bool {
-        self.bayes.probability("low_confidence") > 0.5
+        self.bayes.is_low_confidence()
     }
 }
 #[cfg(test)]

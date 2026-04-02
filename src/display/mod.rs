@@ -28,7 +28,6 @@ pub use banner::{
 pub use banner::{print_banner, print_directory_recommendation, print_welcome_banner};
 pub use tips::{get_random_tip, get_random_tips};
 
-use colored::*;
 use std::io::{self, Write};
 use terminal_size::{Height, Width, terminal_size};
 

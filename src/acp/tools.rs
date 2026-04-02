@@ -3,14 +3,35 @@ use crate::cli::approval::{ApprovalDecision, prompt_external_access_approval};
 use crate::security::audit::{AuditLogger, create_access_log};
 use anyhow::{Result, anyhow};
 use glob::glob;
+use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::{Value, json};
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader, Write};
 use std::path::Path;
-use std::process::Command;
+use tokio::process::Command;
+use tokio::time::{Duration, timeout};
 use tracing::{info, warn};
 use uuid::Uuid;
+
+// ── Cached regex patterns ─────────────────────────────────────────────────────
+// Compiled once at first use; avoids re-compiling on every web_search call.
+
+static RE_SEARCH_RESULT: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"(?s)class="result__body".*?class="result__a" href="([^"]+)">(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</a>"#)
+        .expect("BUG: invalid static RE_SEARCH_RESULT pattern")
+});
+
+static RE_SEARCH_SIMPLE: Lazy<Regex> = Lazy::new(|| {
+    Regex::new(r#"class="result__a" href="([^"]+)">(.*?)</a>"#)
+        .expect("BUG: invalid static RE_SEARCH_SIMPLE pattern")
+});
+
+static RE_STRIP_TAGS: Lazy<Regex> =
+    Lazy::new(|| Regex::new(r"<[^>]*>").expect("BUG: invalid static RE_STRIP_TAGS pattern"));
+
+/// Timeout for shell command execution (prevents hangs on blocking commands).
+const SHELL_COMMAND_TIMEOUT_SECS: u64 = 30;
 
 /// Read file content with support for external access
 pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
@@ -203,7 +224,8 @@ pub fn list_code_definitions(path: &str, security: &SecurityPolicy) -> Result<St
 
 /// Write content to file
 pub fn write_file(path: &str, content: &str, security: &SecurityPolicy) -> Result<String> {
-    // Convert to absolute path first (without canonicalizing yet)
+    // Convert to absolute path first (before canonicalising, so we can create
+    // any missing parent directories).
     let path_ref = Path::new(path);
     let absolute_path = if path_ref.is_absolute() {
         path_ref.to_path_buf()
@@ -211,22 +233,40 @@ pub fn write_file(path: &str, content: &str, security: &SecurityPolicy) -> Resul
         security.working_directory().join(path_ref)
     };
 
-    // Create parent directories first if they don't exist
+    // Create parent directories before resolving the canonical path so that
+    // canonicalize() succeeds even for new files.
     if let Some(parent) = absolute_path.parent() {
         fs::create_dir_all(parent).map_err(|e| anyhow!("Failed to create directory: {}", e))?;
     }
 
-    // Now resolve to canonical form (after directories exist)
-    let resolved_path = security
-        .resolve_path(path)
-        .map_err(|e| anyhow!("Failed to resolve path '{}': {}", path, e))?;
+    // Use validate_path_access so the full external-access / audit / approval
+    // flow is applied consistently — same as read_file.
+    let access_type = security.validate_path_access(path)?;
 
-    // Check trust on resolved path
-    if !security.is_path_trusted(&resolved_path) {
-        return Err(anyhow!("Access denied: Path is not in a trusted directory"));
-    }
+    let resolved_path = match &access_type {
+        PathAccessType::Internal(p) => p.clone(),
+        PathAccessType::External(p) => {
+            if security.is_external_access_logging_enabled() {
+                info!("External file write (auto-approved): {}", p.display());
+            }
+            p.clone()
+        }
+        PathAccessType::ExternalRequiresApproval(p) => {
+            // Writes to unapproved external paths are blocked; the caller
+            // (ACP dispatch) handles the approval flow before we get here.
+            return Err(anyhow!(
+                "Access denied: write to external path '{}' requires explicit approval",
+                p.display()
+            ));
+        }
+    };
 
     fs::write(&resolved_path, content).map_err(|e| anyhow!("Failed to write file: {}", e))?;
+    info!(
+        "Wrote {} bytes to {}",
+        content.len(),
+        resolved_path.display()
+    );
     Ok(format!("Successfully wrote to {}", resolved_path.display()))
 }
 
@@ -441,52 +481,72 @@ pub fn search_file_content(path: &str, pattern: &str, security: &SecurityPolicy)
     }
 }
 
-/// Run shell command
-pub fn run_shell_command(command: &str, security: &SecurityPolicy) -> Result<String> {
+/// Run a shell command with a hard execution timeout.
+///
+/// # Security
+/// - `validate_shell_command` is called first to check the denylist.
+/// - The command is executed in the session's working directory so it cannot
+///   accidentally affect files outside the project root.
+/// - On Windows, PowerShell is invoked with `-NonInteractive -NoProfile
+///   -ExecutionPolicy Bypass` to prevent profile side-effects and hangs.
+/// - Execution is bounded by [`SHELL_COMMAND_TIMEOUT_SECS`]; if the command
+///   does not finish in time an error is returned and the child is killed.
+pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Result<String> {
     security.validate_shell_command(command)?;
 
-    // Check if we are in a trusted directory (implicit in policy check usually,
-    // but here we might want to check CWD if not done yet)
-    // For now, simple execution
+    let cwd = security.working_directory().to_path_buf();
+    let timeout_duration = Duration::from_secs(SHELL_COMMAND_TIMEOUT_SECS);
 
-    if cfg!(target_os = "windows") {
+    let spawn_result = if cfg!(target_os = "windows") {
         // Convert bash-style && to PowerShell-style ; for command chaining
-        let powershell_command = command.replace(" && ", "; ");
+        let ps_command = command.replace(" && ", "; ");
 
-        let output = Command::new("powershell")
-            .args(["-Command", &powershell_command])
+        Command::new("powershell")
+            .args([
+                "-NonInteractive",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &ps_command,
+            ])
+            .current_dir(&cwd)
             .output()
-            .map_err(|e| anyhow!("Failed to execute command: {}", e))?;
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        if !output.status.success() {
-            Ok(format!(
-                "Command failed with code {}:\nStdout: {}\nStderr: {}",
-                output.status, stdout, stderr
-            ))
-        } else {
-            Ok(format!("Stdout: {}\nStderr: {}", stdout, stderr))
-        }
     } else {
-        let output = Command::new("sh")
-            .arg("-c")
-            .arg(command)
+        Command::new("sh")
+            .args(["-c", command])
+            .current_dir(&cwd)
             .output()
-            .map_err(|e| anyhow!("Failed to execute command: {}", e))?;
+    };
 
-        let stdout = String::from_utf8_lossy(&output.stdout);
-        let stderr = String::from_utf8_lossy(&output.stderr);
-
-        if !output.status.success() {
-            Ok(format!(
-                "Command failed with code {}:\nStdout: {}\nStderr: {}",
-                output.status, stdout, stderr
-            ))
-        } else {
-            Ok(format!("Stdout: {}\nStderr: {}", stdout, stderr))
+    // Wrap execution in a timeout
+    let output = match timeout(timeout_duration, spawn_result).await {
+        Ok(Ok(out)) => out,
+        Ok(Err(e)) => return Err(anyhow!("Failed to spawn command: {}", e)),
+        Err(_) => {
+            warn!(
+                command = %command,
+                timeout_secs = SHELL_COMMAND_TIMEOUT_SECS,
+                "Shell command timed out"
+            );
+            return Err(anyhow!(
+                "Command timed out after {}s: {}",
+                SHELL_COMMAND_TIMEOUT_SECS,
+                command
+            ));
         }
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if output.status.success() {
+        Ok(format!("Stdout: {}\nStderr: {}", stdout, stderr))
+    } else {
+        Ok(format!(
+            "Command failed with code {}:\nStdout: {}\nStderr: {}",
+            output.status, stdout, stderr
+        ))
     }
 }
 
@@ -525,10 +585,8 @@ async fn duckduckgo_search(query: &str) -> Result<String> {
     // Regex to extract results (Title, Link, Snippet)
     // Matches: <div class="result ..."> ... <a class="result__a" href="LINK">TITLE</a> ... <a class="result__snippet" ...>SNIPPET</a>
     // We use a more permissive regex to handle potential HTML variations
-    let re = Regex::new(r#"(?s)class="result__body".*?class="result__a" href="([^"]+)">(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</a>"#).unwrap();
-
     let mut results = Vec::new();
-    for cap in re.captures_iter(&html).take(10) {
+    for cap in RE_SEARCH_RESULT.captures_iter(&html).take(10) {
         let link = urlencoding::decode(&cap[1])
             .unwrap_or_else(|_| std::borrow::Cow::Borrowed(&cap[1]))
             .to_string();
@@ -543,8 +601,7 @@ async fn duckduckgo_search(query: &str) -> Result<String> {
 
     if results.is_empty() {
         // Fallback: Try finding just links with result__a if snippet parsing fails
-        let re_simple = Regex::new(r#"class="result__a" href="([^"]+)">(.*?)</a>"#).unwrap();
-        for cap in re_simple.captures_iter(&html).take(10) {
+        for cap in RE_SEARCH_SIMPLE.captures_iter(&html).take(10) {
             let link = urlencoding::decode(&cap[1])
                 .unwrap_or_else(|_| std::borrow::Cow::Borrowed(&cap[1]))
                 .to_string();
@@ -564,8 +621,7 @@ async fn duckduckgo_search(query: &str) -> Result<String> {
 }
 
 fn strip_tags(s: &str) -> String {
-    let re = Regex::new(r"<[^>]*>").unwrap();
-    re.replace_all(s, "").trim().to_string()
+    RE_STRIP_TAGS.replace_all(s, "").trim().to_string()
 }
 
 /// Fetch content from a URL

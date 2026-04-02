@@ -161,7 +161,7 @@ async fn set_config_value(key: &str, value: &str) -> Result<()> {
     // Special handling for API key - store in .env file, not config.toml
     if key == "api_key" {
         use std::fs;
-        use std::path::PathBuf;
+        
 
         print_info("Setting API key in .env file (not config.toml for security)...");
 

@@ -25,11 +25,11 @@ use crate::display::{
 };
 use crate::skills::{AutoActivationEngine, list_skills};
 use crate::utils::context::{
-    format_context_for_prompt, get_all_context_file_paths, load_and_merge_project_context,
+    format_context_for_prompt, get_context_file_path, load_project_context,
 };
 use crate::utils::session::{list_sessions, load_session, save_session};
 use crate::utils::shell_permissions::{ApprovalMode, ShellPermissions};
-use crate::{content_to_string, extract_text_content, text_content};
+use crate::content_to_string;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -53,6 +53,11 @@ pub struct InteractiveSession {
     /// Toggled at runtime with `/auto-skills on|off`.
     #[serde(default = "default_auto_skills_enabled")]
     pub auto_skills_enabled: bool,
+    /// When true, all user messages are routed through the dry-run simulation
+    /// engine instead of being executed for real.
+    /// Toggled at runtime with `/simulate on|off`.
+    #[serde(default)]
+    pub simulate_mode: bool,
 }
 
 fn default_auto_skills_enabled() -> bool {
@@ -113,6 +118,7 @@ impl InteractiveSession {
             max_tokens: 4096,
             active_skills: Vec::new(),
             auto_skills_enabled: true,
+            simulate_mode: false,
             system_prompt,
             conversation_history: Vec::new(),
             current_directory,
@@ -282,37 +288,27 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
     }
 
     // Show context files info if loaded
-    let context_paths = get_all_context_file_paths(&session.current_directory);
-    if !context_paths.is_empty() {
+    if let Some(context_path) = get_context_file_path(&session.current_directory) {
         println!(
-            "  Context loaded: {} {}",
-            context_paths.len().to_string().bright_green(),
-            if context_paths.len() == 1 {
-                "file"
-            } else {
-                "files"
-            }
+            "  Context loaded: {}",
+            context_path.display().to_string().bright_green()
         );
-        for path in &context_paths {
-            // Show full path instead of just filename
-            println!("    - {}", path.display().to_string().bright_green());
-            // When hide_context_summary is false, show a short preview of the file
-            if !config.ui.hide_context_summary
-                && let Ok(content) = std::fs::read_to_string(path)
-            {
-                let preview: Vec<&str> = content
-                    .lines()
-                    .filter(|l| !l.trim().is_empty())
-                    .take(3)
-                    .collect();
-                for line in preview {
-                    let truncated = if line.len() > 80 {
-                        format!("{}...", &line[..80])
-                    } else {
-                        line.to_string()
-                    };
-                    println!("      {}", truncated.dimmed());
-                }
+        // When hide_context_summary is false, show a short preview of the file
+        if !config.ui.hide_context_summary
+            && let Ok(content) = std::fs::read_to_string(&context_path)
+        {
+            let preview: Vec<&str> = content
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .take(3)
+                .collect();
+            for line in preview {
+                let truncated = if line.len() > 80 {
+                    format!("{}...", &line[..80])
+                } else {
+                    line.to_string()
+                };
+                println!("      {}", truncated.dimmed());
             }
         }
     }
@@ -353,34 +349,17 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
 
 /// Load project context for a new session
 fn load_project_context_for_session(project_root: &PathBuf) -> Option<String> {
-    match load_and_merge_project_context(project_root) {
+    match load_project_context(project_root) {
         Ok(Some(context)) => {
             let formatted = format_context_for_prompt(&context);
-            let context_paths = get_all_context_file_paths(project_root);
-
-            if context_paths.is_empty() {
-                // Shouldn't happen but handle gracefully
-                return Some(formatted);
-            }
-
-            if context_paths.len() == 1 {
+            // Show the single file that was loaded (project first, system fallback)
+            if let Some(path) = get_context_file_path(project_root) {
                 println!(
                     "{} {}",
                     "✓".bright_green(),
-                    format!("Loaded project context from {}", context_paths[0].display()).dimmed()
+                    format!("Loaded context from {}", path.display()).dimmed()
                 );
-            } else {
-                println!(
-                    "{} {}",
-                    "✓".bright_green(),
-                    format!("Loaded and merged {} context files", context_paths.len()).dimmed()
-                );
-                for path in &context_paths {
-                    // Show full path for each context file
-                    println!("  {} {}", "•".dimmed(), path.display().to_string().dimmed());
-                }
             }
-
             Some(formatted)
         }
         Ok(None) => {
@@ -514,6 +493,10 @@ async fn run_interactive_loop(
             description: "Toggle skill auto-activation (on/off)".to_string(),
         },
         Suggestion {
+            text: "/simulate".to_string(),
+            description: "Dry-run simulation mode (on/off or status)".to_string(),
+        },
+        Suggestion {
             text: "!ls".to_string(),
             description: "List files (shell command)".to_string(),
         },
@@ -584,12 +567,22 @@ async fn run_interactive_loop(
         }
     }
 
-    // Send to Grok API
-    match send_to_grok(client, session, input).await {
-        Ok(_) => Ok(true),
-        Err(e) => {
-            eprintln!("{} Failed to get response: {}", "Error:".red(), e);
-            Ok(true)
+    // Route to simulation engine or real API depending on mode
+    if session.simulate_mode {
+        match run_simulation(client, session, input).await {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                eprintln!("{} Simulation failed: {}", "Error:".red(), e);
+                Ok(true)
+            }
+        }
+    } else {
+        match send_to_grok(client, session, input).await {
+            Ok(_) => Ok(true),
+            Err(e) => {
+                eprintln!("{} Failed to get response: {}", "Error:".red(), e);
+                Ok(true)
+            }
         }
     }
 }
@@ -634,7 +627,10 @@ fn read_user_input() -> Result<String> {
     std::io::stdin().read_line(&mut input)?;
 
     // Clean up any ANSI escape sequences that might affect cursor position
-    let cleaned = input.trim_end_matches('\n').trim_end_matches('\r').to_string();
+    let cleaned = input
+        .trim_end_matches('\n')
+        .trim_end_matches('\r')
+        .to_string();
     Ok(cleaned)
 }
 
@@ -966,6 +962,81 @@ async fn handle_special_commands(
             print_hooks_info(app_config);
             Ok(Some(true))
         }
+        "simulate" => {
+            match parts.get(1).copied() {
+                Some("on") => {
+                    session.simulate_mode = true;
+                    println!(
+                        "{} Simulation mode {}",
+                        "✓".bright_green(),
+                        "enabled".bright_green()
+                    );
+                    println!(
+                        "  {}",
+                        "All messages will be dry-run simulated — nothing will be executed."
+                            .dimmed()
+                    );
+                    println!(
+                        "  {}",
+                        "Use /simulate off to return to normal mode.".dimmed()
+                    );
+                }
+                Some("off") => {
+                    session.simulate_mode = false;
+                    println!(
+                        "{} Simulation mode {}",
+                        "✓".bright_green(),
+                        "disabled".bright_yellow()
+                    );
+                    println!("  {}", "Returning to normal execution mode.".dimmed());
+                }
+                Some(message) => {
+                    // /simulate <message> — one-shot simulation without entering persistent mode
+                    // Re-join remaining parts in case the message had spaces
+                    let full_message = parts[1..].join(" ");
+                    // We need the client here — signal the caller via a special return that
+                    // this command needs async execution. Instead we print a hint and let the
+                    // user know how to use it.
+                    // NOTE: one-shot simulate is handled in the main loop via a leading prefix.
+                    // For now guide the user to use persistent mode or prefix their message.
+                    println!(
+                        "{} To simulate a one-shot message, enable simulation mode first:",
+                        "ℹ".bright_blue()
+                    );
+                    println!("  {}", "/simulate on".bright_cyan());
+                    println!("  Then type your message: {}", full_message.bright_white());
+                    println!("  Then turn it off: {}", "/simulate off".bright_cyan());
+                    let _ = message; // suppress unused warning
+                }
+                None => {
+                    let state = if session.simulate_mode {
+                        "on".bright_green()
+                    } else {
+                        "off".bright_yellow()
+                    };
+                    println!(
+                        "{} Simulation mode is currently: {}",
+                        "ℹ".bright_blue(),
+                        state
+                    );
+                    println!(
+                        "  Usage: {} or {}",
+                        "/simulate on".bright_cyan(),
+                        "/simulate off".bright_cyan()
+                    );
+                    println!(
+                        "  {}",
+                        "When on, messages are dry-run — the model describes what it WOULD do"
+                            .dimmed()
+                    );
+                    println!(
+                        "  {}",
+                        "without executing any tools or making real changes.".dimmed()
+                    );
+                }
+            }
+            Ok(Some(true))
+        }
         _ => {
             println!("{} Unknown command: /{}", "⚠".bright_yellow(), parts[0]);
             println!("Type /help for available commands");
@@ -1007,6 +1078,10 @@ fn print_interactive_help() {
             "Toggle or show skill auto-activation",
         ),
         ("/hooks", "Show hooks system status and information"),
+        (
+            "/simulate [on|off]",
+            "Dry-run mode: predict tool calls without executing",
+        ),
     ];
 
     for (command, description) in commands {
@@ -1202,6 +1277,14 @@ fn print_session_status(session: &InteractiveSession) {
     if let Some(system) = &session.system_prompt {
         println!("  System prompt: {}", system.bright_green());
     }
+    let sim_state = if session.simulate_mode {
+        "on (dry-run — messages are simulated, not executed)"
+            .bright_yellow()
+            .to_string()
+    } else {
+        "off".dimmed().to_string()
+    };
+    println!("  Simulate mode: {}", sim_state);
     println!();
 }
 
@@ -1329,6 +1412,92 @@ async fn send_to_grok(
     Ok(())
 }
 
+/// Run the dry-run simulation engine for a user message.
+///
+/// Sends the message to the model with a special system prompt that instructs
+/// it to describe what it *would* do without actually executing anything.
+/// The response is parsed and displayed as a structured simulation report.
+async fn run_simulation(
+    client: &GrokClient,
+    session: &InteractiveSession,
+    input: &str,
+) -> Result<()> {
+    use crate::agent::simulator::{
+        SIMULATION_SYSTEM_PROMPT, display_simulation_result, parse_simulation_response,
+    };
+    use colored::*;
+
+    println!(
+        "{} {}",
+        "🔬".to_string(),
+        "Running simulation (dry-run)…".bright_blue().dimmed()
+    );
+    print!("{} ", "Thinking...".bright_yellow());
+    io::stdout().flush()?;
+
+    // Build message list: simulation system prompt first, then the user message.
+    // Tools are intentionally NOT passed so the model cannot execute anything.
+    let mut messages: Vec<serde_json::Value> = Vec::new();
+
+    // Combine existing system prompt with the simulation instructions
+    let mut sim_system = String::new();
+    if let Some(existing) = &session.system_prompt {
+        sim_system.push_str(existing);
+        sim_system.push_str("\n\n");
+    }
+    sim_system.push_str(SIMULATION_SYSTEM_PROMPT);
+
+    messages.push(serde_json::json!({
+        "role": "system",
+        "content": sim_system
+    }));
+
+    // Include recent conversation history for context (last 6 turns)
+    let recent: Vec<_> = session
+        .conversation_history
+        .iter()
+        .rev()
+        .take(6)
+        .rev()
+        .collect();
+    for item in recent {
+        messages.push(serde_json::json!({
+            "role": item.role,
+            "content": item.content
+        }));
+    }
+
+    // The user's message being simulated
+    messages.push(serde_json::json!({
+        "role": "user",
+        "content": input
+    }));
+
+    match client
+        .chat_completion_with_history(
+            &messages,
+            session.temperature,
+            session.max_tokens,
+            &session.model,
+            None, // no tools — simulation must not execute
+        )
+        .await
+    {
+        Ok(response_with_finish) => {
+            clear_current_line();
+            let raw = content_to_string(response_with_finish.message.content.as_ref());
+            let result = parse_simulation_response(&raw);
+            display_simulation_result(&result, input);
+        }
+        Err(e) => {
+            clear_current_line();
+            return Err(e);
+        }
+    }
+
+    Ok(())
+}
+
 /// Execute a tool call in interactive mode
 async fn execute_tool_call_interactive(
     tool_call: &crate::ToolCall,
@@ -1411,7 +1580,7 @@ async fn execute_tool_call_interactive(
                 .as_str()
                 .ok_or_else(|| anyhow!("Missing command"))?;
             println!("  {} Executing: {}", "⚙".cyan(), command);
-            let result = tools::run_shell_command(command, security)?;
+            let result = tools::run_shell_command(command, security).await?;
             println!("  {} Command output:", "✓".green());
             for line in result.lines() {
                 println!("    {}", line);
@@ -1463,38 +1632,87 @@ fn is_home_directory(current_dir: &PathBuf) -> bool {
 
 /// Print available skills and their activation status
 fn print_available_skills(session: &InteractiveSession) {
+    use crate::skills::SkillRegistry;
+
     if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
-        match crate::skills::list_skills(&skills_dir) {
-            Ok(skills) => {
-                if skills.is_empty() {
+        match SkillRegistry::load(&skills_dir) {
+            Ok(registry) => {
+                if registry.is_empty() {
                     println!("{} No skills available", "ℹ".bright_blue());
-                    println!("  Create a skill with: grok skills new <name>");
+                    println!(
+                        "  Create a skill with: {}",
+                        "grok skills new <name>".bright_cyan()
+                    );
                 } else {
                     println!("{}", "Available Skills:".bright_cyan().bold());
+                    println!(
+                        "  {}",
+                        format!(
+                            "{} skill(s) found — sorted by arbitration score",
+                            registry.len()
+                        )
+                        .dimmed()
+                    );
                     println!();
-                    for skill in skills {
-                        let is_active = session.active_skills.contains(&skill.config.name);
-                        let status = if is_active {
+
+                    for entry in registry.entries() {
+                        let is_active = session.active_skills.contains(&entry.name().to_string());
+                        let is_enabled = entry.is_enabled();
+
+                        let status = if !is_enabled {
+                            "✗ DISABLED".bright_red()
+                        } else if is_active {
                             "✓ ACTIVE".bright_green()
                         } else {
                             "○ inactive".dimmed()
                         };
+
+                        let score_badge = format!("[score:{}]", entry.arbitration_score());
+                        let version_str = format!("v{}", entry.version());
+
                         println!(
-                            "  [{}] {} - {}",
+                            "  [{}] {}  {}  {}",
                             status,
-                            skill.config.name.bright_yellow(),
-                            skill.config.description.dimmed()
+                            entry.name().bright_yellow(),
+                            score_badge.dimmed(),
+                            version_str.dimmed()
                         );
+                        println!("       {}", entry.description().dimmed());
+
+                        // Show tags if present
+                        let tags = entry.tags();
+                        if !tags.is_empty() {
+                            println!("       {} {}", "tags:".dimmed(), tags.join(", ").dimmed());
+                        }
+
+                        // Show author if present
+                        if let Some(author) = entry.author() {
+                            println!("       {} {}", "author:".dimmed(), author.dimmed());
+                        }
+
+                        // Show dependencies if present
+                        let deps = entry.dependencies();
+                        if !deps.is_empty() {
+                            println!("       {} {}", "deps:".dimmed(), deps.join(", ").dimmed());
+                        }
+
+                        println!();
                     }
-                    println!();
+
                     println!(
-                        "  Use {} to enable a skill",
-                        "/activate <skill-name>".bright_cyan()
+                        "  Use {} to enable a skill  |  {} to disable",
+                        "/activate <skill-name>".bright_cyan(),
+                        "/deactivate <skill-name>".bright_cyan()
+                    );
+                    println!(
+                        "  Use {} / {} to globally enable/disable a skill",
+                        "grok skills enable <name>".bright_cyan(),
+                        "grok skills disable <name>".bright_cyan()
                     );
                 }
             }
             Err(e) => {
-                println!("{} Failed to list skills: {}", "✗".bright_red(), e);
+                println!("{} Failed to load skill registry: {}", "✗".bright_red(), e);
             }
         }
     } else {
@@ -1514,8 +1732,32 @@ fn activate_skill(session: &mut InteractiveSession, skill_name: &str) -> Result<
         return Ok(());
     }
 
-    // Verify skill exists
+    // Verify skill exists and check global enabled flag via registry
     if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
+        // Registry check: block globally-disabled skills before anything else
+        if let Ok(registry) = crate::skills::SkillRegistry::load(&skills_dir) {
+            match registry.find(skill_name) {
+                None => {
+                    println!("{} Skill '{}' not found", "✗".bright_red(), skill_name);
+                    println!("  Use {} to see available skills", "/skills".bright_cyan());
+                    return Ok(());
+                }
+                Some(entry) if !entry.is_enabled() => {
+                    println!(
+                        "{} Skill '{}' is globally disabled and cannot be activated",
+                        "✗".bright_red(),
+                        skill_name.bright_yellow()
+                    );
+                    println!(
+                        "  Re-enable it first with: {}",
+                        format!("grok skills enable {}", skill_name).bright_cyan()
+                    );
+                    return Ok(());
+                }
+                Some(_) => {} // enabled — fall through to security check
+            }
+        }
+
         if let Some(skill) = crate::skills::find_skill(skill_name, &skills_dir) {
             // Validate skill security before activating
             let validator = crate::skills::SkillSecurityValidator::new();
@@ -1614,27 +1856,38 @@ fn deactivate_skill(session: &mut InteractiveSession, skill_name: &str) -> Resul
     Ok(())
 }
 
-/// Get the context string for currently active skills
+/// Get the ranked context string for currently active skills.
+///
+/// Uses the [`SkillRegistry`] so skills are injected in descending
+/// arbitration-score order, giving higher-priority skills more influence.
 fn get_active_skills_context(session: &InteractiveSession) -> Option<String> {
+    use crate::skills::SkillRegistry;
+
     if session.active_skills.is_empty() {
         return None;
     }
 
     let skills_dir = crate::skills::get_default_skills_dir()?;
-    let mut context =
-        String::from("\n\n## Active Skills\n\nThe following skills are currently active:\n\n");
 
-    for skill_name in &session.active_skills {
-        if let Some(skill) = crate::skills::find_skill(skill_name, &skills_dir) {
-            context.push_str(&format!("### Skill: {}\n", skill.config.name));
-            context.push_str(&format!("Description: {}\n", skill.config.description));
-            context.push_str("\nInstructions:\n");
-            context.push_str(&skill.instructions);
-            context.push_str("\n\n---\n\n");
+    match SkillRegistry::load(&skills_dir) {
+        Ok(registry) => registry.ranked_context(&session.active_skills),
+        Err(_) => {
+            // Fallback: plain unranked context using the legacy loader
+            let mut context = String::from(
+                "\n\n## Active Skills\n\nThe following skills are currently active:\n\n",
+            );
+            for skill_name in &session.active_skills {
+                if let Some(skill) = crate::skills::find_skill(skill_name, &skills_dir) {
+                    context.push_str(&format!("### Skill: {}\n", skill.config.name));
+                    context.push_str(&format!("Description: {}\n", skill.config.description));
+                    context.push_str("\nInstructions:\n");
+                    context.push_str(&skill.instructions);
+                    context.push_str("\n\n---\n\n");
+                }
+            }
+            Some(context)
         }
     }
-
-    Some(context)
 }
 
 fn print_hooks_info(config: &Config) {

@@ -658,8 +658,7 @@ EOF
 ## Getting Help
 
 ### Documentation
-- Full docs: `docs/extensions.md`
-- Progress report: `docs/PROGRESS_REPORT.md`
+- Full doc: `doc/extensions.md`
 - Changelog: `CHANGELOG.md`
 
 ### Commands

@@ -1,4 +1,4 @@
-default_model = "grok-4-1-fast-reasoning"
+default_model = "grok-code-fast-1"
 default_temperature = 0.7
 default_max_tokens = 256000
 timeout_secs = 300
@@ -147,8 +147,50 @@ enable_agents = false
 extension_management = false
 extension_reloading = false
 jit_context = false
-enable_bayesian_router = false
+
+
+[bayesian]
+# Master on/off switch. When false the router is fully bypassed.
+enabled = true
+
+# Show the real-time ASCII belief-graph after each message.
 show_belief_graph = false
+
+# ── Sensitivity thresholds ────────────────────────────────────────────────────
+# All values are probabilities in [0.0, 1.0].
+# Lower  → more cautious / fires more readily
+# Higher → more permissive / fires less readily
+
+# Router asks for clarification when P(need_clarification) exceeds this.
+clarification_threshold = 0.4
+
+# System uncertainty notes injected when P(need_clarification|low_confidence)
+# exceeds this.
+uncertainty_threshold = 0.6
+
+# "Request is vague" note injected when P(is_vague) exceeds this.
+vagueness_threshold = 0.6
+
+# ── Learning parameters ───────────────────────────────────────────────────────
+
+# Strength of keyword → intent likelihood spikes.
+# Higher = more decisive routing on a keyword match.
+intent_likelihood_weight = 5.0
+
+# Fractional boost per successful tool call (0.1 = 10%).
+profile_learning_rate = 0.1
+
+# ── Default priors ────────────────────────────────────────────────────────────
+# Starting belief weights used when no saved profile exists on disk.
+# Values need not sum to 1 — they are normalised on load.
+[bayesian.priors]
+intent_edit         = 0.2
+intent_shell        = 0.2
+intent_search       = 0.2
+intent_question     = 0.3
+need_clarification  = 0.1
+low_confidence      = 0.2
+is_vague            = 0.1
 
 [experimental.codebase_investigator_settings]
 enabled = true
@@ -168,7 +210,7 @@ enabled = true
 bind_host = "127.0.0.1"
 protocol_version = "2024-11-05"
 dev_mode = false
-max_tool_loop_iterations = 25
+max_tool_loop_iterations = 45
 # Disable the session/request_permission gate by default.
 # Zed and most ACP clients do not yet implement the permission-dialog protocol,
 # so leaving this true causes every tool call to be silently blocked.

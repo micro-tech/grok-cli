@@ -5,7 +5,7 @@
 
 use anyhow::Result;
 use grok_api::{
-    ChatMessage, ChatResponse as GrokApiChatResponse, Choice, Message, MessageContent, ToolCall,
+    ChatMessage, ChatResponse as GrokApiChatResponse, Message, MessageContent, ToolCall,
 };
 use serde_json::Value;
 
