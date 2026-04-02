@@ -14,12 +14,11 @@ use std::fs;
 use std::path::Path;
 
 use crate::CodeAction;
-use crate::GrokClient;
 use crate::cli::{
     create_spinner, format_code, print_error, print_info, print_success, print_warning,
 };
-use crate::config::RateLimitConfig;
-use crate::utils::client::initialize_client;
+use crate::router::AppRouter;
+use crate::utils::client::initialize_router;
 
 /// Handle code-related commands
 pub async fn handle_code_action(
@@ -27,10 +26,10 @@ pub async fn handle_code_action(
     api_key: &str,
     model: &str,
     timeout_secs: u64,
-    max_retries: u32,
-    rate_limit_config: RateLimitConfig,
+    _max_retries: u32,
+    _rate_limit_config: crate::config::RateLimitConfig,
 ) -> Result<()> {
-    let client = initialize_client(api_key, timeout_secs, max_retries, rate_limit_config)?;
+    let client = initialize_router(api_key, timeout_secs)?;
 
     match action {
         CodeAction::Explain { input, file } => {
@@ -72,7 +71,7 @@ fn read_code_input(input: &str, is_file: bool) -> Result<(String, Option<String>
 
 /// Handle code explanation requests
 async fn handle_code_explain(
-    client: GrokClient,
+    client: AppRouter,
     input: &str,
     is_file: bool,
     model: &str,
@@ -128,7 +127,7 @@ async fn handle_code_explain(
 
 /// Handle code review requests
 async fn handle_code_review(
-    client: GrokClient,
+    client: AppRouter,
     input: &str,
     is_file: bool,
     focus: Option<&str>,
@@ -202,7 +201,7 @@ async fn handle_code_review(
 
 /// Handle code generation requests
 async fn handle_code_generate(
-    client: GrokClient,
+    client: AppRouter,
     description: Vec<String>,
     language: Option<&str>,
     output_file: Option<&str>,
@@ -293,7 +292,7 @@ async fn handle_code_generate(
 
 /// Handle code fixing requests
 async fn handle_code_fix(
-    client: GrokClient,
+    client: AppRouter,
     file_path: &str,
     issue_description: Vec<String>,
     model: &str,

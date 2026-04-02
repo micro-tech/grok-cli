@@ -15,21 +15,21 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use tokio::time::{Duration, sleep};
 
-use crate::GrokClient;
 use crate::acp::security::SecurityPolicy;
 use crate::acp::tools;
 use crate::config::Config;
+use crate::content_to_string;
 use crate::display::{
     BannerConfig, clear_current_line, format_directory_recommendation, format_grok_logo,
     format_welcome_banner,
 };
+use crate::router::AppRouter;
 use crate::skills::{AutoActivationEngine, list_skills};
 use crate::utils::context::{
     format_context_for_prompt, get_context_file_path, load_project_context,
 };
 use crate::utils::session::{list_sessions, load_session, save_session};
 use crate::utils::shell_permissions::{ApprovalMode, ShellPermissions};
-use crate::content_to_string;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -189,7 +189,7 @@ pub async fn start_interactive_mode(
     // rather than loading all skills at startup
 
     let mut session = InteractiveSession::new(model.to_string(), project_context);
-    let client = GrokClient::new(api_key)?;
+    let client = AppRouter::new(api_key, 30)?;
 
     // Display startup elements
     if interactive_config.show_banner {
@@ -382,7 +382,7 @@ use crate::display::components::input::{Suggestion, read_input_with_suggestions}
 /// Main interactive loop
 async fn run_interactive_loop(
     session: &mut InteractiveSession,
-    client: &GrokClient,
+    client: &AppRouter,
     interactive_config: &InteractiveConfig,
     app_config: &mut Config,
 ) -> Result<bool> {
@@ -1290,7 +1290,7 @@ fn print_session_status(session: &InteractiveSession) {
 
 /// Send message to Grok and handle response
 async fn send_to_grok(
-    client: &GrokClient,
+    client: &AppRouter,
     session: &mut InteractiveSession,
     input: &str,
 ) -> Result<()> {
@@ -1418,7 +1418,7 @@ async fn send_to_grok(
 /// it to describe what it *would* do without actually executing anything.
 /// The response is parsed and displayed as a structured simulation report.
 async fn run_simulation(
-    client: &GrokClient,
+    client: &AppRouter,
     session: &InteractiveSession,
     input: &str,
 ) -> Result<()> {

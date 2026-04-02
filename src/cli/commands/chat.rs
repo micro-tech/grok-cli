@@ -20,8 +20,9 @@ use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
 use crate::cli::{create_spinner, format_grok_response, print_error, print_info, print_success};
 use crate::config::{BayesianConfig, RateLimitConfig};
-use crate::utils::client::initialize_client;
-use crate::{GrokClient, ToolCall, content_to_string, extract_text_content};
+use crate::router::AppRouter;
+use crate::utils::client::initialize_router;
+use crate::{ToolCall, content_to_string, extract_text_content};
 
 pub struct ChatOptions<'a> {
     pub message: Vec<String>,
@@ -38,12 +39,7 @@ pub struct ChatOptions<'a> {
 }
 
 pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
-    let client = initialize_client(
-        options.api_key,
-        options.timeout_secs,
-        options.max_retries,
-        options.rate_limit_config,
-    )?;
+    let client = initialize_router(options.api_key, options.timeout_secs)?;
 
     if options.interactive {
         handle_interactive_chat(
@@ -70,7 +66,7 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
 }
 
 async fn handle_single_chat(
-    client: GrokClient,
+    client: AppRouter,
     message: &str,
     system: Option<String>,
     temperature: f32,
@@ -256,7 +252,7 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
 }
 
 async fn handle_interactive_chat(
-    client: GrokClient,
+    client: AppRouter,
     system: Option<String>,
     temperature: f32,
     max_tokens: u32,
