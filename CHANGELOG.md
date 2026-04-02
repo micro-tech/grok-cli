@@ -11,7 +11,15 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
-## [0.1.8-pre] - 2026-03-14
+## [0.1.9-pre] - 2026-04-02
+
+### Added
+
+- *(next pre-release features will be listed here)*
+
+---
+
+## [0.1.8] - 2026-04-02
 
 ### Added
 
