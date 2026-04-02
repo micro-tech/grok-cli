@@ -588,6 +588,7 @@ async fn run_interactive_loop(
 }
 
 /// Display the input prompt with proper cursor positioning
+#[allow(dead_code)]
 fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> Result<()> {
     let prompt = match config.prompt_style {
         PromptStyle::Simple => "> ".to_string(),
@@ -622,6 +623,7 @@ fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> R
 }
 
 /// Read user input from stdin with cursor cleanup
+#[allow(dead_code)]
 fn read_user_input() -> Result<String> {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;

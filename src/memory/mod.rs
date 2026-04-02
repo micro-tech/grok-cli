@@ -49,6 +49,8 @@
 pub mod episodic;
 pub mod long_term;
 pub mod short_term;
+pub mod skill_memory;
+pub mod tool_memory;
 pub mod types;
 pub mod working;
 
@@ -57,6 +59,8 @@ pub mod working;
 pub use episodic::EpisodicMemory;
 pub use long_term::LongTermMemory;
 pub use short_term::ShortTermMemory;
+pub use skill_memory::{SkillActivationRecord, SkillAffinity, SkillMemory, SkillTrigger};
+pub use tool_memory::{SessionToolSummary, ToolCallRecord, ToolMemory, ToolResult};
 pub use types::{
     ChatMessage, EpisodeSummary, MemoryEntry, MemoryKind, MemorySource, estimate_tokens,
 };
@@ -99,6 +103,10 @@ pub struct MemoryStore {
     session_id: String,
     model: String,
     started_at: chrono::DateTime<Utc>,
+    /// Per-session tool call ledger.
+    pub tool_memory: tool_memory::ToolMemory,
+    /// Cross-session skill usage store (opened lazily — errors are non-fatal).
+    pub skill_memory: Option<skill_memory::SkillMemory>,
 }
 
 impl MemoryStore {
@@ -165,6 +173,25 @@ impl MemoryStore {
             "MemoryStore: session initialised"
         );
 
+        // ── Tool memory ───────────────────────────────────────────────────────
+        let tool_mem = tool_memory::ToolMemory::new(&session_id);
+
+        // ── Skill memory ──────────────────────────────────────────────────────
+        let skill_mem = skill_memory::SkillMemory::load_or_create()
+            .ok()
+            .or_else(|| {
+                warn!("MemoryStore: could not open skill memory store — running without it");
+                None
+            });
+
+        debug!(
+            session_id = %session_id,
+            model = %model,
+            has_context = working.has_context(),
+            long_term_facts = long_term.len(),
+            "MemoryStore: session initialised"
+        );
+
         Ok(Self {
             short_term,
             long_term,
@@ -173,6 +200,8 @@ impl MemoryStore {
             session_id,
             model: model.to_string(),
             started_at,
+            tool_memory: tool_mem,
+            skill_memory: skill_mem,
         })
     }
 
@@ -190,13 +219,16 @@ impl MemoryStore {
         let _ = std::fs::create_dir_all(&base);
         let _ = std::fs::create_dir_all(&sessions);
 
+        let sid = generate_session_id();
         Self {
             short_term: ShortTermMemory::new(),
             long_term: LongTermMemory::load_or_create_at(&base)
                 .expect("temp dir must be writable for minimal store"),
             episodic: EpisodicMemory::with_dir(sessions),
             working: WorkingMemory::empty(),
-            session_id: generate_session_id(),
+            tool_memory: tool_memory::ToolMemory::new(&sid),
+            skill_memory: None,
+            session_id: sid,
             model: "unknown".to_string(),
             started_at: Utc::now(),
         }
@@ -237,12 +269,82 @@ impl MemoryStore {
         self.long_term.save_fact(fact, MemorySource::Inferred, tags)
     }
 
+    /// Record a completed tool call in the session's tool ledger.
+    ///
+    /// This is the central place all command handlers should call after every
+    /// tool execution so the AI and loop-detection layer can see what happened.
+    pub fn record_tool_call(
+        &mut self,
+        tool_name: &str,
+        args: serde_json::Value,
+        result: tool_memory::ToolResult,
+        duration_ms: Option<u64>,
+    ) {
+        self.tool_memory
+            .record_call(tool_name, args, result, duration_ms);
+    }
+
+    /// Return `true` when the same `(tool, args)` pair has failed at least
+    /// `threshold` times this session — used to break infinite retry loops.
+    pub fn is_tool_loop(
+        &self,
+        tool_name: &str,
+        args: &serde_json::Value,
+        threshold: usize,
+    ) -> bool {
+        self.tool_memory.failed_recently(tool_name, args, threshold)
+    }
+
+    /// Activate a skill and record it in skill memory for the current project.
+    ///
+    /// `project_hash` should come from
+    /// [`skill_memory::project_hash_for_path`].
+    pub fn activate_skill(
+        &mut self,
+        skill_name: &str,
+        trigger: skill_memory::SkillTrigger,
+        project_hash: &str,
+    ) {
+        if let Some(sm) = &mut self.skill_memory {
+            if let Err(e) =
+                sm.record_activation(skill_name, trigger, project_hash, &self.session_id)
+            {
+                warn!("MemoryStore: could not record skill activation — {e}");
+            }
+        }
+    }
+
+    /// Record whether a skill was helpful this session.
+    pub fn skill_outcome(&mut self, skill_name: &str, was_helpful: bool) {
+        if let Some(sm) = &mut self.skill_memory {
+            if let Err(e) = sm.record_outcome(skill_name, &self.session_id, was_helpful, None) {
+                warn!("MemoryStore: could not record skill outcome — {e}");
+            }
+        }
+    }
+
+    /// Get suggested skills for the current project based on past history.
+    ///
+    /// Returns skill names ordered by affinity score descending.
+    pub fn suggested_skills(&self, project_hash: &str, min_score: f32) -> Vec<String> {
+        self.skill_memory
+            .as_ref()
+            .map(|sm| {
+                sm.suggested_skills(project_hash, min_score)
+                    .into_iter()
+                    .map(|(n, _)| n.to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     /// Archive the current session as an episode in [`EpisodicMemory`].
     ///
     /// - `title` — optional human-readable session title. When `None` the
     ///   episode is stored without a title.
     ///
     /// The full short-term transcript is saved alongside the episode summary.
+    /// Also flushes the tool call history to disk.
     pub fn save_episode(&mut self, title: Option<&str>) -> Result<PathBuf> {
         let messages: Vec<ChatMessage> = self.short_term.messages().to_vec();
         let message_count = messages.len();
@@ -267,11 +369,17 @@ impl MemoryStore {
 
         let path = self.episodic.save(&summary, Some(&messages))?;
 
+        // Flush tool call history to disk alongside the episode.
+        if let Err(e) = self.tool_memory.flush_to_disk() {
+            warn!("MemoryStore: could not flush tool history — {e}");
+        }
+
         debug!(
             session_id = %self.session_id,
             message_count,
             total_tokens,
             path = %path.display(),
+            tool_calls = self.tool_memory.len(),
             "MemoryStore: episode saved"
         );
 
@@ -314,10 +422,11 @@ impl MemoryStore {
     /// ```
     pub fn status_line(&self) -> String {
         format!(
-            "Short-term: {} msgs (~{} tokens) | Long-term: {} facts | Working: {} bytes",
+            "Short-term: {} msgs (~{} tokens) | Long-term: {} facts | Tools: {} calls | Working: {} bytes",
             self.short_term.len(),
             self.short_term.estimated_tokens(),
             self.long_term.len(),
+            self.tool_memory.len(),
             self.working.byte_len(),
         )
     }

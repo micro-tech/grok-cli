@@ -25,9 +25,9 @@ use crate::acp::protocol::{
     AGENT_METHOD_NAMES, AcpModeInfo, AcpModelInfo, AcpModelsInfo, AcpModesInfo, AgentCapabilities,
     AuthEnvVar, AuthMethod, AvailableCommandsUpdate, ContentBlock, ContentChunk, Implementation,
     InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
-    PermissionOutcome, PromptRequest, PromptResponse,
-    SessionId, SessionInfo, SessionListRequest, SessionListResponse, SessionLoadRequest,
-    SessionNotification, SessionUpdate, StopReason, TextContent,
+    PermissionOutcome, PromptRequest, PromptResponse, SessionId, SessionInfo, SessionListRequest,
+    SessionListResponse, SessionLoadRequest, SessionNotification, SessionUpdate, StopReason,
+    TextContent,
 };
 use crate::acp::slash_commands::{
     self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
@@ -1675,6 +1675,7 @@ struct ModelInfo {
 
 /// Server statistics tracking
 #[derive(Debug, Default)]
+#[allow(dead_code)]
 struct ServerStats {
     connections: u64,
     active_connections: u64,

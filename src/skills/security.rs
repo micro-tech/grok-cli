@@ -46,6 +46,7 @@ pub struct SkillSecurityValidator {
     /// Patterns that warrant warnings
     suspicious_patterns: Vec<Regex>,
     /// Allowed script interpreters
+    #[allow(dead_code)]
     allowed_interpreters: HashSet<String>,
 }
 

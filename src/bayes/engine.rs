@@ -17,7 +17,8 @@ use std::collections::HashMap;
 
 use crate::bayes::belief_graph::BeliefGraph;
 use crate::bayes::likelihoods::{
-    likelihood_from_model_confidence, likelihood_from_text, likelihood_from_tool_failure,
+    DEFAULT_INTENT_LIKELIHOOD_WEIGHT, likelihood_from_model_confidence, likelihood_from_text,
+    likelihood_from_tool_failure,
 };
 use crate::bayes::priors::{default_priors, priors_from_config};
 use crate::bayes::updater::bayes_update;
@@ -26,7 +27,7 @@ use crate::bayes::updater::bayes_update;
 const DEFAULT_CLARIFICATION_THRESHOLD: f32 = 0.4;
 const DEFAULT_UNCERTAINTY_THRESHOLD: f32 = 0.6;
 const DEFAULT_VAGUENESS_THRESHOLD: f32 = 0.6;
-const DEFAULT_INTENT_LIKELIHOOD_WEIGHT: f32 = 5.0;
+
 const DEFAULT_PROFILE_LEARNING_RATE: f32 = 0.1;
 
 /// The core Bayesian inference engine.

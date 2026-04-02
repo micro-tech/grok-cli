@@ -43,10 +43,11 @@ pub enum SettingType {
 /// Handle settings-related commands
 pub async fn handle_settings_action(action: SettingsAction, config: &Config) -> Result<()> {
     match action {
-        SettingsAction::Show | SettingsAction::Edit => {
+        SettingsAction::Show => {
             let settings = get_all_settings(config);
             crate::display::components::settings_list::run_settings_tui(config, settings).await
         }
+        SettingsAction::Edit => edit_settings_interactive(config).await,
         SettingsAction::Reset { category } => reset_settings(category).await,
         SettingsAction::Export { path } => export_settings(config, path).await,
         SettingsAction::Import { path } => import_settings(path).await,

@@ -318,7 +318,7 @@ pub struct FooterConfig {
     pub hide_model_info: bool,
 
     /// Hide context window percentage in footer
-    #[serde(default = "default_true")]
+    #[serde(default = "default_hide_context_percentage")]
     pub hide_context_percentage: bool,
 }
 
@@ -1461,6 +1461,7 @@ impl Config {
     }
 
     /// Get system-level config path (legacy TOML)
+    #[allow(dead_code)]
     fn get_system_config_path() -> Result<PathBuf> {
         let home_dir =
             dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;

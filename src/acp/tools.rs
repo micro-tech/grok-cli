@@ -7,7 +7,7 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use serde_json::{Value, json};
 use std::fs::{self, File};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader};
 use std::path::Path;
 use tokio::process::Command;
 use tokio::time::{Duration, timeout};

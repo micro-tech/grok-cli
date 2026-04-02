@@ -15,6 +15,7 @@ pub struct McpClient {
 }
 
 struct ServerConnection {
+    #[allow(dead_code)] // must be kept alive — dropping it would kill the child process
     process: Child,
     stdin: Mutex<ChildStdin>,
     reader: Mutex<BufReader<ChildStdout>>,
