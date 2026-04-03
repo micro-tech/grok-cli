@@ -121,7 +121,9 @@ impl GrokClient {
                     }
                     "tool" => {
                         let tool_call_id = msg.get("tool_call_id")?.as_str()?;
-                        Some(ChatMessage::tool(content.unwrap_or(""), tool_call_id))
+                        // Fallback: report tool result as user message since tool role is missing in grok_api
+                        // This ensures the model sees the result even if native tool role is not supported
+                        Some(ChatMessage::user(format!("Tool result (ID: {}): {}", tool_call_id, content.unwrap_or(""))))
                     }
                     _ => None,
                 }
