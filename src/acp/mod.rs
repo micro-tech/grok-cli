@@ -318,110 +318,20 @@ impl GrokAcpAgent {
                 "streaming".to_string(),
                 "function_calling".to_string(),
             ],
-            tools: vec![
-                ToolDefinition {
-                    name: "chat_complete".to_string(),
-                    description: "Generate chat completions using Grok AI".to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {
-                            "message": {
-                                "type": "string",
-                                "description": "The message to send to Grok"
-                            },
-                            "temperature": {
-                                "type": "number",
-                                "minimum": 0.0,
-                                "maximum": 2.0,
-                                "description": "Creativity level (0.0 to 2.0)"
-                            },
-                            "max_tokens": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 131072,
-                                "description": "Maximum tokens in response"
-                            }
-                        },
-                        "required": ["message"]
-                    }),
-                },
-                ToolDefinition {
-                    name: "code_explain".to_string(),
-                    description: "Explain code functionality and structure".to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {
-                            "code": {
-                                "type": "string",
-                                "description": "The code to explain"
-                            },
-                            "language": {
-                                "type": "string",
-                                "description": "Programming language (optional)"
-                            },
-                            "detail_level": {
-                                "type": "string",
-                                "enum": ["basic", "detailed", "expert"],
-                                "description": "Level of detail in explanation"
-                            }
-                        },
-                        "required": ["code"]
-                    }),
-                },
-                ToolDefinition {
-                    name: "code_review".to_string(),
-                    description: "Review code for issues and improvements".to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {
-                            "code": {
-                                "type": "string",
-                                "description": "The code to review"
-                            },
-                            "focus": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string",
-                                    "enum": ["security", "performance", "style", "bugs", "maintainability"]
-                                },
-                                "description": "Areas to focus on during review"
-                            },
-                            "language": {
-                                "type": "string",
-                                "description": "Programming language"
-                            }
-                        },
-                        "required": ["code"]
-                    }),
-                },
-                ToolDefinition {
-                    name: "code_generate".to_string(),
-                    description: "Generate code from natural language descriptions".to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {
-                            "description": {
-                                "type": "string",
-                                "description": "Description of what to generate"
-                            },
-                            "language": {
-                                "type": "string",
-                                "description": "Target programming language"
-                            },
-                            "style": {
-                                "type": "string",
-                                "enum": ["functional", "object-oriented", "procedural"],
-                                "description": "Programming style preference"
-                            },
-                            "include_tests": {
-                                "type": "boolean",
-                                "description": "Whether to include unit tests"
-                            }
-                        },
-                        "required": ["description"]
-                    }),
-                },
-            ],
+            // Build the tool list live from the registry so this list
+            // automatically reflects any newly added tools without requiring
+            // manual updates here.
+            tools: crate::tools::registry::get_available_tool_definitions()
+                .iter()
+                .filter_map(|t| {
+                    let func = t.get("function")?;
+                    Some(ToolDefinition {
+                        name: func["name"].as_str()?.to_string(),
+                        description: func["description"].as_str()?.to_string(),
+                        parameters: func.get("parameters").cloned().unwrap_or(json!({})),
+                    })
+                })
+                .collect(),
         }
     }
 

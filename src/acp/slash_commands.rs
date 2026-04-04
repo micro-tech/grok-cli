@@ -65,6 +65,9 @@ pub enum SlashCommand {
 
     /// `/context` — show session configuration and active context files.
     Context,
+
+    /// `/tools` — list all 32 LLM-callable tools available in this session.
+    Tools,
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +108,7 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         "/model" => Some(SlashCommand::Model { name: args }),
         "/clear" => Some(SlashCommand::Clear),
         "/context" => Some(SlashCommand::Context),
+        "/tools" => Some(SlashCommand::Tools),
         _ => None, // unknown command — let the AI handle the raw text
     }
 }
@@ -118,6 +122,10 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
 pub fn get_available_commands() -> Vec<AvailableCommand> {
     vec![
         AvailableCommand::new("help", "Show all available slash commands and their usage"),
+        AvailableCommand::new(
+            "tools",
+            "List all LLM-callable tools available in this session (file, shell, web, task, …)",
+        ),
         AvailableCommand::new("web", "Research a topic or search the web for information")
             .with_input("query to research"),
         AvailableCommand::new(
@@ -165,7 +173,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         SlashCommand::Help
         | SlashCommand::Clear
         | SlashCommand::Model { .. }
-        | SlashCommand::Context => None,
+        | SlashCommand::Context
+        | SlashCommand::Tools => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -316,6 +325,7 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
             }
         }
         SlashCommand::Context => Some(BuiltinResult::ShowContext),
+        SlashCommand::Tools => Some(BuiltinResult::Text(format_tools_text())),
         _ => None, // AI-assisted command
     }
 }
@@ -323,6 +333,113 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
 // ---------------------------------------------------------------------------
 // Formatting helpers
 // ---------------------------------------------------------------------------
+
+/// Format the `/tools` response — a markdown table of every LLM-callable tool
+/// drawn live from [`crate::tools::registry::get_available_tool_definitions`].
+///
+/// This always reflects the current registry state, so newly added tools
+/// appear automatically the next time a user types `/tools`.
+pub fn format_tools_text() -> String {
+    let tool_defs = crate::tools::registry::get_available_tool_definitions();
+
+    // Group tools by the first underscore-separated prefix (e.g. "read_file" → "File")
+    // for a more readable presentation.
+    let section_label = |name: &str| -> &'static str {
+        if name.starts_with("read")
+            || name.starts_with("write")
+            || name.starts_with("list_dir")
+            || name.starts_with("list_code")
+            || name.starts_with("glob")
+            || name.starts_with("search_file")
+            || name.starts_with("replace")
+        {
+            "📁 File"
+        } else if name.starts_with("run_shell") {
+            "🐚 Shell"
+        } else if name.starts_with("web") {
+            "🌐 Web"
+        } else if name.starts_with("save_memory") {
+            "🧠 Memory"
+        } else if name.starts_with("sleep") || name.starts_with("synthetic") {
+            "⚙️  System"
+        } else if name.starts_with("task") {
+            "📋 Tasks"
+        } else if name.starts_with("enter_plan")
+            || name.starts_with("exit_plan")
+            || name.starts_with("enter_work")
+            || name.starts_with("exit_work")
+        {
+            "🗂️  Plan / Worktree"
+        } else if name.starts_with("notebook") {
+            "📓 Notebook"
+        } else if name.starts_with("execute_skill") || name.starts_with("list_skill") {
+            "🎓 Skills"
+        } else if name.starts_with("spawn")
+            || name.starts_with("send_msg")
+            || name.starts_with("team")
+        {
+            "🤖 Agents"
+        } else if name.starts_with("mcp") {
+            "🔌 MCP"
+        } else if name.starts_with("lsp") {
+            "🔍 LSP"
+        } else if name.starts_with("tool_search")
+            || name.starts_with("cron")
+            || name.starts_with("remote")
+        {
+            "🔎 Discovery"
+        } else {
+            "🛠️  Other"
+        }
+    };
+
+    let mut lines: Vec<String> = vec![
+        "## Grok CLI — Available Tools".to_string(),
+        String::new(),
+        format!(
+            "**{} tools** are available to the AI during this session.",
+            tool_defs.len()
+        ),
+        String::new(),
+    ];
+
+    // Collect rows with their section label so we can sort by section
+    let mut rows: Vec<(&'static str, String, String)> = tool_defs
+        .iter()
+        .filter_map(|t| {
+            let func = t.get("function")?;
+            let name = func["name"].as_str()?;
+            let desc = func["description"].as_str().unwrap_or("");
+            Some((section_label(name), name.to_string(), desc.to_string()))
+        })
+        .collect();
+
+    rows.sort_by(|a, b| a.0.cmp(b.0).then(a.1.cmp(&b.1)));
+
+    let mut current_section = "";
+    for (section, name, desc) in &rows {
+        if *section != current_section {
+            if !current_section.is_empty() {
+                lines.push(String::new());
+            }
+            lines.push(format!("### {}", section));
+            lines.push(String::new());
+            lines.push("| Tool | Description |".to_string());
+            lines.push("|------|-------------|".to_string());
+            current_section = section;
+        }
+        lines.push(format!("| `{}` | {} |", name, desc));
+    }
+
+    lines.push(String::new());
+    lines.push(
+        "> **Tip:** These tools are invoked automatically by the AI. \
+         Use `/help` to see slash commands you can type directly."
+            .to_string(),
+    );
+
+    lines.join("\n")
+}
 
 /// Format the `/help` response — a markdown list of all available commands.
 pub fn format_help_text() -> String {
@@ -423,6 +540,49 @@ mod tests {
     use super::*;
 
     // --- parse_slash_command ---
+
+    #[test]
+    fn test_parse_tools() {
+        let cmd = parse_slash_command("/tools");
+        assert_eq!(cmd, Some(SlashCommand::Tools));
+    }
+
+    #[test]
+    fn test_tools_is_builtin() {
+        let result = handle_builtin(&SlashCommand::Tools);
+        assert!(result.is_some());
+        match result.unwrap() {
+            BuiltinResult::Text(text) => {
+                assert!(text.contains("tools"), "expected tool list in: {text}");
+                assert!(text.contains("read_file"), "expected read_file in: {text}");
+                assert!(
+                    text.contains("web_search"),
+                    "expected web_search in: {text}"
+                );
+            }
+            other => panic!("expected Text, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_format_tools_text_covers_all_registry_tools() {
+        let text = format_tools_text();
+        let all_defs = crate::tools::registry::get_available_tool_definitions();
+        // Every registered tool should appear in the formatted output
+        for def in &all_defs {
+            if let Some(name) = def
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+            {
+                assert!(
+                    text.contains(name),
+                    "tool '{}' missing from /tools output",
+                    name
+                );
+            }
+        }
+    }
 
     #[test]
     fn test_parse_help() {
