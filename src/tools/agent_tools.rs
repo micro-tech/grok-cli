@@ -274,3 +274,35 @@ mod tests {
         assert!(r.is_err());
     }
 }
+
+ 
+ / /    % %  m e r g e _ a g e n t _ r e s u l t s    % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % % %
+ 
+ / / /   M e r g e   r e s u l t s   f r o m   m u l t i p l e   s u b - a g e n t s   u s i n g   s i m p l e   a r b i t r a t i o n . 
+ / / /   
+ / / /   T a k e s   a   l i s t   o f   r e s u l t s   a n d   r e t u r n s   a   m e r g e d   s u m m a r y . 
+ / / /   U s e s   b a s i c   h e u r i s t i c s :   p r e f e r   l o n g e r ,   m o r e   d e t a i l e d   r e s p o n s e s . 
+ p u b   f n   m e r g e _ a g e n t _ r e s u l t s ( r e s u l t s :   V e c < S t r i n g > )   - >   S t r i n g   { 
+         i f   r e s u l t s . i s _ e m p t y ( )   { 
+                 r e t u r n   " N o   r e s u l t s   t o   m e r g e . " . t o _ s t r i n g ( ) ; 
+         } 
+         i f   r e s u l t s . l e n ( )   = =   1   { 
+                 r e t u r n   r e s u l t s [ 0 ] . c l o n e ( ) ; 
+         } 
+ 
+         / /   S i m p l e   s c o r i n g :   p r e f e r   l o n g e r   r e s p o n s e s   a s   m o r e   d e t a i l e d 
+         l e t   m u t   s c o r e d :   V e c < ( S t r i n g ,   u s i z e ) >   =   r e s u l t s . i n t o _ i t e r ( ) 
+                 . m a p ( | r |   ( r ,   r . l e n ( ) ) ) 
+                 . c o l l e c t ( ) ; 
+         s c o r e d . s o r t _ b y ( | a ,   b |   b . 1 . c m p ( & a . 1 ) ) ; 
+ 
+         / /   T a k e   t o p   3   a n d   s u m m a r i z e 
+         l e t   t o p   =   s c o r e d . i n t o _ i t e r ( ) . t a k e ( 3 ) . m a p ( | ( r ,   _ ) |   r ) . c o l l e c t : : < V e c < _ > > ( ) ; 
+         
+         f o r m a t ! ( 
+                 " M e r g e d   r e s u l t s   f r o m   { }   a g e n t s : \ n \ n { } " , 
+                 t o p . l e n ( ) , 
+                 t o p . j o i n ( " \ n \ n - - - \ n \ n " ) 
+         ) 
+ }  
+ 

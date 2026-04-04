@@ -573,3 +573,42 @@ mod tests {
         // The test passes as long as the module compiles correctly
     }
 }
+
+ # [ d e r i v e ( D e b u g ) ] 
+ s t r u c t   T e a m I n f o   { 
+         n a m e :   S t r i n g , 
+         d e s c r i p t i o n :   S t r i n g , 
+ } 
+ 
+ f n   l i s t _ t e a m s ( )   - >   R e s u l t < V e c < T e a m I n f o > >   { 
+         u s e   s t d : : p a t h : : P a t h B u f ; 
+         u s e   d i r s : : d a t a _ l o c a l _ d i r ; 
+         u s e   s e r d e _ j s o n : : V a l u e ; 
+ 
+         l e t   d a t a _ d i r   =   d a t a _ l o c a l _ d i r ( ) 
+                 . o k _ o r _ e l s e ( | |   a n y h o w : : a n y h o w ! ( " C a n n o t   d e t e r m i n e   l o c a l   d a t a   d i r e c t o r y " ) ) ? 
+                 . j o i n ( " . g r o k " ) ; 
+         l e t   t e a m s _ f i l e   =   d a t a _ d i r . j o i n ( " t e a m s . j s o n " ) ; 
+ 
+         i f   ! t e a m s _ f i l e . e x i s t s ( )   { 
+                 r e t u r n   O k ( V e c : : n e w ( ) ) ; 
+         } 
+ 
+         l e t   c o n t e n t   =   s t d : : f s : : r e a d _ t o _ s t r i n g ( & t e a m s _ f i l e ) ? ; 
+         l e t   d a t a :   V a l u e   =   s e r d e _ j s o n : : f r o m _ s t r ( & c o n t e n t ) ? ; 
+         
+         l e t   t e a m s   =   d a t a [ " t e a m s " ] 
+                 . a s _ a r r a y ( ) 
+                 . u n w r a p _ o r ( & v e c ! [ ] ) 
+                 . i t e r ( ) 
+                 . f i l t e r _ m a p ( | t |   { 
+                         S o m e ( T e a m I n f o   { 
+                                 n a m e :   t [ " n a m e " ] . a s _ s t r ( ) ? . t o _ s t r i n g ( ) , 
+                                 d e s c r i p t i o n :   t [ " d e s c r i p t i o n " ] . a s _ s t r ( ) ? . t o _ s t r i n g ( ) , 
+                         } ) 
+                 } ) 
+                 . c o l l e c t ( ) ; 
+ 
+         O k ( t e a m s ) 
+ }  
+ 
