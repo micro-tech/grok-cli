@@ -39,6 +39,7 @@ pub mod agent;
 pub mod bayes;
 pub mod cli;
 pub mod config;
+pub mod context;
 pub mod display;
 pub mod grok_client_ext;
 pub mod hooks;

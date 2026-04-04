@@ -7,7 +7,7 @@
 // remain for external users and documentation purposes.
 #![allow(deprecated)]
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use colored::*;
 use serde_json::{Value, json};
 use std::env;
