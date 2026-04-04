@@ -29,6 +29,17 @@ pub enum RouterError {
     #[error("Rate limit exceeded")]
     RateLimit,
 
+    /// A tool execution failed during the tool loop.
+    ///
+    /// The inner string contains the tool name and the underlying error message.
+    #[error("Tool execution error: {0}")]
+    ToolError(String),
+
+    /// The tool-execution loop hit the maximum iteration cap without the LLM
+    /// returning a final text response.
+    #[error("Max tool loop iterations reached ({0} iterations)")]
+    MaxToolIterations(u32),
+
     /// Catch-all for truly unexpected situations.
     #[error("Unknown router error")]
     Unknown,

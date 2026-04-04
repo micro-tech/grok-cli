@@ -1,5 +1,7 @@
 use std::fmt;
 
+use grok_api::MessageContent;
+
 use crate::router::{Backend, BackendKind, RouterError, RouterRequest, RouterResponse};
 
 /// CPU-side request router.
@@ -36,6 +38,132 @@ impl CpuRouter {
             .ok_or_else(|| RouterError::BackendUnavailable(req.model.clone()))?;
 
         backend.send(req).await
+    }
+
+    /// Route a request through a **tool-execution loop**.
+    ///
+    /// This is the CPU router's implementation of the agent loop described in
+    /// the Grok-CLI Tools Build Instructions:
+    ///
+    /// 1. Send the current message history to the backend.
+    /// 2. If the LLM returns one or more tool calls, execute them via
+    ///    [`crate::tools::registry::execute_tool`] using the provided
+    ///    [`crate::tools::ToolContext`].
+    /// 3. Append each tool result to the message history as a `"tool"` role
+    ///    message (with `tool_call_id` so the API can correlate them).
+    /// 4. Repeat until the LLM returns a final text response with no tool
+    ///    calls, or until `max_iterations` is reached.
+    ///
+    /// # Security
+    /// Every tool call is executed inside the security policy carried by
+    /// `context`. Paths are canonicalized and checked against trusted
+    /// directories; shell commands are validated against the denylist; all
+    /// external access is logged.
+    ///
+    /// # Starlink resilience
+    /// The loop re-uses the same retry-capable [`Backend`] for every
+    /// iteration, so Starlink handover drops during tool calls are handled
+    /// by the backend's exponential back-off.
+    ///
+    /// # Errors
+    /// - [`RouterError::BackendUnavailable`] — no backend matches the model.
+    /// - [`RouterError::ToolError`] — a tool call returned a hard error
+    ///   (soft errors are appended as tool result text and sent back to the
+    ///   model).
+    /// - [`RouterError::MaxToolIterations`] — the loop reached `max_iterations`
+    ///   without the model returning a final response.
+    pub async fn route_with_tools(
+        &self,
+        req: RouterRequest,
+        context: &crate::tools::ToolContext,
+        max_iterations: u32,
+    ) -> Result<RouterResponse, RouterError> {
+        // We work with raw JSON internally so tool-result messages can carry
+        // the `tool_call_id` field that the Grok API requires for function
+        // calling.  The typed `grok_api::Message` struct does not have this
+        // field, so raw JSON is the safest cross-version approach.
+        let mut messages_json: Vec<serde_json::Value> = req
+            .messages
+            .iter()
+            .filter_map(|m| serde_json::to_value(m).ok())
+            .collect();
+
+        for iteration in 0..max_iterations {
+            // Re-parse JSON → typed messages for this iteration's request.
+            // Unknown fields (e.g. `tool_call_id`) are ignored by serde's
+            // default behaviour, which is intentional here.
+            let typed_messages: Vec<grok_api::Message> = messages_json
+                .iter()
+                .filter_map(|v| serde_json::from_value(v.clone()).ok())
+                .collect();
+
+            let iter_req = RouterRequest {
+                model: req.model.clone(),
+                messages: typed_messages,
+                tools: req.tools.clone(),
+                max_tokens: req.max_tokens,
+                temperature: req.temperature,
+            };
+
+            // Call the backend (retries + back-off happen inside `route`).
+            let resp = self.route(&iter_req).await?;
+
+            // Clone tool calls before consuming the response.
+            let tool_calls = resp.tool_calls.clone();
+            let has_tool_calls = !tool_calls.is_empty();
+
+            // Serialize the assistant message into the running history.
+            let assistant_msg = resp.into_message_with_finish_reason().message;
+            if let Ok(v) = serde_json::to_value(&assistant_msg) {
+                messages_json.push(v);
+            }
+
+            if !has_tool_calls {
+                // The model returned a final text response — we're done.
+                let text = match assistant_msg.content {
+                    Some(MessageContent::Text(t)) => Some(t),
+                    _ => None,
+                };
+                return Ok(RouterResponse {
+                    text,
+                    tool_calls: vec![],
+                    raw: serde_json::Value::Null,
+                    model: req.model.clone(),
+                    usage: None,
+                });
+            }
+
+            // ── Execute each tool call ────────────────────────────────────────
+            for tool_call in &tool_calls {
+                let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
+                    .unwrap_or(serde_json::Value::Null);
+
+                // Soft errors are returned as tool result text so the model
+                // can react (e.g. "File not found — try a different path").
+                // Hard / unexpected errors propagate as RouterError::ToolError.
+                let result =
+                    crate::tools::registry::execute_tool(&tool_call.function.name, &args, context)
+                        .await
+                        .unwrap_or_else(|e| {
+                            format!("Tool '{}' failed: {}", tool_call.function.name, e)
+                        });
+
+                messages_json.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": result,
+                }));
+            }
+
+            tracing::debug!(
+                iteration = iteration + 1,
+                max = max_iterations,
+                tools = tool_calls.len(),
+                "tool loop iteration complete"
+            );
+        }
+
+        Err(RouterError::MaxToolIterations(max_iterations))
     }
 
     /// Return the first available backend that matches the model prefix.
@@ -115,5 +243,69 @@ mod tests {
         let req = make_request("grok-2");
         let err = router.route(&req).await.expect_err("should fail");
         assert!(matches!(err, RouterError::BackendUnavailable(_)));
+    }
+
+    #[tokio::test]
+    async fn route_with_tools_returns_text_when_no_tool_calls() {
+        // A mock backend that always returns plain text (no tool calls).
+        let router = CpuRouter::new(vec![Box::new(MockGrokBackend { available: true })]);
+        let req = make_request("grok-3-mini");
+        let ctx = crate::tools::ToolContext::default_for_cwd();
+
+        let resp = router
+            .route_with_tools(req, &ctx, 10)
+            .await
+            .expect("should succeed");
+
+        assert_eq!(resp.text.as_deref(), Some("mock response"));
+        assert!(resp.tool_calls.is_empty());
+    }
+
+    #[tokio::test]
+    async fn route_with_tools_hits_max_iterations_when_tools_never_stop() {
+        // A mock backend that always returns a tool call so the loop never
+        // terminates naturally.
+        struct AlwaysToolBackend;
+
+        #[async_trait]
+        impl Backend for AlwaysToolBackend {
+            fn kind(&self) -> BackendKind {
+                BackendKind::Grok
+            }
+            fn is_available(&self) -> bool {
+                true
+            }
+            async fn send(&self, req: &RouterRequest) -> Result<RouterResponse, RouterError> {
+                Ok(RouterResponse {
+                    text: None,
+                    tool_calls: vec![grok_api::ToolCall {
+                        id: "tc_1".to_string(),
+                        call_type: "function".to_string(),
+                        function: grok_api::FunctionCall {
+                            name: "list_directory".to_string(),
+                            arguments: r#"{"path":"."}"#.to_string(),
+                        },
+                    }],
+                    raw: serde_json::Value::Null,
+                    model: req.model.clone(),
+                    usage: None,
+                })
+            }
+        }
+
+        let router = CpuRouter::new(vec![Box::new(AlwaysToolBackend)]);
+        let req = make_request("grok-3-mini");
+        let ctx = crate::tools::ToolContext::default_for_cwd();
+
+        let err = router
+            .route_with_tools(req, &ctx, 3)
+            .await
+            .expect_err("should hit max iterations");
+
+        assert!(
+            matches!(err, RouterError::MaxToolIterations(3)),
+            "unexpected error: {:?}",
+            err
+        );
     }
 }

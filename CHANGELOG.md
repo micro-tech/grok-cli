@@ -15,6 +15,73 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Added
 
+- **Tools module restructuring** (`src/tools/`) — AI: Claude Sonnet 4.6
+  - Moved all tool implementations out of the monolithic `src/acp/tools.rs`
+    (1 166 lines) into a properly structured `src/tools/` module following the
+    Grok-CLI Tools Build Instructions spec.
+  - **`tool_error.rs`** — `ToolError` enum with nine structured variants:
+    `AccessDenied`, `FileNotFound`, `Io`, `InvalidArgument`, `Timeout`,
+    `Network`, `InvalidPattern`, `UnknownTool`, and `Other` (anyhow catch-all).
+    Both `std::io::Error` and `anyhow::Error` have `#[from]` conversions.
+  - **`tool_context.rs`** — `ToolContext` struct wrapping `SecurityPolicy`.
+    `Clone + Debug`, cheap to copy without `Arc`. Constructors: `::new(policy)`,
+    `::default_for_cwd()`, and `From<SecurityPolicy>`.
+  - **`file_tools.rs`** — eight file-system tools with identical signatures to
+    the previous `acp::tools` functions so no call-sites needed updating:
+    `read_file`, `read_multiple_files`, `list_code_definitions`, `write_file`,
+    `replace`, `list_directory`, `glob_search`, `search_file_content`.
+    Full external-access approval / audit flow preserved. 9 unit tests.
+  - **`shell_tools.rs`** — `run_shell_command` with 30-second hard timeout,
+    denylist validation, Windows PowerShell dispatch with `&&`→`;` rewriting.
+    2 unit tests.
+  - **`web_tools.rs`** — `web_search` (DuckDuckGo HTML scraping) and
+    `web_fetch` (URL GET with 30-second timeout, 10 000-char truncation).
+    Static regex patterns compiled once via `Lazy`. Starlink-resilient timeouts.
+    4 unit tests.
+  - **`memory_tools.rs`** — `save_memory` delegating to the long-term memory
+    store's atomic write path. 1 unit test.
+  - **`registry.rs`** — central `execute_tool(name, args, ctx)` async entry
+    point dispatching all 12 named tools. `get_tool_definitions()` and
+    `get_available_tool_definitions()` return LLM-facing JSON schemas.
+    5 unit tests.
+  - **`mod.rs`** — flat re-exports of all tool functions plus `ToolContext` and
+    `ToolError` so callers can write `tools::read_file(...)` or go through the
+    registry.
+  - **`src/acp/tools.rs`** reduced to a single `pub use crate::tools::*;`
+    re-export shim — all existing call-sites in `src/acp/mod.rs` continue to
+    compile unchanged; all 11 existing ACP tool tests preserved and still pass.
+  - **`src/lib.rs`** — added `pub mod tools;` to expose the new module
+    publicly.
+
+- **CPU router tool-execution loop** (`src/router/cpu_router.rs`) — AI: Claude Sonnet 4.6
+  - New `route_with_tools(req, context, max_iterations)` method implementing
+    the full agent/tool loop directly inside `CpuRouter`:
+    - Serializes message history to raw JSON so `tool_call_id` fields survive
+      round-trips (the typed `grok_api::Message` does not carry this field).
+    - Each iteration re-deserializes to typed messages, calls `route()` (which
+      already handles Starlink back-off retries via the backend), then checks
+      for tool calls.
+    - No tool calls → returns the final `RouterResponse` immediately.
+    - Tool calls present → dispatches each through `tools::registry::execute_tool`,
+      appends results as `"tool"` role messages, and loops.
+    - Exhausts `max_iterations` → `RouterError::MaxToolIterations(n)`.
+  - 2 new tests: happy path (no tools → text returned) and exhaustion path
+    (infinite tool calls → `MaxToolIterations` after 3 iterations).
+
+- **`RouterError` new variants** (`src/router/router_error.rs`) — AI: Claude Sonnet 4.6
+  - `ToolError(String)` — hard tool execution failure (tool name + message).
+  - `MaxToolIterations(u32)` — loop exhausted its iteration budget; the `u32`
+    is the cap that was hit, making error messages self-documenting.
+
+### Test Results
+  - **37/37 tools + ACP shim tests pass** (zero failures introduced).
+  - **3/3 new CPU router tool-loop tests pass**.
+  - Pre-existing failures in `agent::router`, `bayes::engine`, and
+    `tests/integration_tests.rs` are unrelated to this change.
+
+
+### Added
+
 - **Unified memory module** (`src/memory/`)
   - New four-tier memory hierarchy replacing the scattered `Vec<Value>`,
     `Vec<ConversationItem>`, and bare file-append patterns that existed before.

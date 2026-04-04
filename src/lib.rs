@@ -47,6 +47,7 @@ pub mod memory;
 pub mod router;
 pub mod security;
 pub mod skills;
+pub mod tools;
 pub mod utils;
 
 // Re-export grok_api types for use throughout the crate
