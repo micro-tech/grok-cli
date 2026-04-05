@@ -56,7 +56,7 @@ impl PermissionBridge {
 
 /// Grok AI agent implementation for ACP
 pub struct GrokAcpAgent {
-    /// Grok API client — `None` when no API key is configured at startup.
+    /// AppRouter — `None` when no API key is configured at startup.
     /// The key is only required when making actual API calls; the agent can
     /// still respond to `initialize` and declare its auth requirements.
     router: Option<AppRouter>,
@@ -240,11 +240,11 @@ impl GrokAcpAgent {
         // `initialize` (declaring its auth requirements) even before the user
         // has supplied a key, so we defer the hard error to the first actual
         // API call rather than failing here.
-        let grok_client = if let Some(ref api_key) = config.api_key {
-            match GrokClient::with_settings(api_key, config.timeout_secs, config.max_retries) {
-                Ok(client) => {
-                    info!("✓ Grok API client initialised");
-                    Some(client)
+        let router = if let Some(ref api_key) = config.api_key {
+            match AppRouter::new(api_key, config.timeout_secs) {
+                Ok(router) => {
+                    info!("✓ AppRouter initialised");
+                    Some(router)
                 }
                 Err(e) => {
                     warn!(
@@ -279,7 +279,7 @@ impl GrokAcpAgent {
         })
     }
 
-    /// Return a reference to the underlying [`GrokClient`], or a descriptive
+    /// Return a reference to the underlying [`AppRouter`], or a descriptive
     /// error if no API key was configured when the agent was created.
     ///
     /// Call this inside any method that needs to reach the xAI API instead of
@@ -558,7 +558,7 @@ impl GrokAcpAgent {
                 loop {
                     attempt += 1;
                     match self
-                        .get_client()?
+                        .get_router()?
                         .chat_completion_with_history(
                             &session.messages,
                             temperature,
@@ -1055,7 +1055,7 @@ impl GrokAcpAgent {
             .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
 
         let response_with_finish = self
-            .get_client()?
+            .get_router()?
             .chat_completion_with_history(
                 &messages,
                 session.config.temperature,
