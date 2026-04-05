@@ -12,7 +12,7 @@ use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
-use crate::GrokClient;
+use crate::router::AppRouter;
 use crate::config::Config;
 use crate::content_to_string;
 use crate::hooks::HookManager;
@@ -59,7 +59,7 @@ pub struct GrokAcpAgent {
     /// Grok API client — `None` when no API key is configured at startup.
     /// The key is only required when making actual API calls; the agent can
     /// still respond to `initialize` and declare its auth requirements.
-    grok_client: Option<GrokClient>,
+    router: Option<AppRouter>,
 
     /// Agent configuration
     config: Config,
@@ -269,7 +269,7 @@ impl GrokAcpAgent {
         }
 
         Ok(Self {
-            grok_client,
+            router,
             config,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             capabilities,
@@ -284,8 +284,8 @@ impl GrokAcpAgent {
     ///
     /// Call this inside any method that needs to reach the xAI API instead of
     /// accessing `self.grok_client` directly.
-    fn get_client(&self) -> Result<&GrokClient> {
-        self.grok_client.as_ref().ok_or_else(|| {
+    fn get_router(&self) -> Result<AppRouter> {
+        self.router.clone().ok_or_else(|| {
             anyhow!(
                 "API key not configured. \
                  Set the GROK_API_KEY environment variable and restart the agent, \
