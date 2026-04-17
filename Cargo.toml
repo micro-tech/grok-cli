@@ -82,7 +82,7 @@ serde_yaml = "0.9.34"
 whoami = "2.1.1"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.55"
+winreg = "0.56"
 
 [dev-dependencies]
 tempfile = "3.27.0"
