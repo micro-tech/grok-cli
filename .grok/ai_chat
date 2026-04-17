@@ -1,6 +1,6 @@
 ## User
 
-a littel info for useing tooling from grom 
+a littel info for useing tooling from Grok
 
 
 Tools
@@ -62,7 +62,7 @@ if response.tool_calls:
         # Execute your function
         result = {"location": args["location"], "temperature": 59, "unit": args.get("unit", "fahrenheit")}
         chat.append(tool_result(json.dumps(result)))
-    
+
     response = chat.sample()
 
 print(response.content)
@@ -121,14 +121,14 @@ response = chat.sample()
 # Process tool calls
 if response.tool_calls:
     chat.append(response)
-    
+
     for tool_call in response.tool_calls:
         name = tool_call.function.name
         args = json.loads(tool_call.function.arguments)
-        
+
         result = tools_map[name](**args)
         chat.append(tool_result(json.dumps(result)))
-    
+
     response = chat.sample()
 
 print(response.content)
@@ -142,7 +142,7 @@ from xai_sdk.tools import web_search, x_search
 
 tools = [
     web_search(),                    # Built-in: runs on xAI servers
-    x_search(),                      # Built-in: runs on xAI servers  
+    x_search(),                      # Built-in: runs on xAI servers
     tool(                            # Custom: runs on your side
         name="save_to_database",
         description="Save research results to the database",
@@ -843,14 +843,14 @@ use serde_json::Value;
 fn main() {
     // Check if we can create a tool message
     // Uncommenting lines to test compilation one by one or all together
-    
+
     // Test 1: Tool message creation
     // let tool_msg = ChatMessage::tool("result content", "call_id_123");
-    
+
     // Test 2: Assistant with tool calls
     // let calls: Vec<ToolCall> = vec![];
     // let assist_msg = ChatMessage::assistant("thinking").tool_calls(calls);
-    
+
     // Test 3: Check struct fields directly (if public)
     // let msg = ChatMessage { role: "user".into(), content: Some("hi".into()), tool_calls: None, tool_call_id: None };
 }
@@ -1581,7 +1581,7 @@ error[E0277]: the trait bound `MessageContent: std::default::Default` is not sat
  745 |             response.content.clone().unwrap_or_default()
      |                                      ^^^^^^^^^^^^^^^^^ the trait `std::default::Default` is not implemented for `MessageContent`
      |
-note: required by a bound in `std::option::Option::<T>::unwrap_or_default`      
+note: required by a bound in `std::option::Option::<T>::unwrap_or_default`
     --> C:\Users\johnm\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\option.rs:1095:12
      |
 1093 |     pub const fn unwrap_or_default(self) -> T
@@ -1630,7 +1630,7 @@ error[E0308]: mismatched types
 123 |                 let text = extract_text_content(&content);
     |                            -------------------- ^^^^^^^^ expected `&str`, found `&MessageContent`
     |                            |
-    |                            arguments to this function are incorrect       
+    |                            arguments to this function are incorrect
     |
     = note: expected reference `&str`
                found reference `&MessageContent`
@@ -1691,7 +1691,7 @@ note: function defined here
 error[E0308]: mismatched types
    --> src\grok_client_ext.rs:165:26
     |
-165 |                 content: response.content().map(|s| s.to_string()),       
+165 |                 content: response.content().map(|s| s.to_string()),
     |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<MessageContent>`, found `Option<String>`
     |
     = note: expected enum `std::option::Option<MessageContent>`
@@ -2329,7 +2329,7 @@ error[E0277]: `MessageContent` doesn't implement `std::fmt::Display`
 error[E0308]: mismatched types
    --> src\grok_client_ext.rs:165:26
     |
-165 |                 content: response.content().map(|s| s.to_string()),       
+165 |                 content: response.content().map(|s| s.to_string()),
     |                          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ expected `Option<MessageContent>`, found `Option<String>`
     |
     = note: expected enum `std::option::Option<MessageContent>`
@@ -3087,7 +3087,7 @@ error[E0277]: `MessageContent` doesn't implement `std::fmt::Display`
 error[E0599]: no function or associated item named `tool` found for struct `grok_api::ChatMessage` in the current scope
    --> src\grok_client_ext.rs:118:43
     |
-118 | ...       Some(ChatMessage::tool(content.unwrap_or(""), tool_call_id))    
+118 | ...       Some(ChatMessage::tool(content.unwrap_or(""), tool_call_id))
     |                             ^^^^ function or associated item not found in `grok_api::ChatMessage`
     |
 note: if you're trying to build a new `grok_api::ChatMessage` consider using one of the following associated functions:
@@ -3098,7 +3098,7 @@ note: if you're trying to build a new `grok_api::ChatMessage` consider using one
       grok_api::ChatMessage::assistant_with_tools
    --> H:\GitHub\grok_crate\grok_api\src\models.rs:95:5
     |
- 95 |       pub fn system<S: Into<MessageContent>>(content: S) -> Self {        
+ 95 |       pub fn system<S: Into<MessageContent>>(content: S) -> Self {
     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ...
 104 |       pub fn user<S: Into<MessageContent>>(content: S) -> Self {
@@ -3107,8 +3107,8 @@ note: if you're trying to build a new `grok_api::ChatMessage` consider using one
 113 |       pub fn user_parts(parts: Vec<ContentPart>) -> Self {
     |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ...
-122 |       pub fn assistant<S: Into<MessageContent>>(content: S) -> Self {     
-    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^       
+122 |       pub fn assistant<S: Into<MessageContent>>(content: S) -> Self {
+    |       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 ...
 131 | /     pub fn assistant_with_tools<S: Into<MessageContent>>(
 132 | |         content: Option<S>,
@@ -3144,10 +3144,10 @@ help: try using a conversion method
 error[E0631]: type mismatch in function arguments
     --> src\grok_client_ext.rs:182:49
      |
- 182 |                 content: response.content().map(MessageContent::Text),   
-     |                                             --- ^^^^^^^^^^^^^^^^^^^^     
+ 182 |                 content: response.content().map(MessageContent::Text),
+     |                                             --- ^^^^^^^^^^^^^^^^^^^^
      |                                             |   |
-     |                                             |   expected due to this     
+     |                                             |   expected due to this
      |                                             |   found signature defined here
      |                                             required by a bound introduced by this call
      |
@@ -3157,14 +3157,14 @@ note: required by a bound in `std::option::Option::<T>::map`
     --> C:\Users\johnm\.rustup\toolchains\nightly-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\option.rs:1162:12
      |
 1160 |     pub const fn map<U, F>(self, f: F) -> Option<U>
-     |                  --- required by a bound in this associated function     
+     |                  --- required by a bound in this associated function
 1161 |     where
 1162 |         F: [const] FnOnce(T) -> U + [const] Destruct,
      |            ^^^^^^^^^^^^^^^^^^^^^^ required by this bound in `Option::<T>::map`
 help: consider wrapping the function in a closure
      |
  182 |                 content: response.content().map(|arg0: &str| MessageContent::Text(/* std::string::String */)),
-     |                                                 ++++++++++++             
+     |                                                 ++++++++++++
         +++++++++++++++++++++++++++
 
 Some errors have detailed explanations: E0277, E0308, E0599, E0631.
@@ -4640,10 +4640,10 @@ note: if you're trying to build a new `ChatMessage` consider using one of the fo
 134 | |     ) -> Self {
     | |_____________^
 
-For more information about this error, try `rustc --explain E0599`.             
-error: could not compile `grok-cli` (bin "probe_types") due to 1 previous error 
+For more information about this error, try `rustc --explain E0599`.
+error: could not compile `grok-cli` (bin "probe_types") due to 1 previous error
 warning: build failed, waiting for other jobs to finish...
-                                                                                
+
 
 ## Assistant
 
@@ -4691,14 +4691,12 @@ I'll verify if `src/bin/api_probe.rs` exists and remove it if so.
 **Tool Call: dir src\bin\api_probe.rs [current working directory H:\GitHub\grok-cli]**
 Status: Completed
 
-dir : Cannot find path 'H:\GitHub\grok-cli\src\bin\api_probe.rs' because it 
+dir : Cannot find path 'H:\GitHub\grok-cli\src\bin\api_probe.rs' because it
 does not exist.
 At line:1 char:1
 + dir src\bin\api_probe.rs
 + ~~~~~~~~~~~~~~~~~~~~~~~~
-    + CategoryInfo          : ObjectNotFound: (H:\GitHub\grok-cli\src\bin\api_ 
+    + CategoryInfo          : ObjectNotFound: (H:\GitHub\grok-cli\src\bin\api_
    probe.rs:String) [Get-ChildItem], ItemNotFoundException
-    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetCh 
+    + FullyQualifiedErrorId : PathNotFound,Microsoft.PowerShell.Commands.GetCh
    ildItemCommand
- 
-
