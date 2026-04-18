@@ -202,6 +202,14 @@ impl Backend for GrokBackend {
                         _ => None,
                     };
 
+                    // Capture the real finish_reason from the API before
+                    // partially moving mwfr.  This is critical: when the model
+                    // wants to call tools the API returns "tool_calls" here, NOT
+                    // "stop".  Propagating the real value lets handle_chat_completion
+                    // correctly continue the tool loop instead of short-circuiting
+                    // and returning an empty response.
+                    let finish_reason = mwfr.finish_reason.clone();
+
                     let tool_calls = mwfr.message.tool_calls.unwrap_or_default();
 
                     return Ok(RouterResponse {
@@ -210,6 +218,7 @@ impl Backend for GrokBackend {
                         raw,
                         model: req.model.clone(),
                         usage: None,
+                        finish_reason,
                     });
                 }
 

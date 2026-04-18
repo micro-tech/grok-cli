@@ -13,6 +13,35 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [0.1.9-pre] - 2026-04-02
 
+### Fixed
+
+- **`[No response content]` on complex questions via ACP (`@bot`)** — AI: Claude Sonnet 4.6
+  - **Root cause:** `RouterResponse` had no `finish_reason` field, so the real
+    value from the xAI API (e.g. `"tool_calls"`) was silently discarded.
+    `RouterResponse::into_message_with_finish_reason()` then hardcoded
+    `finish_reason = Some("stop")` for every response.
+  - In `handle_chat_completion` (`src/acp/mod.rs`) the very first check is
+    `if finish_reason == Some("stop") { return Ok(response_text) }`.  Because
+    finish_reason was always `"stop"`, this early-return fired on the **first
+    loop iteration**, before any tool calls were ever executed.  When the model
+    had returned tool-calls with no text content, `response_text` was `""` →
+    the fallback `"[No response content]"` was sent back to Zed.
+  - **Fix — three files changed:**
+    1. `src/router/response.rs` — added `finish_reason: Option<String>` field
+       to `RouterResponse`; `into_message_with_finish_reason()` now uses
+       `self.finish_reason` (falls back to `"stop"` only when absent).
+    2. `src/router/backends/grok.rs` — captures `mwfr.finish_reason` from the
+       `GrokClient` response and stores it in the returned `RouterResponse`.
+    3. `src/router/cpu_router.rs` — added the new `finish_reason` field to the
+       inline `RouterResponse` literal (set to `Some("stop")` — that path only
+       fires after tool execution completes, so "stop" is correct there).
+  - Also fixed a pre-existing one-character typo in
+    `src/cli/commands/acp.rs` line 1: `/!` → `//!` (missing `/` on the
+    module doc-comment) which caused a hard compile error.
+  - Simple messages (e.g. "hi") are unaffected — they never trigger tool calls
+    and the model correctly returns `finish_reason = "stop"` with text content.
+
+
 ### Added
 
 - **Tools module restructuring** (`src/tools/`) — AI: Claude Sonnet 4.6

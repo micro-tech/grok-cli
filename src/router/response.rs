@@ -24,6 +24,10 @@ pub struct RouterResponse {
     pub model: String,
     /// Optional token-usage statistics.
     pub usage: Option<UsageStats>,
+    /// The finish reason returned by the API (e.g. "stop", "tool_calls", "length").
+    /// Propagated from the real API response so callers can make correct
+    /// loop-control decisions instead of guessing.
+    pub finish_reason: Option<String>,
 }
 
 impl RouterResponse {
@@ -36,6 +40,7 @@ impl RouterResponse {
             tool_calls: Vec::new(),
             model: model.into(),
             usage: None,
+            finish_reason: Some("stop".to_string()),
         }
     }
 
@@ -54,6 +59,10 @@ impl RouterResponse {
     ///
     /// This lets call sites that previously consumed a `GrokClient` response
     /// consume an `AppRouter` response without any further changes.
+    ///
+    /// The `finish_reason` is taken directly from the API response so that
+    /// callers (e.g. `handle_chat_completion`) can distinguish between a
+    /// genuine "stop" and a "tool_calls" signal without guessing.
     pub fn into_message_with_finish_reason(self) -> MessageWithFinishReason {
         let content = self.text.map(MessageContent::Text);
         MessageWithFinishReason {
@@ -66,7 +75,9 @@ impl RouterResponse {
                     Some(self.tool_calls)
                 },
             },
-            finish_reason: Some("stop".to_string()),
+            // Use the real finish_reason from the API; fall back to "stop"
+            // only when the backend did not supply one.
+            finish_reason: self.finish_reason.or_else(|| Some("stop".to_string())),
         }
     }
 }

@@ -130,6 +130,7 @@ impl CpuRouter {
                     raw: serde_json::Value::Null,
                     model: req.model.clone(),
                     usage: None,
+                    finish_reason: Some("stop".to_string()),
                 });
             }
 
