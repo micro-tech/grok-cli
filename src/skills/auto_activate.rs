@@ -19,7 +19,7 @@
 //! accumulated score meets or exceeds its `min_confidence` threshold
 //! (default: 50).
 
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use regex::Regex;
@@ -261,6 +261,136 @@ impl AutoActivationEngine {
         .into_iter()
         .next()
     }
+
+    /// Like [`check`] but adjusts scores using an optional [`crate::rpl::ReasoningTrace`].
+    ///
+    /// # Reasoning adjustments applied
+    ///
+    /// - **Tool-name keyword boost**: if a skill's keyword list contains a tool
+    ///   name that appears in `trace.tool_evaluations` with `selected = true` and
+    ///   `relevance_score >= 0.7`, add `tool_boost` points (default 15) to that
+    ///   skill's confidence.
+    ///
+    /// - **Uncertainty penalty**: if `trace.uncertainty >= 0.7`, reduce every
+    ///   matched skill's confidence by `uncertainty_penalty` points (default 10)
+    ///   to signal lower overall reliability.  Scores are clamped to `[0, 100]`.
+    ///
+    /// # Fallback
+    ///
+    /// When `reasoning` is `None`, this method behaves identically to [`check`].
+    pub fn check_with_reasoning(
+        &self,
+        input: &str,
+        working_dir: &std::path::Path,
+        available_skills: &[crate::skills::config::Skill],
+        already_active: &[String],
+        reasoning: Option<&crate::rpl::ReasoningTrace>,
+    ) -> Vec<SkillMatch> {
+        let mut matches = self.check(input, working_dir, available_skills, already_active);
+
+        let trace = match reasoning {
+            Some(t) => t,
+            None => return matches,
+        };
+
+        // Build a map of lowercased tool name → original tool name for all
+        // tools that were selected with sufficient relevance.
+        let selected_tools: HashMap<String, String> = trace
+            .tool_evaluations
+            .iter()
+            .filter(|te| te.selected && te.relevance_score >= 0.7)
+            .map(|te| (te.tool_name.to_lowercase(), te.tool_name.clone()))
+            .collect();
+
+        let apply_penalty = trace.uncertainty >= 0.7;
+
+        for m in &mut matches {
+            let mut confidence = m.confidence as u32;
+
+            // ── Tool-name keyword boost ──────────────────────────────────
+            if !selected_tools.is_empty()
+                && let Some(skill) = available_skills
+                    .iter()
+                    .find(|s| s.config.name == m.skill_name)
+                && let Some(auto_cfg) = skill.config.auto_activate.as_ref()
+            {
+                'kw: for keyword in &auto_cfg.keywords {
+                    let kw_lower = keyword.to_lowercase();
+                    if let Some(orig_name) = selected_tools.get(&kw_lower) {
+                        confidence = confidence.saturating_add(15).min(100);
+                        m.reasons.push(format!("RPL tool match: {orig_name}"));
+                        // A single boost per skill is sufficient.
+                        break 'kw;
+                    }
+                }
+            }
+
+            // ── Uncertainty penalty ──────────────────────────────────────
+            if apply_penalty {
+                confidence = confidence.saturating_sub(10);
+                m.reasons
+                    .push("RPL uncertainty penalty applied".to_string());
+            }
+
+            m.confidence = confidence as u8;
+        }
+
+        // Re-sort by descending confidence after adjustments.
+        matches.sort_by_key(|m| std::cmp::Reverse(m.confidence));
+
+        // Filter out matches that now fall below their skill's min_confidence.
+        matches.retain(|m| {
+            available_skills
+                .iter()
+                .find(|s| s.config.name == m.skill_name)
+                .and_then(|s| s.config.auto_activate.as_ref())
+                .map(|cfg| m.confidence >= cfg.min_confidence)
+                .unwrap_or(true)
+        });
+
+        matches
+    }
+
+    /// Like [`check_with_reasoning`] but applies an explicit fallback when
+    /// reasoning uncertainty is too high or when no skills are matched.
+    ///
+    /// # Fallback behaviour
+    ///
+    /// When `reasoning` is `Some(trace)` and `trace.uncertainty >= 0.9`,
+    /// **all** matched skills are returned with their confidence halved, and
+    /// an additional reason `"RPL high-uncertainty fallback"` is appended to
+    /// each.  This signals to the caller that skill activation should be
+    /// treated as tentative.
+    ///
+    /// When `reasoning` is `None` or uncertainty is below `0.9`, this method
+    /// delegates to [`check_with_reasoning`] unchanged.
+    pub fn check_with_fallback(
+        &self,
+        input: &str,
+        working_dir: &std::path::Path,
+        available_skills: &[crate::skills::config::Skill],
+        already_active: &[String],
+        reasoning: Option<&crate::rpl::ReasoningTrace>,
+    ) -> Vec<SkillMatch> {
+        let mut matches = self.check_with_reasoning(
+            input,
+            working_dir,
+            available_skills,
+            already_active,
+            reasoning,
+        );
+
+        let high_uncertainty = reasoning.map(|t| t.uncertainty >= 0.9).unwrap_or(false);
+
+        if high_uncertainty {
+            for m in &mut matches {
+                m.confidence /= 2;
+                m.reasons.push("RPL high-uncertainty fallback".to_string());
+            }
+        }
+
+        matches
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -490,5 +620,161 @@ mod tests {
             1,
             "keyword matching should be case-insensitive"
         );
+    }
+
+    // ── RPL-aware scoring tests ──────────────────────────────────────────
+
+    #[test]
+    fn rpl_tool_match_boosts_confidence() {
+        use crate::rpl::{ReasoningPhase, ReasoningTrace, ToolEvaluation};
+
+        let engine = AutoActivationEngine::new();
+        // "files" in the input triggers the base keyword score; "list_directory"
+        // is a keyword that also appears as a selected RPL tool, earning the +15
+        // boost without contributing to the base score itself.
+        let skill = make_skill(
+            "fs-expert",
+            vec!["list_directory", "files"],
+            vec![],
+            vec![],
+            10,
+        );
+        let tmp = std::env::temp_dir();
+
+        // Establish baseline without RPL.
+        let base = engine.check(
+            "list some files in the directory",
+            &tmp,
+            &[skill.clone()],
+            &[],
+        );
+        assert_eq!(base.len(), 1, "skill should match the base input");
+        let base_confidence = base[0].confidence;
+
+        // Trace selects "list_directory" with high relevance; uncertainty is 0.0
+        // so no penalty is applied.
+        let mut trace = ReasoningTrace::new(ReasoningPhase::Complete).with_uncertainty(0.0);
+        trace.add_tool_evaluation(ToolEvaluation {
+            tool_name: "list_directory".to_string(),
+            relevance_score: 0.9,
+            reason: None,
+            selected: true,
+        });
+
+        let result = engine.check_with_reasoning(
+            "list some files in the directory",
+            &tmp,
+            &[skill],
+            &[],
+            Some(&trace),
+        );
+
+        assert_eq!(result.len(), 1);
+        assert_eq!(
+            result[0].confidence,
+            (base_confidence as u32).saturating_add(15).min(100) as u8,
+            "tool-name keyword match should add 15 points"
+        );
+        assert!(
+            result[0]
+                .reasons
+                .iter()
+                .any(|r| r.contains("RPL tool match")),
+            "reasons should mention the RPL tool match"
+        );
+    }
+
+    #[test]
+    fn rpl_uncertainty_penalty_reduces_confidence() {
+        use crate::rpl::{ReasoningPhase, ReasoningTrace};
+
+        let engine = AutoActivationEngine::new();
+        let skill = make_skill("rust-expert", vec!["rust"], vec![], vec![], 10);
+        let tmp = std::env::temp_dir();
+
+        // Establish baseline (one keyword hit → 30 points).
+        let base = engine.check("rust code", &tmp, &[skill.clone()], &[]);
+        assert_eq!(base.len(), 1);
+        let base_confidence = base[0].confidence;
+
+        // uncertainty = 0.8 >= 0.7 → -10 penalty.
+        let trace = ReasoningTrace::new(ReasoningPhase::Complete).with_uncertainty(0.8);
+
+        let result = engine.check_with_reasoning("rust code", &tmp, &[skill], &[], Some(&trace));
+
+        assert_eq!(result.len(), 1, "skill should remain above min_confidence");
+        assert_eq!(
+            result[0].confidence,
+            base_confidence.saturating_sub(10),
+            "uncertainty >= 0.7 should subtract 10 from confidence"
+        );
+        assert!(
+            result[0]
+                .reasons
+                .iter()
+                .any(|r| r.contains("RPL uncertainty penalty applied")),
+            "reasons should document the penalty"
+        );
+    }
+
+    #[test]
+    fn rpl_high_uncertainty_fallback_halves_confidence() {
+        use crate::rpl::{ReasoningPhase, ReasoningTrace};
+
+        let engine = AutoActivationEngine::new();
+        // min_confidence is very low so the skill survives both the -10 penalty
+        // and the subsequent halving in check_with_fallback.
+        let skill = make_skill("rust-expert", vec!["rust"], vec![], vec![], 5);
+        let tmp = std::env::temp_dir();
+
+        let trace = ReasoningTrace::new(ReasoningPhase::Complete).with_uncertainty(0.95);
+
+        // check_with_reasoning applies the -10 penalty (0.95 >= 0.7).
+        let reasoning_result =
+            engine.check_with_reasoning("rust code", &tmp, &[skill.clone()], &[], Some(&trace));
+        assert_eq!(reasoning_result.len(), 1);
+        let reasoning_confidence = reasoning_result[0].confidence;
+
+        // check_with_fallback should additionally halve the confidence.
+        let fallback_result =
+            engine.check_with_fallback("rust code", &tmp, &[skill], &[], Some(&trace));
+
+        assert_eq!(fallback_result.len(), 1);
+        assert_eq!(
+            fallback_result[0].confidence,
+            reasoning_confidence / 2,
+            "high-uncertainty fallback should halve the confidence"
+        );
+        assert!(
+            fallback_result[0]
+                .reasons
+                .iter()
+                .any(|r| r.contains("RPL high-uncertainty fallback")),
+            "reasons should document the fallback"
+        );
+    }
+
+    #[test]
+    fn check_with_reasoning_none_matches_check() {
+        let engine = AutoActivationEngine::new();
+        let skill = make_skill("rust-expert", vec!["rust", "cargo"], vec![], vec![], 20);
+        let tmp = std::env::temp_dir();
+
+        let base = engine.check("cargo build my Rust project", &tmp, &[skill.clone()], &[]);
+        let with_none =
+            engine.check_with_reasoning("cargo build my Rust project", &tmp, &[skill], &[], None);
+
+        assert_eq!(
+            base.len(),
+            with_none.len(),
+            "passing None for reasoning should give the same number of results"
+        );
+        for (b, r) in base.iter().zip(with_none.iter()) {
+            assert_eq!(b.skill_name, r.skill_name, "skill names should match");
+            assert_eq!(
+                b.confidence, r.confidence,
+                "confidence should be identical with no reasoning trace"
+            );
+        }
     }
 }

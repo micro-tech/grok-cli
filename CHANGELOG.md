@@ -11,6 +11,202 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
+## [Unreleased]
+
+### Added — Reasoning Protocol Layer (Tasks 86–92)
+
+- **Task 86 — RPL Architecture Document** (`docs/rpl_architecture.md`):
+  Full architecture document defining RPL goals, constraints, CPU lifecycle
+  mapping, reasoning schema fields, logging levels, suppression rules, and
+  integration points.
+
+- **Task 87 — Reasoning Schema** (`src/rpl/schema.rs`, `src/rpl/validation.rs`):
+  Structured `ReasoningTrace` type with fields: `trace_id` (UUID v4
+  correlation ID), `goal`, `context`, `tool_evaluations`, `memory_considerations`,
+  `plan`, `uncertainty` [0,1], `phase`, `suppressed`. Includes non-short-
+  circuiting `validate()` function that collects all `ValidationError`s.
+
+- **Task 88 — CPU/State Machine Integration** (`src/router/cpu_router.rs`, `src/rpl/layer.rs`):
+  `CpuRouter` gains optional `RplLayer` via `with_rpl()` builder. New
+  `route_with_tools_traced()` method calls `on_pre_evaluate()`,
+  `on_tool_selection()`, and `on_complete()` hooks at correct CPU lifecycle
+  points. Determinism guard uses UUID call_id in tracing spans.
+
+- **Task 89 — Skill Arbitration Integration** (`src/skills/auto_activate.rs`):
+  `AutoActivationEngine` gains `check_with_reasoning()` (tool-name keyword
+  boost +15, uncertainty penalty −10) and `check_with_fallback()` (halves
+  confidence when uncertainty ≥ 0.9).
+
+- **Task 90 — Reasoning Trace Logging** (`src/rpl/logging.rs`):
+  `ReasoningLogLevel` enum (Off / Summary / Debug / Trace) with `log_trace()`
+  function emitting structured `tracing` events. Default level is `Summary`.
+  `Trace` level JSON-serialises the full trace.
+
+- **RPL module** (`src/rpl/mod.rs`, `src/rpl/layer.rs`): `RplLayer` (stateless,
+  shareable) and `RplConfig` (log_level, lenient_validation). 56 new unit tests.
+
+- **Task 92 — RPL Integration Test Suite** (`tests/rpl_integration.rs`):
+  12 integration tests covering schema round-trips, suppression in production
+  and debug modes, redaction of sensitive goals, validation rejection, skill
+  arbitration stability, and regression prevention.
+
+### Added — Reasoning Engine (Tasks 91, 93–101)
+
+- **Task 91 — Suppression & Privacy Controls** (`src/rpl/suppression.rs`):
+  `SuppressionLayer` with `guard()` (blocks suppressed traces in production),
+  `redact()` (applies `RedactionConfig` rules to all string fields).
+  `RedactionConfig::default_rules()` covers API keys, secrets, and passwords.
+  `RedactionRule` wraps compiled regex patterns for safe, testable redaction.
+
+- **Task 93 — Full Reasoning Engine Architecture Document** (`docs/engine_architecture.md`):
+  Comprehensive architecture specification for the `src/engine/` subsystem covering
+  all nine required sections:
+  - **§1 Overview** — Engine responsibilities, explicit non-goals (ACP layer, CLI binary,
+    HTTP calls, display, secrets), and a detailed comparison table distinguishing the
+    active Reasoning Engine from the passive RPL layer across seven dimensions (role,
+    mode, state, output, side-effects, failure mode, coupling).
+  - **§2 Component Responsibilities** — Submodule table for all seven `src/engine/`
+    files (`state.rs`, `beliefs.rs`, `planner.rs`, `memory_bridge.rs`, `arbitration.rs`,
+    `correction.rs`, `observability.rs`) plus an ASCII type-ownership map showing
+    which engine types wrap which existing crate types.
+  - **§3 CPU Phase Mapping** — Full-stack ASCII call-flow diagram showing engine
+    position between `ACP Layer` and `RplLayer::on_complete()`; `EngineState`→CPU
+    action→next-state table for all nine FSM variants; annotated forward-only state
+    transition diagram with the `RevisePlan`→`CommitPlan` back-edge.
+  - **§4 Core State Model** — Field-by-field table for `ReasoningEngineState` (13
+    fields including `engine_id` UUID v4, `schema_version` mirroring `RPL_SCHEMA_VERSION=1`,
+    `uncertainty` f32 [0,1], `max_revisions` default 3); inline Rust definitions for
+    `EngineState`, `Hypothesis`, `PlanStep`, `StepAction` (`UseTool`, `QueryMemory`,
+    `ModelCall`, `NoOp`), and `StepStatus`.
+  - **§5 Interfaces** — `MemoryBridge` interface (3 methods) with memory-tier access
+    policy table; `ArbitrationEngine` interface (3 methods) with `RankedTool` field
+    table and fused-score formula (`0.6 * auto_activation + 0.4 * bayesian`); grounded
+    in real `AutoActivationEngine` weights (keyword=30, pattern=40, extension=25) and
+    `SkillMatch` struct from `src/skills/auto_activate.rs`.
+  - **§6 Bayesian Integration** — Maps engine lifecycle events to actual
+    `BayesianEngine` methods (`update_from_text`, `update_from_model_confidence`,
+    `update_from_tool_failure`, `update_profile`); documents real threshold values
+    (clarification=0.4, uncertainty=0.6, vagueness=0.6) from `src/bayes/engine.rs`;
+    explains how `best_intent()`, `probability("low_confidence")`, and per-intent
+    posteriors flow into `Hypothesis::confidence` and `ArbitrationEngine` scoring.
+  - **§7 Self-Correction Loops** — Three trigger conditions (low confidence, step
+    failure, user feedback signal); `should_correct()` pseudocode with `max_revisions`
+    cap enforcement; full correction cycle ASCII diagram showing detect→revise→
+    re-evaluate→continue-or-fail path and the key invariant that `revision_count`
+    counts plan revisions not step retries.
+  - **§8 Observability** — Event-level table (seven event types with `tracing` macro,
+    fields, and minimum `ReasoningLogLevel`); suppression and privacy rules for
+    `state.goal`, `memory_references`, and belief update events; code snippet for
+    enabling `Trace`-level logs in development.
+  - **§9 Future Work** — Five backlog items: persistent state across sessions,
+    parallel independent step execution via `tokio::join!`, LLM-generated hypotheses,
+    online belief updates from user feedback, and hypothesis confidence calibration
+    (Platt scaling / isotonic regression).
+  - **Appendix A** — Complete file inventory cross-referencing all `src/engine/`,
+    `src/rpl/`, `src/bayes/`, `src/memory/`, `src/skills/`, and `src/router/` files.
+
+- **Task 94 — Core State Model** (`src/engine/state.rs`, `src/engine/mod.rs`):
+  `ReasoningEngineState` FSM with `EngineState` enum (8 states), `PlanStep`,
+  `StepAction`, `StepStatus`, `Hypothesis`, `TransitionError`, `PlanError`.
+  Enforced state transitions reject invalid moves from terminal states.
+  17 unit tests. `pub mod engine` added to `src/lib.rs`.
+
+- **Task 95 — Bayesian Belief Integration** (`src/engine/beliefs.rs`):
+  `EngineBeliefs` wraps `BayesianEngine`, manages `ToolBelief` scores,
+  processes `Evidence` variants (UserText, ToolSuccess, ToolFailure,
+  ModelConfidence). `sync_to_state()` propagates uncertainty and hypotheses.
+  19 unit tests.
+
+- **Task 96 — Planning Layer** (`src/engine/planner.rs`):
+  `PlanBuilder` with keyword→tool heuristic `ToolHint`s (7 default rules),
+  `build_plan()`, `build_model_only_plan()`, and `revise_plan()` for
+  post-failure re-planning. 9 unit tests.
+
+- **Task 97 — Memory Bridge** (`src/engine/memory_bridge.rs`):
+  `MemoryBridge` queries `LongTermMemory` for goal-relevant facts, decides
+  write-back eligibility (uncertainty + Complete state + no revision),
+  and builds summary strings for memory persistence. 8 unit tests.
+
+- **Task 98 — Skill Arbitration Integration** (`src/engine/arbitration.rs`):
+  `ArbitrationEngine` with 8 built-in `ToolCapability` entries, `rank_tools()`
+  combining plan + RPL trace scores, uncertainty-aware `select_tool()`
+  (falls back to cheapest tool at high uncertainty), and `commit_selection()`
+  writing `ToolEvaluation`s to the RPL trace. 11 unit tests.
+
+- **Task 99 — Self-Correction Loops** (`src/engine/correction.rs`):
+  `CorrectionEngine` detects `StepFailed`, `HighUncertainty`, `EmptyPlan`,
+  `ExternalFeedback` triggers and applies targeted recovery plans.
+  `correct_until_stable()` provides a bounded loop safeguard. 23 unit tests.
+
+- **Task 100 — Engine Observability** (`src/engine/observability.rs`):
+  `EngineObserver` with `ObserverConfig` (log_level, redaction, suppressed).
+  Logs state transitions at Info/Debug/Trace, plan revisions, step completions,
+  and corrections (always warn). `is_safe_to_log()` and `redact_state()` for
+  privacy validation. 22 unit tests.
+
+- **Task 101 — End-to-End Integration Tests** (`tests/engine_integration.rs`):
+  15 integration tests exercising the full engine lifecycle: goal analysis,
+  Bayesian updates, plan building, memory write decisions, arbitration
+  ranking, self-correction, observability, suppression, redaction, and
+  regression checks.
+
+### Documentation
+
+- `docs/rpl_architecture.md` — RPL architecture specification (Task 86)
+- `docs/engine_architecture.md` — Reasoning Engine architecture specification (Task 93)
+- `docs/REASONING_SYSTEMS.md` — Overview index linking both architecture docs.
+  New index document covering both the RPL and Reasoning Engine in a single reference
+  page. Sections: Introduction (RPL vs Engine distinction), Quick Links table, RPL at
+  a Glance (key types, default suppression behaviour, full lifecycle code example),
+  Reasoning Engine at a Glance (FSM diagram, key types, self-correction bounds,
+  lifecycle code example), How RPL and Engine Work Together
+  (`route_with_tools_traced` call site, `engine_id`/`trace_id` correlation,
+  `ArbitrationEngine::commit_selection` writing into RPL trace, shared
+  `SuppressionLayer` rules), Test Coverage Summary (227 tests across 4 files),
+  and Configuration tables for all five config structs (`RplConfig`,
+  `ObserverConfig`, `CorrectionConfig`, `MemoryBridgeConfig`, `ArbitrationConfig`).
+  Source: AI-assisted, human-reviewed.
+- `Doc/REASONING_QUICK_START.md` — Developer quick-start guide for RPL and Engine.
+  Covers: Prerequisites (Rust 2024, `cargo build`, Starlink network resilience note),
+  step-by-step RPL usage (`RplLayer` creation → `route_with_tools_traced` wrapping →
+  `SuppressionLayer` guard), Engine usage (state creation → `PlanBuilder::build_plan`
+  → `CorrectionEngine::correct_until_stable`), adding a custom `RedactionRule` +
+  `RedactionConfig`, enabling `Trace`-level logs (env-var and in-code variants),
+  running the test suites (unit, integration, Clippy), and a Troubleshooting table
+  covering 8 common failure modes with causes and fixes.
+  Source: AI-assisted, human-reviewed.
+- `project_layout.md` — Complete project directory and module reference
+- `dataflow_map.md` — Updated with RPL and Engine data flow diagrams
+
+### Changed
+
+- `src/lib.rs` — Added `pub mod rpl` and `pub mod engine`
+- `src/router/cpu_router.rs` — Added `with_rpl()` builder, `route_with_tools_traced()`, determinism guard
+- `src/skills/auto_activate.rs` — Added `check_with_reasoning()` and `check_with_fallback()` methods
+- `src/rpl/mod.rs` — Added `pub mod suppression` and complete re-exports
+- `src/engine/mod.rs` — Complete re-exports for all engine submodule types
+
+---
+
+## [Unreleased] - 2026-04-19
+
+### Added
+
+- **`docs/rpl_architecture.md`** — Comprehensive architecture document for the Reasoning Protocol Layer (RPL). AI: Claude Sonnet 4.6
+  - **Task 86 completed** (subtasks 86.1, 86.2, 86.3 all done).
+  - Documents RPL goals and constraints: structured reasoning, observability, privacy by default, and determinism. Non-goals explicitly stated (no model fine-tuning, no backend replacement).
+  - Defines the position of `RplLayer` in the overall architecture with an ASCII component diagram showing data flow from ACP → `CpuRouter` → Tool Loop → Skill Arbitration → `MemoryManager`.
+  - Maps CPU/state-machine phases to `ReasoningPhase` enum values and their corresponding `RplLayer` hook entry points (`on_pre_evaluate`, `on_tool_selection`, `on_complete`).
+  - Fully documents the `ReasoningTrace` envelope schema (`schema_version`, `trace_id`, `goal`, `context`, `tool_evaluations`, `memory_considerations`, `plan`, `uncertainty`, `created_at`, `phase`, `suppressed`) plus `ToolEvaluation` and `MemoryConsideration` sub-types.
+  - Documents `ReasoningLogLevel` (`Off` / `Summary` / `Debug` / `Trace`) and explains `RUST_LOG` control surface and `trace_id` correlation with `CpuRouter` structured logs.
+  - Documents suppression and privacy contract: `suppressed = true` by default, hard ACP boundary enforcement, and the future redaction rules extension point.
+  - Lists all integration points: `CpuRouter::route_with_tools`, `CpuRouter::route_with_tools_traced`, `AutoActivationEngine::check_with_reasoning`, and future `MemoryStore` / `BayesEngine` hooks.
+  - Includes a validation table (`validate()` checks and `ValidationError` variants).
+  - Future work section tracks Tasks 95 (Bayesian belief integration), 96 (Planning layer), 97 (Memory-aware reasoning), and 99 (Self-correction loops).
+- **`.zed/task_list.json`** — Task 86 and subtasks 86.1–86.3 marked as `done`.
+
+---
+
 ## [0.1.9-pre] - 2026-04-02
 
 ### Fixed

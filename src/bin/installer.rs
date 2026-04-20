@@ -26,7 +26,7 @@ fn find_project_root() -> Option<PathBuf> {
 fn main() {
     println!(
         "{}",
-        "Grok CLI Installer v0.1.8-pre for Windows 11"
+        "Grok CLI Installer v0.1.9-pre for Windows 11"
             .green()
             .bold()
     );
@@ -125,13 +125,20 @@ fn install_windows() {
     println!("{}", "Setting up audit logging...".cyan());
     setup_audit_directory();
 
+    // 12. Setup Memory / Sessions / Skills directories
+    println!("{}", "Setting up memory and skills directories...".cyan());
+    setup_memory_directories();
+
     println!("\n{}", "Installation Complete!".green().bold());
-    println!("Version: 0.1.8-pre");
+    println!("Version: 0.1.9-pre");
     println!("\nNew features in this version:");
-    println!("  • External file access with security controls");
-    println!("  • Audit logging for compliance tracking");
-    println!("  • Tool loop debugging and diagnostics");
-    println!("  • Enhanced MCP server support");
+    println!("  • Reasoning Protocol Layer (RPL) — structured AI decision tracing");
+    println!("  • Reasoning Engine — goal analysis, multi-step planning, self-correction");
+    println!("  • Privacy controls — suppression layer + redaction rules");
+    println!("  • Bayesian belief integration for tool and plan scoring");
+    println!("  • Memory-aware reasoning with long-term memory bridge");
+    println!("  • Uncertainty-aware skill and tool arbitration");
+    println!("  • 227 new tests across RPL and Engine modules");
     println!("\nPlease restart your terminal to use the 'grok' command.");
     println!(
         "\nDocumentation installed to: {}",
@@ -233,6 +240,35 @@ fn setup_context(root_dir: &Path) {
         }
     } else {
         eprintln!("Failed to locate home directory for context setup.");
+    }
+}
+
+#[cfg(windows)]
+fn setup_memory_directories() {
+    if let Some(home_dir) = dirs::home_dir() {
+        let grok_dir = home_dir.join(".grok");
+
+        // Directories expected by the memory, episodic, and skill modules
+        let subdirs = [
+            ("sessions", "Episodic memory session archives"),
+            ("skills", "User skill definitions"),
+            ("memory", "Long-term memory store"),
+            ("traces", "RPL reasoning trace cache (optional)"),
+        ];
+
+        for (name, description) in &subdirs {
+            let dir = grok_dir.join(name);
+            if !dir.exists() {
+                match fs::create_dir_all(&dir) {
+                    Ok(_) => println!("Created ~/.grok/{name}/ — {description}"),
+                    Err(e) => eprintln!("Failed to create ~/.grok/{name}/: {e}"),
+                }
+            } else {
+                println!("~/.grok/{name}/ already exists.");
+            }
+        }
+    } else {
+        eprintln!("Failed to locate home directory for memory directory setup.");
     }
 }
 
@@ -427,6 +463,15 @@ fn install_additional_files(root_dir: &Path, install_dir: &Path) {
         eprintln!("Failed to copy LICENSE: {}", e);
     }
 
+    // Install project_layout.md alongside the binary
+    let layout_src = root_dir.join("project_layout.md");
+    let layout_dst = base_install_dir.join("project_layout.md");
+    if layout_src.exists()
+        && let Err(e) = fs::copy(&layout_src, &layout_dst)
+    {
+        eprintln!("Failed to copy project_layout.md: {}", e);
+    }
+
     // Create docs directory
     let docs_dir = base_install_dir.join("docs");
     if let Err(e) = fs::create_dir_all(&docs_dir) {
@@ -434,33 +479,16 @@ fn install_additional_files(root_dir: &Path, install_dir: &Path) {
         return;
     }
 
-    // Install core documentation files
-    let core_docs = vec![
+    // ── Core markdown docs (root level) ────────────────────────────────────
+    let core_docs: &[(&str, &str)] = &[
         ("README.md", "README.md"),
         ("CONFIGURATION.md", "CONFIGURATION.md"),
         ("CHANGELOG.md", "CHANGELOG.md"),
         ("CONTRIBUTING.md", "CONTRIBUTING.md"),
-        (
-            "EXTERNAL_FILE_ACCESS_SUMMARY.md",
-            "EXTERNAL_FILE_ACCESS_SUMMARY.md",
-        ),
-        (
-            "Doc/MAX_TOOL_LOOP_ITERATIONS.md",
-            "MAX_TOOL_LOOP_ITERATIONS.md",
-        ),
-        (
-            "Doc/EXTERNAL_FILE_REFERENCE.md",
-            "EXTERNAL_FILE_REFERENCE.md",
-        ),
-        (
-            "Doc/PROPOSAL_EXTERNAL_ACCESS.md",
-            "PROPOSAL_EXTERNAL_ACCESS.md",
-        ),
-        (
-            "Doc/TROUBLESHOOTING_TOOL_LOOPS.md",
-            "TROUBLESHOOTING_TOOL_LOOPS.md",
-        ),
-        ("Doc/SYSTEM_CONFIG_NOTES.md", "SYSTEM_CONFIG_NOTES.md"),
+        ("SETUP.md", "SETUP.md"),
+        ("TROUBLESHOOTING.md", "TROUBLESHOOTING.md"),
+        ("TESTING_TOOLS.md", "TESTING_TOOLS.md"),
+        ("dataflow_map.md", "dataflow_map.md"),
     ];
 
     for (src_path, dst_name) in core_docs {
@@ -469,40 +497,90 @@ fn install_additional_files(root_dir: &Path, install_dir: &Path) {
         if src.exists()
             && let Err(e) = fs::copy(&src, &dst)
         {
-            eprintln!("Failed to copy {}: {}", src_path, e);
+            eprintln!("Failed to copy {src_path}: {e}");
         }
     }
 
-    // Install Doc/docs/ files
-    let doc_docs_dir = root_dir.join("Doc").join("docs");
-    if doc_docs_dir.exists()
-        && let Ok(entries) = fs::read_dir(&doc_docs_dir)
+    // ── Technical architecture docs (docs/) ─────────────────────────────────
+    let arch_docs: &[(&str, &str)] = &[
+        ("docs/rpl_architecture.md", "rpl_architecture.md"),
+        ("docs/engine_architecture.md", "engine_architecture.md"),
+        ("docs/REASONING_SYSTEMS.md", "REASONING_SYSTEMS.md"),
+        ("docs/agent_docs.md", "agent_docs.md"),
+    ];
+
+    for (src_path, dst_name) in arch_docs {
+        let src = root_dir.join(src_path);
+        let dst = docs_dir.join(dst_name);
+        if src.exists()
+            && let Err(e) = fs::copy(&src, &dst)
+        {
+            eprintln!("Failed to copy {src_path}: {e}");
+        }
+    }
+
+    // ── User-facing quick-reference docs (Doc/) ─────────────────────────────
+    let user_docs: &[(&str, &str)] = &[
+        ("Doc/QUICK_REFERENCE.md", "QUICK_REFERENCE.md"),
+        ("Doc/CONFIG_QUICK_START.md", "CONFIG_QUICK_START.md"),
+        ("Doc/SKILLS_QUICK_START.md", "SKILLS_QUICK_START.md"),
+        ("Doc/REASONING_QUICK_START.md", "REASONING_QUICK_START.md"),
+        (
+            "Doc/EXTERNAL_ACCESS_QUICK_START.md",
+            "EXTERNAL_ACCESS_QUICK_START.md",
+        ),
+        ("Doc/HOOKS_AND_EXTENSIONS.md", "HOOKS_AND_EXTENSIONS.md"),
+        ("Doc/SECURITY.md", "SECURITY.md"),
+        (
+            "Doc/MAX_TOOL_LOOP_ITERATIONS.md",
+            "MAX_TOOL_LOOP_ITERATIONS.md",
+        ),
+        ("Doc/extensions.md", "extensions.md"),
+    ];
+
+    for (src_path, dst_name) in user_docs {
+        let src = root_dir.join(src_path);
+        let dst = docs_dir.join(dst_name);
+        if src.exists()
+            && let Err(e) = fs::copy(&src, &dst)
+        {
+            eprintln!("Failed to copy {src_path}: {e}");
+        }
+    }
+
+    // ── Scan entire Doc/ directory for any remaining .md files ──────────────
+    let doc_dir = root_dir.join("Doc");
+    if doc_dir.exists()
+        && let Ok(entries) = fs::read_dir(&doc_dir)
     {
         for entry in entries.flatten() {
             let path = entry.path();
             if path.is_file()
-                && let Some(ext) = path.extension()
-                && ext == "md"
+                && path.extension().is_some_and(|e| e == "md")
                 && let Some(filename) = path.file_name()
             {
+                // Skip files already explicitly listed above
                 let dst = docs_dir.join(filename);
-                if let Err(e) = fs::copy(&path, &dst) {
-                    eprintln!("Failed to copy {}: {}", path.display(), e);
+                if !dst.exists()
+                    && let Err(e) = fs::copy(&path, &dst)
+                {
+                    eprintln!("Failed to copy {}: {e}", path.display());
                 }
             }
         }
     }
 
-    // Install example skills
+    // ── Example skills ───────────────────────────────────────────────────────
     let skills_src = root_dir.join("examples").join("skills");
     let skills_dst = base_install_dir.join("examples").join("skills");
     if skills_src.exists()
         && let Err(e) = copy_dir_recursive(&skills_src, &skills_dst)
     {
-        eprintln!("Failed to copy example skills: {}", e);
+        eprintln!("Failed to copy example skills: {e}");
     }
 
     println!("Documentation and examples installed successfully.");
+    println!("  Docs location: {}", docs_dir.display());
 }
 
 #[cfg(windows)]

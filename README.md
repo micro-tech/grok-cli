@@ -27,6 +27,12 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 
 ## 🚀 Features
 
+### 🧠 Reasoning Systems (v0.1.9-pre)
+- **Reasoning Protocol Layer (RPL)** — Structured observability for every AI decision: goal analysis, tool selection, uncertainty scoring, and suppression-safe trace logging. All traces are privacy-guarded by default. See `docs/rpl_architecture.md`.
+- **Reasoning Engine** — Active decision-making FSM that decomposes goals into multi-step plans, integrates Bayesian belief updates, queries long-term memory, and applies bounded self-correction when steps fail. See `docs/engine_architecture.md`.
+- **Privacy Controls** — `SuppressionLayer` and `RedactionConfig` ensure reasoning traces and engine state never leak sensitive data (API keys, secrets, passwords) to user output.
+- **227 new tests** — Full unit and integration test coverage for all reasoning components.
+
 ### 🆕 New Features (v0.1.8-pre)
 - **🔒 External Directory Access** - Securely read files outside project boundaries with interactive approval prompts, comprehensive audit logging, and pattern-based security protections. Perfect for shared configs and cross-project references! [Quick Start Guide](Doc/EXTERNAL_ACCESS_QUICK_START.md)
 - **🤖 Skill Auto-Activation** - Skills now activate automatically based on keywords, regex patterns, and file types in your project. Add an `auto-activate` block to any `SKILL.md` to declare triggers. Toggle with `/auto-skills on|off`.
@@ -68,6 +74,8 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 - **Audit Logging** - Complete access tracking with CSV export and analytics
 - **Zed Editor Integration** - Agent Client Protocol (ACP) support
 - **Network Resilience** - Starlink-optimized with retry logic
+- **Reasoning Protocol Layer** — Structured trace logging with correlation IDs, log-level controls, suppression and redaction. See `Doc/REASONING_QUICK_START.md`
+- **Reasoning Engine** — Goal decomposition, Bayesian belief updates, multi-step planning, memory-aware execution, and self-correction loops
 
 ## 🎨 Visual Demo
 

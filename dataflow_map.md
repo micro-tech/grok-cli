@@ -423,3 +423,254 @@ E2E Tests → CLI Invocation → Full Pipeline → Output Verification
 ```
 
 This data flow map provides a comprehensive view of how data moves through the Grok CLI system, from user input to final output, including all the processing steps, security checks, and error handling paths.
+
+---
+
+## Reasoning Protocol Layer (RPL) Data Flow
+
+The RPL is a **passive observability layer** that wraps the `CpuRouter::route_with_tools_traced()` call. It captures structured `ReasoningTrace` objects without influencing the control flow.
+
+### RPL Lifecycle
+
+```
+CpuRouter::route_with_tools_traced()
+    │
+    ├─ RplLayer::on_pre_evaluate(goal, context)
+    │      └─► Creates ReasoningTrace { phase: PreEvaluation, suppressed: true }
+    │
+    ├─ [Tool Execution Loop - per iteration]
+    │      └─ RplLayer::on_tool_selection(trace, tool_name, selected, reason)
+    │             └─► Appends ToolEvaluation { tool_name, relevance_score, selected }
+    │                 Advances phase → ToolSelection
+    │
+    └─ RplLayer::on_complete(trace)
+           ├─► Advances phase → Complete
+           ├─► Calls validate(trace) — collects all ValidationErrors
+           └─► Calls log_trace(trace, config.log_level)
+```
+
+### RPL Data Structures
+
+```
+ReasoningTrace
+├── schema_version: u32          (= 1)
+├── trace_id: String             (UUID v4 — correlation ID)
+├── goal: Option<String>         (inferred from last user message)
+├── context: Option<String>      (active skills, session summary)
+├── tool_evaluations: Vec<ToolEvaluation>
+│   └── { tool_name, relevance_score [0,1], reason, selected }
+├── memory_considerations: Vec<MemoryConsideration>
+│   └── { memory_key, relevance_score [0,1], summary }
+├── plan: Option<String>         (planned action sequence)
+├── uncertainty: f32             ([0,1] — 0=confident, 1=max uncertainty)
+├── created_at: DateTime<Utc>
+├── phase: ReasoningPhase        (PreEvaluation|ToolSelection|MemoryLookup|ActionPlanning|Complete)
+└── suppressed: bool             (true by default — safe production default)
+```
+
+### Suppression Gate
+
+```
+ReasoningTrace (suppressed=true by default)
+    │
+    ▼
+SuppressionLayer::guard(&trace)
+    ├── suppressed=true  + production mode  → None  (trace blocked)
+    ├── suppressed=true  + debug_mode=true  → Some  (debug override)
+    └── suppressed=false + any mode         → Some  (explicitly exposed)
+    │
+    ▼
+SuppressionLayer::redact(&trace)     (applied before any exposure)
+    ├── RedactionConfig::apply_all(goal)
+    ├── RedactionConfig::apply_all(context)
+    ├── RedactionConfig::apply_all(plan)
+    ├── RedactionConfig::apply_all(tool_evaluation.reason)
+    └── RedactionConfig::apply_all(memory_consideration.summary)
+    trace_id is NEVER redacted (needed for log correlation)
+```
+
+### RPL Log Levels
+
+```
+ReasoningLogLevel::Off     → no log events emitted
+ReasoningLogLevel::Summary → tracing::info!  { trace_id, phase, uncertainty }
+ReasoningLogLevel::Debug   → tracing::debug! { above + goal, plan, tool_count }
+ReasoningLogLevel::Trace   → tracing::trace! { full JSON-serialised trace }
+```
+
+---
+
+## Reasoning Engine Data Flow
+
+The Reasoning Engine is an **active decision-making component** that runs alongside the CPU tool loop. Unlike the RPL (which only observes), the engine shapes what the CPU does.
+
+### Engine Lifecycle per Turn
+
+```
+User Prompt
+    │
+    ▼
+ReasoningEngineState::new()              phase: AnalyzeGoal
+    │
+    ├─ EngineBeliefs::update_from_evidence(UserText(prompt))
+    │      └─► BayesianEngine::update_from_text(prompt)
+    │          Adjusts hypothesis confidence and uncertainty score
+    │
+    ├─ state.transition(ExpandOptions)   phase: ExpandOptions
+    │      └─► Add/update Hypothesis entries
+    │
+    ├─ state.transition(EvaluateOptions) phase: EvaluateOptions
+    │      └─► EngineBeliefs::sync_to_state(&mut state)
+    │          Sets state.uncertainty, updates hypothesis confidences
+    │
+    ├─ state.transition(CommitPlan)      phase: CommitPlan
+    │      └─► PlanBuilder::build_plan(goal, available_tools)
+    │          Returns Vec<PlanStep> with UseTool/QueryMemory/ModelCall/NoOp steps
+    │
+    ├─ [For each PlanStep]
+    │      ├─ state.transition(ExecuteStep { step_index })
+    │      │
+    │      ├─ MemoryBridge::relevant_facts(&mut state, &long_term_memory)
+    │      │      └─► Queries LongTermMemory by goal keywords
+    │      │          Records IDs in state.memory_references
+    │      │
+    │      ├─ ArbitrationEngine::rank_tools(&state.plan, &rpl_trace)
+    │      │      └─► Scores tools by: plan match (0.6 weight) + RPL trace (0.4 weight)
+    │      │          Returns Vec<RankedTool> sorted descending by score
+    │      │
+    │      ├─ ArbitrationEngine::select_tool(&ranked, state.uncertainty)
+    │      │      ├─ uncertainty < 0.7  → highest-score tool
+    │      │      └─ uncertainty ≥ 0.7  → cheapest-cost tool (fallback)
+    │      │
+    │      └─ [Tool executes via CpuRouter]
+    │             ├─ Success → state.mark_step_complete(result)
+    │             └─ Failure → state.mark_step_failed(reason)
+    │                    └─► CorrectionEngine::should_correct(state)
+    │                        └─► Trigger? → apply_correction(state, trigger)
+    │                                        Calls state.revise_plan(recovery_steps)
+    │
+    └─ state.transition(Complete)        phase: Complete
+           ├─ MemoryBridge::should_write_memory(&state) → bool
+           └─ EngineObserver::log_state_transition(engine_id, CommitPlan, Complete, uncertainty)
+```
+
+### Engine State Machine
+
+```
+         ┌───────────────┐
+    ──►  │  AnalyzeGoal  │
+         └───────┬───────┘
+                 │
+         ┌───────▼───────┐
+         │ ExpandOptions │
+         └───────┬───────┘
+                 │
+         ┌───────▼───────┐
+         │EvaluateOptions│
+         └───────┬───────┘
+                 │
+         ┌───────▼───────┐
+         │  CommitPlan   │◄────────────┐
+         └───────┬───────┘             │
+                 │                     │
+         ┌───────▼───────┐    ┌────────┴──────┐
+         │ ExecuteStep(n)│───►│  RevisePlan   │
+         └───────┬───────┘    └───────────────┘
+         │       │
+     ┌───▼───┐ ┌─▼──────┐
+     │Complete│ │Failed  │   (terminal — no further transitions)
+     └────────┘ └────────┘
+```
+
+### Self-Correction Loop
+
+```
+CorrectionEngine::should_correct(state)
+    ├── state == Complete or Failed → None   (terminal, no correction)
+    ├── plan is empty + goal set   → EmptyPlan trigger
+    ├── any step Failed            → StepFailed { index, reason } trigger
+    └── uncertainty > 0.75         → HighUncertainty trigger
+
+CorrectionEngine::apply_correction(state, trigger)
+    ├── StepFailed  → keep completed steps + ModelCall("Recover: {reason}") + pending steps
+    ├── HighUncertainty → prepend ModelCall("Re-evaluate due to high uncertainty")
+    ├── EmptyPlan   → single ModelCall("No plan; re-analyse goal: {goal}")
+    └── ExternalFeedback → prepend ModelCall("User feedback: {msg}")
+    All call state.revise_plan(recovery) — MaxRevisionsExceeded → stop
+
+CorrectionEngine::correct_until_stable(state, max_rounds=10)
+    Bounded loop: stops when should_correct → None OR MaxRevisionsReached
+    (Double safeguard: max_rounds cap + state.max_revisions cap)
+```
+
+### Engine Data Structures
+
+```
+ReasoningEngineState
+├── schema_version: u32            (= 1)
+├── engine_id: String              (UUID v4 — links to RPL trace_id)
+├── state: EngineState             (FSM variant)
+├── goal: Option<String>           (inferred user intent)
+├── hypotheses: Vec<Hypothesis>    ({ id, description, confidence: f32 })
+├── plan: Vec<PlanStep>
+│   └── { step_id, description, action: StepAction, status: StepStatus, result }
+│       StepAction: UseTool{tool_name,args} | QueryMemory{query} | ModelCall{prompt} | NoOp
+│       StepStatus: Pending | InProgress | Completed | Failed{reason} | Skipped
+├── current_step_index: usize
+├── selected_tools: Vec<String>
+├── memory_references: Vec<String>
+├── uncertainty: f32               ([0,1])
+├── revision_count: u32
+├── max_revisions: u32             (default 3 — self-correction safeguard)
+└── created_at / updated_at: DateTime<Utc>
+```
+
+### Engine Observability Data Flow
+
+```
+EngineObserver::log_state_transition(engine_id, from, to, uncertainty)
+    ├── Off     → nothing
+    ├── Summary → tracing::info!  { engine_id, from, to }
+    ├── Debug   → tracing::debug! { above + uncertainty }
+    └── Trace   → tracing::trace! { above + JSON state }
+    All fields pass through RedactionConfig::apply_all() before emission
+
+EngineObserver::log_correction(engine_id, trigger, revision_count)
+    └── Any active level → tracing::warn! (corrections always warrant warning)
+
+is_safe_to_log(state) — returns false if goal or step descriptions contain
+    patterns matching: api_key, secret, password (default RedactionConfig rules)
+redact_state(state, redaction) — returns a clone with sensitive fields redacted
+```
+
+---
+
+## Module Dependency Map (Updated)
+
+```
+src/main.rs
+    └── src/lib.rs
+            ├── src/cli/           (commands, argument parsing)
+            ├── src/acp/           (Zed ACP protocol)
+            ├── src/router/
+            │       ├── CpuRouter::route_with_tools_traced()
+            │       └── ── calls ──► src/rpl/ (RplLayer hooks)
+            ├── src/rpl/           ◄── NEW (Tasks 86-92)
+            │       ├── schema.rs  (ReasoningTrace)
+            │       ├── layer.rs   (lifecycle hooks)
+            │       ├── logging.rs (log_trace)
+            │       ├── suppression.rs (SuppressionLayer)
+            │       └── validation.rs
+            ├── src/engine/        ◄── NEW (Tasks 93-101)
+            │       ├── state.rs   (ReasoningEngineState FSM)
+            │       ├── beliefs.rs (EngineBeliefs → src/bayes/)
+            │       ├── planner.rs (PlanBuilder)
+            │       ├── memory_bridge.rs (→ src/memory/)
+            │       ├── arbitration.rs (→ src/skills/)
+            │       ├── correction.rs (CorrectionEngine)
+            │       └── observability.rs (EngineObserver)
+            ├── src/bayes/         (BayesianEngine)
+            ├── src/memory/        (MemoryStore, 4 tiers)
+            ├── src/skills/        (AutoActivationEngine + RPL-aware scoring)
+            └── src/tools/         (execute_tool registry)
+```
