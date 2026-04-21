@@ -173,11 +173,18 @@ impl CpuRouter {
                 // Soft errors are returned as tool result text so the model
                 // can react (e.g. "File not found — try a different path").
                 // Hard / unexpected errors propagate as RouterError::ToolError.
+                // format_tool_error_for_llm() categorises the failure and adds
+                // actionable recovery suggestions so the model does not blindly
+                // retry the exact same failing call.
                 let result =
                     crate::tools::registry::execute_tool(&tool_call.function.name, &args, context)
                         .await
                         .unwrap_or_else(|e| {
-                            format!("Tool '{}' failed: {}", tool_call.function.name, e)
+                            crate::tools::tool_error::format_tool_error_for_llm(
+                                &tool_call.function.name,
+                                &args,
+                                &e.to_string(),
+                            )
                         });
 
                 messages_json.push(serde_json::json!({

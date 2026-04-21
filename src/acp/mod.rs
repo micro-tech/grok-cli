@@ -12,10 +12,10 @@ use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
-use crate::router::AppRouter;
 use crate::config::Config;
 use crate::content_to_string;
 use crate::hooks::HookManager;
+use crate::router::AppRouter;
 
 pub mod protocol;
 pub mod security;
@@ -882,14 +882,22 @@ impl GrokAcpAgent {
                         // 4. Update Bayesian Engine for Tool Failure
                         session.bayes_engine.update_from_tool_failure();
 
-                        let mut error_content =
-                            format!("Error executing tool {}: {}", function_name, e);
+                        // Build a structured, actionable error message so the LLM knows
+                        // exactly what went wrong and what to try instead of retrying blindly.
+                        let error_str = e.to_string();
+                        let mut error_content = crate::tools::tool_error::format_tool_error_for_llm(
+                            function_name,
+                            &args,
+                            &error_str,
+                        );
 
-                        // If confidence drops significantly due to failure, add a recovery system prompt
+                        // If Bayesian confidence is also low, append an additional note
+                        // encouraging the model to change strategy rather than looping.
                         if session.bayes_engine.is_low_confidence() {
-                            error_content = format!(
-                                "{}\n\n[System Note: This tool failed and Bayesian confidence is low. Please rewrite your approach, verify your assumptions, or ask the user for clarification instead of repeating the same action.]",
-                                error_content
+                            error_content.push_str(
+                                "\n\n[System Note: Bayesian confidence is low after this failure. \
+                                Do NOT retry the same action. Re-evaluate your plan, verify your \
+                                assumptions, or ask the user for clarification.]",
                             );
                         }
 

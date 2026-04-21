@@ -64,6 +64,16 @@ impl SecurityPolicy {
         &self.working_directory
     }
 
+    /// Return the list of trusted directories for diagnostic logging.
+    ///
+    /// These are the directories that the security policy considers "internal"
+    /// (i.e. accessible without user approval).  Exposing them here lets the
+    /// tool logger include them in error entries so it is immediately clear why
+    /// an "Access denied" failure occurred.
+    pub fn trusted_directories(&self) -> &[PathBuf] {
+        &self.trusted_directories
+    }
+
     /// Check if external access logging is enabled
     pub fn is_external_access_logging_enabled(&self) -> bool {
         self.external_access_config.logging
