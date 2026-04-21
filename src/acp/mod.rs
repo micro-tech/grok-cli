@@ -349,6 +349,11 @@ impl GrokAcpAgent {
             session_config.model = model.clone();
         }
 
+        // Capture values for logging before they are moved into SessionData.
+        let log_cwd = std::path::PathBuf::from(&cwd);
+        let log_model = session_config.model.clone();
+        let log_session_id = session_id.0.clone();
+
         let session_data = SessionData {
             cwd,
             messages: Vec::new(),
@@ -364,6 +369,11 @@ impl GrokAcpAgent {
         sessions.insert(session_id.0.clone(), session_data);
 
         info!("Initialized new ACP session: {}", session_id.0);
+
+        // Write a session-start banner to the dedicated tool log so each
+        // session is clearly delimited when tailing the log file.
+        crate::utils::tool_logger::log_session_start(&log_session_id, &log_cwd, &log_model);
+
         Ok(())
     }
 
@@ -873,6 +883,15 @@ impl GrokAcpAgent {
                             tool_duration,
                             s.len()
                         );
+
+                        // ── Tool success: write a compact entry to the tool log ──
+                        crate::utils::tool_logger::log_tool_success(
+                            function_name,
+                            &args,
+                            s.len(),
+                            tool_duration.as_micros(),
+                        );
+
                         (s, crate::acp::protocol::ToolCallStatus::Completed)
                     }
                     Err(e) => {
@@ -885,6 +904,21 @@ impl GrokAcpAgent {
                         // Build a structured, actionable error message so the LLM knows
                         // exactly what went wrong and what to try instead of retrying blindly.
                         let error_str = e.to_string();
+
+                        // ── Tool failure: write a detailed diagnostic entry to the tool log ──
+                        // This records the working directory, trusted directories, and a
+                        // human-readable hint so you can immediately see WHY the tool failed
+                        // (e.g. "Access denied" because Grok was not launched from the project
+                        // root, or a path typo causing "os error 3").
+                        crate::utils::tool_logger::log_tool_error(
+                            function_name,
+                            &args,
+                            &error_str,
+                            tool_duration.as_micros(),
+                            policy.working_directory(),
+                            policy.trusted_directories(),
+                        );
+
                         let mut error_content = crate::tools::tool_error::format_tool_error_for_llm(
                             function_name,
                             &args,

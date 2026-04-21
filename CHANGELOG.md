@@ -13,6 +13,68 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+### Added — Dedicated Tool-Execution Diagnostic Logger
+
+- **`src/utils/tool_logger.rs`** — New module providing a persistent, per-project
+  tool-execution log written to `<project-root>/.grok/logs/grok-tool-error-log.log`.
+  - `log_tool_error()` — writes a full diagnostic block on every tool failure,
+    including: ISO 8601 timestamp, tool name, JSON arguments (truncated at 512 B),
+    error message, call duration in µs, current working directory, and the complete
+    list of trusted directories from the active security policy.  Entry is
+    force-flushed to disk immediately so Starlink drops / process crashes never
+    lose a record.
+  - `log_tool_success()` — writes a compact one-liner for successful calls
+    (`TOOL-OK  ─ write_file  path="src/main.rs"  result=1024B  55µs`) for
+    confirming that file writes actually reached disk.
+  - `log_note()` — free-form diagnostic note (session-level events).
+  - `log_session_start()` — banner written at the top of each new ACP session
+    so log entries are cleanly delimited per session.
+  - Human-readable hints appended automatically for the most common failure
+    categories: Access Denied, Path Not Found, OS Permission, Network Timeout,
+    Network Error.
+  - Thread-safe via `OnceCell<Mutex<Option<File>>>` — safe to call from async
+    contexts and parallel tool loops.
+  - 10 unit tests covering hint categorisation, argument truncation, path
+    construction, and entry formatting.
+
+- **`src/acp/security.rs`** — Added `trusted_directories() -> &[PathBuf]` accessor
+  to `SecurityPolicy` so the tool logger can include the trust list in error entries,
+  making "Access denied" root causes immediately visible without digging through
+  config files.
+
+- **`src/utils/mod.rs`** — Registered `pub mod tool_logger` so the module is
+  reachable as `crate::utils::tool_logger` throughout the codebase.
+
+### Changed
+
+- **`src/acp/mod.rs`** — `GrokAcpAgent::handle_chat_completion()` now calls
+  `tool_logger::log_tool_error()` in the `Err` arm of the tool-dispatch loop
+  (in addition to the existing `warn!` tracing event) and
+  `tool_logger::log_tool_success()` in the `Ok` arm.  Failure entries capture
+  the working directory and trusted directories at call time so the log is
+  self-contained for debugging.
+
+- **`src/acp/mod.rs`** — `GrokAcpAgent::initialize_session()` now calls
+  `tool_logger::log_session_start()` so each ACP session is clearly delimited
+  in the tool log with session ID, CWD, and model name.
+
+### Why
+
+When Grok is used as an ACP agent inside the Zed editor the existing
+`grok-errors.log` only showed that a tool failed but not **why**.  The two most
+common failures observed were:
+
+1. `Access denied: External access is disabled in configuration` — Grok was
+   launched from a directory that did not include the file the AI tried to edit.
+2. `Failed to resolve path '…': os error 3` — the path was relative but not
+   relative to the project root Grok was started from.
+
+The new log makes both cases immediately diagnosable: the `CWD` and `Trusted`
+fields show exactly which directory was active and which directories were
+considered safe, so the fix (re-launching from the correct project root or
+`@`-mentioning a file) is obvious without reading source code.
+
+
 ### Added — Reasoning Protocol Layer (Tasks 86–92)
 
 - **Task 86 — RPL Architecture Document** (`docs/rpl_architecture.md`):
