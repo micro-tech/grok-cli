@@ -14,6 +14,29 @@ use tracing::{debug, info, warn};
 
 use crate::mcp::config::McpConfig;
 
+/// Operational mode controlling how Grok responds and uses tools.
+///
+/// The active mode influences the system prompt, tool selection, and verbosity
+/// of responses.  It can be set per-session or as a global default in
+/// `config.toml`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OperationalMode {
+    /// Research mode — expands answers with citations and depth.
+    Research,
+    /// Coder mode — concise, tool-focused responses (default).
+    Coder,
+    /// Shell mode — terse, command-oriented output.
+    Shell,
+    /// Creative mode — open-ended and exploratory.
+    Creative,
+}
+
+impl Default for OperationalMode {
+    fn default() -> Self {
+        OperationalMode::Coder
+    }
+}
+
 /// Main configuration structure for grok-cli
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
