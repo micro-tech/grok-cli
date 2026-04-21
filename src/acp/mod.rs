@@ -1313,7 +1313,7 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-        assert_eq!(config.model, "grok-4-1-fast-reasoning");
+        assert_eq!(config.model, "grok-code-fast-1");
         assert_eq!(config.temperature, 0.5);
         assert_eq!(config.max_tokens, 4096);
         assert!(config.system_prompt.is_some());

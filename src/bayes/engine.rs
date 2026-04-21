@@ -76,6 +76,24 @@ impl BayesianEngine {
         )
     }
 
+    /// Create a new engine using only the compiled-in default priors,
+    /// **without** loading the on-disk profile.
+    ///
+    /// This constructor is intended for unit tests that need a deterministic,
+    /// isolated starting distribution that cannot be polluted by a saved
+    /// `~/.grok/bayes_profile.json` from real usage on the developer's machine.
+    #[cfg(test)]
+    pub fn new_with_default_priors() -> Self {
+        Self::from_priors(
+            default_priors(),
+            DEFAULT_CLARIFICATION_THRESHOLD,
+            DEFAULT_UNCERTAINTY_THRESHOLD,
+            DEFAULT_VAGUENESS_THRESHOLD,
+            DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
+            DEFAULT_PROFILE_LEARNING_RATE,
+        )
+    }
+
     /// Create a new engine using values from `[bayesian]` config.
     ///
     /// The prior distribution is loaded from the saved profile on disk first;
@@ -254,14 +272,18 @@ mod tests {
 
     #[test]
     fn test_engine_initialization() {
-        let engine = BayesianEngine::new();
+        // Use the test constructor to avoid loading ~/.grok/bayes_profile.json,
+        // which may have intent_edit dominant from real usage on this machine.
+        let engine = BayesianEngine::new_with_default_priors();
         assert!(engine.probability("intent_question") > 0.0);
         assert_eq!(engine.best_intent(), Some("intent_question".to_string()));
     }
 
     #[test]
     fn test_engine_update_from_text() {
-        let mut engine = BayesianEngine::new();
+        // Use the test constructor so the starting distribution is always the
+        // compiled-in defaults, not whatever the saved profile holds.
+        let mut engine = BayesianEngine::new_with_default_priors();
         assert_eq!(engine.best_intent(), Some("intent_question".to_string()));
         engine.update_from_text("can you edit the config file");
         assert_eq!(engine.best_intent(), Some("intent_edit".to_string()));

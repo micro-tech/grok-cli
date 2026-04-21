@@ -2,7 +2,7 @@ use anyhow::Result;
 use grok_cli::acp::protocol::{OutcomeDetail, PermissionOutcome, SessionId};
 use grok_cli::acp::{GrokAcpAgent, PermissionBridge};
 use grok_cli::config::Config;
-use mockito::Server;
+
 use serde_json::{Value, json};
 use serial_test::serial;
 use std::sync::Arc;

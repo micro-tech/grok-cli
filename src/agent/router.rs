@@ -27,6 +27,19 @@ impl Router {
         }
     }
 
+    /// Create a router using only the compiled-in default priors,
+    /// **without** loading the on-disk Bayesian profile.
+    ///
+    /// This constructor is intended for unit tests that need a deterministic,
+    /// isolated starting distribution that cannot be polluted by a saved
+    /// `~/.grok/bayes_profile.json` from real usage on the developer's machine.
+    #[cfg(test)]
+    pub fn new_with_default_priors() -> Self {
+        Self {
+            bayes: BayesianEngine::new_with_default_priors(),
+        }
+    }
+
     /// Create a router whose engine is initialised from `[bayesian]` config.
     ///
     /// This applies configured priors, thresholds, likelihood weights, and
@@ -144,7 +157,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_edit_intent() {
-        let mut router = Router::new();
+        let mut router = Router::new_with_default_priors();
         let action = router.route("can you fix this bug and refactor").await;
 
         assert!(matches!(action, RouterAction::UseTool(tool) if tool == "replace"));
@@ -152,7 +165,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_shell_intent() {
-        let mut router = Router::new();
+        // Use the test constructor to avoid loading ~/.grok/bayes_profile.json,
+        // which may have intent_edit so dominant that it drowns out intent_shell.
+        let mut router = Router::new_with_default_priors();
         let action = router.route("run the build command").await;
 
         assert!(matches!(action, RouterAction::UseTool(tool) if tool == "run_shell_command"));
@@ -160,7 +175,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_clarification_gate() {
-        let mut router = Router::new();
+        // Use the test constructor so need_clarification starts at its compiled-in
+        // default prior rather than a value diluted by the developer's real profile.
+        let mut router = Router::new_with_default_priors();
         let action = router.route("be careful, don't delete").await;
 
         assert!(matches!(action, RouterAction::AskClarification(_)));
@@ -172,7 +189,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_normal_chat() {
-        let mut router = Router::new();
+        // Use the test constructor so intent_question is the dominant prior
+        // (as the compiled-in defaults intend), not intent_edit from a saved profile.
+        let mut router = Router::new_with_default_priors();
         // Just a random statement
         let action = router.route("hello there").await;
         assert!(matches!(action, RouterAction::NormalChat));
