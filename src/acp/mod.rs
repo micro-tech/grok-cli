@@ -872,7 +872,21 @@ impl GrokAcpAgent {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         tools::list_code_definitions(path, &policy)
                     }
-                    _ => Err(anyhow!("Unknown tool: {}", function_name)),
+                    _ => {
+                        // Fall back to the full tool registry for any tool that is
+                        // not in the built-in ACP dispatch above.  This covers:
+                        //   task_create, task_update, enter_plan_mode, exit_plan_mode,
+                        //   enter_worktree, exit_worktree, notebook_edit, execute_skill,
+                        //   list_skills, spawn_agent, send_message, team_create,
+                        //   team_delete, mcp_call, lsp_query, tool_search, cron_create,
+                        //   remote_trigger, sleep, synthetic_output, …
+                        //
+                        // The registry is the single source of truth for all tool
+                        // implementations; keeping the ACP dispatch in sync manually
+                        // was what caused the "Unknown tool: task_update" errors.
+                        let ctx = tools::ToolContext::new(policy.clone());
+                        tools::execute_tool(function_name, &args, &ctx).await
+                    }
                 };
 
                 let (content, status) = match result {

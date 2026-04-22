@@ -11,6 +11,7 @@
 
 use anyhow::{Result, anyhow};
 use colored::*;
+use dirs;
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::net::SocketAddr;
@@ -128,6 +129,29 @@ async fn start_acp_stdio(
 ) -> Result<()> {
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
+
+    // Initialise the global chat logger so every session/prompt/response is
+    // persisted to ~/.grok/logs/chat_sessions/.  Without this call every
+    // chat_logger::log_user / log_assistant call silently does nothing because
+    // the global GLOBAL_LOGGER mutex is never populated.
+    let chat_log_dir = std::env::current_dir()
+        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+        .join(".grok")
+        .join("logs")
+        .join("chat_sessions");
+    let chat_config = chat_logger::ChatLoggerConfig {
+        enabled: true,
+        log_dir: chat_log_dir,
+        json_format: true,
+        text_format: true,
+        ..Default::default()
+    };
+    if let Err(e) = chat_logger::init(chat_config) {
+        warn!("Could not initialise chat logger: {e} — chat history will not be saved");
+    } else {
+        info!("Chat logger initialised (stdio mode)");
+    }
+
     let agent = GrokAcpAgent::new(config.clone(), model).await?;
 
     // Trust an explicitly-supplied workspace root immediately — before any
@@ -177,6 +201,25 @@ async fn handle_acp_client(
         let mut stats_guard = stats.write().await;
         stats_guard.connections += 1;
         stats_guard.active_connections += 1;
+    }
+
+    // Initialise the global chat logger (TCP server mode).
+    // Only the first call takes effect because OnceCell / Mutex prevents
+    // double-initialisation; subsequent clients reuse the same logger.
+    let chat_log_dir = dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".grok")
+        .join("logs")
+        .join("chat_sessions");
+    let chat_config = chat_logger::ChatLoggerConfig {
+        enabled: true,
+        log_dir: chat_log_dir,
+        json_format: true,
+        text_format: true,
+        ..Default::default()
+    };
+    if let Err(e) = chat_logger::init(chat_config) {
+        warn!("Could not initialise chat logger: {e} — chat history will not be saved");
     }
 
     // Create the Grok ACP agent
