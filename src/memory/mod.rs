@@ -507,6 +507,7 @@ fn generate_session_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::fs;
     use tempfile::tempdir;
 
@@ -577,6 +578,7 @@ mod tests {
     // ── MemoryStore::new_for_session ──────────────────────────────────────────
 
     #[test]
+    #[serial]
     fn new_for_session_with_context_injects_system_prompt() {
         let dir = project_with_context("# Project\nAlways use Rust.");
         let store =
@@ -589,6 +591,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn new_for_session_no_context_still_builds() {
         let dir = tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
@@ -607,6 +610,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn new_for_session_no_prompt_no_context_has_no_system_message() {
         let dir = tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
