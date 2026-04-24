@@ -577,6 +577,19 @@ pub struct ShellConfig {
     pub show_color: bool,
     #[serde(default)]
     pub inactivity_timeout: u32,
+    /// Maximum number of seconds a shell command may run before it is killed.
+    ///
+    /// Increase this for long-running build or install commands.
+    /// The `GROK_SHELL_TIMEOUT_SECS` environment variable overrides this value
+    /// at runtime (useful for one-off overrides without editing the file).
+    ///
+    /// Default: 300 s (5 minutes).
+    #[serde(default = "default_shell_command_timeout")]
+    pub command_timeout_secs: u64,
+}
+
+fn default_shell_command_timeout() -> u64 {
+    300
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1118,6 +1131,7 @@ impl Default for ShellConfig {
             pager: String::new(),
             show_color: false,
             inactivity_timeout: 0,
+            command_timeout_secs: default_shell_command_timeout(),
         }
     }
 }

@@ -106,6 +106,10 @@ enable_interactive_shell = true
 pager = ""
 show_color = false
 inactivity_timeout = 0
+# Maximum seconds a shell command (e.g. cargo build, npm install) may run
+# before it is killed and an error is returned to the model.
+# The GROK_SHELL_TIMEOUT_SECS environment variable overrides this at runtime.
+command_timeout_secs = 600
 
 [security]
 disable_yolo_mode = false

@@ -267,6 +267,10 @@ impl GrokAcpAgent {
             let canonical_cwd = cwd.canonicalize().unwrap_or(cwd);
             security.add_trusted_directory(canonical_cwd);
         }
+        // Apply the shell-command timeout from config so `tools.shell.command_timeout_secs`
+        // in config.toml is honoured. The GROK_SHELL_TIMEOUT_SECS env var still
+        // takes precedence (checked at call time in shell_tools::run_shell_command).
+        security.set_shell_timeout_secs(config.tools.shell.command_timeout_secs);
 
         Ok(Self {
             router,

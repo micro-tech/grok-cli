@@ -9,6 +9,10 @@ pub struct SecurityPolicy {
     trusted_directories: Vec<PathBuf>,
     working_directory: PathBuf,
     external_access_config: ExternalAccessConfig,
+    /// Maximum seconds a shell command may run before being killed.
+    /// Set from `tools.shell.command_timeout_secs` in config.toml.
+    /// The `GROK_SHELL_TIMEOUT_SECS` env var overrides this at runtime.
+    shell_timeout_secs: u64,
 }
 
 impl Default for SecurityPolicy {
@@ -30,6 +34,7 @@ impl SecurityPolicy {
             trusted_directories: vec![canonical_cwd],
             working_directory,
             external_access_config: ExternalAccessConfig::default(),
+            shell_timeout_secs: 300,
         }
     }
 
@@ -49,6 +54,7 @@ impl SecurityPolicy {
             trusted_directories: vec![canonical],
             working_directory,
             external_access_config: ExternalAccessConfig::default(),
+            shell_timeout_secs: 300,
         }
     }
 
@@ -72,6 +78,22 @@ impl SecurityPolicy {
     /// an "Access denied" failure occurred.
     pub fn trusted_directories(&self) -> &[PathBuf] {
         &self.trusted_directories
+    }
+
+    /// Return the configured shell-command timeout in seconds.
+    ///
+    /// This is the value from `tools.shell.command_timeout_secs` in
+    /// `config.toml`.  The `GROK_SHELL_TIMEOUT_SECS` environment variable
+    /// takes precedence over this value when set.
+    pub fn shell_timeout_secs(&self) -> u64 {
+        self.shell_timeout_secs
+    }
+
+    /// Set the shell-command timeout (called once at startup from config).
+    pub fn set_shell_timeout_secs(&mut self, secs: u64) {
+        if secs > 0 {
+            self.shell_timeout_secs = secs;
+        }
     }
 
     /// Check if external access logging is enabled
@@ -445,6 +467,17 @@ impl SecurityManager {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .add_trusted_directory(path);
+    }
+
+    /// Apply the shell-command timeout from `config.toml` to the policy.
+    ///
+    /// Call this once in `GrokAcpAgent::new()` after the config is loaded.
+    /// The `GROK_SHELL_TIMEOUT_SECS` env var still overrides this at runtime.
+    pub fn set_shell_timeout_secs(&self, secs: u64) {
+        self.policy
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_shell_timeout_secs(secs);
     }
 
     pub fn check_path_access<P: AsRef<Path>>(&self, path: P) -> Result<()> {

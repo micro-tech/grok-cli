@@ -94,6 +94,25 @@ impl BayesianEngine {
         )
     }
 
+    /// Create an engine from a [`BayesianConfig`] but using only the config's
+    /// **compiled-in priors**, without loading the on-disk profile.
+    ///
+    /// This lets tests verify threshold / weight behaviour under controlled,
+    /// deterministic conditions — the on-disk `~/.grok/bayes_profile.json`
+    /// from real usage cannot dilute or skew the starting distribution.
+    #[cfg(test)]
+    pub fn new_from_config_no_profile(config: &crate::config::BayesianConfig) -> Self {
+        use crate::bayes::priors::priors_from_config;
+        Self::from_priors(
+            priors_from_config(&config.priors),
+            config.clarification_threshold,
+            config.uncertainty_threshold,
+            config.vagueness_threshold,
+            config.intent_likelihood_weight,
+            config.profile_learning_rate,
+        )
+    }
+
     /// Create a new engine using values from `[bayesian]` config.
     ///
     /// The prior distribution is loaded from the saved profile on disk first;
@@ -327,7 +346,11 @@ mod tests {
             clarification_threshold: 0.01, // fires with almost any need_clarification signal
             ..BayesianConfig::default()
         };
-        let mut engine = BayesianEngine::new_with_config(&config);
+        // Use the isolated constructor so the on-disk profile cannot dilute
+        // need_clarification below the 0.01 threshold being tested here.
+        // With default priors (need_clarification = 0.1) and a 10× likelihood
+        // spike from "don't delete", the posterior is ~0.33 — well above 0.01.
+        let mut engine = BayesianEngine::new_from_config_no_profile(&config);
         engine.update_from_text("be careful, don't delete");
         assert!(engine.needs_clarification());
     }

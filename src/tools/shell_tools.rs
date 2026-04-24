@@ -6,28 +6,20 @@ use tokio::process::Command;
 use tokio::time::{Duration, timeout};
 use tracing::warn;
 
-/// Default execution timeout for every shell command (5 minutes).
-///
-/// `cargo build`, `npm install`, and similar long-running build commands
-/// routinely take several minutes, so 30 s was far too aggressive.
-///
-/// Override at runtime with the `GROK_SHELL_TIMEOUT_SECS` environment variable:
-///
-/// ```text
-/// GROK_SHELL_TIMEOUT_SECS=600 grok acp stdio   # 10 minutes
-/// ```
-const DEFAULT_SHELL_TIMEOUT_SECS: u64 = 300;
-
 /// Return the effective shell-command timeout in seconds.
 ///
-/// Reads `GROK_SHELL_TIMEOUT_SECS` from the environment; falls back to
-/// [`DEFAULT_SHELL_TIMEOUT_SECS`] if the variable is absent or invalid.
-fn shell_timeout_secs() -> u64 {
+/// Priority (highest → lowest):
+/// 1. `GROK_SHELL_TIMEOUT_SECS` environment variable — one-off override
+///    without touching config files.
+/// 2. `tools.shell.command_timeout_secs` in `config.toml` — loaded into
+///    the [`SecurityPolicy`] at startup by `GrokAcpAgent::new`.
+/// 3. 300 s compiled-in safety net (used only if neither of the above is set).
+fn effective_timeout(security: &SecurityPolicy) -> u64 {
     std::env::var("GROK_SHELL_TIMEOUT_SECS")
         .ok()
         .and_then(|s| s.parse::<u64>().ok())
         .filter(|&t| t > 0)
-        .unwrap_or(DEFAULT_SHELL_TIMEOUT_SECS)
+        .unwrap_or_else(|| security.shell_timeout_secs())
 }
 
 /// Run a shell command with a hard execution timeout.
@@ -51,7 +43,7 @@ pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Resu
     security.validate_shell_command(command)?;
 
     let cwd = security.working_directory().to_path_buf();
-    let timeout_secs = shell_timeout_secs();
+    let timeout_secs = effective_timeout(security);
     let timeout_duration = Duration::from_secs(timeout_secs);
 
     let spawn_result = if cfg!(target_os = "windows") {
