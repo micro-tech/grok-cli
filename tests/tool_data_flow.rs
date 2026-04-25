@@ -655,3 +655,152 @@ fn task_get_missing_file_returns_descriptive_error() {
     // Must not contain a panic or unwrap trace
     assert!(!err.contains("panicked"), "must not panic: {err}");
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// 9. Format C — plain JSON array  [{…}, {…}, …]
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Write a `.zed/task_list.json` as a plain top-level JSON array (Format C).
+/// This is the format used by the bot project.
+fn write_format_c(dir: &TempDir, tasks: &[Value]) {
+    let zed = dir.path().join(".zed");
+    fs::create_dir_all(&zed).unwrap();
+    fs::write(
+        zed.join("task_list.json"),
+        serde_json::to_string_pretty(&Value::Array(tasks.to_vec())).unwrap(),
+    )
+    .unwrap();
+}
+
+#[test]
+fn task_get_format_c_finds_task_by_id() {
+    let dir = TempDir::new().unwrap();
+    let sec = make_security(&dir);
+
+    write_format_c(
+        &dir,
+        &[
+            json!({ "id": 58, "title": "T58", "status": "done",    "subtasks": [] }),
+            json!({ "id": 59, "title": "T59", "status": "pending", "subtasks": [] }),
+            json!({
+                "id": 60,
+                "title": "Design RPL Architecture",
+                "status": "pending",
+                "priority": "high",
+                "description": "Define RPL.",
+                "details": "Full details.",
+                "subtasks": []
+            }),
+            json!({ "id": 61, "title": "T61", "status": "pending", "subtasks": [] }),
+        ],
+    );
+
+    let json_str = task_get(60.0, &sec).unwrap();
+    let v: Value = serde_json::from_str(&json_str).expect("must be valid JSON");
+
+    assert_eq!(v["id"], 60, "wrong id");
+    assert_eq!(v["title"], "Design RPL Architecture", "wrong title");
+    assert_eq!(v["status"], "pending");
+    assert_eq!(v["priority"], "high");
+
+    // Must not bleed into adjacent tasks
+    assert_ne!(v["title"], "T59");
+    assert_ne!(v["title"], "T61");
+}
+
+#[test]
+fn task_get_format_c_not_found_returns_err() {
+    let dir = TempDir::new().unwrap();
+    let sec = make_security(&dir);
+    write_format_c(
+        &dir,
+        &[json!({ "id": 1, "title": "Only", "status": "pending", "subtasks": [] })],
+    );
+
+    let err = task_get(999.0, &sec).unwrap_err().to_string();
+    assert!(err.contains("999"), "error must mention the requested id");
+    assert!(err.contains("not found"));
+}
+
+#[test]
+fn task_get_format_c_finds_string_subtask_id() {
+    let dir = TempDir::new().unwrap();
+    let sec = make_security(&dir);
+
+    write_format_c(
+        &dir,
+        &[json!({
+            "id": 60,
+            "title": "Parent",
+            "status": "pending",
+            "subtasks": [
+                { "id": "60.1", "title": "Sub one",   "status": "pending" },
+                { "id": "60.2", "title": "Sub two",   "status": "pending" },
+                { "id": "60.3", "title": "Sub three", "status": "done"    }
+            ]
+        })],
+    );
+
+    let j = task_get(60.1, &sec).unwrap();
+    let v: Value = serde_json::from_str(&j).unwrap();
+    assert_eq!(v["title"], "Sub one");
+
+    let j3 = task_get(60.3, &sec).unwrap();
+    let v3: Value = serde_json::from_str(&j3).unwrap();
+    assert_eq!(v3["title"], "Sub three");
+    assert_eq!(v3["status"], "done");
+}
+
+#[test]
+fn full_pipeline_format_c_task60_survives_to_llm_context() {
+    let dir = TempDir::new().unwrap();
+    let sec = make_security(&dir);
+
+    write_format_c(
+        &dir,
+        &[
+            json!({"id": 59, "title": "T59", "status": "done",    "subtasks": []}),
+            json!({
+                "id": 60,
+                "title": "Design RPL Architecture",
+                "status": "pending",
+                "priority": "high",
+                "description": "Define the RPL.",
+                "details": "Implementation details.",
+                "subtasks": [
+                    {"id": "60.1", "title": "Sub A", "status": "pending"},
+                    {"id": "60.2", "title": "Sub B", "status": "pending"}
+                ]
+            }),
+            json!({"id": 61, "title": "T61", "status": "pending", "subtasks": []}),
+        ],
+    );
+
+    // Step 1: tool call
+    let result_json =
+        task_get(60.0, &sec).expect("task_get must succeed for Format C (plain array)");
+
+    let result: Value = serde_json::from_str(&result_json).unwrap();
+    assert_eq!(result["id"], 60);
+    assert_eq!(result["title"], "Design RPL Architecture");
+
+    // Step 2: place into ACP message history
+    let mut messages = build_messages_with_tool_result(
+        "System prompt",
+        "What is task 60?",
+        "task_get",
+        "call_format_c",
+        &result_json,
+    );
+    apply_trimmer(&mut messages, 20);
+
+    // Step 3: verify the LLM context contains the correct data
+    let tool_msg = messages.iter().find(|m| m["role"] == "tool").unwrap();
+    let content: Value = serde_json::from_str(tool_msg["content"].as_str().unwrap()).unwrap();
+    assert_eq!(content["id"], 60, "PIPELINE FORMAT C: id");
+    assert_eq!(
+        content["title"], "Design RPL Architecture",
+        "PIPELINE FORMAT C: title"
+    );
+    assert_eq!(content["priority"], "high", "PIPELINE FORMAT C: priority");
+}

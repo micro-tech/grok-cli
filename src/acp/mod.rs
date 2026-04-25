@@ -227,15 +227,17 @@ impl Default for SessionConfig {
                 5. Always consider edge cases and error handling.\n\
                 6. Suggest tests to verify your code when appropriate.\n\
                 \n\
-                Project task management:\n\
-                7. A dedicated tool called 'task_get' retrieves a single task by its \
-                numeric ID from .zed/task_list.json. ALWAYS call task_get(id=N) when the \
-                user asks about task N — NEVER answer from memory, context, or prior \
-                responses. Example: 'what is task 60' → call task_get with id=60.\n\
-                8. Return the task fields verbatim: title, status, priority, description, \
-                details, subtasks. Do not paraphrase or invent values.\n\
-                9. If task_get returns a TOOL ERROR, report the exact error — do NOT \
-                guess or fabricate task information.\n\
+                Project task management rules (follow exactly):\n\
+                7. ALWAYS call the 'task_get' tool when the user asks about a specific \
+                task by number. Example: 'what is task 60' → call task_get(id=60). \
+                Never skip the tool call and never answer from memory.\n\
+                8. When task_get SUCCEEDS: reply in plain English using the title, \
+                status, priority, and description from the tool result. \
+                Do not invent or change any field values.\n\
+                9. When task_get FAILS (tool returns TOOL ERROR): reply ONLY with \
+                'I could not retrieve task N. Error: <exact error text>'. \
+                Do NOT return any JSON. Do NOT guess the task title or any other field. \
+                Do NOT make up a task object.\n\
                 10. To list ALL tasks use read_file with path '.zed/task_list.json'."
                     .to_string(),
             ),
@@ -1153,6 +1155,24 @@ impl GrokAcpAgent {
                     "tool_call_id": tool_call.id,
                     "content": content
                 }));
+
+                // ── Anti-hallucination guard ─────────────────────────────────
+                // When a tool returns a TOOL ERROR the LLM tends to ignore it
+                // and fabricate an answer anyway.  Injecting an explicit system
+                // message immediately after the error — right before the LLM
+                // generates its reply — overrides that tendency.
+                if content.starts_with("TOOL ERROR") {
+                    session.messages.push(json!({
+                        "role": "system",
+                        "content": "⚠️ STOP — the tool call above returned an error. \
+                                   You MUST NOT fabricate, guess, or invent any information. \
+                                   Your only permitted response is to report the error to the \
+                                   user in plain language and suggest they try again or check \
+                                   the file manually. Do NOT return any JSON, task data, \
+                                   titles, statuses, or descriptions."
+                    }));
+                }
+                // ────────────────────────────────────────────────────────────
             }
 
             let loop_duration = loop_start.elapsed();

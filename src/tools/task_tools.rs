@@ -285,7 +285,12 @@ pub fn task_get(id: f64, security: &SecurityPolicy) -> Result<String> {
     let found = if let Some(tasks) = data["tasks"].as_array() {
         search_slice(tasks, id)
 
-    // ── Format B: {"0": {...}, "1": {...}, ...} ───────────────────────────────
+    // ── Format C: [{…}, {…}, …] plain JSON array ──────────────────────────────
+    // Some projects store the task list as a top-level array with no wrapper key.
+    } else if let Some(arr) = data.as_array() {
+        search_slice(arr, id)
+
+    // ── Format B: {"0": {…}, "1": {…}, …} numeric-indexed object ─────────────
     // The key is a 0-based index; the real task id lives inside the object.
     } else if let Some(obj) = data.as_object() {
         let values: Vec<serde_json::Value> =
@@ -305,6 +310,7 @@ pub fn task_get(id: f64, security: &SecurityPolicy) -> Result<String> {
             let total = data["tasks"]
                 .as_array()
                 .map(|a| a.len())
+                .or_else(|| data.as_array().map(|a| a.len()))
                 .or_else(|| data.as_object().map(|o| o.len()))
                 .unwrap_or(0);
             tracing::warn!(
