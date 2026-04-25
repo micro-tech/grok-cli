@@ -616,6 +616,69 @@ impl GrokAcpAgent {
             // NOTE: if you see "Request timeout after 30 seconds" the "30" is a
             // hardcoded value in the grok_api crate error formatter — the actual
             // HTTP timeout driving the request is the real_timeout printed above.
+            // ── DATA-TRACE: snapshot what we are about to send to the LLM ───────
+            // Written to BOTH tracing (visible in Zed's log panel with
+            // RUST_LOG=grok_cli::acp=debug) AND to the persistent tool log file
+            // so every iteration is preserved on disk even on a Starlink drop.
+            {
+                let roles: Vec<&str> = session
+                    .messages
+                    .iter()
+                    .filter_map(|m| m.get("role")?.as_str())
+                    .collect();
+                let sizes: Vec<usize> = session
+                    .messages
+                    .iter()
+                    .map(|m| {
+                        m.get("content")
+                            .and_then(|c| c.as_str())
+                            .map(|s| s.len())
+                            .unwrap_or(0)
+                    })
+                    .collect();
+                let summary = roles
+                    .iter()
+                    .zip(sizes.iter())
+                    .enumerate()
+                    .map(|(i, (r, s))| format!("[{i}]{r}:{s}B"))
+                    .collect::<Vec<_>>()
+                    .join(" ");
+
+                info!(
+                    "📨 DATA-TRACE iter={} total_msgs={} layout={}",
+                    loop_count,
+                    session.messages.len(),
+                    summary
+                );
+
+                crate::utils::tool_logger::log_note(&format!(
+                    "DATA-TRACE iter={} total_msgs={} layout={}",
+                    loop_count,
+                    session.messages.len(),
+                    summary
+                ));
+
+                // At DEBUG level log a 150-char preview of every message body.
+                for (i, msg) in session.messages.iter().enumerate() {
+                    let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("?");
+                    let body = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
+                    let preview = body[..body.len().min(150)]
+                        .replace('\n', "↵")
+                        .replace('\r', "");
+                    let has_tc = msg.get("tool_calls").is_some();
+                    let tcid = msg
+                        .get("tool_call_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("");
+                    tracing::debug!(
+                        "[msg {i}] role={role} bytes={bytes} has_tool_calls={has_tc} \
+                         tool_call_id='{tcid}' | {preview}",
+                        bytes = body.len(),
+                    );
+                }
+            }
+            // ────────────────────────────────────────────────────────────────────
+
             let api_call_start = std::time::Instant::now();
 
             let response_with_finish = {
@@ -716,6 +779,36 @@ impl GrokAcpAgent {
             let finish_reason = response_with_finish.finish_reason.as_deref();
 
             info!("📋 Finish reason: {:?}", finish_reason);
+
+            // ── DATA-TRACE: what did the LLM just return? ────────────────────
+            {
+                let tc_count = response_msg
+                    .tool_calls
+                    .as_ref()
+                    .map(|tc| tc.len())
+                    .unwrap_or(0);
+                let resp_text = content_to_string(response_msg.content.as_ref());
+                let preview = resp_text[..resp_text.len().min(200)]
+                    .replace('\n', "↵")
+                    .replace('\r', "");
+                info!(
+                    "🤖 DATA-TRACE LLM response: finish={:?} tool_calls={} \
+                     text_bytes={} preview='{}'",
+                    finish_reason,
+                    tc_count,
+                    resp_text.len(),
+                    preview
+                );
+                crate::utils::tool_logger::log_note(&format!(
+                    "DATA-TRACE LLM response: finish={:?} tool_calls={} text_bytes={} \
+                     preview='{}'",
+                    finish_reason,
+                    tc_count,
+                    resp_text.len(),
+                    preview
+                ));
+            }
+            // ────────────────────────────────────────────────────────────────
 
             // Add assistant response to history
             session.messages.push(serde_json::to_value(&response_msg)?);
@@ -1029,6 +1122,30 @@ impl GrokAcpAgent {
                     let hooks = self.hook_manager.read().await;
                     hooks.execute_after_tool(function_name, &args, &content)?;
                 }
+
+                // ── DATA-TRACE: confirm exactly what is being pushed as tool result ──
+                {
+                    let preview = content[..content.len().min(300)]
+                        .replace('\n', "↵")
+                        .replace('\r', "");
+                    info!(
+                        "📦 DATA-TRACE tool_result_push: tool='{}' tcid='{}' \
+                         bytes={} preview='{}'",
+                        function_name,
+                        tool_call.id,
+                        content.len(),
+                        preview
+                    );
+                    crate::utils::tool_logger::log_note(&format!(
+                        "DATA-TRACE tool_result_push: tool='{}' tcid='{}' bytes={} \
+                         preview='{}'",
+                        function_name,
+                        tool_call.id,
+                        content.len(),
+                        preview
+                    ));
+                }
+                // ────────────────────────────────────────────────────────────
 
                 // Add tool result to history
                 session.messages.push(json!({
