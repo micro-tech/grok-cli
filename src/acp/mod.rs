@@ -815,43 +815,33 @@ impl GrokAcpAgent {
             // Add assistant response to history
             session.messages.push(serde_json::to_value(&response_msg)?);
 
-            // Check finish_reason - if "stop", we're done regardless of tool_calls
-            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
-                let elapsed = start_time.elapsed();
-                let response_text = content_to_string(response_msg.content.as_ref());
-                info!(
-                    "✅ Model signaled completion (finish_reason: {:?}) in {:?} ({} loops, {} chars)",
-                    finish_reason,
-                    elapsed,
-                    loop_count,
-                    response_text.len()
-                );
-                return Ok(response_text);
-            }
-
-            // Check if we have tool calls to process
-            let has_tool_calls = response_msg
-                .tool_calls
-                .as_ref()
-                .map(|tc| !tc.is_empty())
-                .unwrap_or(false);
-
-            let elapsed = start_time.elapsed();
             let response_text = content_to_string(response_msg.content.as_ref());
+            let elapsed = start_time.elapsed();
 
-            if !has_tool_calls {
-                // No tool calls and no explicit stop - return content
-                info!(
-                    "✨ Chat completion finished in {:?} ({} loops, {} chars)",
-                    elapsed,
-                    loop_count,
-                    response_text.len()
-                );
-                return Ok(response_text);
-            }
-
-            // We have tool calls to process
-            let Some(tool_calls) = response_msg.tool_calls.as_ref() else {
+            // Extract tool calls. finish_reason is intentionally NOT checked here –
+            // Grok (and some other models) can return finish_reason "stop" in the
+            // same payload as tool_calls. We always run every tool call first and
+            // then honour finish_reason in the post-tool-loop check below.
+            let Some(tool_calls) = response_msg.tool_calls.as_ref().filter(|tc| !tc.is_empty())
+            else {
+                // No tool calls – the turn is complete; honour finish_reason.
+                if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
+                    info!(
+                        "✅ Model signaled completion (finish_reason: {:?}) in {:?} \
+                         ({} loops, {} chars)",
+                        finish_reason,
+                        elapsed,
+                        loop_count,
+                        response_text.len()
+                    );
+                } else {
+                    info!(
+                        "✨ Chat completion finished in {:?} ({} loops, {} chars)",
+                        elapsed,
+                        loop_count,
+                        response_text.len()
+                    );
+                }
                 return Ok(response_text);
             };
             info!("🛠️  Processing {} tool calls", tool_calls.len());
@@ -1124,6 +1114,12 @@ impl GrokAcpAgent {
                     let hooks = self.hook_manager.read().await;
                     hooks.execute_after_tool(function_name, &args, &content)?;
                 }
+                // Push tool result into LLM message history so the model can see it
+                session.messages.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": content,
+                }));
 
                 // ── DATA-TRACE: confirm exactly what is being pushed as tool result ──
                 {
@@ -1149,13 +1145,6 @@ impl GrokAcpAgent {
                 }
                 // ────────────────────────────────────────────────────────────
 
-                // Add tool result to history
-                session.messages.push(json!({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": content
-                }));
-
                 // ── Anti-hallucination guard ─────────────────────────────────
                 // When a tool returns a TOOL ERROR the LLM tends to ignore it
                 // and fabricate an answer anyway.  Injecting an explicit system
@@ -1172,12 +1161,49 @@ impl GrokAcpAgent {
                                    titles, statuses, or descriptions."
                     }));
                 }
+                // 🔍 Verify the tool message was actually inserted (debug only).
+                {
+                    let last = session.messages.last().unwrap();
+                    let role = last.get("role").and_then(|v| v.as_str()).unwrap_or("?");
+                    let tcid = last
+                        .get("tool_call_id")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or("NONE");
+                    let bytes = last
+                        .get("content")
+                        .and_then(|v| v.as_str())
+                        .map(|s| s.len())
+                        .unwrap_or(0);
+                    debug!(
+                        "🧪 TOOL-PUSH-VERIFY → role='{}' tool_call_id='{}' bytes={} (should be >0)",
+                        role, tcid, bytes
+                    );
+                }
                 // ────────────────────────────────────────────────────────────
             }
 
+            // ── Post-tool-loop finish_reason check ───────────────────────────
+            // If the model signalled stop alongside its tool calls (common with
+            // Grok), do not spin up another API iteration. Tool results are
+            // already committed to session.messages for full context.
+            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
+                info!(
+                    "✅ Model signaled stop after {} tool call(s) \
+                     (finish_reason: {:?}) in {:?} ({} loops)",
+                    tool_calls.len(),
+                    finish_reason,
+                    start_time.elapsed(),
+                    loop_count,
+                );
+                return Ok(response_text);
+            }
+            // ─────────────────────────────────────────────────────────────────
+
             let loop_duration = loop_start.elapsed();
-            info!("🔄 Loop iteration completed in {:?}", loop_duration);
-            // Continue loop to get next response from model with tool results
+            info!(
+                "🔄 Loop iteration completed in {:?} – feeding tool results back to model",
+                loop_duration
+            );
         }
     }
 
