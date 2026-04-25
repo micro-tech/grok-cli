@@ -13,6 +13,156 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+### Fixed & Hardened — All Tool Implementations + `task_list.json` Rebuild
+
+**Scope**: Every tool module (`agent_tools`, `discovery_tools`, `file_tools`,
+`lsp_tools`, `mcp_tools`, `memory_tools`, `notebook_tools`, `plan_tools`,
+`shell_tools`, `skill_tools`, `system_tools`, `task_tools`, `web_tools`) plus
+the `cpu_router` tool-dispatch loops and the `.zed/task_list.json` data file.
+
+#### Cross-cutting changes (all tool files)
+
+- **`tracing::warn!`** added at every `return Err(…)` site across all 13 tool
+  modules — every failure path now emits a structured diagnostic before
+  propagating the error.
+- **`tracing::debug!`** added on success paths in `system_tools` for lightweight
+  observability.
+- The `utils::network` helpers (`detect_network_drop`, `calculate_retry_delay`)
+  are now wired into every network-calling tool — previously they existed but
+  were called by nothing.
+
+#### Per-file changes
+
+**`web_tools.rs`**
+- Fixed a **UTF-8 truncation panic**: `&text[..10_000]` (byte-index slice on a
+  UTF-8 string) replaced with a `char_indices().nth(10_000)` boundary search
+  that is always safe.
+- Added **empty-query guard** to `web_search` — an empty string now returns
+  `Err` immediately instead of hitting DuckDuckGo.
+- Added **3-retry loop** (with Starlink-aware backoff) to both `web_search` and
+  `web_fetch` using `detect_network_drop` + `calculate_retry_delay`.
+- Added `tracing::warn!` before every non-2xx / parse-error / retry-exhausted
+  return in `web_fetch`.
+- New unit test: `web_search_empty_query_returns_error`.
+
+**`agent_tools.rs`**
+- Added **3-retry loop** around `router.chat_completion(…)` in `spawn_agent`.
+- **Atomic write** for `send_message` — data is now written to a `.tmp` file
+  and then renamed into place, preventing corruption on a mid-write Starlink
+  drop.
+- `merge_agent_results` — added **empty-slice guard** (`Ok("No agent results
+  to merge.")`); fixed return type to `Result<String>`; applied Clippy
+  suggestions (`clamp`, `sort_by_key`).
+- `tracing::warn!` added before every `return Err(…)` in all five functions.
+- New unit tests: `merge_empty_returns_ok`, `merge_single_passthrough`,
+  `merge_prefers_longer`.
+
+**`mcp_tools.rs`**
+- Added a **30-second `tokio::time::timeout`** around the entire MCP protocol
+  exchange — previously the function had zero built-in timeout and could hang
+  indefinitely.
+- Added a **2-retry connect loop** (inside the timeout budget) for transient
+  MCP server connection failures.
+- `tracing::warn!` added at security-validation failure, connect failure
+  (per-retry and final), tool-call failure, serialisation failure, and timeout.
+
+**`lsp_tools.rs`**
+- `tracing::warn!` added at every error site across `lsp_query`,
+  `get_diagnostics`, `get_hover`, `find_definition`, `find_references`, and
+  `extract_symbol`.
+- `get_diagnostics` now logs a structured warning with `timeout_secs` and
+  `path` fields when `cargo check` times out, and warns separately when it
+  exits non-zero.
+
+**`discovery_tools.rs`**
+- `remote_trigger` now returns `Err` for any HTTP method other than GET, POST,
+  or PUT — previously unknown methods silently fell through to POST.
+- Added **3-retry loop** with `detect_network_drop` + `calculate_retry_delay`
+  to `remote_trigger`.
+- `tracing::warn!` added at every error site in `tool_search`, `cron_create`,
+  and `remote_trigger`.
+
+**`task_tools.rs`**
+- **Atomic write** via `.json.tmp` + `fs::rename` in `save_task_file` — covers
+  both `task_create` and `task_update`, preventing `task_list.json` corruption
+  on a mid-write process kill.
+- `task_update` now **validates the `priority` field** (`high / medium / low`)
+  the same way `task_create` already did.
+- `tracing::warn!` at every error return site.
+- New tests: `update_rejects_invalid_priority`, `update_rejects_invalid_status`.
+
+**`notebook_tools.rs`**
+- **Atomic write** via `.ipynb.tmp` + `fs::rename` — notebook is never left in
+  a partially-written state.
+- Added **empty-source guard** — a blank or whitespace-only cell source now
+  returns `Err` immediately.
+- `tracing::warn!` at every error site (resolve, trust, cell_type, source,
+  read, parse, cells array, mkdir, serialise, write, rename).
+- New test: `rejects_empty_source`.
+
+**`plan_tools.rs`**
+- `let _ = save_state(…)` replaced with `if let Err(e) = save_state(…)`
+  + `tracing::warn!` — state-save failures are no longer silently discarded.
+- **Branch-name sanitizer** rejects names containing `..` or starting with `-`
+  (guards against argument injection and path-traversal in git commands).
+- `tracing::warn!` at every error site in `enter_worktree` and `exit_worktree`.
+- New tests: `enter_worktree_rejects_dotdot_branch`,
+  `_rejects_dash_prefix_branch`, `_rejects_empty_branch`,
+  `_rejects_empty_path`.
+
+**`memory_tools.rs`**
+- Added **empty-fact guard** (`fact.trim().is_empty()` check) — `save_memory`
+  now returns `Err` instead of silently writing a blank fact.
+- `map_err` closure now calls `tracing::warn!` before wrapping the error.
+- Replaced trivially-true `assert!(result.is_ok() || result.is_err())` test
+  with `save_memory_empty_fact_returns_err` (and a whitespace-only variant).
+
+**`shell_tools.rs`**
+- `tracing::warn!` added on process-spawn failure and on timeout.
+- `tracing::warn!(exit_code, command)` added when the child process exits
+  non-zero (the `Ok(…)` return is preserved for backward compatibility).
+
+**`skill_tools.rs`**
+- Added a **32 KB input-size cap warning** (`tracing::warn!` when `input.len()`
+  exceeds 32 768 bytes) to prevent context-window overflow.
+- `tracing::warn!` at every error site in `execute_skill` and
+  `list_available_skills`.
+- Replaced trivially-true `assert!(r.is_ok() || r.is_err())` test with
+  `list_skills_returns_ok`.
+
+**`system_tools.rs`**
+- `sleep_for(0)` now emits `tracing::warn!` — a zero-second sleep is almost
+  certainly a caller mistake.
+- `tracing::debug!` added for successful `sleep_for` and `synthetic_output`
+  calls.
+- `tracing::warn!` at error sites in `synthetic_output`.
+
+#### `.zed/task_list.json` rebuild
+
+The file was completely rebuilt by a Node.js script:
+
+| Problem | Fix |
+|---|---|
+| JSONC trailing commas (invalid `serde_json`) | Stripped — file is now standard JSON |
+| IDs jumped from 10 → 26 (gap 11–25) | Old 26–40 renumbered to 11–25; all subsequent IDs shifted |
+| Duplicate "Implement Context Engine 2.0" (IDs 34 & 52) | Old 52 removed; old 34 (now 19) retained |
+| Duplicate "Implement Agent Health Monitoring" (IDs 56 & 70) | Old 70 removed; old 56 (now 40) retained |
+| Tasks 86 & 87 referenced non-existent dep IDs 12 & 22 | Dependencies cleared to `[]` / remapped correctly |
+| Status drift — completed work still marked `pending` | Old 58 (Agent Error Logging) → `done`; old 67 (Enhanced Logging) → `done`; old 45 (Tool Failure Recovery) → `in_progress` |
+
+Two new tasks added at the end:
+- **Task 85** — "Harden read_file: JSON/JSONC Validation and Error Reporting" (`done`)
+- **Task 86** — "Harden All Tool Implementations" (`in_progress`, deps: [85])
+
+Final state: **86 tasks, IDs 1–86, no gaps, no duplicates, valid standard JSON.**
+Original backed up to `.zed/task_list.bak2.json`.
+
+**Build result**: `cargo build` clean, **650/650 tests pass**, zero Clippy errors.
+
+*Source: AI (Claude Sonnet 4.6) — 2025-07-16*
+
+---
+
 ### Fixed — `read_file` Diagnostics, JSONC Validation & Tool-Loop Error Reporting
 
 **Root cause of hallucinations when reading `.zed/task_list.json`**
