@@ -20,6 +20,16 @@ pub async fn sleep_for(seconds: u64) -> Result<String> {
             "sleep duration capped at MAX_SLEEP_SECS"
         );
     }
+    if seconds == 0 {
+        tracing::warn!(
+            "system_tools: sleep_for(0) called — this is a no-op and is likely a mistake"
+        );
+    }
+    tracing::debug!(
+        tool = "sleep_for",
+        seconds = seconds,
+        "system_tools: sleeping"
+    );
     tokio::time::sleep(tokio::time::Duration::from_secs(capped)).await;
     Ok(format!("Slept for {} second(s).", capped))
 }
@@ -31,6 +41,7 @@ pub async fn sleep_for(seconds: u64) -> Result<String> {
 /// valid JSON value.  Returns a pretty-printed JSON string.
 pub fn synthetic_output(schema_name: &str, data: &Value) -> Result<String> {
     if schema_name.trim().is_empty() {
+        tracing::warn!("system_tools::synthetic_output: schema_name is empty");
         return Err(anyhow!("schema_name cannot be empty"));
     }
     let output = serde_json::json!({
@@ -38,7 +49,19 @@ pub fn synthetic_output(schema_name: &str, data: &Value) -> Result<String> {
         "data":         data,
         "generated_at": chrono::Utc::now().to_rfc3339(),
     });
-    serde_json::to_string_pretty(&output).map_err(|e| anyhow!("Failed to serialise output: {}", e))
+    let result = serde_json::to_string_pretty(&output).map_err(|e| {
+        tracing::warn!(
+            error = %e,
+            "system_tools::synthetic_output: failed to serialise output"
+        );
+        anyhow!("Failed to serialise output: {}", e)
+    })?;
+    tracing::debug!(
+        tool = "synthetic_output",
+        schema = schema_name,
+        "system_tools: output generated"
+    );
+    Ok(result)
 }
 
 #[cfg(test)]

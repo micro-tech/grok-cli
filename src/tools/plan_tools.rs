@@ -69,11 +69,31 @@ pub fn exit_plan_mode() -> Result<String> {
 ///
 /// If the branch does not exist it is created with `-b`.  The worktree path
 /// and branch are saved to the state file so [`exit_worktree`] can find them.
+///
+/// Branch names that start with `-` or contain `..` are rejected to prevent
+/// argument injection and path traversal.
 pub async fn enter_worktree(branch: &str, path: &str, security: &SecurityPolicy) -> Result<String> {
     if branch.trim().is_empty() {
+        tracing::warn!("plan_tools::enter_worktree: rejected — branch name is empty");
         return Err(anyhow!("branch cannot be empty"));
     }
+
+    // Sanitize: reject names that could be misinterpreted as git flags or
+    // that contain path-traversal sequences.
+    if branch.contains("..") || branch.starts_with('-') {
+        tracing::warn!(
+            branch = %branch,
+            "plan_tools::enter_worktree: rejected unsafe branch name"
+        );
+        return Err(anyhow!(
+            "enter_worktree: unsafe branch name '{}'. \
+             Must not start with '-' or contain '..'.",
+            branch
+        ));
+    }
+
     if path.trim().is_empty() {
+        tracing::warn!("plan_tools::enter_worktree: rejected — worktree path is empty");
         return Err(anyhow!("path cannot be empty"));
     }
 
@@ -100,8 +120,17 @@ pub async fn enter_worktree(branch: &str, path: &str, security: &SecurityPolicy)
             .output(),
     )
     .await
-    .map_err(|_| anyhow!("git worktree add timed out"))?
-    .map_err(|e| anyhow!("Failed to spawn git: {}", e))?;
+    .map_err(|_| {
+        tracing::warn!(
+            branch = %branch,
+            "plan_tools::enter_worktree: git worktree add timed out"
+        );
+        anyhow!("git worktree add timed out")
+    })?
+    .map_err(|e| {
+        tracing::warn!(error = %e, "plan_tools::enter_worktree: failed to spawn git");
+        anyhow!("Failed to spawn git: {}", e)
+    })?;
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
@@ -121,25 +150,50 @@ pub async fn enter_worktree(branch: &str, path: &str, security: &SecurityPolicy)
                     .output(),
             )
             .await
-            .map_err(|_| anyhow!("git worktree add -b timed out"))?
-            .map_err(|e| anyhow!("Failed to spawn git: {}", e))?;
+            .map_err(|_| {
+                tracing::warn!(
+                    branch = %branch,
+                    "plan_tools::enter_worktree: git worktree add -b timed out"
+                );
+                anyhow!("git worktree add -b timed out")
+            })?
+            .map_err(|e| {
+                tracing::warn!(error = %e, "plan_tools::enter_worktree: failed to spawn git (create branch)");
+                anyhow!("Failed to spawn git: {}", e)
+            })?;
 
             if !output2.status.success() {
                 let err2 = String::from_utf8_lossy(&output2.stderr);
+                tracing::warn!(
+                    branch = %branch,
+                    stderr = %err2,
+                    "plan_tools::enter_worktree: git worktree add -b failed"
+                );
                 return Err(anyhow!("Failed to create worktree: {}", err2));
             }
         } else {
+            tracing::warn!(
+                branch = %branch,
+                stderr = %stderr,
+                "plan_tools::enter_worktree: git worktree add failed"
+            );
             return Err(anyhow!("Failed to create worktree: {}", stderr));
         }
     }
 
-    // Persist worktree state
+    // Persist worktree state — failure is non-fatal but we log it so the
+    // operator knows the next call may see stale state data.
     let mut state = load_state();
     state["worktree"] = json!({
         "branch": branch,
         "path":   worktree_path.display().to_string(),
     });
-    let _ = save_state(&state);
+    if let Err(e) = save_state(&state) {
+        tracing::warn!(
+            error = %e,
+            "plan_tools: failed to persist state — next call may see stale data"
+        );
+    }
 
     Ok(format!(
         "Worktree created at '{}' on branch '{}'.",
@@ -156,7 +210,10 @@ pub async fn exit_worktree(merge: bool, security: &SecurityPolicy) -> Result<Str
     let state = load_state();
     let worktree_path = state["worktree"]["path"]
         .as_str()
-        .ok_or_else(|| anyhow!("No active worktree found. Call enter_worktree first."))?
+        .ok_or_else(|| {
+            tracing::warn!("plan_tools::exit_worktree: no active worktree found in state");
+            anyhow!("No active worktree found. Call enter_worktree first.")
+        })?
         .to_string();
     let branch = state["worktree"]["branch"]
         .as_str()
@@ -175,8 +232,17 @@ pub async fn exit_worktree(merge: bool, security: &SecurityPolicy) -> Result<Str
             .output(),
     )
     .await
-    .map_err(|_| anyhow!("git worktree remove timed out"))?
-    .map_err(|e| anyhow!("Failed to spawn git: {}", e))?;
+    .map_err(|_| {
+        tracing::warn!(
+            path = %worktree_path,
+            "plan_tools::exit_worktree: git worktree remove timed out"
+        );
+        anyhow!("git worktree remove timed out")
+    })?
+    .map_err(|e| {
+        tracing::warn!(error = %e, "plan_tools::exit_worktree: failed to spawn git for remove");
+        anyhow!("Failed to spawn git: {}", e)
+    })?;
 
     if rm.status.success() {
         messages.push(format!("Worktree at '{}' removed.", worktree_path));
@@ -195,8 +261,17 @@ pub async fn exit_worktree(merge: bool, security: &SecurityPolicy) -> Result<Str
                 .output(),
         )
         .await
-        .map_err(|_| anyhow!("git merge timed out"))?
-        .map_err(|e| anyhow!("Failed to spawn git: {}", e))?;
+        .map_err(|_| {
+            tracing::warn!(
+                branch = %branch,
+                "plan_tools::exit_worktree: git merge timed out"
+            );
+            anyhow!("git merge timed out")
+        })?
+        .map_err(|e| {
+            tracing::warn!(error = %e, "plan_tools::exit_worktree: failed to spawn git for merge");
+            anyhow!("Failed to spawn git: {}", e)
+        })?;
 
         if mg.status.success() {
             messages.push(format!("Branch '{}' merged successfully.", branch));
@@ -206,10 +281,15 @@ pub async fn exit_worktree(merge: bool, security: &SecurityPolicy) -> Result<Str
         }
     }
 
-    // Clear state
+    // Clear state — failure is non-fatal but logged.
     let mut state = load_state();
     state["worktree"] = serde_json::Value::Null;
-    let _ = save_state(&state);
+    if let Err(e) = save_state(&state) {
+        tracing::warn!(
+            error = %e,
+            "plan_tools: failed to persist state — next call may see stale data"
+        );
+    }
 
     Ok(messages.join("\n"))
 }
@@ -242,6 +322,50 @@ mod tests {
         let policy = crate::acp::security::SecurityPolicy::new();
         let rt = tokio::runtime::Runtime::new().unwrap();
         let result = rt.block_on(exit_worktree(false, &policy));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn enter_worktree_rejects_dotdot_branch() {
+        let policy = crate::acp::security::SecurityPolicy::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(enter_worktree("../../evil", "some/path", &policy));
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("unsafe branch name"),
+            "unexpected message: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn enter_worktree_rejects_dash_prefix_branch() {
+        let policy = crate::acp::security::SecurityPolicy::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(enter_worktree("-upstream", "some/path", &policy));
+        assert!(result.is_err());
+        let msg = result.unwrap_err().to_string();
+        assert!(
+            msg.contains("unsafe branch name"),
+            "unexpected message: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn enter_worktree_rejects_empty_branch() {
+        let policy = crate::acp::security::SecurityPolicy::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(enter_worktree("", "some/path", &policy));
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn enter_worktree_rejects_empty_path() {
+        let policy = crate::acp::security::SecurityPolicy::new();
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let result = rt.block_on(enter_worktree("main", "", &policy));
         assert!(result.is_err());
     }
 }

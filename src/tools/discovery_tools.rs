@@ -13,10 +13,24 @@ use std::path::PathBuf;
 
 fn grok_data_dir() -> Result<PathBuf> {
     let dir = dirs::data_local_dir()
-        .ok_or_else(|| anyhow!("Cannot determine local data directory"))?
+        .ok_or_else(|| {
+            let e = anyhow!("Cannot determine local data directory");
+            tracing::warn!(
+                error = %e,
+                "discovery_tools: failed to locate local data directory"
+            );
+            e
+        })?
         .join(".grok");
-    fs::create_dir_all(&dir)
-        .map_err(|e| anyhow!("Failed to create .grok data directory: {}", e))?;
+    fs::create_dir_all(&dir).map_err(|e| {
+        let err = anyhow!("Failed to create .grok data directory: {}", e);
+        tracing::warn!(
+            path  = %dir.display(),
+            error = %err,
+            "discovery_tools: failed to create .grok data directory"
+        );
+        err
+    })?;
     Ok(dir)
 }
 
@@ -29,7 +43,12 @@ fn grok_data_dir() -> Result<PathBuf> {
 /// "no results" message when nothing matches.
 pub fn tool_search(query: &str) -> Result<String> {
     if query.trim().is_empty() {
-        return Err(anyhow!("query cannot be empty"));
+        let e = anyhow!("query cannot be empty");
+        tracing::warn!(
+            error = %e,
+            "discovery_tools: tool_search called with empty query"
+        );
+        return Err(e);
     }
 
     let query_lower = query.to_lowercase();
@@ -93,35 +112,59 @@ pub fn tool_search(query: &str) -> Result<String> {
 /// read `crons.json` and invoke `grok` accordingly.
 pub fn cron_create(name: &str, schedule: &str, task: &str) -> Result<String> {
     if name.trim().is_empty() {
-        return Err(anyhow!("name cannot be empty"));
+        let e = anyhow!("name cannot be empty");
+        tracing::warn!(error = %e, "discovery_tools: cron_create called with empty name");
+        return Err(e);
     }
     if task.trim().is_empty() {
-        return Err(anyhow!("task cannot be empty"));
+        let e = anyhow!("task cannot be empty");
+        tracing::warn!(error = %e, "discovery_tools: cron_create called with empty task");
+        return Err(e);
     }
 
     // Basic 5-field cron validation
     let parts: Vec<&str> = schedule.split_whitespace().collect();
     if parts.len() != 5 {
-        return Err(anyhow!(
+        let e = anyhow!(
             "Invalid cron expression '{}': must have exactly 5 fields \
              (minute hour day-of-month month day-of-week). Example: '0 9 * * 1-5'",
             schedule
-        ));
+        );
+        tracing::warn!(
+            schedule = schedule,
+            fields   = parts.len(),
+            error    = %e,
+            "discovery_tools: invalid cron expression"
+        );
+        return Err(e);
     }
 
     let cron_file = grok_data_dir()?.join("crons.json");
 
     let mut data: Value = if cron_file.exists() {
-        let content = fs::read_to_string(&cron_file)
-            .map_err(|e| anyhow!("Failed to read crons.json: {}", e))?;
+        let content = fs::read_to_string(&cron_file).map_err(|e| {
+            let err = anyhow!("Failed to read crons.json: {}", e);
+            tracing::warn!(
+                path  = %cron_file.display(),
+                error = %err,
+                "discovery_tools: failed to read crons.json"
+            );
+            err
+        })?;
         serde_json::from_str(&content).unwrap_or(json!({ "crons": [] }))
     } else {
         json!({ "crons": [] })
     };
 
-    let crons = data["crons"]
-        .as_array_mut()
-        .ok_or_else(|| anyhow!("Invalid crons.json: missing 'crons' array"))?;
+    let crons = data["crons"].as_array_mut().ok_or_else(|| {
+        let e = anyhow!("Invalid crons.json: missing 'crons' array");
+        tracing::warn!(
+            path  = %cron_file.display(),
+            error = %e,
+            "discovery_tools: malformed crons.json — missing 'crons' array"
+        );
+        e
+    })?;
 
     // Upsert: remove existing entry with same name
     crons.retain(|e| e["name"].as_str() != Some(name));
@@ -133,8 +176,15 @@ pub fn cron_create(name: &str, schedule: &str, task: &str) -> Result<String> {
         "created_at": Utc::now().to_rfc3339(),
     }));
 
-    fs::write(&cron_file, serde_json::to_string_pretty(&data)?)
-        .map_err(|e| anyhow!("Failed to write crons.json: {}", e))?;
+    fs::write(&cron_file, serde_json::to_string_pretty(&data)?).map_err(|e| {
+        let err = anyhow!("Failed to write crons.json: {}", e);
+        tracing::warn!(
+            path  = %cron_file.display(),
+            error = %err,
+            "discovery_tools: failed to write crons.json"
+        );
+        err
+    })?;
 
     Ok(format!(
         "Cron job '{}' registered: `{}` → {}",
@@ -147,41 +197,132 @@ pub fn cron_create(name: &str, schedule: &str, task: &str) -> Result<String> {
 /// Fire an HTTP trigger to a remote endpoint.
 ///
 /// `method` must be one of `"POST"`, `"GET"`, or `"PUT"` (case-insensitive).
-/// The `payload` is sent as a JSON body for POST / PUT requests and is ignored
-/// for GET.  A 30-second timeout is applied; returns an error on non-2xx
-/// responses so the agent can react.
+/// Any other value returns an error immediately.
+///
+/// The `payload` is sent as a JSON body for POST / PUT; ignored for GET.
+/// A 30-second per-attempt timeout is applied via the `reqwest` client.
+///
+/// On network drops (detected via [`crate::utils::network::detect_network_drop`])
+/// the call is retried up to **3 times** with exponential back-off before the
+/// error is surfaced. Non-2xx responses are surfaced as errors immediately
+/// without retrying (the remote endpoint made a deliberate choice).
 pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Result<String> {
     if endpoint.trim().is_empty() {
-        return Err(anyhow!("endpoint cannot be empty"));
+        let e = anyhow!("endpoint cannot be empty");
+        tracing::warn!(
+            error = %e,
+            "discovery_tools: remote_trigger called with empty endpoint"
+        );
+        return Err(e);
     }
 
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
-        .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
+        .map_err(|e| {
+            let err = anyhow!("Failed to build HTTP client: {}", e);
+            tracing::warn!(
+                error = %err,
+                "discovery_tools: failed to build reqwest client"
+            );
+            err
+        })?;
 
-    let response = match method.to_uppercase().as_str() {
-        "GET" => client.get(endpoint).send().await,
-        "PUT" => client.put(endpoint).json(&payload).send().await,
-        "POST" | _ => client.post(endpoint).json(&payload).send().await,
+    // ── method validation ─────────────────────────────────────────────────────
+    // Reject unknown methods immediately, before spending any network budget.
+    let method_upper = method.to_ascii_uppercase();
+    match method_upper.as_str() {
+        "GET" | "POST" | "PUT" => {}
+        other => {
+            let e = anyhow::anyhow!(
+                "remote_trigger: unsupported HTTP method '{}'. \
+                 Allowed: GET, POST, PUT.",
+                other
+            );
+            tracing::warn!(
+                method = other,
+                error  = %e,
+                "discovery_tools: remote_trigger — unsupported HTTP method"
+            );
+            return Err(e);
+        }
     }
-    .map_err(|e| {
-        anyhow!(
-            "Failed to reach '{}': {}\n\
-            This may be a Starlink handover drop — retry in a few seconds.",
-            endpoint,
-            e
-        )
-    })?;
 
-    let status = response.status();
-    let body = response.text().await.unwrap_or_default();
+    // ── retry loop ────────────────────────────────────────────────────────────
+    // Up to MAX_RETRIES extra attempts on network drops; non-network errors and
+    // non-2xx HTTP responses are returned immediately without retrying.
+    const MAX_RETRIES: u32 = 3;
 
-    if status.is_success() {
-        Ok(format!("Trigger succeeded ({status}): {body}"))
-    } else {
-        Err(anyhow!("Trigger failed ({status}): {body}"))
+    for attempt in 0u32..=MAX_RETRIES {
+        // Build a fresh RequestBuilder every iteration (RequestBuilder is not Clone).
+        let request = match method_upper.as_str() {
+            "GET" => client.get(endpoint),
+            "POST" => client.post(endpoint).json(&payload),
+            "PUT" => client.put(endpoint).json(&payload),
+            // SAFETY: already validated above; this branch is unreachable.
+            _ => unreachable!("HTTP method was validated before the retry loop"),
+        };
+
+        // Send and interpret the response inside an async block so we get a
+        // single Result<String> to pattern-match against.
+        let outcome: Result<String> = async {
+            let response = request.send().await.map_err(|e| {
+                anyhow!(
+                    "Failed to reach '{}': {}\n\
+                     This may be a Starlink handover drop — retry in a few seconds.",
+                    endpoint,
+                    e
+                )
+            })?;
+
+            let status = response.status();
+            let body = response.text().await.unwrap_or_default();
+
+            if status.is_success() {
+                Ok(format!("Trigger succeeded ({status}): {body}"))
+            } else {
+                let e = anyhow!("Trigger failed ({status}): {body}");
+                tracing::warn!(
+                    endpoint = endpoint,
+                    status   = status.as_u16(),
+                    error    = %e,
+                    "discovery_tools: remote_trigger received non-2xx response"
+                );
+                Err(e)
+            }
+        }
+        .await;
+
+        match outcome {
+            Ok(response_text) => return Ok(response_text),
+
+            Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
+                let delay = crate::utils::network::calculate_retry_delay(attempt, false);
+                tracing::warn!(
+                    attempt  = attempt + 1,
+                    delay_ms = delay.as_millis() as u64,
+                    error    = %e,
+                    "discovery_tools: remote_trigger — network error, retrying"
+                );
+                tokio::time::sleep(delay).await;
+            }
+
+            Err(e) => {
+                tracing::warn!(
+                    endpoint = endpoint,
+                    attempt  = attempt + 1,
+                    error    = %e,
+                    "discovery_tools: remote_trigger — failed, no more retries"
+                );
+                return Err(e);
+            }
+        }
     }
+
+    // The loop runs for attempt in 0..=MAX_RETRIES.  Every iteration either
+    // returns Ok, sleeps and continues, or returns Err.  After MAX_RETRIES+1
+    // iterations we must have returned, so this point is unreachable.
+    unreachable!("retry loop exhausted without returning")
 }
 
 #[cfg(test)]
@@ -224,6 +365,23 @@ mod tests {
     #[tokio::test]
     async fn remote_trigger_invalid_url_returns_error() {
         let r = remote_trigger("not-a-url", json!({}), "POST").await;
+        assert!(r.is_err());
+    }
+
+    #[tokio::test]
+    async fn remote_trigger_unknown_method_returns_error() {
+        let r = remote_trigger("http://localhost", json!({}), "PATCH").await;
+        assert!(r.is_err());
+        let msg = r.unwrap_err().to_string();
+        assert!(
+            msg.contains("unsupported HTTP method"),
+            "unexpected error: {msg}"
+        );
+    }
+
+    #[tokio::test]
+    async fn remote_trigger_empty_endpoint_returns_error() {
+        let r = remote_trigger("", json!({}), "POST").await;
         assert!(r.is_err());
     }
 }

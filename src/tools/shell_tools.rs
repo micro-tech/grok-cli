@@ -71,7 +71,14 @@ pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Resu
     // Wrap execution in a hard timeout.
     let output = match timeout(timeout_duration, spawn_result).await {
         Ok(Ok(out)) => out,
-        Ok(Err(e)) => return Err(anyhow!("Failed to spawn command: {}", e)),
+        Ok(Err(e)) => {
+            tracing::warn!(
+                command = command,
+                error = %e,
+                "shell_tools: failed to spawn command"
+            );
+            return Err(anyhow!("Failed to spawn command: {}", e));
+        }
         Err(_) => {
             warn!(
                 command = %command,
@@ -88,6 +95,14 @@ pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Resu
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if !output.status.success() {
+        tracing::warn!(
+            exit_code = output.status.code().unwrap_or(-1),
+            command = command,
+            "shell_tools: command exited with non-zero status"
+        );
+    }
 
     if output.status.success() {
         Ok(format!("Stdout: {}\nStderr: {}", stdout, stderr))

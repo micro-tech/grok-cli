@@ -15,8 +15,14 @@ fn load_task_file(security: &SecurityPolicy) -> Result<(std::path::PathBuf, Valu
 
     let data: Value = if task_file.exists() {
         let content = fs::read_to_string(&task_file)
-            .map_err(|e| anyhow!("Failed to read task_list.json: {}", e))?;
-        serde_json::from_str(&content).map_err(|e| anyhow!("Invalid task_list.json: {}", e))?
+            .map_err(|e| {
+                tracing::warn!(error = %e, "task_tools::load_task_file: failed to read task_list.json");
+                anyhow!("Failed to read task_list.json: {}", e)
+            })?;
+        serde_json::from_str(&content).map_err(|e| {
+            tracing::warn!(error = %e, "task_tools::load_task_file: invalid JSON in task_list.json");
+            anyhow!("Invalid task_list.json: {}", e)
+        })?
     } else {
         json!({ "tasks": [] })
     };
@@ -24,14 +30,32 @@ fn load_task_file(security: &SecurityPolicy) -> Result<(std::path::PathBuf, Valu
     Ok((task_file, data))
 }
 
+/// Write `data` to `path` atomically: write to a `.json.tmp` sibling first,
+/// then rename over the real file so a mid-write crash never corrupts the store.
 fn save_task_file(path: &std::path::Path, data: &Value) -> Result<()> {
     if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| anyhow!("Failed to create .zed directory: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            tracing::warn!(error = %e, "task_tools::save_task_file: failed to create .zed directory");
+            anyhow!("Failed to create .zed directory: {}", e)
+        })?;
     }
-    let json_str = serde_json::to_string_pretty(data)
-        .map_err(|e| anyhow!("Failed to serialise tasks: {}", e))?;
-    fs::write(path, json_str).map_err(|e| anyhow!("Failed to write task_list.json: {}", e))?;
+
+    let json_str = serde_json::to_string_pretty(data).map_err(|e| {
+        tracing::warn!(error = %e, "task_tools::save_task_file: failed to serialise tasks");
+        anyhow!("Failed to serialise tasks: {}", e)
+    })?;
+
+    // Atomic write: write to a temp file then rename.
+    let tmp_path = path.with_extension("json.tmp");
+    fs::write(&tmp_path, &json_str).map_err(|e| {
+        tracing::warn!(error = %e, "task_tools::save_task_file: failed to write tmp file");
+        anyhow::anyhow!("task_tools: failed to write tmp file: {}", e)
+    })?;
+    fs::rename(&tmp_path, path).map_err(|e| {
+        tracing::warn!(error = %e, "task_tools::save_task_file: failed to rename tmp → task_list.json");
+        anyhow::anyhow!("task_tools: failed to rename tmp → task_list.json: {}", e)
+    })?;
+
     Ok(())
 }
 
@@ -48,11 +72,13 @@ pub fn task_create(
     security: &SecurityPolicy,
 ) -> Result<String> {
     if title.trim().is_empty() {
+        tracing::warn!("task_tools::task_create: rejected — title is empty");
         return Err(anyhow!("Task title cannot be empty"));
     }
 
     let valid_priorities = ["high", "medium", "low"];
     if !valid_priorities.contains(&priority) {
+        tracing::warn!(priority = %priority, "task_tools::task_create: invalid priority rejected");
         return Err(anyhow!(
             "Invalid priority '{}'. Use: high, medium, low",
             priority
@@ -61,9 +87,10 @@ pub fn task_create(
 
     let (task_file, mut data) = load_task_file(security)?;
 
-    let tasks = data["tasks"]
-        .as_array_mut()
-        .ok_or_else(|| anyhow!("task_list.json is missing the 'tasks' array"))?;
+    let tasks = data["tasks"].as_array_mut().ok_or_else(|| {
+        tracing::warn!("task_tools::task_create: task_list.json is missing the 'tasks' array");
+        anyhow!("task_list.json is missing the 'tasks' array")
+    })?;
 
     // Next ID = floor(max_id) + 1 (works for both integer and decimal subtask IDs)
     let max_id = tasks
@@ -104,9 +131,14 @@ pub fn task_update(
     details: Option<&str>,
     security: &SecurityPolicy,
 ) -> Result<String> {
+    // ── validate status ───────────────────────────────────────────────────────
     let valid_statuses = ["pending", "in_progress", "done", "deferred"];
     if let Some(s) = status {
         if !valid_statuses.contains(&s) {
+            tracing::warn!(
+                status = %s,
+                "task_tools::task_update: invalid status rejected"
+            );
             return Err(anyhow!(
                 "Invalid status '{}'. Use: pending, in_progress, done, deferred",
                 s
@@ -114,17 +146,36 @@ pub fn task_update(
         }
     }
 
+    // ── validate priority ─────────────────────────────────────────────────────
+    if let Some(p) = priority {
+        let valid = ["high", "medium", "low"];
+        if !valid.contains(&p) {
+            tracing::warn!(
+                priority = %p,
+                "task_tools::task_update: invalid priority rejected"
+            );
+            return Err(anyhow::anyhow!(
+                "task_update: invalid priority '{}'. Must be one of: high, medium, low.",
+                p
+            ));
+        }
+    }
+
     let (task_file, mut data) = load_task_file(security)?;
 
-    let tasks = data["tasks"]
-        .as_array_mut()
-        .ok_or_else(|| anyhow!("task_list.json is missing the 'tasks' array"))?;
+    let tasks = data["tasks"].as_array_mut().ok_or_else(|| {
+        tracing::warn!("task_tools::task_update: task_list.json is missing the 'tasks' array");
+        anyhow!("task_list.json is missing the 'tasks' array")
+    })?;
 
     // Find by ID (compare as f64 to support subtask IDs like 85.2)
     let task = tasks
         .iter_mut()
         .find(|t| t["id"].as_f64().map(|v| (v - id).abs() < f64::EPSILON) == Some(true))
-        .ok_or_else(|| anyhow!("Task {} not found in task_list.json", id))?;
+        .ok_or_else(|| {
+            tracing::warn!(id = %id, "task_tools::task_update: task not found");
+            anyhow!("Task {} not found in task_list.json", id)
+        })?;
 
     let mut changed = Vec::new();
     if let Some(s) = status {
@@ -211,6 +262,34 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let r = task_create("", "desc", "high", vec![], &security);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn update_rejects_invalid_priority() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        fs::create_dir_all(dir.path().join(".zed")).unwrap();
+
+        task_create("A task", "", "high", vec![], &security).unwrap();
+        let r = task_update(1.0, None, None, Some("critical"), None, &security);
+        assert!(r.is_err());
+        let msg = r.unwrap_err().to_string();
+        assert!(
+            msg.contains("high, medium, low"),
+            "error should mention valid options, got: {}",
+            msg
+        );
+    }
+
+    #[test]
+    fn update_rejects_invalid_status() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        fs::create_dir_all(dir.path().join(".zed")).unwrap();
+
+        task_create("A task", "", "high", vec![], &security).unwrap();
+        let r = task_update(1.0, Some("finished"), None, None, None, &security);
         assert!(r.is_err());
     }
 }

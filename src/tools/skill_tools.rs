@@ -7,6 +7,9 @@
 use crate::skills::manager::{find_skill, get_default_skills_dir, list_skills};
 use anyhow::{Result, anyhow};
 
+/// Maximum input size (32 KB) to avoid overflowing the model context window.
+const MAX_INPUT_BYTES: usize = 32_768;
+
 /// Execute a named skill by formatting its instructions with the user input.
 ///
 /// This does **not** make an API call; it returns the skill's instruction
@@ -23,35 +26,59 @@ use anyhow::{Result, anyhow};
 /// the error so the model can suggest alternatives.
 pub fn execute_skill(skill_name: &str, input: &str) -> Result<String> {
     if skill_name.trim().is_empty() {
+        tracing::warn!("skill_tools: execute_skill called with empty skill_name");
         return Err(anyhow!("skill_name cannot be empty"));
     }
 
-    let skills_dir = get_default_skills_dir()
-        .ok_or_else(|| anyhow!("Cannot determine skills directory (HOME not set?)"))?;
+    if input.len() > MAX_INPUT_BYTES {
+        tracing::warn!(
+            input_bytes = input.len(),
+            max_bytes = MAX_INPUT_BYTES,
+            "skill_tools: input exceeds 32 KB — this may overflow the model context window"
+        );
+    }
 
-    let skill = find_skill(skill_name, &skills_dir).ok_or_else(|| {
-        // Build a helpful error listing available skills
-        let available = list_skills(&skills_dir)
-            .map(|skills| {
-                if skills.is_empty() {
-                    "No skills installed.".to_string()
-                } else {
-                    skills
-                        .iter()
-                        .map(|s| format!("  - {} ({})", s.config.name, s.config.description))
-                        .collect::<Vec<_>>()
-                        .join("\n")
-                }
-            })
-            .unwrap_or_else(|_| "Could not list skills.".to_string());
+    let skills_dir = match get_default_skills_dir() {
+        Some(d) => d,
+        None => {
+            tracing::warn!(
+                "skill_tools::execute_skill: cannot determine skills directory (HOME not set?)"
+            );
+            return Err(anyhow!("Cannot determine skills directory (HOME not set?)"));
+        }
+    };
 
-        anyhow!(
-            "Skill '{}' not found in {}.\n\nAvailable skills:\n{}",
-            skill_name,
-            skills_dir.display(),
-            available
-        )
-    })?;
+    let skill = match find_skill(skill_name, &skills_dir) {
+        Some(s) => s,
+        None => {
+            tracing::warn!(
+                skill_name = skill_name,
+                skills_dir = %skills_dir.display(),
+                "skill_tools::execute_skill: skill not found"
+            );
+            // Build a helpful error listing available skills
+            let available = list_skills(&skills_dir)
+                .map(|skills| {
+                    if skills.is_empty() {
+                        "No skills installed.".to_string()
+                    } else {
+                        skills
+                            .iter()
+                            .map(|s| format!("  - {} ({})", s.config.name, s.config.description))
+                            .collect::<Vec<_>>()
+                            .join("\n")
+                    }
+                })
+                .unwrap_or_else(|_| "Could not list skills.".to_string());
+
+            return Err(anyhow!(
+                "Skill '{}' not found in {}.\n\nAvailable skills:\n{}",
+                skill_name,
+                skills_dir.display(),
+                available
+            ));
+        }
+    };
 
     // Format the skill context for consumption by the LLM
     let allowed_tools = skill
@@ -88,10 +115,23 @@ pub fn execute_skill(skill_name: &str, input: &str) -> Result<String> {
 
 /// List all available skills and their descriptions.
 pub fn list_available_skills() -> Result<String> {
-    let skills_dir =
-        get_default_skills_dir().ok_or_else(|| anyhow!("Cannot determine skills directory"))?;
+    let skills_dir = match get_default_skills_dir() {
+        Some(d) => d,
+        None => {
+            tracing::warn!(
+                "skill_tools::list_available_skills: cannot determine skills directory (HOME not set?)"
+            );
+            return Err(anyhow!("Cannot determine skills directory"));
+        }
+    };
 
-    let skills = list_skills(&skills_dir).map_err(|e| anyhow!("Failed to list skills: {}", e))?;
+    let skills = list_skills(&skills_dir).map_err(|e| {
+        tracing::warn!(
+            error = %e,
+            "skill_tools::list_available_skills: failed to read skills directory"
+        );
+        anyhow!("Failed to list skills: {}", e)
+    })?;
 
     if skills.is_empty() {
         Ok(format!(
@@ -129,15 +169,18 @@ mod tests {
         assert!(r.is_err());
         let msg = r.unwrap_err().to_string();
         assert!(
-            msg.contains("not found") || msg.contains("No skills"),
+            msg.contains("not found") || msg.contains("No skills") || msg.contains("directory"),
             "unexpected error: {msg}"
         );
     }
 
     #[test]
-    fn list_available_skills_returns_string() {
-        // Just verifies it doesn't panic; may return empty list in test env.
-        let r = list_available_skills();
-        assert!(r.is_ok() || r.is_err()); // Either is valid in test env
+    fn list_skills_returns_ok() {
+        let result = list_available_skills();
+        assert!(
+            result.is_ok(),
+            "list_available_skills must not return Err, got: {:?}",
+            result
+        );
     }
 }

@@ -5,8 +5,8 @@ use anyhow::{Result, anyhow};
 use chrono::Utc;
 use serde_json::{Value, json};
 use std::fs;
-use std::io::Write;
 use std::path::PathBuf;
+use tracing::warn;
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -27,9 +27,14 @@ fn grok_data_dir() -> Result<PathBuf> {
 /// with a tight system prompt that instructs the sub-agent to return a
 /// concise, direct result.
 ///
+/// Retries up to 3 times on transient network errors (satellite handover,
+/// timeout, connection reset) with exponential back-off before surfacing an
+/// error to the caller.
+///
 /// `max_tokens` is clamped to the range 256–4096.
 pub async fn spawn_agent(task: &str, context: &str, max_tokens: u32) -> Result<String> {
     if task.trim().is_empty() {
+        warn!("spawn_agent: task is empty");
         return Err(anyhow!("task cannot be empty"));
     }
 
@@ -48,21 +53,43 @@ pub async fn spawn_agent(task: &str, context: &str, max_tokens: u32) -> Result<S
         format!("{}\n\n## Context\n{}", task, context)
     };
 
-    let clamped_tokens = max_tokens.max(256).min(4096);
+    let clamped_tokens = max_tokens.clamp(256, 4096);
 
-    router
-        .chat_completion(
-            &prompt,
-            Some(
-                "You are a focused sub-agent. Complete the given task as concisely and \
-                 directly as possible. Return only the result — no preamble, no meta-commentary.",
-            ),
-            0.7,
-            clamped_tokens,
-            "grok-3-mini",
-        )
-        .await
-        .map_err(|e| anyhow!("Sub-agent call failed: {}", e))
+    const MAX_RETRIES: u32 = 3;
+    for attempt in 0..=MAX_RETRIES {
+        match router
+            .chat_completion(
+                &prompt,
+                Some(
+                    "You are a focused sub-agent. Complete the given task as concisely and \
+                     directly as possible. Return only the result — no preamble, no meta-commentary.",
+                ),
+                0.7,
+                clamped_tokens,
+                "grok-3-mini",
+            )
+            .await
+            .map_err(|e| anyhow!("Sub-agent call failed: {}", e))
+        {
+            Ok(result) => return Ok(result),
+            Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
+                let delay = crate::utils::network::calculate_retry_delay(attempt, false);
+                warn!(
+                    attempt = attempt + 1,
+                    max_attempts = MAX_RETRIES + 1,
+                    delay_ms = delay.as_millis(),
+                    error = %e,
+                    "spawn_agent: network error — retrying after delay"
+                );
+                tokio::time::sleep(delay).await;
+            }
+            Err(e) => {
+                warn!(error = %e, "spawn_agent: sub-agent call failed — no more retries");
+                return Err(e);
+            }
+        }
+    }
+    unreachable!()
 }
 
 // ── send_message ──────────────────────────────────────────────────────────────
@@ -70,12 +97,16 @@ pub async fn spawn_agent(task: &str, context: &str, max_tokens: u32) -> Result<S
 /// Send a message to a named target (agent ID or channel).
 ///
 /// Messages are appended to `{data_dir}/.grok/messages/{target}.jsonl` as
-/// JSON Lines.  The target name is sanitised so it is safe as a file name.
+/// JSON Lines using an atomic write (`.tmp` → rename) so a Starlink drop
+/// mid-write cannot corrupt the log file.  The target name is sanitised so
+/// it is safe as a file name.
 pub fn send_message(target: &str, message: &str) -> Result<String> {
     if target.trim().is_empty() {
+        warn!("send_message: target is empty");
         return Err(anyhow!("target cannot be empty"));
     }
     if message.trim().is_empty() {
+        warn!("send_message: message is empty");
         return Err(anyhow!("message cannot be empty"));
     }
 
@@ -83,7 +114,7 @@ pub fn send_message(target: &str, message: &str) -> Result<String> {
     fs::create_dir_all(&msg_dir)
         .map_err(|e| anyhow!("Failed to create messages directory: {}", e))?;
 
-    // Sanitise target name for safe use as a filename
+    // Sanitise target name for safe use as a filename.
     let safe_target: String = target
         .chars()
         .map(|c| {
@@ -95,7 +126,7 @@ pub fn send_message(target: &str, message: &str) -> Result<String> {
         })
         .collect();
 
-    let msg_file = msg_dir.join(format!("{}.jsonl", safe_target));
+    let path = msg_dir.join(format!("{}.jsonl", safe_target));
 
     let entry = json!({
         "timestamp": Utc::now().to_rfc3339(),
@@ -104,13 +135,20 @@ pub fn send_message(target: &str, message: &str) -> Result<String> {
         "message":   message,
     });
 
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&msg_file)
-        .map_err(|e| anyhow!("Failed to open message file: {}", e))?;
+    // Read existing content so we can append and then write atomically.
+    let existing = if path.exists() {
+        fs::read_to_string(&path)
+            .map_err(|e| anyhow!("send_message: failed to read existing messages: {}", e))?
+    } else {
+        String::new()
+    };
+    let content = format!("{}{}\n", existing, entry);
 
-    writeln!(file, "{}", entry).map_err(|e| anyhow!("Failed to write message: {}", e))?;
+    // Atomic write: write to .tmp then rename so a mid-write Starlink drop
+    // cannot leave a partial / corrupt JSONL file.
+    let tmp_path = path.with_extension("tmp");
+    fs::write(&tmp_path, &content).map_err(|e| anyhow!("send_message: write tmp failed: {}", e))?;
+    fs::rename(&tmp_path, &path).map_err(|e| anyhow!("send_message: rename failed: {}", e))?;
 
     Ok(format!(
         "Message delivered to '{}' ({} chars).",
@@ -127,6 +165,7 @@ pub fn send_message(target: &str, message: &str) -> Result<String> {
 /// [`team_delete`] first if you need to recreate it.
 pub fn team_create(name: &str, members: Vec<String>, description: &str) -> Result<String> {
     if name.trim().is_empty() {
+        warn!("team_create: team name is empty");
         return Err(anyhow!("team name cannot be empty"));
     }
 
@@ -145,6 +184,7 @@ pub fn team_create(name: &str, members: Vec<String>, description: &str) -> Resul
         .ok_or_else(|| anyhow!("Invalid teams.json: missing 'teams' array"))?;
 
     if teams.iter().any(|t| t["name"].as_str() == Some(name)) {
+        warn!(team = %name, "team_create: team already exists");
         return Err(anyhow!(
             "Team '{}' already exists. Call team_delete first to recreate it.",
             name
@@ -180,12 +220,14 @@ pub fn team_create(name: &str, members: Vec<String>, description: &str) -> Resul
 /// Delete a named team from `{data_dir}/.grok/teams.json`.
 pub fn team_delete(name: &str) -> Result<String> {
     if name.trim().is_empty() {
+        warn!("team_delete: team name is empty");
         return Err(anyhow!("team name cannot be empty"));
     }
 
     let teams_file = grok_data_dir()?.join("teams.json");
 
     if !teams_file.exists() {
+        warn!("team_delete: teams file does not exist — no teams have been created");
         return Err(anyhow!("No teams file found — no teams have been created."));
     }
 
@@ -202,6 +244,7 @@ pub fn team_delete(name: &str) -> Result<String> {
     teams.retain(|t| t["name"].as_str() != Some(name));
 
     if teams.len() == before {
+        warn!(team = %name, "team_delete: team not found");
         return Err(anyhow!("Team '{}' not found.", name));
     }
 
@@ -215,34 +258,38 @@ pub fn team_delete(name: &str) -> Result<String> {
 
 /// Merge results from multiple sub-agents using simple arbitration.
 ///
-/// Takes a list of results and returns a merged summary.
-/// Uses basic heuristics: prefer longer, more detailed responses.
-pub fn merge_agent_results(results: Vec<String>) -> String {
+/// Returns `Ok("No agent results to merge.")` immediately when `results` is
+/// empty.  Otherwise prefers longer, more detailed responses and returns a
+/// formatted summary of the top three candidates.
+pub fn merge_agent_results(results: Vec<String>) -> Result<String> {
     if results.is_empty() {
-        return "No results to merge.".to_string();
+        return Ok("No agent results to merge.".to_string());
     }
     if results.len() == 1 {
-        return results[0].clone();
+        return Ok(results[0].clone());
     }
 
-    // Simple scoring: prefer longer responses as more detailed
-    let mut scored: Vec<(String, usize)> = results.into_iter()
+    // Simple scoring: prefer longer responses as more detailed.
+    let mut scored: Vec<(String, usize)> = results
+        .into_iter()
         .map(|r| {
             let len = r.len();
             (r, len)
         })
         .collect();
-    scored.sort_by(|a, b| b.1.cmp(&a.1));
+    scored.sort_by_key(|item| std::cmp::Reverse(item.1));
 
-    // Take top 3 and summarize
-    let top = scored.into_iter().take(3).map(|(r, _)| r).collect::<Vec<_>>();
-    
-    format!(
+    // Take top 3 and format a merged summary.
+    let top: Vec<String> = scored.into_iter().take(3).map(|(r, _)| r).collect();
+
+    Ok(format!(
         "Merged results from {} agents:\n\n{}",
         top.len(),
         top.join("\n\n---\n\n")
-    )
+    ))
 }
+
+// ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
@@ -276,6 +323,27 @@ mod tests {
     }
 
     #[test]
+    fn merge_agent_results_empty_returns_ok() {
+        let r = merge_agent_results(vec![]);
+        assert!(r.is_ok());
+        assert_eq!(r.unwrap(), "No agent results to merge.");
+    }
+
+    #[test]
+    fn merge_agent_results_single_passthrough() {
+        let r = merge_agent_results(vec!["only one".to_string()]);
+        assert_eq!(r.unwrap(), "only one");
+    }
+
+    #[test]
+    fn merge_agent_results_prefers_longer() {
+        let short = "hi".to_string();
+        let long = "a".repeat(500);
+        let r = merge_agent_results(vec![short, long.clone()]);
+        assert!(r.unwrap().contains(&long));
+    }
+
+    #[test]
     #[serial]
     fn team_create_and_delete_roundtrip() {
         let name = format!("test_team_{}", Utc::now().timestamp_millis());
@@ -295,7 +363,7 @@ mod tests {
         let name = format!("dup_team_{}", Utc::now().timestamp_millis());
         team_create(&name, vec![], "first").unwrap();
         let r = team_create(&name, vec![], "second");
-        // Clean up
+        // Clean up regardless of assertion outcome.
         let _ = team_delete(&name);
         assert!(r.is_err());
     }
