@@ -472,8 +472,24 @@ impl ChatLogger {
 /// Global chat logger instance
 static GLOBAL_LOGGER: Mutex<Option<ChatLogger>> = Mutex::new(None);
 
-/// Initialize the global chat logger
+/// Initialize the global chat logger.
+///
+/// Idempotent: if a logger is already initialised (e.g. from a previous call
+/// or a reconnect), this is a no-op so that any in-progress session is not
+/// wiped out.  Call `reinit` if you genuinely need to replace the logger.
 pub fn init(config: ChatLoggerConfig) -> Result<()> {
+    let mut global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
+    if global.is_none() {
+        let logger = ChatLogger::new(config)?;
+        *global = Some(logger);
+    }
+    Ok(())
+}
+
+/// Force-replace the global chat logger regardless of whether one already
+/// exists.  Only call this when you intentionally want to reset all state
+/// (e.g. in tests).
+pub fn reinit(config: ChatLoggerConfig) -> Result<()> {
     let logger = ChatLogger::new(config)?;
     let mut global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
     *global = Some(logger);

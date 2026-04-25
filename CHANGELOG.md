@@ -13,6 +13,88 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+### Fixed — Task Tool Data-Flow, Format Detection, Anti-Hallucination & Session Hardening
+
+**Root cause chain that caused Grok to fabricate task information:**
+
+1. `task_get` only handled two task-file layouts; the bot project's plain JSON array
+   format was silently parsed as "0 entries" → TOOL ERROR → LLM hallucinated.
+2. Even when a TOOL ERROR was returned, the LLM ignored it and invented task data.
+3. The system prompt's wording ("return fields verbatim") was misread by the model
+   as permission to return JSON even on failure.
+4. `chat_logger::init` replaced the global logger unconditionally on every call, so
+   a reconnect wiped any active session → "no active session" warning on every turn.
+5. `SecurityPolicy::add_trusted_directory` had no dedup check, so the same path was
+   pushed 3–4 times per session, polluting every TOOL-ERROR log entry.
+
+#### `src/tools/task_tools.rs`
+
+- **Format C** (`[{…}, {…}, …]`) added to `task_get` — plain top-level JSON array,
+  the layout used by the bot project.  Format detection order is now:
+  - A: `{"tasks":[…]}` (grok-cli standard)
+  - C: `[{…},…]` (plain array — checked before B so arrays are not misidentified)
+  - B: `{"0":{…},"1":{…},…}` (numeric-indexed object)
+- `total` count in the not-found error now covers all three formats.
+
+#### `src/acp/mod.rs`
+
+- **Anti-hallucination guard**: after every `TOOL ERROR` response is pushed to
+  `session.messages`, an immediate `role:"system"` message is injected:
+  > ⚠️ STOP — the tool call above returned an error. You MUST NOT fabricate…
+  This fires right before the LLM generates its reply and overrides the tendency
+  to invent task information.
+- **System prompt rewritten** (guidelines 7–9): separated success path ("reply in
+  plain English using title, status, priority, description from the tool result")
+  from failure path ("reply ONLY with 'I could not retrieve task N. Error: …'
+  — Do NOT return any JSON, do NOT guess the task title").
+- **History trimmer** now protects the `role:"system"` message at index 0 from
+  eviction.  Previously `drain(0..trim_count)` could delete the system prompt
+  after a long conversation, causing the LLM to lose all task-management
+  instructions and revert to hallucinating.
+- **DATA-TRACE logging** added at three points in `handle_chat_completion`:
+  1. Before each API call: message-history layout (`[i]role:NB`) written to both
+     `tracing::info!` and the persistent tool log.
+  2. After the LLM responds: finish reason, tool-call count, text preview.
+  3. After each tool result is pushed: tool name, call ID, byte count, preview.
+  Enable full per-message body previews with `RUST_LOG=grok_cli::acp=debug`.
+
+#### `src/utils/chat_logger.rs`
+
+- **`init` is now idempotent** — if a `ChatLogger` already exists in `GLOBAL_LOGGER`
+  the call is a no-op, so a Zed reconnect no longer wipes an active session and
+  causes subsequent `log_user` calls to warn "no active session".
+- **`reinit`** added for callers that intentionally want to replace the logger
+  (tests, explicit reset scenarios).
+
+#### `src/acp/security.rs`
+
+- **`add_trusted_directory` deduplicates**: checks `!self.trusted_directories.contains`
+  before pushing, eliminating the 4× duplicate entries seen in TOOL-ERROR logs.
+
+#### `tests/tool_data_flow.rs` — new integration test file (20 tests)
+
+Pins down every handoff point in the data pipeline:
+
+| Test | What it asserts |
+|---|---|
+| `task_get_format_a/b/c_finds_task_by_id` | all three layouts return correct JSON |
+| `task_get_format_b_key_does_not_equal_id` | inner `id` field used, not outer key |
+| `task_get_format_c_finds_string_subtask_id` | `"60.1"` string IDs resolved |
+| `tool_result_message_has_correct_role_and_content` | `role:"tool"` + `tool_call_id` set |
+| `tool_error_message_contains_actionable_guidance` | TOOL ERROR has "Do NOT repeat" guard |
+| `trimmer_never_removes_system_prompt` | system message pinned at index 0 |
+| `trimmer_preserves_tool_result_after_evicting_user_turn` | tool result survives trim |
+| `full_pipeline_format_a/b/c_task60_survives_to_llm_context` | end-to-end pipeline intact |
+| `task_create_then_task_get_round_trip` | write + read consistency |
+| `task_get_missing_file_returns_descriptive_error` | no panic on missing file |
+
+**Build result**: `cargo build` clean, **672/672 tests pass**, zero Clippy errors.
+
+*Source: AI (Claude Sonnet 4.6) — 2025-07-16*
+
+---
+
+
 ### Fixed & Hardened — All Tool Implementations + `task_list.json` Rebuild
 
 **Scope**: Every tool module (`agent_tools`, `discovery_tools`, `file_tools`,

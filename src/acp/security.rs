@@ -62,7 +62,13 @@ impl SecurityPolicy {
         let path = path.as_ref();
         // Canonicalize the path to resolve symlinks and make it absolute
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        self.trusted_directories.push(canonical);
+        // Deduplicate — the same directory can be registered many times
+        // (once in SecurityPolicy::new, once explicitly in GrokAcpAgent::new,
+        // and once per session in initialize_session). Pushing duplicates just
+        // pollutes the trusted-directory list shown in TOOL-ERROR log entries.
+        if !self.trusted_directories.contains(&canonical) {
+            self.trusted_directories.push(canonical);
+        }
     }
 
     /// Get the working directory
