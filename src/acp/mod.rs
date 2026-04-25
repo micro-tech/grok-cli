@@ -846,6 +846,7 @@ impl GrokAcpAgent {
             };
             info!("🛠️  Processing {} tool calls", tool_calls.len());
 
+            // ── BEGIN TOOL LOOP ──────────────────────────────────────────────
             for (tool_idx, tool_call) in tool_calls.iter().enumerate() {
                 let tool_start = std::time::Instant::now();
                 info!(
@@ -1181,6 +1182,7 @@ impl GrokAcpAgent {
                 }
                 // ────────────────────────────────────────────────────────────
             }
+            // ── END TOOL LOOP ────────────────────────────────────────────────
 
             // ── Post-tool-loop finish_reason check ───────────────────────────
             // If the model signalled stop alongside its tool calls (common with
