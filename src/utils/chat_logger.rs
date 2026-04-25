@@ -164,11 +164,20 @@ impl ChatLogger {
         // End previous session if exists
         if let Some(prev_session) = current.take() {
             warn!(
-                "Starting new session {} while session {} was active. Ending previous session.",
+                "chat_logger: starting new session '{}' while '{}' was still active — \
+                 ending previous session",
                 session_id, prev_session.session_id
             );
-            drop(current); // Release lock before saving
-            self.save_session(&prev_session)?;
+            drop(current); // Release lock before I/O
+            if let Err(e) = self.save_session(&prev_session) {
+                // Best-effort: a save failure must not prevent the new session
+                // from starting.  Log the error and continue.
+                warn!(
+                    "chat_logger: failed to save previous session '{}': {} — \
+                     starting new session anyway",
+                    prev_session.session_id, e
+                );
+            }
             current = self
                 .current_session
                 .lock()

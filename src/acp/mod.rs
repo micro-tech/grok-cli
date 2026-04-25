@@ -225,7 +225,19 @@ impl Default for SessionConfig {
                 3. Provide clear explanations for your design choices.\n\
                 4. When modifying existing code, respect the existing style and structure.\n\
                 5. Always consider edge cases and error handling.\n\
-                6. Suggest tests to verify your code when appropriate."
+                6. Suggest tests to verify your code when appropriate.\n\
+                \n\
+                Project task management:\n\
+                7. Tasks for this project are tracked in '.zed/task_list.json'. \
+                ALWAYS use the read_file tool with path '.zed/task_list.json' to look up \
+                task information — NEVER answer from memory or guess task titles, statuses, \
+                or details. The file contains a JSON object with a 'tasks' array; each task \
+                has 'id', 'title', 'status', 'priority', 'description', 'details', and \
+                'subtasks' fields.\n\
+                8. When the user asks about a specific task ID, call read_file first, then \
+                find the matching object in the 'tasks' array, and return its fields verbatim.\n\
+                9. If read_file returns a TOOL ERROR, report the exact error to the user — \
+                do NOT fabricate task information."
                     .to_string(),
             ),
         }
@@ -372,9 +384,20 @@ impl GrokAcpAgent {
         let log_model = session_config.model.clone();
         let log_session_id = session_id.0.clone();
 
+        // Seed the message history with the system prompt so the LLM has
+        // context from the very first API call.  Without this the system
+        // prompt field in SessionConfig is stored but never forwarded to the
+        // model — leaving it with no instructions and causing hallucination.
+        let initial_messages: Vec<serde_json::Value> =
+            if let Some(ref sys) = session_config.system_prompt {
+                vec![serde_json::json!({ "role": "system", "content": sys })]
+            } else {
+                Vec::new()
+            };
+
         let session_data = SessionData {
             cwd,
-            messages: Vec::new(),
+            messages: initial_messages,
             config: session_config,
             created_at: std::time::Instant::now(),
             last_activity: std::time::Instant::now(),
