@@ -96,6 +96,23 @@ impl SecurityPolicy {
         }
     }
 
+    /// Update the working directory and ensure it is in the trusted list.
+    ///
+    /// Call this when the Zed session workspace root is received via `session/new`
+    /// so that relative paths like `.zed/task_list.json` resolve correctly.
+    pub fn set_working_directory(&mut self, cwd: PathBuf) {
+        let canonical = cwd.canonicalize().unwrap_or_else(|_| cwd.clone());
+        tracing::debug!(
+            old_cwd = %self.working_directory.display(),
+            new_cwd = %canonical.display(),
+            "SecurityPolicy: updating working directory"
+        );
+        self.working_directory = canonical.clone();
+        if !self.trusted_directories.contains(&canonical) {
+            self.trusted_directories.push(canonical);
+        }
+    }
+
     /// Check if external access logging is enabled
     pub fn is_external_access_logging_enabled(&self) -> bool {
         self.external_access_config.logging
@@ -478,6 +495,17 @@ impl SecurityManager {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .set_shell_timeout_secs(secs);
+    }
+
+    /// Update the policy's working directory to the Zed session workspace root.
+    ///
+    /// Without this call, relative paths like `.zed/task_list.json` resolve
+    /// against the process launch directory instead of the actual project root.
+    pub fn set_working_directory(&self, cwd: &Path) {
+        self.policy
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_working_directory(cwd.to_path_buf());
     }
 
     pub fn check_path_access<P: AsRef<Path>>(&self, path: P) -> Result<()> {

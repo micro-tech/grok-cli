@@ -346,6 +346,20 @@ impl GrokAcpAgent {
         cwd: String,
         config: Option<SessionConfig>,
     ) -> Result<()> {
+        // ── Update security policy working directory ─────────────────────────────
+        // Zed passes the actual workspace root as `cwd` in `session/new`.  Without
+        // updating the security policy here, relative paths like
+        // `.zed/task_list.json` would resolve against the process launch directory
+        // rather than the workspace root, causing silent file-not-found errors that
+        // make the LLM hallucinate the file contents.
+        let cwd_path = std::path::PathBuf::from(&cwd);
+        self.security.set_working_directory(&cwd_path);
+        tracing::info!(
+            session = %session_id.0,
+            workspace = %cwd_path.display(),
+            "initialize_session: security policy workspace root updated"
+        );
+
         let mut session_config = config.unwrap_or_default();
 
         // Apply default model override if present and config matches default

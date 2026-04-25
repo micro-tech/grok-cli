@@ -134,8 +134,12 @@ async fn start_acp_stdio(
     // persisted to ~/.grok/logs/chat_sessions/.  Without this call every
     // chat_logger::log_user / log_assistant call silently does nothing because
     // the global GLOBAL_LOGGER mutex is never populated.
-    let chat_log_dir = std::env::current_dir()
-        .unwrap_or_else(|_| std::path::PathBuf::from("."))
+    // Use the home directory for chat logs — more reliable than CWD which may
+    // point to the Grok binary directory rather than the user's workspace.
+    let chat_log_dir = dirs::home_dir()
+        .unwrap_or_else(|| {
+            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
+        })
         .join(".grok")
         .join("logs")
         .join("chat_sessions");

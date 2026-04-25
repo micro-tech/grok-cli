@@ -13,12 +13,23 @@ fn load_task_file(security: &SecurityPolicy) -> Result<(std::path::PathBuf, Valu
         .join(".zed")
         .join("task_list.json");
 
+    // Verify the file exists and give a clear diagnostic if not.
+    // An empty/missing task file is a CWD mismatch (Grok launched from the
+    // wrong directory), not a valid "no tasks yet" state when updating.
+    if !task_file.exists() {
+        tracing::warn!(
+            path = %task_file.display(),
+            cwd  = %security.working_directory().display(),
+            "task_tools::load_task_file: task_list.json not found — \
+             the working directory may not be the project root"
+        );
+    }
+
     let data: Value = if task_file.exists() {
-        let content = fs::read_to_string(&task_file)
-            .map_err(|e| {
-                tracing::warn!(error = %e, "task_tools::load_task_file: failed to read task_list.json");
-                anyhow!("Failed to read task_list.json: {}", e)
-            })?;
+        let content = fs::read_to_string(&task_file).map_err(|e| {
+            tracing::warn!(error = %e, "task_tools::load_task_file: failed to read task_list.json");
+            anyhow!("Failed to read task_list.json: {}", e)
+        })?;
         serde_json::from_str(&content).map_err(|e| {
             tracing::warn!(error = %e, "task_tools::load_task_file: invalid JSON in task_list.json");
             anyhow!("Invalid task_list.json: {}", e)
@@ -173,8 +184,15 @@ pub fn task_update(
         .iter_mut()
         .find(|t| t["id"].as_f64().map(|v| (v - id).abs() < f64::EPSILON) == Some(true))
         .ok_or_else(|| {
-            tracing::warn!(id = %id, "task_tools::task_update: task not found");
-            anyhow!("Task {} not found in task_list.json", id)
+            tracing::warn!(id = %id, path = %task_file.display(), "task_tools::task_update: task not found");
+            anyhow!(
+                "Task {} not found in task_list.json at '{}'.\n\
+                 If Grok is not running from the project root, the task file may be \
+                 resolved to the wrong location. Current working directory: {}",
+                id,
+                task_file.display(),
+                security.working_directory().display()
+            )
         })?;
 
     let mut changed = Vec::new();
