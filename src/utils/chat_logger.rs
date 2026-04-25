@@ -225,6 +225,16 @@ impl ChatLogger {
                 session.session_id, message.role
             );
             session.add_message(message);
+
+            // Flush to disk immediately after every message so the log file is
+            // visible even if the process is killed (e.g. Zed closes the ACP
+            // connection without sending a clean shutdown, or a Starlink drop
+            // interrupts the session).  save_session rewrites the whole file,
+            // which is fine for typical chat sizes.  Errors are best-effort —
+            // a failed flush does not fail the message log call.
+            if let Err(e) = self.save_session(session) {
+                warn!("chat_logger: failed to flush session to disk: {}", e);
+            }
         } else {
             warn!("Attempted to log message without an active session");
         }

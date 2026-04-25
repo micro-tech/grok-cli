@@ -1357,24 +1357,6 @@ impl Config {
             debug!("No system config.toml found at: {:?}", system_config_path);
         }
 
-        // Try loading system-level config.toml first
-        let system_config_path = Self::default_config_path()?;
-        if system_config_path.exists() {
-            debug!("Loading system config.toml from: {:?}", system_config_path);
-            match Self::load_config_from_path(&system_config_path).await {
-                Ok(system_config) => {
-                    config = Self::merge_configs(config, system_config);
-                    loaded_system_config = Some(system_config_path.clone());
-                    debug!("✓ Loaded system config.toml from: {:?}", system_config_path);
-                }
-                Err(e) => {
-                    warn!("Failed to load system config.toml: {}", e);
-                }
-            }
-        } else {
-            debug!("No system config.toml found at: {:?}", system_config_path);
-        }
-
         // Try system-level .env
         let system_env_path = Self::get_system_env_path()?;
         if system_env_path.exists() {

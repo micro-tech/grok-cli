@@ -176,16 +176,42 @@ impl CpuRouter {
                 // format_tool_error_for_llm() categorises the failure and adds
                 // actionable recovery suggestions so the model does not blindly
                 // retry the exact same failing call.
-                let result =
+                // ── Execute tool, log result, forward structured error to LLM ────────────
+                let t0 = std::time::Instant::now();
+                let outcome =
                     crate::tools::registry::execute_tool(&tool_call.function.name, &args, context)
-                        .await
-                        .unwrap_or_else(|e| {
-                            crate::tools::tool_error::format_tool_error_for_llm(
-                                &tool_call.function.name,
-                                &args,
-                                &e.to_string(),
-                            )
-                        });
+                        .await;
+                let elapsed_us = t0.elapsed().as_micros();
+
+                let result = match outcome {
+                    Ok(r) => {
+                        crate::utils::tool_logger::log_tool_success(
+                            &tool_call.function.name,
+                            &args,
+                            r.len(),
+                            elapsed_us,
+                        );
+                        r
+                    }
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        let cwd = std::env::current_dir()
+                            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+                        crate::utils::tool_logger::log_tool_error(
+                            &tool_call.function.name,
+                            &args,
+                            &err_str,
+                            elapsed_us,
+                            &cwd,
+                            context.policy.trusted_directories(),
+                        );
+                        crate::tools::tool_error::format_tool_error_for_llm(
+                            &tool_call.function.name,
+                            &args,
+                            &err_str,
+                        )
+                    }
+                };
 
                 messages_json.push(serde_json::json!({
                     "role": "tool",
@@ -356,12 +382,42 @@ impl CpuRouter {
 
                 // Soft errors become tool result text; the model can then
                 // decide how to react (e.g. retry with a different path).
-                let result =
+                // ── Execute tool, log result, forward structured error to LLM ────────────
+                let t0 = std::time::Instant::now();
+                let outcome =
                     crate::tools::registry::execute_tool(&tool_call.function.name, &args, context)
-                        .await
-                        .unwrap_or_else(|e| {
-                            format!("Tool '{}' failed: {}", tool_call.function.name, e)
-                        });
+                        .await;
+                let elapsed_us = t0.elapsed().as_micros();
+
+                let result = match outcome {
+                    Ok(r) => {
+                        crate::utils::tool_logger::log_tool_success(
+                            &tool_call.function.name,
+                            &args,
+                            r.len(),
+                            elapsed_us,
+                        );
+                        r
+                    }
+                    Err(e) => {
+                        let err_str = e.to_string();
+                        let cwd = std::env::current_dir()
+                            .unwrap_or_else(|_| std::path::PathBuf::from("."));
+                        crate::utils::tool_logger::log_tool_error(
+                            &tool_call.function.name,
+                            &args,
+                            &err_str,
+                            elapsed_us,
+                            &cwd,
+                            context.policy.trusted_directories(),
+                        );
+                        crate::tools::tool_error::format_tool_error_for_llm(
+                            &tool_call.function.name,
+                            &args,
+                            &err_str,
+                        )
+                    }
+                };
 
                 messages_json.push(serde_json::json!({
                     "role":        "tool",

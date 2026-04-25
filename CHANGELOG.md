@@ -13,6 +13,67 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased]
 
+### Fixed — `read_file` Diagnostics, JSONC Validation & Tool-Loop Error Reporting
+
+**Root cause of hallucinations when reading `.zed/task_list.json`**
+
+Three separate issues combined to cause Grok to "make stuff up" instead of
+reporting a real error when asked to read a JSON task file:
+
+1. `route_with_tools_traced` used a bare `format!("Tool '{}' failed: {}", …)`
+   string on tool failure — the LLM received no recovery suggestions and no
+   structured guidance, so it fell back to fabricating an answer.
+2. Neither tool-execution loop (`route_with_tools` or `route_with_tools_traced`)
+   called `log_tool_error` / `log_tool_success`, so failures left no audit trail
+   in `.grok/logs/grok-tool-error-log.log`.
+3. `.zed/task_list.json` (and similar editor config files) uses **JSONC** format
+   — trailing commas after the last property — which `serde_json` (a strict
+   parser) rejects.  Previously there was no validation at all, so the LLM
+   silently received potentially malformed bytes.
+
+#### Changes — `src/router/cpu_router.rs`
+
+- **`route_with_tools`**: replaced the bare `unwrap_or_else` error string with
+  the full `format_tool_error_for_llm(…)` call **and** added timing +
+  `log_tool_success` / `log_tool_error` calls around every tool dispatch.
+- **`route_with_tools_traced`**: same fix — replaced `format!("Tool '{}' failed:
+  …")` with `format_tool_error_for_llm(…)` and added success/error logging.
+  This was the primary source of the hallucination bug.
+
+Both loops now write a structured entry to
+`.grok/logs/grok-tool-error-log.log` on every tool call (success or failure),
+force-flushed on errors so Starlink drops never lose a record.
+
+#### Changes — `src/tools/file_tools.rs`
+
+- **Two-stage JSON integrity check** added to `read_file`:
+  - *Stage 1*: strict `serde_json` parse — valid JSON files pass through
+    unchanged.
+  - *Stage 2*: JSONC cleanup — trailing commas are stripped with a regex and
+    the file is re-parsed.  Files that are valid JSONC (Zed / VS Code config
+    style) are returned **verbatim** with no warning, preserving the original
+    content for the LLM.
+  - *Stage 3*: genuinely malformed content — a `READ_FILE_WARNING:` banner is
+    prepended so the LLM knows the file *was* read but the data is corrupt,
+    preventing fabrication.
+- **`strip_jsonc_trailing_commas()`** helper added (uses the already-imported
+  `Regex` crate; no new dependencies).
+- **Four new `#[test]` functions** added to `mod tests`:
+
+  | Test | What it verifies |
+  |---|---|
+  | `read_json_file_valid_json_returns_content` | valid JSON returned verbatim and re-parseable |
+  | `read_json_file_malformed_json_returns_warning` | truly broken JSON yields `READ_FILE_WARNING` |
+  | `read_json_file_jsonc_trailing_commas_no_warning` | JSONC files pass through cleanly |
+  | `read_file_empty_file_returns_empty_string` | empty file → `Ok("")`, never an error |
+  | `read_file_denied_for_untrusted_path` | untrusted path → `Err` mentioning access denial |
+
+All 14 `file_tools` tests and 40 router/tool-error tests pass; Clippy reports
+zero new errors (pre-existing warnings only).
+
+*Source: AI (Claude Sonnet 4.6) — 2025-07-16*
+
+
 ### Added — Dedicated Tool-Execution Diagnostic Logger
 
 - **`src/utils/tool_logger.rs`** — New module providing a persistent, per-project

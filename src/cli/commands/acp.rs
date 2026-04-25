@@ -574,6 +574,23 @@ fn resolve_workspace_path(raw: &str) -> PathBuf {
         raw.to_string()
     };
 
+    // Strip any URI fragment (e.g. "#L864:865" appended by Zed when the user
+    // ctrl-clicks a file reference).  The fragment is never part of the file
+    // system path and causes canonicalize() to fail with os error 2/3, which
+    // in turn registers a garbage string as the trusted workspace root and
+    // silently blocks all file-tool access for that session.
+    let stripped = match stripped.find('#') {
+        Some(idx) => {
+            let without_fragment = stripped[..idx].to_string();
+            debug!(
+                "Stripped URI fragment '{}' from workspace path",
+                &stripped[idx..]
+            );
+            without_fragment
+        }
+        None => stripped,
+    };
+
     // On Windows, normalise forward slashes to backslashes.
     // Also handle the Git-bash / WSL path style "/h/foo" → "H:\foo".
     #[cfg(target_os = "windows")]

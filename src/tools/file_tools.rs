@@ -9,6 +9,7 @@ use crate::security::audit::{AuditLogger, create_access_log};
 use anyhow::{Result, anyhow};
 use glob::glob;
 use regex::Regex;
+use serde_json;
 use std::fs::{self, File};
 use std::io::{BufRead, BufReader};
 use std::path::Path;
@@ -145,7 +146,90 @@ pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
         return Err(anyhow!("File not found: {}", resolved_path.display()));
     }
 
-    fs::read_to_string(&resolved_path).map_err(|e| anyhow!("Failed to read file: {}", e))
+    let content =
+        fs::read_to_string(&resolved_path).map_err(|e| anyhow!("Failed to read file: {}", e))?;
+
+    // ── JSON integrity check (two-stage: strict JSON → JSONC → error) ────────
+    //
+    // Stage 1 — strict parse: valid JSON files are returned immediately.
+    // Stage 2 — JSONC cleanup: Zed, VS Code, and many editor config files use
+    //           JSONC (trailing commas after the last element).  Strip those
+    //           commas and retry before declaring the file broken.
+    // Stage 3 — truly malformed: prepend READ_FILE_WARNING so the LLM knows
+    //           the file *was* read but the data cannot be trusted, preventing
+    //           it from fabricating a plausible-looking answer.
+    let ext = resolved_path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    if ext == "json" && !content.trim().is_empty() {
+        if let Err(strict_err) = serde_json::from_str::<serde_json::Value>(&content) {
+            // Stage 2: try JSONC (trailing-comma cleanup).
+            let stripped = strip_jsonc_trailing_commas(&content);
+            if serde_json::from_str::<serde_json::Value>(&stripped).is_ok() {
+                // JSONC file — return the original, unmodified content so the
+                // LLM sees the real source.  Log at DEBUG so there is a record
+                // without spamming the user.
+                tracing::debug!(
+                    path = %resolved_path.display(),
+                    "read_file: JSONC detected (trailing commas) — returning raw content"
+                );
+                return Ok(content);
+            }
+
+            // Stage 3: genuinely malformed — warn and forward with a banner.
+            tracing::warn!(
+                path = %resolved_path.display(),
+                bytes = content.len(),
+                error = %strict_err,
+                "read_file: JSON validation failed — file was read but content is malformed"
+            );
+            let preview_len = content.len().min(300);
+            let truncation_note = if content.len() > 300 {
+                "…[truncated]"
+            } else {
+                ""
+            };
+            return Ok(format!(
+                "READ_FILE_WARNING: '{}' was read ({} bytes) but failed JSON \
+                 validation.\nJSON error: {}\nContent preview ({} bytes):\n{}{}\n\
+                 ---\nFull raw content:\n{}",
+                resolved_path.display(),
+                content.len(),
+                strict_err,
+                preview_len,
+                &content[..preview_len],
+                truncation_note,
+                content,
+            ));
+        }
+    }
+
+    Ok(content)
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// JSON / JSONC helpers
+// ─────────────────────────────────────────────────────────────────────────────
+
+/// Strip trailing commas from JSON-like text to produce standard JSON.
+///
+/// Zed, VS Code, and many editor configuration files use JSONC — JSON with
+/// trailing commas after the last element of an object or array.
+/// `serde_json` is a strict parser and rejects these files.  This function
+/// performs a best-effort cleanup so that JSONC files pass the Stage 2
+/// validation check in [`read_file`] without a false-positive warning.
+///
+/// **Limitations**: does not handle `//` or `/* */` comments, and does not
+/// correctly handle a comma that appears *inside* a string value.  For
+/// typical task-list and editor config files this is sufficient.
+fn strip_jsonc_trailing_commas(s: &str) -> String {
+    // Remove a comma that is immediately followed (possibly with whitespace /
+    // newlines) by a closing `}` or `]`.
+    let re = Regex::new(r",(\s*[}\]])").expect("static regex is valid");
+    re.replace_all(s, "$1").into_owned()
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -577,4 +661,107 @@ mod tests {
     // that write to byte buffers directly.
     #[allow(dead_code)]
     fn _assert_write_imported(_: &dyn Write) {}
+
+    // ── Additional diagnostic tests ───────────────────────────────────────────
+
+    /// Reading a valid JSON file must return the raw content unchanged.
+    #[test]
+    fn read_json_file_valid_json_returns_content() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        let path = dir.path().join("data.json");
+        let json_str = r#"{"tasks":[{"id":1,"title":"Test task","status":"pending"}]}"#;
+        std::fs::write(&path, json_str).unwrap();
+
+        let result = read_file(path.to_str().unwrap(), &security).unwrap();
+        assert_eq!(result, json_str, "valid JSON must be returned verbatim");
+
+        // Double-check it really is parseable.
+        let parsed: serde_json::Value =
+            serde_json::from_str(&result).expect("result must parse as JSON");
+        assert_eq!(parsed["tasks"][0]["status"], "pending");
+    }
+
+    /// Reading a malformed JSON file must return Ok with a READ_FILE_WARNING
+    /// prefix — NOT an Err — so the LLM can see the raw content and the
+    /// parse error rather than fabricating an answer.
+    #[test]
+    fn read_json_file_malformed_json_returns_warning() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        let path = dir.path().join("broken.json");
+        // Truly broken — not just trailing commas — so JSONC fallback won't save it.
+        std::fs::write(&path, r#"{"key": "value", BROKEN"#).unwrap();
+
+        let result = read_file(path.to_str().unwrap(), &security).unwrap();
+        assert!(
+            result.starts_with("READ_FILE_WARNING:"),
+            "malformed JSON must produce a READ_FILE_WARNING prefix, got: {result}"
+        );
+        assert!(
+            result.contains("JSON error:"),
+            "warning must include the parse error"
+        );
+        assert!(
+            result.contains(r#"{"key""#),
+            "warning must include the raw content"
+        );
+    }
+
+    /// A JSONC file (trailing commas only — common in Zed / VS Code configs)
+    /// must be returned verbatim WITHOUT a READ_FILE_WARNING.  The two-stage
+    /// validator should detect the JSONC pattern and pass through cleanly.
+    #[test]
+    fn read_json_file_jsonc_trailing_commas_no_warning() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        let path = dir.path().join("config.json");
+        // JSONC: trailing comma after last array element AND last object key.
+        let jsonc = "{\"tasks\": [{\"id\": 1, \"status\": \"pending\",}],}";
+        std::fs::write(&path, jsonc).unwrap();
+
+        let result = read_file(path.to_str().unwrap(), &security).unwrap();
+        assert!(
+            !result.starts_with("READ_FILE_WARNING:"),
+            "JSONC with trailing commas must NOT trigger a warning, got: {result}"
+        );
+        assert_eq!(result, jsonc, "JSONC content must be returned verbatim");
+    }
+
+    /// An empty file must be returned as an empty string — never an error.
+    #[test]
+    fn read_file_empty_file_returns_empty_string() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        let path = dir.path().join("empty.txt");
+        std::fs::write(&path, "").unwrap();
+
+        let result = read_file(path.to_str().unwrap(), &security).unwrap();
+        assert_eq!(result, "", "empty file must return empty string");
+    }
+
+    /// Attempting to read a file outside the trusted directory must return
+    /// an Err whose message mentions access denial — never silently succeed.
+    #[test]
+    fn read_file_denied_for_untrusted_path() {
+        let trusted_dir = TempDir::new().unwrap();
+        let other_dir = TempDir::new().unwrap();
+
+        // Security only trusts `trusted_dir`, NOT `other_dir`.
+        let security = make_security(&trusted_dir);
+
+        let secret = other_dir.path().join("secret.txt");
+        std::fs::write(&secret, "top secret").unwrap();
+
+        let result = read_file(secret.to_str().unwrap(), &security);
+        assert!(result.is_err(), "untrusted path must return Err");
+
+        let msg = result.unwrap_err().to_string().to_lowercase();
+        assert!(
+            msg.contains("access denied")
+                || msg.contains("external access")
+                || msg.contains("denied"),
+            "error must mention access denial, got: {msg}"
+        );
+    }
 }
