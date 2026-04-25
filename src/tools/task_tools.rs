@@ -223,9 +223,14 @@ pub fn task_update(
 
 /// Return a single task (or subtask) by numeric ID as pretty-printed JSON.
 ///
-/// Use this instead of read_file when the user asks about a specific task —
-/// it returns only the relevant object instead of the full 60–100 KB file,
-/// making the LLM response far more reliable.
+/// Handles two common `task_list.json` layouts automatically:
+///
+/// * **Format A** — `{"tasks": [{…}, …]}` (grok-cli standard)
+/// * **Format B** — `{"0": {…}, "1": {…}, …}` (numeric-indexed object where
+///   the actual task `id` lives *inside* each value, not in the key)
+///
+/// In Format B the subtask `id` fields may be strings (`"60.1"`) rather than
+/// numbers, so both representations are compared.
 pub fn task_get(id: f64, security: &SecurityPolicy) -> Result<String> {
     let (task_file, data) = load_task_file(security)?;
 
@@ -243,39 +248,75 @@ pub fn task_get(id: f64, security: &SecurityPolicy) -> Result<String> {
         ));
     }
 
-    let tasks = data["tasks"].as_array().ok_or_else(|| {
-        tracing::warn!("task_tools::task_get: 'tasks' array missing");
-        anyhow!("task_list.json is missing the 'tasks' array")
-    })?;
+    // ── helpers ───────────────────────────────────────────────────────────────
 
-    // Search top-level tasks and their subtasks.
-    let found = tasks.iter().find_map(|t| {
-        if t["id"].as_f64().map(|v| (v - id).abs() < 0.001) == Some(true) {
-            return Some(t.clone());
+    /// Return true when a JSON value's "id" field (number *or* string) matches
+    /// the requested float id within a small epsilon.
+    fn id_matches(val: &serde_json::Value, target: f64) -> bool {
+        if let Some(n) = val["id"].as_f64() {
+            return (n - target).abs() < 0.001;
         }
-        t["subtasks"]
-            .as_array()?
-            .iter()
-            .find(|st| st["id"].as_f64().map(|v| (v - id).abs() < 0.001) == Some(true))
-            .cloned()
-    });
+        if let Some(s) = val["id"].as_str() {
+            if let Ok(n) = s.parse::<f64>() {
+                return (n - target).abs() < 0.001;
+            }
+        }
+        false
+    }
 
+    /// Search `tasks` slice (top-level + subtasks) for id `target`.
+    fn search_slice(tasks: &[serde_json::Value], target: f64) -> Option<serde_json::Value> {
+        for t in tasks {
+            if id_matches(t, target) {
+                return Some(t.clone());
+            }
+            if let Some(subs) = t["subtasks"].as_array() {
+                for st in subs {
+                    if id_matches(st, target) {
+                        return Some(st.clone());
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    // ── Format A: {"tasks": [...]} ────────────────────────────────────────────
+    let found = if let Some(tasks) = data["tasks"].as_array() {
+        search_slice(tasks, id)
+
+    // ── Format B: {"0": {...}, "1": {...}, ...} ───────────────────────────────
+    // The key is a 0-based index; the real task id lives inside the object.
+    } else if let Some(obj) = data.as_object() {
+        let values: Vec<serde_json::Value> =
+            obj.values().filter(|v| v.is_object()).cloned().collect();
+        search_slice(&values, id)
+    } else {
+        None
+    };
+
+    // ── result ────────────────────────────────────────────────────────────────
     match found {
         Some(task) => serde_json::to_string_pretty(&task).map_err(|e| {
             tracing::warn!(error = %e, "task_tools::task_get: serialisation failed");
             anyhow!("Failed to serialise task {}: {}", id, e)
         }),
         None => {
+            let total = data["tasks"]
+                .as_array()
+                .map(|a| a.len())
+                .or_else(|| data.as_object().map(|o| o.len()))
+                .unwrap_or(0);
             tracing::warn!(
-                id = %id, total = tasks.len(), path = %task_file.display(),
+                id = %id, total, path = %task_file.display(),
                 "task_tools::task_get: task not found"
             );
             Err(anyhow!(
                 "Task {} not found in task_list.json \
-                 ({} top-level tasks in '{}').\n\
+                 ({} entries in '{}').\n\
                  Tip: call read_file with '.zed/task_list.json' to list all IDs.",
                 id,
-                tasks.len(),
+                total,
                 task_file.display()
             ))
         }
