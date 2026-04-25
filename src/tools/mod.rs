@@ -83,7 +83,7 @@ pub use memory_tools::save_memory;
 
 // ── Task management ───────────────────────────────────────────────────────────
 
-pub use task_tools::{task_create, task_update};
+pub use task_tools::{task_create, task_get, task_update};
 
 // ── Plan mode + worktrees ─────────────────────────────────────────────────────
 

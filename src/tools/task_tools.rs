@@ -221,6 +221,67 @@ pub fn task_update(
     Ok(format!("Task {} updated: {}", id, changed.join(", ")))
 }
 
+/// Return a single task (or subtask) by numeric ID as pretty-printed JSON.
+///
+/// Use this instead of read_file when the user asks about a specific task —
+/// it returns only the relevant object instead of the full 60–100 KB file,
+/// making the LLM response far more reliable.
+pub fn task_get(id: f64, security: &SecurityPolicy) -> Result<String> {
+    let (task_file, data) = load_task_file(security)?;
+
+    if !task_file.exists() {
+        tracing::warn!(
+            path = %task_file.display(),
+            cwd  = %security.working_directory().display(),
+            "task_tools::task_get: task_list.json not found"
+        );
+        return Err(anyhow!(
+            "task_list.json not found at '{}' (working dir: '{}'). \
+             Launch Grok from the project root that contains the '.zed' folder.",
+            task_file.display(),
+            security.working_directory().display()
+        ));
+    }
+
+    let tasks = data["tasks"].as_array().ok_or_else(|| {
+        tracing::warn!("task_tools::task_get: 'tasks' array missing");
+        anyhow!("task_list.json is missing the 'tasks' array")
+    })?;
+
+    // Search top-level tasks and their subtasks.
+    let found = tasks.iter().find_map(|t| {
+        if t["id"].as_f64().map(|v| (v - id).abs() < 0.001) == Some(true) {
+            return Some(t.clone());
+        }
+        t["subtasks"]
+            .as_array()?
+            .iter()
+            .find(|st| st["id"].as_f64().map(|v| (v - id).abs() < 0.001) == Some(true))
+            .cloned()
+    });
+
+    match found {
+        Some(task) => serde_json::to_string_pretty(&task).map_err(|e| {
+            tracing::warn!(error = %e, "task_tools::task_get: serialisation failed");
+            anyhow!("Failed to serialise task {}: {}", id, e)
+        }),
+        None => {
+            tracing::warn!(
+                id = %id, total = tasks.len(), path = %task_file.display(),
+                "task_tools::task_get: task not found"
+            );
+            Err(anyhow!(
+                "Task {} not found in task_list.json \
+                 ({} top-level tasks in '{}').\n\
+                 Tip: call read_file with '.zed/task_list.json' to list all IDs.",
+                id,
+                tasks.len(),
+                task_file.display()
+            ))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -298,6 +359,29 @@ mod tests {
             "error should mention valid options, got: {}",
             msg
         );
+    }
+
+    #[test]
+    fn task_get_returns_correct_task() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        fs::create_dir_all(dir.path().join(".zed")).unwrap();
+        task_create("Alpha", "first", "high", vec![], &security).unwrap();
+        task_create("Beta", "second", "low", vec![], &security).unwrap();
+        let json = task_get(1.0, &security).unwrap();
+        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(v["title"], "Alpha");
+        assert_eq!(v["id"], 1);
+    }
+
+    #[test]
+    fn task_get_missing_returns_err() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        fs::create_dir_all(dir.path().join(".zed")).unwrap();
+        let r = task_get(999.0, &security);
+        assert!(r.is_err());
+        assert!(r.unwrap_err().to_string().contains("not found"));
     }
 
     #[test]

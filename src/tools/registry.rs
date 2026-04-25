@@ -160,6 +160,10 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
             let details = args["details"].as_str();
             task_tools::task_update(id, status, title, priority, details, policy)
         }
+        "task_get" => {
+            let id = args["id"].as_f64().ok_or_else(|| anyhow!("Missing: id"))?;
+            task_tools::task_get(id, policy)
+        }
 
         // ── Plan mode + worktrees ────────────────────────────────────────────
         "enter_plan_mode" => plan_tools::enter_plan_mode(),
@@ -325,6 +329,7 @@ pub fn get_tool_definitions() -> Vec<Value> {
         // ── Task management ──────────────────────────────────────────────────
         json!({"type":"function","function":{"name":"task_create","description":"Create a new task in .zed/task_list.json","parameters":{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string"},"priority":{"type":"string","enum":["high","medium","low"]},"dependencies":{"type":"array","items":{"type":"number"}}},"required":["title"]}}}),
         json!({"type":"function","function":{"name":"task_update","description":"Update a task's status, title, priority, or details in .zed/task_list.json","parameters":{"type":"object","properties":{"id":{"type":"number","description":"Task ID (supports decimals for subtasks, e.g. 85.2)"},"status":{"type":"string","enum":["pending","in_progress","done","deferred"]},"title":{"type":"string"},"priority":{"type":"string","enum":["high","medium","low"]},"details":{"type":"string"}},"required":["id"]}}}),
+        json!({"type":"function","function":{"name":"task_get","description":"Return a single task or subtask by its numeric ID from .zed/task_list.json. ALWAYS use this (not read_file) when the user asks about a specific task ID. Returns the full task object: id, title, status, priority, description, details, subtasks.","parameters":{"type":"object","properties":{"id":{"type":"number","description":"Task ID (e.g. 60) or subtask ID (e.g. 60.1)"}},"required":["id"]}}}),
         // ── Plan mode ────────────────────────────────────────────────────────
         json!({"type":"function","function":{"name":"enter_plan_mode","description":"Activate plan mode — the agent outlines a full plan before making any changes","parameters":{"type":"object","properties":{}}}}),
         json!({"type":"function","function":{"name":"exit_plan_mode","description":"Deactivate plan mode and begin executing the current plan","parameters":{"type":"object","properties":{}}}}),
@@ -387,7 +392,7 @@ mod tests {
 
     #[test]
     fn get_tool_definitions_has_31_tools() {
-        assert_eq!(get_tool_definitions().len(), 32);
+        assert_eq!(get_tool_definitions().len(), 33);
     }
 
     #[test]

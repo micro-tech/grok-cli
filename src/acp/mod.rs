@@ -228,16 +228,15 @@ impl Default for SessionConfig {
                 6. Suggest tests to verify your code when appropriate.\n\
                 \n\
                 Project task management:\n\
-                7. Tasks for this project are tracked in '.zed/task_list.json'. \
-                ALWAYS use the read_file tool with path '.zed/task_list.json' to look up \
-                task information — NEVER answer from memory or guess task titles, statuses, \
-                or details. The file contains a JSON object with a 'tasks' array; each task \
-                has 'id', 'title', 'status', 'priority', 'description', 'details', and \
-                'subtasks' fields.\n\
-                8. When the user asks about a specific task ID, call read_file first, then \
-                find the matching object in the 'tasks' array, and return its fields verbatim.\n\
-                9. If read_file returns a TOOL ERROR, report the exact error to the user — \
-                do NOT fabricate task information."
+                7. A dedicated tool called 'task_get' retrieves a single task by its \
+                numeric ID from .zed/task_list.json. ALWAYS call task_get(id=N) when the \
+                user asks about task N — NEVER answer from memory, context, or prior \
+                responses. Example: 'what is task 60' → call task_get with id=60.\n\
+                8. Return the task fields verbatim: title, status, priority, description, \
+                details, subtasks. Do not paraphrase or invent values.\n\
+                9. If task_get returns a TOOL ERROR, report the exact error — do NOT \
+                guess or fabricate task information.\n\
+                10. To list ALL tasks use read_file with path '.zed/task_list.json'."
                     .to_string(),
             ),
         }
@@ -533,11 +532,26 @@ impl GrokAcpAgent {
         // tool-call sequence that was already committed to history.
         let max_history = self.config.acp.max_history_messages;
         if session.messages.len() > max_history {
-            let trim_count = session.messages.len() - max_history;
-            session.messages.drain(0..trim_count);
+            // Never evict the system-prompt message (role="system" at index 0).
+            // Losing it removes all task-management instructions and causes
+            // the LLM to ignore tools and hallucinate answers.
+            let has_system = session
+                .messages
+                .first()
+                .and_then(|m| m.get("role"))
+                .and_then(|r| r.as_str())
+                == Some("system");
+            let trim_from = usize::from(has_system); // 1 if system present, else 0
+
+            let available = session.messages.len().saturating_sub(trim_from);
+            let need = session.messages.len() - max_history;
+            let actual = need.min(available.saturating_sub(1));
+            if actual > 0 {
+                session.messages.drain(trim_from..trim_from + actual);
+            }
             debug!(
-                "Trimmed {} old messages from session history (keeping last {})",
-                trim_count, max_history
+                "Trimmed {} messages (system prompt preserved: {}; keeping ≤{})",
+                actual, has_system, max_history
             );
         }
 
