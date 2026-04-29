@@ -1,4 +1,11 @@
 //! Task management tools — create and update tasks in `.zed/task_list.json`.
+//!
+//! Follows the **Task Builder** and **Task Runner** project rules:
+//! - Every task has: id, title, description, status, dependencies, priority,
+//!   details, testStrategy, subtasks.
+//! - Status lifecycle: pending → in_progress → done | deferred.
+//! - Subtask IDs are decimal: `{parent_id}.1`, `{parent_id}.2`, …
+//! - Dependencies support both integer task IDs and decimal subtask IDs.
 
 use crate::acp::security::SecurityPolicy;
 use anyhow::{Result, anyhow};
@@ -37,14 +44,30 @@ fn save_task_file(path: &std::path::Path, data: &Value) -> Result<()> {
 
 // ── public API ────────────────────────────────────────────────────────────────
 
-/// Create a new task in `.zed/task_list.json`.
+/// Create a new task in `.zed/task_list.json` following Task Builder rules.
 ///
-/// The new task is assigned an ID of `max_existing_id + 1`.
+/// # Fields
+/// - `title`         — required; brief descriptive name.
+/// - `description`   — concise overview of what the task involves.
+/// - `priority`      — `"high"` | `"medium"` | `"low"`.
+/// - `dependencies`  — IDs of tasks that must be `done` first (supports
+///                     decimal subtask IDs such as `5.2`).
+/// - `details`       — in-depth implementation instructions.
+/// - `test_strategy` — verification approach (maps to `testStrategy` in JSON).
+/// - `subtasks`      — optional initial subtasks; each must have at least
+///                     a `"title"` key. IDs are auto-assigned as
+///                     `{parent_id}.1`, `{parent_id}.2`, …
+///
+/// The new task is assigned `ID = floor(max_existing_id) + 1` and its
+/// `status` is always initialised to `"pending"`.
 pub fn task_create(
     title: &str,
     description: &str,
     priority: &str,
-    dependencies: Vec<u64>,
+    dependencies: Vec<f64>,
+    details: &str,
+    test_strategy: &str,
+    subtasks: Vec<Value>,
     security: &SecurityPolicy,
 ) -> Result<String> {
     if title.trim().is_empty() {
@@ -59,18 +82,52 @@ pub fn task_create(
         ));
     }
 
+    // Validate every subtask has a title.
+    for (i, st) in subtasks.iter().enumerate() {
+        if st["title"].as_str().map(str::trim).unwrap_or("").is_empty() {
+            return Err(anyhow!("Subtask {} is missing a 'title' field", i + 1));
+        }
+    }
+
     let (task_file, mut data) = load_task_file(security)?;
 
     let tasks = data["tasks"]
         .as_array_mut()
         .ok_or_else(|| anyhow!("task_list.json is missing the 'tasks' array"))?;
 
-    // Next ID = floor(max_id) + 1 (works for both integer and decimal subtask IDs)
+    // Next ID = floor(max_id) + 1 (handles decimal subtask IDs safely)
     let max_id = tasks
         .iter()
         .filter_map(|t| t["id"].as_f64())
         .fold(0.0_f64, f64::max) as u64;
     let new_id = max_id + 1;
+
+    // Build subtask list with auto-assigned decimal IDs: {parent}.1, {parent}.2, …
+    let processed_subtasks: Vec<Value> = subtasks
+        .into_iter()
+        .enumerate()
+        .map(|(i, subtask)| {
+            // e.g. parent=85, i=0  =>  id=85.1
+            let subtask_id: f64 = format!("{}.{}", new_id, i + 1).parse().unwrap_or(0.0);
+            let subtask_title = subtask["title"]
+                .as_str()
+                .unwrap_or("Untitled subtask")
+                .to_string();
+            let subtask_deps = if subtask["dependencies"].is_array() {
+                subtask["dependencies"].clone()
+            } else {
+                json!([])
+            };
+            json!({
+                "id":           subtask_id,
+                "title":        subtask_title,
+                "status":       "pending",
+                "dependencies": subtask_deps
+            })
+        })
+        .collect();
+
+    let subtask_count = processed_subtasks.len();
 
     let new_task = json!({
         "id":           new_id,
@@ -79,18 +136,25 @@ pub fn task_create(
         "status":       "pending",
         "dependencies": dependencies,
         "priority":     priority,
-        "details":      "",
-        "testStrategy": "",
-        "subtasks":     []
+        "details":      details,
+        "testStrategy": test_strategy,
+        "subtasks":     processed_subtasks
     });
 
     tasks.push(new_task);
     save_task_file(&task_file, &data)?;
 
-    Ok(format!(
-        "Task {} created: \"{}\" [{}]",
-        new_id, title, priority
-    ))
+    if subtask_count > 0 {
+        Ok(format!(
+            "Task {} created: \"{}\" [{}] with {} subtask(s) ({}.1 … {}.{})",
+            new_id, title, priority, subtask_count, new_id, new_id, subtask_count
+        ))
+    } else {
+        Ok(format!(
+            "Task {} created: \"{}\" [{}]",
+            new_id, title, priority
+        ))
+    }
 }
 
 /// Update one or more fields of an existing task.
@@ -163,13 +227,18 @@ mod tests {
         SecurityPolicy::with_working_directory(dir.path().to_path_buf())
     }
 
+    // ── helper to call task_create with all arguments ────────────────────
+    fn create(dir: &TempDir, title: &str, desc: &str, priority: &str) -> Result<String> {
+        let security = make_security(dir);
+        task_create(title, desc, priority, vec![], "", "", vec![], &security)
+    }
+
     #[test]
     fn create_task_in_empty_list() {
         let dir = TempDir::new().unwrap();
-        let security = make_security(&dir);
         fs::create_dir_all(dir.path().join(".zed")).unwrap();
 
-        let result = task_create("Test task", "A test", "high", vec![], &security);
+        let result = create(&dir, "Test task", "A test", "high");
         assert!(result.is_ok(), "{:?}", result);
         assert!(result.unwrap().contains("Task 1"));
     }
@@ -177,21 +246,110 @@ mod tests {
     #[test]
     fn create_increments_id() {
         let dir = TempDir::new().unwrap();
-        let security = make_security(&dir);
         fs::create_dir_all(dir.path().join(".zed")).unwrap();
 
-        task_create("First", "", "medium", vec![], &security).unwrap();
-        let r = task_create("Second", "", "low", vec![], &security).unwrap();
+        create(&dir, "First", "", "medium").unwrap();
+        let r = create(&dir, "Second", "", "low").unwrap();
         assert!(r.contains("Task 2"), "expected Task 2 in: {}", r);
+    }
+
+    #[test]
+    fn create_stores_details_and_test_strategy() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join(".zed")).unwrap();
+        let security = make_security(&dir);
+
+        task_create(
+            "Task with details",
+            "desc",
+            "medium",
+            vec![],
+            "Do X then Y",
+            "Run cargo test",
+            vec![],
+            &security,
+        )
+        .unwrap();
+
+        let (_, data) = load_task_file(&security).unwrap();
+        let task = &data["tasks"][0];
+        assert_eq!(task["details"].as_str(), Some("Do X then Y"));
+        assert_eq!(task["testStrategy"].as_str(), Some("Run cargo test"));
+    }
+
+    #[test]
+    fn create_assigns_subtask_decimal_ids() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join(".zed")).unwrap();
+        let security = make_security(&dir);
+
+        let subtasks = vec![
+            json!({"title": "Design", "dependencies": []}),
+            json!({"title": "Implement", "dependencies": [1.1]}),
+        ];
+        let r = task_create(
+            "Feature",
+            "desc",
+            "high",
+            vec![],
+            "",
+            "",
+            subtasks,
+            &security,
+        )
+        .unwrap();
+        assert!(r.contains("2 subtask"), "expected subtask count in: {}", r);
+
+        let (_, data) = load_task_file(&security).unwrap();
+        let st = &data["tasks"][0]["subtasks"];
+        assert_eq!(st[0]["id"].as_f64(), Some(1.1));
+        assert_eq!(st[1]["id"].as_f64(), Some(1.2));
+        assert_eq!(st[0]["status"].as_str(), Some("pending"));
+    }
+
+    #[test]
+    fn create_rejects_subtask_missing_title() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        let bad_subtasks = vec![json!({"dependencies": []})];
+        let r = task_create("T", "", "low", vec![], "", "", bad_subtasks, &security);
+        assert!(r.is_err());
+    }
+
+    #[test]
+    fn create_supports_float_dependencies() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join(".zed")).unwrap();
+        let security = make_security(&dir);
+
+        // Create parent first so the file exists
+        task_create("Parent", "", "high", vec![], "", "", vec![], &security).unwrap();
+        let r = task_create(
+            "Child",
+            "",
+            "medium",
+            vec![1.0, 1.1],
+            "",
+            "",
+            vec![],
+            &security,
+        )
+        .unwrap();
+        assert!(r.contains("Task 2"), "expected Task 2 in: {}", r);
+
+        let (_, data) = load_task_file(&security).unwrap();
+        let deps = &data["tasks"][1]["dependencies"];
+        assert_eq!(deps[0].as_f64(), Some(1.0));
+        assert_eq!(deps[1].as_f64(), Some(1.1));
     }
 
     #[test]
     fn update_task_status() {
         let dir = TempDir::new().unwrap();
-        let security = make_security(&dir);
         fs::create_dir_all(dir.path().join(".zed")).unwrap();
 
-        task_create("My task", "", "high", vec![], &security).unwrap();
+        create(&dir, "My task", "", "high").unwrap();
+        let security = make_security(&dir);
         let r = task_update(1.0, Some("done"), None, None, None, &security).unwrap();
         assert!(r.contains("status=done"), "expected status=done in: {}", r);
     }
@@ -199,8 +357,8 @@ mod tests {
     #[test]
     fn update_nonexistent_task_returns_error() {
         let dir = TempDir::new().unwrap();
-        let security = make_security(&dir);
         fs::create_dir_all(dir.path().join(".zed")).unwrap();
+        let security = make_security(&dir);
 
         let r = task_update(999.0, Some("done"), None, None, None, &security);
         assert!(r.is_err());
@@ -210,7 +368,7 @@ mod tests {
     fn create_rejects_empty_title() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
-        let r = task_create("", "desc", "high", vec![], &security);
+        let r = task_create("", "desc", "high", vec![], "", "", vec![], &security);
         assert!(r.is_err());
     }
 }

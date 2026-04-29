@@ -139,18 +139,32 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
             system_tools::synthetic_output(schema_name, data)
         }
 
-        // ── Task management ──────────────────────────────────────────────────
+        // ── Task management ──────────────────────────────────────────────
         "task_create" => {
             let title = args["title"]
                 .as_str()
                 .ok_or_else(|| anyhow!("Missing: title"))?;
             let description = args["description"].as_str().unwrap_or("");
             let priority = args["priority"].as_str().unwrap_or("medium");
-            let deps: Vec<u64> = args["dependencies"]
+            // Dependencies support integer task IDs and decimal subtask IDs (e.g. 5.2)
+            let deps: Vec<f64> = args["dependencies"]
                 .as_array()
-                .map(|a| a.iter().filter_map(|v| v.as_u64()).collect())
+                .map(|a| a.iter().filter_map(|v| v.as_f64()).collect())
                 .unwrap_or_default();
-            task_tools::task_create(title, description, priority, deps, policy)
+            let details = args["details"].as_str().unwrap_or("");
+            let test_strategy = args["testStrategy"].as_str().unwrap_or("");
+            // Each subtask element must have at least {"title": "..."}
+            let subtasks: Vec<Value> = args["subtasks"].as_array().cloned().unwrap_or_default();
+            task_tools::task_create(
+                title,
+                description,
+                priority,
+                deps,
+                details,
+                test_strategy,
+                subtasks,
+                policy,
+            )
         }
         "task_update" => {
             let id = args["id"].as_f64().ok_or_else(|| anyhow!("Missing: id"))?;
@@ -322,8 +336,8 @@ pub fn get_tool_definitions() -> Vec<Value> {
         // ── System ───────────────────────────────────────────────────────────
         json!({"type":"function","function":{"name":"sleep","description":"Wait for a specified number of seconds (max 300). Use in proactive or scheduled tasks.","parameters":{"type":"object","properties":{"seconds":{"type":"number","description":"Duration in seconds (capped at 300)"}},"required":["seconds"]}}}),
         json!({"type":"function","function":{"name":"synthetic_output","description":"Emit a structured JSON output object with a schema label","parameters":{"type":"object","properties":{"schema_name":{"type":"string","description":"Label identifying the output schema"},"data":{"type":"object","description":"The structured data to emit"}},"required":["schema_name","data"]}}}),
-        // ── Task management ──────────────────────────────────────────────────
-        json!({"type":"function","function":{"name":"task_create","description":"Create a new task in .zed/task_list.json","parameters":{"type":"object","properties":{"title":{"type":"string"},"description":{"type":"string"},"priority":{"type":"string","enum":["high","medium","low"]},"dependencies":{"type":"array","items":{"type":"number"}}},"required":["title"]}}}),
+        // ── Task management ────────────────────────────────────────────
+        json!({"type":"function","function":{"name":"task_create","description":"Create a new task in .zed/task_list.json following Task Builder rules. Auto-assigns the next available integer ID and sets status to 'pending'. All Task Builder fields are supported: title, description, priority, dependencies (integer or decimal subtask IDs like 5.2), details (implementation instructions), testStrategy (verification approach), and subtasks (auto-assigned decimal IDs {parent}.1, {parent}.2, …).","parameters":{"type":"object","properties":{"title":{"type":"string","description":"Brief, descriptive task title (required)"},"description":{"type":"string","description":"Concise description of what the task involves"},"priority":{"type":"string","enum":["high","medium","low"],"description":"Importance level — high: blocks progress; medium: important; low: deferrable. Default: medium"},"dependencies":{"type":"array","items":{"type":"number"},"description":"IDs of tasks (or subtasks, e.g. 5.2) that must be done before this one"},"details":{"type":"string","description":"In-depth implementation instructions for the task"},"testStrategy":{"type":"string","description":"Verification approach to confirm the task is complete"},"subtasks":{"type":"array","description":"Optional initial subtasks; IDs are auto-assigned as {parent_id}.1, {parent_id}.2, etc. Each subtask starts as 'pending'.","items":{"type":"object","properties":{"title":{"type":"string","description":"Subtask title (required)"},"dependencies":{"type":"array","items":{"type":"number"},"description":"Subtask-level dependency IDs"}},"required":["title"]}}},"required":["title"]}}}),
         json!({"type":"function","function":{"name":"task_update","description":"Update a task's status, title, priority, or details in .zed/task_list.json","parameters":{"type":"object","properties":{"id":{"type":"number","description":"Task ID (supports decimals for subtasks, e.g. 85.2)"},"status":{"type":"string","enum":["pending","in_progress","done","deferred"]},"title":{"type":"string"},"priority":{"type":"string","enum":["high","medium","low"]},"details":{"type":"string"}},"required":["id"]}}}),
         // ── Plan mode ────────────────────────────────────────────────────────
         json!({"type":"function","function":{"name":"enter_plan_mode","description":"Activate plan mode — the agent outlines a full plan before making any changes","parameters":{"type":"object","properties":{}}}}),
