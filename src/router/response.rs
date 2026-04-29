@@ -55,18 +55,26 @@ impl RouterResponse {
     /// This lets call sites that previously consumed a `GrokClient` response
     /// consume an `AppRouter` response without any further changes.
     pub fn into_message_with_finish_reason(self) -> MessageWithFinishReason {
+        let has_tool_calls = !self.tool_calls.is_empty();
         let content = self.text.map(MessageContent::Text);
         MessageWithFinishReason {
             message: Message {
                 role: "assistant".to_string(),
                 content,
-                tool_calls: if self.tool_calls.is_empty() {
-                    None
-                } else {
+                tool_calls: if has_tool_calls {
                     Some(self.tool_calls)
+                } else {
+                    None
                 },
             },
-            finish_reason: Some("stop".to_string()),
+            // When the model wants to call tools the API returns finish_reason
+            // "tool_calls".  Hardcoding "stop" here caused handle_chat_completion
+            // to exit the tool loop immediately with empty content.
+            finish_reason: if has_tool_calls {
+                Some("tool_calls".to_string())
+            } else {
+                Some("stop".to_string())
+            },
         }
     }
 }

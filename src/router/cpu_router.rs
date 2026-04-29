@@ -78,28 +78,14 @@ impl CpuRouter {
         context: &crate::tools::ToolContext,
         max_iterations: u32,
     ) -> Result<RouterResponse, RouterError> {
-        // We work with raw JSON internally so tool-result messages can carry
-        // the `tool_call_id` field that the Grok API requires for function
-        // calling.  The typed `grok_api::Message` struct does not have this
-        // field, so raw JSON is the safest cross-version approach.
-        let mut messages_json: Vec<serde_json::Value> = req
-            .messages
-            .iter()
-            .filter_map(|m| serde_json::to_value(m).ok())
-            .collect();
+        // Messages are already raw JSON — clone directly, no typed round-trip needed.
+        // Raw JSON lets tool-result messages carry `tool_call_id` without loss.
+        let mut messages_json: Vec<serde_json::Value> = req.messages.clone();
 
         for iteration in 0..max_iterations {
-            // Re-parse JSON → typed messages for this iteration's request.
-            // Unknown fields (e.g. `tool_call_id`) are ignored by serde's
-            // default behaviour, which is intentional here.
-            let typed_messages: Vec<grok_api::Message> = messages_json
-                .iter()
-                .filter_map(|v| serde_json::from_value(v.clone()).ok())
-                .collect();
-
             let iter_req = RouterRequest {
                 model: req.model.clone(),
-                messages: typed_messages,
+                messages: messages_json.clone(),
                 tools: req.tools.clone(),
                 max_tokens: req.max_tokens,
                 temperature: req.temperature,
@@ -189,7 +175,6 @@ mod tests {
     use super::*;
     use crate::router::{RouterError, RouterRequest, RouterResponse};
     use async_trait::async_trait;
-    use grok_api::Message;
 
     struct MockGrokBackend {
         available: bool,
@@ -213,11 +198,7 @@ mod tests {
     fn make_request(model: &str) -> RouterRequest {
         RouterRequest::new(
             model,
-            vec![Message {
-                role: "user".to_string(),
-                content: Some(grok_api::MessageContent::Text("hello".to_string())),
-                tool_calls: None,
-            }],
+            vec![serde_json::json!({"role": "user", "content": "hello"})],
         )
     }
 

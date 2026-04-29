@@ -1,4 +1,3 @@
-use grok_api::Message;
 use serde::{Deserialize, Serialize};
 
 /// A function parameter schema, compatible with the OpenAI/xAI tool-calling spec.
@@ -40,8 +39,9 @@ impl ToolDefinition {
 pub struct RouterRequest {
     /// Model identifier, e.g. `"grok-3-mini"`.
     pub model: String,
-    /// Conversation history in OpenAI-compatible message format.
-    pub messages: Vec<Message>,
+    /// Conversation history as raw JSON — preserves all fields including
+    /// `tool_call_id` that typed structs would strip.
+    pub messages: Vec<serde_json::Value>,
     /// Optional tool definitions to expose to the model.
     pub tools: Vec<ToolDefinition>,
     /// Cap on generated tokens (passed straight through to the backend).
@@ -52,7 +52,7 @@ pub struct RouterRequest {
 
 impl RouterRequest {
     /// Create a minimal request with just a model and messages.
-    pub fn new(model: impl Into<String>, messages: Vec<Message>) -> Self {
+    pub fn new(model: impl Into<String>, messages: Vec<serde_json::Value>) -> Self {
         Self {
             model: model.into(),
             messages,

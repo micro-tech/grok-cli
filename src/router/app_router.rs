@@ -141,15 +141,10 @@ impl AppRouter {
         model: &str,
         tools: Option<Vec<Value>>,
     ) -> Result<MessageWithFinishReason> {
-        // Deserialise raw JSON into typed grok_api::Message structs.
-        // Any message that fails to deserialise is silently skipped so that
-        // unexpected fields from older code paths don't abort the request.
-        let typed: Vec<grok_api::Message> = messages
-            .iter()
-            .filter_map(|v| serde_json::from_value(v.clone()).ok())
-            .collect();
-
-        let mut req = RouterRequest::new(model, typed)
+        // Pass messages as raw JSON so that fields like `tool_call_id` are
+        // preserved through the full pipeline.  Typed deserialization was
+        // silently stripping that field, breaking multi-turn tool calls.
+        let mut req = RouterRequest::new(model, messages.to_vec())
             .with_temperature(temperature)
             .with_max_tokens(max_tokens);
 

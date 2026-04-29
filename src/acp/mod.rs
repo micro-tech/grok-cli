@@ -12,10 +12,10 @@ use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
-use crate::GrokClient;
 use crate::config::Config;
 use crate::content_to_string;
 use crate::hooks::HookManager;
+use crate::router::AppRouter;
 
 pub mod protocol;
 pub mod security;
@@ -56,10 +56,11 @@ impl PermissionBridge {
 
 /// Grok AI agent implementation for ACP
 pub struct GrokAcpAgent {
-    /// Grok API client — `None` when no API key is configured at startup.
-    /// The key is only required when making actual API calls; the agent can
-    /// still respond to `initialize` and declare its auth requirements.
-    grok_client: Option<GrokClient>,
+    /// Application-level AI router — `None` when no API key is configured at
+    /// startup.  The key is only required when making actual API calls; the
+    /// agent can still respond to `initialize` and declare its auth
+    /// requirements without one.
+    router: Option<AppRouter>,
 
     /// Agent configuration
     config: Config,
@@ -240,15 +241,18 @@ impl GrokAcpAgent {
         // `initialize` (declaring its auth requirements) even before the user
         // has supplied a key, so we defer the hard error to the first actual
         // API call rather than failing here.
-        let grok_client = if let Some(ref api_key) = config.api_key {
-            match GrokClient::with_settings(api_key, config.timeout_secs, config.max_retries) {
-                Ok(client) => {
-                    info!("✓ Grok API client initialised");
-                    Some(client)
+        // Build the AppRouter only when an API key is available.
+        // Retries and Starlink-resilient back-off live inside GrokBackend;
+        // config.max_retries is no longer passed explicitly.
+        let router = if let Some(ref api_key) = config.api_key {
+            match AppRouter::new(api_key, config.timeout_secs) {
+                Ok(r) => {
+                    info!("✓ AppRouter initialised (timeout={}s)", config.timeout_secs);
+                    Some(r)
                 }
                 Err(e) => {
                     warn!(
-                        "Failed to create Grok client (will retry on first API call): {}",
+                        "Failed to create AppRouter (will retry on first API call): {}",
                         e
                     );
                     None
@@ -269,7 +273,7 @@ impl GrokAcpAgent {
         }
 
         Ok(Self {
-            grok_client,
+            router,
             config,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             capabilities,
@@ -279,13 +283,13 @@ impl GrokAcpAgent {
         })
     }
 
-    /// Return a reference to the underlying [`GrokClient`], or a descriptive
-    /// error if no API key was configured when the agent was created.
+    /// Return a reference to the [`AppRouter`], or a descriptive error if no
+    /// API key was configured when the agent was created.
     ///
     /// Call this inside any method that needs to reach the xAI API instead of
-    /// accessing `self.grok_client` directly.
-    fn get_client(&self) -> Result<&GrokClient> {
-        self.grok_client.as_ref().ok_or_else(|| {
+    /// accessing `self.router` directly.
+    fn get_router(&self) -> Result<&AppRouter> {
+        self.router.as_ref().ok_or_else(|| {
             anyhow!(
                 "API key not configured. \
                  Set the GROK_API_KEY environment variable and restart the agent, \
@@ -558,7 +562,7 @@ impl GrokAcpAgent {
                 loop {
                     attempt += 1;
                     match self
-                        .get_client()?
+                        .get_router()?
                         .chat_completion_with_history(
                             &session.messages,
                             temperature,
@@ -1055,7 +1059,7 @@ impl GrokAcpAgent {
             .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
 
         let response_with_finish = self
-            .get_client()?
+            .get_router()?
             .chat_completion_with_history(
                 &messages,
                 session.config.temperature,
@@ -1271,7 +1275,7 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-        assert_eq!(config.model, "grok-4-1-fast-reasoning");
+        assert_eq!(config.model, "grok-code-fast-1");
         assert_eq!(config.temperature, 0.5);
         assert_eq!(config.max_tokens, 4096);
         assert!(config.system_prompt.is_some());

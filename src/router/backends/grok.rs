@@ -140,12 +140,8 @@ impl Backend for GrokBackend {
     }
 
     async fn send(&self, req: &RouterRequest) -> Result<RouterResponse, RouterError> {
-        // ── Convert messages to the raw JSON format expected by the client ──
-        let messages: Vec<serde_json::Value> = req
-            .messages
-            .iter()
-            .map(|m| serde_json::to_value(m).unwrap_or(serde_json::Value::Null))
-            .collect();
+        // Messages are already raw serde_json::Value — no conversion needed.
+        let messages = &req.messages;
 
         // ── Convert tool definitions (empty → None, so Grok skips tool plumbing) ──
         let tools: Option<Vec<serde_json::Value>> = if req.tools.is_empty() {
