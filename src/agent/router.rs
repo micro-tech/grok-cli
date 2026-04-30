@@ -27,6 +27,16 @@ impl Router {
         }
     }
 
+    /// Create a router that uses the compiled-in default priors.
+    ///
+    /// Unlike [`new`], this never reads the on-disk saved profile, making it
+    /// deterministic for unit tests.
+    pub fn new_with_default_priors() -> Self {
+        Self {
+            bayes: BayesianEngine::new_with_default_priors(),
+        }
+    }
+
     /// Create a router whose engine is initialised from `[bayesian]` config.
     ///
     /// This applies configured priors, thresholds, likelihood weights, and
@@ -152,7 +162,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_shell_intent() {
-        let mut router = Router::new();
+        let mut router = Router::new_with_default_priors();
         let action = router.route("run the build command").await;
 
         assert!(matches!(action, RouterAction::UseTool(tool) if tool == "run_shell_command"));
@@ -160,7 +170,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_clarification_gate() {
-        let mut router = Router::new();
+        let mut router = Router::new_with_default_priors();
         let action = router.route("be careful, don't delete").await;
 
         assert!(matches!(action, RouterAction::AskClarification(_)));
@@ -172,7 +182,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_normal_chat() {
-        let mut router = Router::new();
+        let mut router = Router::new_with_default_priors();
         // Just a random statement
         let action = router.route("hello there").await;
         assert!(matches!(action, RouterAction::NormalChat));

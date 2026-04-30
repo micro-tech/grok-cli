@@ -13,6 +13,32 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [0.1.9-pre] - 2026-04-02
 
+### Fixed
+
+- **Test isolation hardening** — AI: Claude Sonnet 4.6
+  - Seven lib tests were failing because `BayesianEngine::new()` and
+    `LongTermMemory::load_or_create()` read from `~/.grok/` at test time,
+    picking up on-disk data from real usage that corrupted expected values.
+  - Added `BayesianEngine::new_with_default_priors()` — same as `new()` but
+    always uses compiled-in `default_priors()` and never touches disk.
+  - Added `Router::new_with_default_priors()` — thin wrapper around the new
+    engine constructor for deterministic router unit tests.
+  - `grok_dir()` in `long_term.rs` now checks `GROK_GLOBAL_CONTEXT_DIR` env
+    var first, letting tests redirect long-term memory away from `~/.grok/`.
+  - Updated 7 unit tests across `bayes/engine.rs`, `agent/router.rs`, and
+    `memory/mod.rs` to use the isolated constructors or the env-var override.
+  - **Result**: 422 lib tests pass, 0 failures.
+
+- **`tests/integration_tests.rs`** — removed reference to deleted
+  `OperationalMode` enum (removed in the "drop OperationalMode" commit).
+  Replaced with two lean smoke tests that verify `AcpConfig` and `AppRouter`
+  are publicly accessible.
+
+- **`task_list.json`** — corrected status for tasks 42 and 51 from `"done"`
+  back to `"pending"`.  Both had all subtasks listed as pending and their
+  dependency chains unfinished; the `"done"` marking was a git-rebase
+  artefact.
+
 ### Added
 
 - **Tools module restructuring** (`src/tools/`) — AI: Claude Sonnet 4.6

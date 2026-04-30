@@ -76,6 +76,21 @@ impl BayesianEngine {
         )
     }
 
+    /// Create a new engine using the compiled-in default priors.
+    ///
+    /// Unlike [`new`], this constructor never reads from the on-disk saved profile,
+    /// making it suitable for unit tests that require deterministic baseline behaviour.
+    pub fn new_with_default_priors() -> Self {
+        Self::from_priors(
+            default_priors(),
+            DEFAULT_CLARIFICATION_THRESHOLD,
+            DEFAULT_UNCERTAINTY_THRESHOLD,
+            DEFAULT_VAGUENESS_THRESHOLD,
+            DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
+            DEFAULT_PROFILE_LEARNING_RATE,
+        )
+    }
+
     /// Create a new engine using values from `[bayesian]` config.
     ///
     /// The prior distribution is loaded from the saved profile on disk first;
@@ -254,14 +269,14 @@ mod tests {
 
     #[test]
     fn test_engine_initialization() {
-        let engine = BayesianEngine::new();
+        let engine = BayesianEngine::new_with_default_priors();
         assert!(engine.probability("intent_question") > 0.0);
         assert_eq!(engine.best_intent(), Some("intent_question".to_string()));
     }
 
     #[test]
     fn test_engine_update_from_text() {
-        let mut engine = BayesianEngine::new();
+        let mut engine = BayesianEngine::new_with_default_priors();
         assert_eq!(engine.best_intent(), Some("intent_question".to_string()));
         engine.update_from_text("can you edit the config file");
         assert_eq!(engine.best_intent(), Some("intent_edit".to_string()));
@@ -301,11 +316,15 @@ mod tests {
     #[test]
     fn test_needs_clarification_gate() {
         // With a very low threshold the clarification gate should fire easily.
-        let config = BayesianConfig {
-            clarification_threshold: 0.01, // fires with almost any need_clarification signal
-            ..BayesianConfig::default()
-        };
-        let mut engine = BayesianEngine::new_with_config(&config);
+        // Use from_priors() directly so the test doesn't load the on-disk profile.
+        let mut engine = BayesianEngine::from_priors(
+            default_priors(),
+            0.01, // very low threshold — fires easily
+            DEFAULT_UNCERTAINTY_THRESHOLD,
+            DEFAULT_VAGUENESS_THRESHOLD,
+            DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
+            DEFAULT_PROFILE_LEARNING_RATE,
+        );
         engine.update_from_text("be careful, don't delete");
         assert!(engine.needs_clarification());
     }

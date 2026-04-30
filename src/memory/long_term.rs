@@ -347,6 +347,12 @@ pub fn load_prompt_section() -> String {
 // ── Private file-system helpers ───────────────────────────────────────────────
 
 fn grok_dir() -> Result<PathBuf> {
+    // Allow tests (and future CLI flag) to redirect the global context dir.
+    if let Ok(dir) = std::env::var("GROK_GLOBAL_CONTEXT_DIR") {
+        let path = PathBuf::from(dir);
+        std::fs::create_dir_all(&path)?;
+        return Ok(path);
+    }
     dirs::home_dir()
         .map(|h| h.join(".grok"))
         .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))

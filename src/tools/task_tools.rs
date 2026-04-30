@@ -20,15 +20,43 @@ fn load_task_file(security: &SecurityPolicy) -> Result<(std::path::PathBuf, Valu
         .join(".zed")
         .join("task_list.json");
 
-    let data: Value = if task_file.exists() {
-        let content = fs::read_to_string(&task_file)
-            .map_err(|e| anyhow!("Failed to read task_list.json: {}", e))?;
-        serde_json::from_str(&content).map_err(|e| anyhow!("Invalid task_list.json: {}", e))?
-    } else {
-        json!({ "tasks": [] })
-    };
+    if !task_file.exists() {
+        tracing::info!(path = %task_file.display(), "task_list.json not found — starting empty");
+        return Ok((task_file, json!({ "tasks": [] })));
+    }
 
-    Ok((task_file, data))
+    let content = fs::read_to_string(&task_file)
+        .map_err(|e| anyhow!("Failed to read task_list.json: {}", e))?;
+
+    // Try strict parse first; fall back to .bak if corrupt.
+    match serde_json::from_str::<Value>(&content) {
+        Ok(data) => Ok((task_file, data)),
+        Err(parse_err) => {
+            let bak = task_file.with_file_name("task_list.json.bak");
+            tracing::warn!(
+                error = %parse_err,
+                bak_exists = bak.exists(),
+                "task_list.json is corrupt — attempting .bak recovery"
+            );
+            if bak.exists() {
+                let bak_content =
+                    fs::read_to_string(&bak).map_err(|e| anyhow!("Failed to read .bak: {}", e))?;
+                let data: Value = serde_json::from_str(&bak_content).map_err(|e| {
+                    anyhow!(
+                        "task_list.json corrupt ({}) AND .bak invalid ({}). Manual recovery needed.",
+                        parse_err, e
+                    )
+                })?;
+                tracing::warn!("Recovered task list from task_list.json.bak");
+                Ok((task_file, data))
+            } else {
+                Err(anyhow!(
+                    "task_list.json is corrupt ({}). No .bak found. Manual recovery needed.",
+                    parse_err
+                ))
+            }
+        }
+    }
 }
 
 fn save_task_file(path: &std::path::Path, data: &Value) -> Result<()> {
@@ -36,9 +64,31 @@ fn save_task_file(path: &std::path::Path, data: &Value) -> Result<()> {
         fs::create_dir_all(parent)
             .map_err(|e| anyhow!("Failed to create .zed directory: {}", e))?;
     }
+
     let json_str = serde_json::to_string_pretty(data)
         .map_err(|e| anyhow!("Failed to serialise tasks: {}", e))?;
-    fs::write(path, json_str).map_err(|e| anyhow!("Failed to write task_list.json: {}", e))?;
+
+    // Atomic write: write to .tmp sibling, then rename over the live file.
+    // A killed process can never leave task_list.json in a partial state.
+    let tmp_path = path.with_file_name(format!(
+        "{}.tmp",
+        path.file_name().unwrap_or_default().to_string_lossy()
+    ));
+    fs::write(&tmp_path, &json_str)
+        .map_err(|e| anyhow!("Failed to write temp task file: {}", e))?;
+
+    // Best-effort .bak snapshot before replacing the live file.
+    if path.exists() {
+        let bak = path.with_file_name("task_list.json.bak");
+        if let Err(e) = fs::copy(path, &bak) {
+            tracing::warn!(error = %e, ".bak snapshot failed (non-fatal)");
+        }
+    }
+
+    fs::rename(&tmp_path, path)
+        .map_err(|e| anyhow!("Failed to finalise task file (rename .tmp): {}", e))?;
+
+    tracing::info!(bytes = json_str.len(), "task_list.json saved");
     Ok(())
 }
 
@@ -370,5 +420,59 @@ mod tests {
         let security = make_security(&dir);
         let r = task_create("", "desc", "high", vec![], "", "", vec![], &security);
         assert!(r.is_err());
+    }
+
+    // ── Atomic write + .bak tests ───────────────────────────────
+
+    #[test]
+    fn save_leaves_no_tmp_file() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join(".zed")).unwrap();
+
+        create(&dir, "Atomic", "", "medium").unwrap();
+
+        let tmp = dir.path().join(".zed").join("task_list.json.tmp");
+        assert!(!tmp.exists(), ".tmp should be gone after save");
+        let live = dir.path().join(".zed").join("task_list.json");
+        assert!(live.exists());
+        let v: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&live).unwrap()).unwrap();
+        assert!(v["tasks"].is_array());
+    }
+
+    #[test]
+    fn second_save_creates_bak() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join(".zed")).unwrap();
+
+        // First write creates live file; second write snapshots it to .bak.
+        create(&dir, "First", "", "high").unwrap();
+        create(&dir, "Second", "", "low").unwrap();
+
+        let bak = dir.path().join(".zed").join("task_list.json.bak");
+        assert!(bak.exists(), ".bak should exist after second write");
+    }
+
+    #[test]
+    fn load_recovers_from_bak_on_corrupt_live() {
+        let dir = TempDir::new().unwrap();
+        fs::create_dir_all(dir.path().join(".zed")).unwrap();
+        let security = make_security(&dir);
+
+        // Two writes so .bak exists (snapshot of first write = 1 task).
+        create(&dir, "GoodTask", "", "medium").unwrap();
+        create(&dir, "SecondTask", "", "low").unwrap();
+
+        // Corrupt the live file.
+        fs::write(dir.path().join(".zed").join("task_list.json"), "NOT JSON").unwrap();
+
+        // Should silently recover from .bak (1 task).
+        let (_, data) = load_task_file(&security).unwrap();
+        assert_eq!(
+            data["tasks"].as_array().unwrap().len(),
+            1,
+            ".bak snapshot should have 1 task"
+        );
+        assert_eq!(data["tasks"][0]["title"].as_str(), Some("GoodTask"));
     }
 }
