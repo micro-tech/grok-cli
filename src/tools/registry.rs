@@ -32,7 +32,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
             let path = args["path"]
                 .as_str()
                 .ok_or_else(|| anyhow!("Missing: path"))?;
-            file_tools::read_file(path, policy)
+            file_tools::read_file(path, policy).await
         }
         "read_multiple_files" => {
             let paths_val = args["paths"]
@@ -46,13 +46,13 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                         .map(str::to_string)
                 })
                 .collect();
-            file_tools::read_multiple_files(paths?, policy)
+            file_tools::read_multiple_files(paths?, policy).await
         }
         "list_code_definitions" => {
             let path = args["path"]
                 .as_str()
                 .ok_or_else(|| anyhow!("Missing: path"))?;
-            file_tools::list_code_definitions(path, policy)
+            file_tools::list_code_definitions(path, policy).await
         }
         "write_file" => {
             let path = args["path"]
@@ -61,7 +61,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
             let content = args["content"]
                 .as_str()
                 .ok_or_else(|| anyhow!("Missing: content"))?;
-            file_tools::write_file(path, content, policy)
+            file_tools::write_file(path, content, policy).await
         }
         "replace" => {
             let path = args["path"]
@@ -74,7 +74,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                 .as_str()
                 .ok_or_else(|| anyhow!("Missing: new_string"))?;
             let expected = args["expected_replacements"].as_u64().map(|n| n as u32);
-            file_tools::replace(path, old_string, new_string, expected, policy)
+            file_tools::replace(path, old_string, new_string, expected, policy).await
         }
         "list_directory" => {
             let path = args["path"]

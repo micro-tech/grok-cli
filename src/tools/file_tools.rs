@@ -9,8 +9,10 @@ use crate::security::audit::{AuditLogger, create_access_log};
 use anyhow::{Result, anyhow};
 use glob::glob;
 use regex::Regex;
-use std::fs::{self, File};
+use tokio::fs;
+use std::fs::File;
 use std::io::{BufRead, BufReader};
+
 use std::path::Path;
 use tracing::info;
 use uuid::Uuid;
@@ -25,7 +27,7 @@ use uuid::Uuid;
 /// * External paths that have `auto_approve` set are read after audit-logging.
 /// * External paths that require approval prompt the user via
 ///   [`prompt_external_access_approval`] before proceeding.
-pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
+pub async fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
     let access_type = security.validate_path_access(path)?;
 
     let resolved_path = match &access_type {
@@ -145,7 +147,7 @@ pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
         return Err(anyhow!("File not found: {}", resolved_path.display()));
     }
 
-    fs::read_to_string(&resolved_path).map_err(|e| anyhow!("Failed to read file: {}", e))
+    fs::read_to_string(&resolved_path).await.map_err(|e| anyhow!("Failed to read file: {}", e))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -156,10 +158,10 @@ pub fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> {
 ///
 /// Each file is prefixed with a `--- File: <path> ---` header. Errors for
 /// individual files are reported inline rather than aborting the whole call.
-pub fn read_multiple_files(paths: Vec<String>, security: &SecurityPolicy) -> Result<String> {
+pub async fn read_multiple_files(paths: Vec<String>, security: &SecurityPolicy) -> Result<String> {
     let mut results = Vec::new();
     for path in paths {
-        match read_file(&path, security) {
+        match read_file(&path, security).await {
             Ok(content) => {
                 results.push(format!("--- File: {} ---\n{}\n", path, content));
             }
@@ -179,8 +181,8 @@ pub fn read_multiple_files(paths: Vec<String>, security: &SecurityPolicy) -> Res
 ///
 /// Uses a heuristic regex that recognises common definition keywords across
 /// Rust, JavaScript, TypeScript, Python, Go, and C++.
-pub fn list_code_definitions(path: &str, security: &SecurityPolicy) -> Result<String> {
-    let content = read_file(path, security)?;
+pub async fn list_code_definitions(path: &str, security: &SecurityPolicy) -> Result<String> {
+    let content = read_file(path, security).await?;
 
     let re = Regex::new(
         r"(?m)^[\t ]*(pub|async|unsafe|static|export|default|class|def|fn|func|struct|enum|trait|impl|interface|type|const|let|var)\b",
@@ -214,7 +216,7 @@ pub fn list_code_definitions(path: &str, security: &SecurityPolicy) -> Result<St
 /// Applies the same external-access / audit flow as [`read_file`].
 /// Writes to paths that `ExternalRequiresApproval` are blocked — the caller
 /// (ACP dispatch) handles the approval before invoking this function.
-pub fn write_file(path: &str, content: &str, security: &SecurityPolicy) -> Result<String> {
+pub async fn write_file(path: &str, content: &str, security: &SecurityPolicy) -> Result<String> {
     let path_ref = Path::new(path);
     let absolute_path = if path_ref.is_absolute() {
         path_ref.to_path_buf()
@@ -223,7 +225,7 @@ pub fn write_file(path: &str, content: &str, security: &SecurityPolicy) -> Resul
     };
 
     if let Some(parent) = absolute_path.parent() {
-        fs::create_dir_all(parent).map_err(|e| anyhow!("Failed to create directory: {}", e))?;
+        fs::create_dir_all(parent).await.map_err(|e| anyhow!("Failed to create directory: {}", e))?;
     }
 
     let access_type = security.validate_path_access(path)?;
@@ -244,7 +246,7 @@ pub fn write_file(path: &str, content: &str, security: &SecurityPolicy) -> Resul
         }
     };
 
-    fs::write(&resolved_path, content).map_err(|e| anyhow!("Failed to write file: {}", e))?;
+    fs::write(&resolved_path, content).await.map_err(|e| anyhow!("Failed to write file: {}", e))?;
     info!(
         "Wrote {} bytes to {}",
         content.len(),
@@ -261,7 +263,7 @@ pub fn write_file(path: &str, content: &str, security: &SecurityPolicy) -> Resul
 ///
 /// Fails if the `old_string` is not found or if `expected_replacements` is
 /// given and doesn't match the actual occurrence count.
-pub fn replace(
+pub async fn replace(
     path: &str,
     old_string: &str,
     new_string: &str,
@@ -281,7 +283,7 @@ pub fn replace(
     }
 
     let content =
-        fs::read_to_string(&resolved_path).map_err(|e| anyhow!("Failed to read file: {}", e))?;
+        fs::read_to_string(&resolved_path).await.map_err(|e| anyhow!("Failed to read file: {}", e))?;
 
     let occurrences = content.matches(old_string).count();
     if occurrences == 0 {
@@ -302,7 +304,7 @@ pub fn replace(
     }
 
     let new_content = content.replace(old_string, new_string);
-    fs::write(&resolved_path, new_content).map_err(|e| anyhow!("Failed to write file: {}", e))?;
+    fs::write(&resolved_path, new_content).await.map_err(|e| anyhow!("Failed to write file: {}", e))?;
 
     Ok(format!(
         "Successfully replaced {} occurrence(s) in {}",
@@ -340,7 +342,7 @@ pub fn list_directory(path: &str, security: &SecurityPolicy) -> Result<String> {
 
     let mut entries = Vec::new();
     for entry in
-        fs::read_dir(&resolved_path).map_err(|e| anyhow!("Failed to read directory: {}", e))?
+        std::fs::read_dir(&resolved_path).map_err(|e| anyhow!("Failed to read directory: {}", e))?
     {
         let entry = entry?;
         let path = entry.path();

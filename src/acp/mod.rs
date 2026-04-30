@@ -790,12 +790,12 @@ impl GrokAcpAgent {
                 let result = match function_name.as_str() {
                     "read_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::read_file(path, &policy)
+                        tools::read_file(path, &policy).await
                     }
                     "write_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
-                        tools::write_file(path, content, &policy)
+                        tools::write_file(path, content, &policy).await
                     }
                     "list_directory" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
@@ -824,7 +824,7 @@ impl GrokAcpAgent {
                             .ok_or(anyhow!("Missing new_string"))?;
                         let expected_replacements =
                             args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(path, old_string, new_string, expected_replacements, &policy)
+                        tools::replace(path, old_string, new_string, expected_replacements, &policy).await
                     }
                     "save_memory" => {
                         let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
@@ -849,11 +849,11 @@ impl GrokAcpAgent {
                                     .map(|s| s.to_string())
                             })
                             .collect();
-                        tools::read_multiple_files(paths?, &policy)
+                        tools::read_multiple_files(paths?, &policy).await
                     }
                     "list_code_definitions" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_code_definitions(path, &policy)
+                        tools::list_code_definitions(path, &policy).await
                     }
                     "task_create" => {
                         let title = args["title"].as_str().ok_or(anyhow!("Missing title"))?;
