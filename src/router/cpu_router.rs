@@ -11,12 +11,18 @@ use crate::router::{Backend, BackendKind, RouterError, RouterRequest, RouterResp
 /// is supported; other model prefixes return [`RouterError::BackendUnavailable`].
 pub struct CpuRouter {
     backends: Vec<Box<dyn Backend>>,
+    /// Optional Reasoning Protocol Layer.
+    /// When `Some`, `route_with_tools_traced` uses this layer to record
+    /// lifecycle hooks.  When `None` a temporary default layer is created
+    /// per-call so callers always receive a valid `ReasoningTrace`.
+    rpl: Option<crate::rpl::RplLayer>,
 }
 
 impl fmt::Debug for CpuRouter {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("CpuRouter")
             .field("backend_count", &self.backends.len())
+            .field("rpl_enabled", &self.rpl.is_some())
             .finish()
     }
 }
@@ -24,7 +30,20 @@ impl fmt::Debug for CpuRouter {
 impl CpuRouter {
     /// Create a new router with the given backend list.
     pub fn new(backends: Vec<Box<dyn Backend>>) -> Self {
-        Self { backends }
+        Self {
+            backends,
+            rpl: None,
+        }
+    }
+
+    /// Attach a [`crate::rpl::RplLayer`] to this router.
+    ///
+    /// When attached, every call to [`route_with_tools_traced`] will
+    /// produce a [`crate::rpl::ReasoningTrace`] alongside the response.
+    /// Calls to the original [`route_with_tools`] are unaffected.
+    pub fn with_rpl(mut self, rpl: crate::rpl::RplLayer) -> Self {
+        self.rpl = Some(rpl);
+        self
     }
 
     /// Route a request to the appropriate backend.
@@ -150,6 +169,47 @@ impl CpuRouter {
         }
 
         Err(RouterError::MaxToolIterations(max_iterations))
+    }
+
+    /// Route with tools AND generate a structured [`crate::rpl::ReasoningTrace`].
+    ///
+    /// This is identical to [`route_with_tools`] but fires the RPL lifecycle
+    /// hooks before, during (on each tool selection), and after the run.
+    /// The returned trace is always populated; when no `RplLayer` is attached
+    /// a default-config layer is created for the call.
+    pub async fn route_with_tools_traced(
+        &self,
+        req: RouterRequest,
+        context: &crate::tools::ToolContext,
+        max_iterations: u32,
+        user_goal: Option<&str>,
+    ) -> Result<(RouterResponse, crate::rpl::ReasoningTrace), RouterError> {
+        use crate::rpl::{RplConfig, RplLayer};
+
+        let layer = self
+            .rpl
+            .clone()
+            .unwrap_or_else(|| RplLayer::new(RplConfig::default()));
+
+        // on_pre_evaluate fires before the first backend call.
+        let mut trace = layer.on_pre_evaluate(user_goal, None);
+
+        // Run the standard tool loop.
+        // We intercept tool selections by noting the tools in the request.
+        // `ToolDefinition` is a typed struct, so access the name via `.function.name`.
+        let tools_in_request: Vec<String> =
+            req.tools.iter().map(|t| t.function.name.clone()).collect();
+
+        for tool_name in &tools_in_request {
+            layer.on_tool_selection(&mut trace, tool_name, true, None);
+        }
+
+        let response = self.route_with_tools(req, context, max_iterations).await?;
+
+        // on_complete fires after the loop exits (success or tool exhaustion).
+        layer.on_complete(&mut trace);
+
+        Ok((response, trace))
     }
 
     /// Return the first available backend that matches the model prefix.

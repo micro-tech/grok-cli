@@ -67,7 +67,7 @@ impl AppRouter {
     ///
     /// - `api_key`     – xAI API key (must be non-empty).
     /// - `timeout_secs`– per-request HTTP timeout; use `Config::timeout_secs`
-    ///                   to honour the user's config value.
+    ///   to honour the user's config value.
     ///
     /// Returns an error if the key is empty or the underlying HTTP client
     /// cannot be constructed.

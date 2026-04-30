@@ -659,21 +659,9 @@ impl GrokAcpAgent {
             // Add assistant response to history
             session.messages.push(serde_json::to_value(&response_msg)?);
 
-            // Check finish_reason - if "stop", we're done regardless of tool_calls
-            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
-                let elapsed = start_time.elapsed();
-                let response_text = content_to_string(response_msg.content.as_ref());
-                info!(
-                    "✅ Model signaled completion (finish_reason: {:?}) in {:?} ({} loops, {} chars)",
-                    finish_reason,
-                    elapsed,
-                    loop_count,
-                    response_text.len()
-                );
-                return Ok(response_text);
-            }
-
-            // Check if we have tool calls to process
+            // Check if we have tool calls to process FIRST.
+            // finish_reason is checked AFTER the tool loop so that Grok's
+            // "stop" signal never short-circuits pending tool calls mid-flight.
             let has_tool_calls = response_msg
                 .tool_calls
                 .as_ref()
@@ -684,10 +672,11 @@ impl GrokAcpAgent {
             let response_text = content_to_string(response_msg.content.as_ref());
 
             if !has_tool_calls {
-                // No tool calls and no explicit stop - return content
+                // No tool calls — return whatever the model said (including "stop").
                 info!(
-                    "✨ Chat completion finished in {:?} ({} loops, {} chars)",
+                    "✨ Chat completion finished in {:?} (finish_reason: {:?}, {} loops, {} chars)",
                     elapsed,
+                    finish_reason,
                     loop_count,
                     response_text.len()
                 );
@@ -933,6 +922,17 @@ impl GrokAcpAgent {
 
             let loop_duration = loop_start.elapsed();
             info!("🔄 Loop iteration completed in {:?}", loop_duration);
+
+            // Post-tool-loop guard: if the model signalled "stop" alongside
+            // tool calls, return now instead of spinning up a redundant extra
+            // API iteration (the tools have already completed).
+            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
+                info!(
+                    "✅ Model flagged stop after tool execution — returning ({} loops)",
+                    loop_count
+                );
+                return Ok(String::new());
+            }
             // Continue loop to get next response from model with tool results
         }
     }

@@ -350,11 +350,15 @@ mod tests {
 
     #[test]
     fn test_profile_learning_rate_applied() {
-        let config = BayesianConfig {
-            profile_learning_rate: 0.5, // 50 % boost — noticeable in test
-            ..BayesianConfig::default()
-        };
-        let mut engine = BayesianEngine::new_with_config(&config);
+        // Use from_priors directly to avoid loading the on-disk saved profile.
+        let mut engine = BayesianEngine::from_priors(
+            default_priors(),
+            DEFAULT_CLARIFICATION_THRESHOLD,
+            DEFAULT_UNCERTAINTY_THRESHOLD,
+            DEFAULT_VAGUENESS_THRESHOLD,
+            DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
+            0.5, // 50 % boost — noticeable in test
+        );
         let before = engine.probability("intent_edit");
         engine.update_profile("write_file");
         let after = engine.probability("intent_edit");

@@ -177,7 +177,7 @@ impl Backend for GrokBackend {
             let result = self
                 .client
                 .chat_completion_with_history(
-                    &messages,
+                    messages,
                     temperature,
                     max_tokens,
                     &req.model,

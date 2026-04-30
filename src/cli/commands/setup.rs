@@ -227,12 +227,10 @@ fn read_masked() -> Result<String> {
                     break Err(anyhow!("Setup cancelled (Ctrl-D)."));
                 }
                 // Backspace: erase last char
-                KeyCode::Backspace | KeyCode::Delete => {
-                    if key.pop().is_some() {
-                        // Move back, overwrite with space, move back again
-                        write!(stdout, "\x08 \x08")?;
-                        stdout.flush()?;
-                    }
+                KeyCode::Backspace | KeyCode::Delete if key.pop().is_some() => {
+                    // Move back, overwrite with space, move back again
+                    write!(stdout, "\x08 \x08")?;
+                    stdout.flush()?;
                 }
                 // Regular character
                 KeyCode::Char(c) => {

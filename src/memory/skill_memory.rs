@@ -430,7 +430,7 @@ impl SkillMemory {
             .map(|(name, count)| (name.to_string(), count))
             .collect();
 
-        list.sort_by(|a, b| b.1.cmp(&a.1));
+        list.sort_by_key(|item| std::cmp::Reverse(item.1));
         list.truncate(n);
         list
     }

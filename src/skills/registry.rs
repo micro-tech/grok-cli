@@ -282,7 +282,7 @@ impl SkillRegistry {
 
         // Secondary sort by the order the caller provided (tie-break within
         // equal scores keeps user intent intact).
-        active.sort_by(|a, b| b.arbitration_score().cmp(&a.arbitration_score()));
+        active.sort_by_key(|s| std::cmp::Reverse(s.arbitration_score()));
 
         let mut ctx = String::from(
             "\n\n## Active Skills\n\nThe following skills are currently active \

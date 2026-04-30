@@ -48,7 +48,7 @@ pub async fn spawn_agent(task: &str, context: &str, max_tokens: u32) -> Result<S
         format!("{}\n\n## Context\n{}", task, context)
     };
 
-    let clamped_tokens = max_tokens.max(256).min(4096);
+    let clamped_tokens = max_tokens.clamp(256, 4096);
 
     router
         .chat_completion(

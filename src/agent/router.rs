@@ -71,7 +71,7 @@ impl Router {
             "intent_edit" => RouterAction::UseTool("replace".to_string()),
             "intent_shell" => RouterAction::UseTool("run_shell_command".to_string()),
             "intent_search" => RouterAction::UseTool("web_search".to_string()),
-            "intent_question" | _ => RouterAction::NormalChat,
+            _ => RouterAction::NormalChat,
         }
     }
 
@@ -121,10 +121,12 @@ impl Router {
         all_tools
             .into_iter()
             .filter(|t| {
-                if let Some(function) = t.get("function") {
-                    if let Some(name) = function.get("name").and_then(|n| n.as_str()) {
-                        return keep.contains(&name);
-                    }
+                if let Some(name) = t
+                    .get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str())
+                {
+                    return keep.contains(&name);
                 }
                 true
             })

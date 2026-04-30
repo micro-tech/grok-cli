@@ -137,11 +137,9 @@ impl ShortTermMemory {
             tool_call_id: None,
         };
 
-        if let Some(existing) = self.messages.first_mut() {
-            if existing.role == "system" {
-                *existing = msg;
-                return;
-            }
+        if let Some(existing) = self.messages.first_mut().filter(|m| m.role == "system") {
+            *existing = msg;
+            return;
         }
 
         // No system message yet — insert at the front.

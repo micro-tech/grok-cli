@@ -172,7 +172,7 @@ impl LongTermMemory {
             .collect();
 
         // Newest first.
-        results.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        results.sort_by_key(|e| std::cmp::Reverse(e.created_at));
         results
     }
 
@@ -220,7 +220,7 @@ impl LongTermMemory {
 
         // Most recent first for the prompt.
         let mut sorted: Vec<&MemoryEntry> = self.entries.iter().collect();
-        sorted.sort_by(|a, b| b.created_at.cmp(&a.created_at));
+        sorted.sort_by_key(|e| std::cmp::Reverse(e.created_at));
 
         let lines: Vec<String> = sorted
             .iter()

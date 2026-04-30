@@ -11,7 +11,92 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
+## [Unreleased] — Tasks 92-97 + ACP bug fix — AI: Claude Sonnet 4.6
+
+### Fixed
+
+- **ACP tool loop bug** (`src/acp/mod.rs`) — `finish_reason == "stop"` was
+  checked **before** tool-call processing, so when Grok returned `stop` +
+  tool calls together the loop bailed out early and tool results were never
+  appended to the message history.  Fix mirrors commit `7aa7c8b` from the
+  old branch: the `finish_reason` check now happens **after** the entire
+  tool-execution for-loop, and a post-loop guard returns early (without
+  spinning up a redundant API call) when the model signalled stop alongside
+  tool calls.
+
+### Added
+
+- **`src/rpl/`** (Task 92) — Reasoning Protocol Layer ported from `test-old_10`
+  commit `a6c6f82`.  Six source files: `layer.rs`, `logging.rs`, `schema.rs`,
+  `validation.rs`, `suppression.rs`, `mod.rs` (~2 550 lines total).
+  Registered as `pub mod rpl` in `src/lib.rs`. **76/76 tests pass.**
+
+- **`src/engine/state.rs` + `src/engine/mod.rs`** (Task 93) — FSM core ported
+  from `test-old_10`. Defines `EngineState`, `ReasoningEngineState`,
+  `PlanStep`, `StepAction`, `Hypothesis`, `TransitionError`, and friends.
+  Registered as `pub mod engine` in `src/lib.rs`. **17/17 tests pass.**
+
+- **`src/engine/` sub-modules** (Task 94) — Six supporting modules ported:
+  `beliefs.rs`, `planner.rs`, `memory_bridge.rs`, `arbitration.rs`,
+  `correction.rs`, `observability.rs`.  All compiled against the current
+  `PreRelese` API with zero fixes needed. **101 new tests pass.**
+
+- **`CpuRouter::with_rpl()` + `route_with_tools_traced()`** (Task 95) —
+  Re-added the optional `RplLayer` field, builder method, and the traced
+  route variant to `src/router/cpu_router.rs`. All existing router tests
+  unaffected.
+
+- **`tests/engine_integration.rs`** (Task 96) — 15 integration tests ported
+  from `test-old_10`, covering the full engine lifecycle (goal → plan →
+  execute → self-correct). **15/15 pass.**
+
+- **`src/agent/planner.rs`** (Task 97) — Replaced the mock stub with a real
+  `Planner` that drives `ReasoningEngineState` through AnalyzeGoal →
+  ExpandOptions → EvaluateOptions → CommitPlan. `Plan` wraps the committed
+  state and exposes `heuristic_confidence()`, `step_count()`, and
+  `first_step_action()`. **3/3 planner tests pass.**
+
+### Fixed — Clippy (`-D warnings`)
+
+- Resolved all 38 Clippy errors across 18 files: `sort_by` → `sort_by_key`
+  with `Reverse` (6×), collapsed nested `if`/`if-let` blocks (10×), doc
+  comment overindentation (6×), wildcard-in-or-pattern (2×), useless
+  `format!` / `.to_string()` in format args (3×), `manual_clamp` (2×),
+  `needless_borrow` (1×), `too_many_arguments` (1×, `#[allow]`),
+  `unreachable_patterns` (1×), added `Default` derive to `BeliefGraph`.
+
+- Fixed `test_profile_learning_rate_applied` test isolation: replaced
+  `BayesianEngine::new_with_config()` (reads `~/.grok/bayes_profile.json`)
+  with `from_priors(default_priors(), …)` for deterministic behaviour.
+
+### Verified
+
+- `cargo clippy -- -D warnings` → **zero errors**
+- `cargo test` → **610 lib + 15 engine_integration + 5 tool_loop + 3 acp +
+  13 tool_data_flow + 2 integration = 648 total, 0 failures**
+
+---
+
 ## [0.1.9-pre] - 2026-04-02
+
+### Investigated — RPL + Reasoning Engine branch gap — AI: Claude Sonnet 4.6
+
+- Discovered that the full **Reasoning Protocol Layer** (`src/rpl/`, ~2 550 lines)
+  and **Reasoning Engine** (`src/engine/`, ~5 250 lines) were written on the
+  `test-old_10` branch (commit `a6c6f82`) but were **never merged** into
+  `PreRelese`.
+- Corrected `task_list.json`: tasks 69–84 (all RPL/Engine) reset from
+  `"done"` → `"pending"` (60 status fields updated).
+- Added 6 new tasks to track the porting work:
+  - **Task 92** — Port `src/rpl/` (6 files) from `test-old_10`
+  - **Task 93** — Port `src/engine/state.rs` (FSM core, 987 lines)
+  - **Task 94** — Port `src/engine/` sub-modules (6 stubs)
+  - **Task 95** — Wire RPL back into `CpuRouter`
+  - **Task 96** — Port `tests/engine_integration.rs`
+  - **Task 97** — Replace `agent/planner.rs` stub with real engine integration
+- Current state on `PreRelese`: `agent/planner.rs` is a stub with mock methods;
+  `agent/router.rs`, `agent/simulator.rs`, `agent/mode.rs` are complete.
+  `src/engine/` and `src/rpl/` directories do **not** exist on this branch.
 
 ### Fixed
 

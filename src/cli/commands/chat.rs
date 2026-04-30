@@ -244,14 +244,14 @@ async fn handle_interactive_chat(
                 if lower_input == "/bayes" || lower_input == "/beliefs" {
                     show_belief_graph = !show_belief_graph;
                     if show_belief_graph {
-                        println!("{} {}", "✓".green(), "Belief graph visualization enabled.");
+                        println!("{} Belief graph visualization enabled.", "✓".green());
                         if enable_bayesian_router {
                             println!("{}", router.visualize_beliefs());
                         } else {
                             println!("{}", "⚠ Bayesian router is disabled in config.".yellow());
                         }
                     } else {
-                        println!("{} {}", "✓".green(), "Belief graph visualization disabled.");
+                        println!("{} Belief graph visualization disabled.", "✓".green());
                     }
                     continue;
                 }

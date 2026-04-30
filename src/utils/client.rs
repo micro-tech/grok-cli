@@ -39,7 +39,7 @@ pub fn initialize_client(
 ///
 /// - `api_key`      – xAI API key (must be non-empty).
 /// - `timeout_secs` – per-request HTTP timeout; pass `config.timeout_secs`
-///                    to honour the user's configuration value end-to-end.
+///   to honour the user's configuration value end-to-end.
 pub fn initialize_router(api_key: &str, timeout_secs: u64) -> Result<AppRouter> {
     AppRouter::new(api_key, timeout_secs)
 }

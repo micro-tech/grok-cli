@@ -272,19 +272,15 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
                     }
                     cursor_pos += 1;
                 }
-                KeyCode::Backspace => {
-                    if cursor_pos > 0 {
-                        buffer.remove(cursor_pos - 1);
-                        cursor_pos -= 1;
-                    }
+                KeyCode::Backspace if cursor_pos > 0 => {
+                    buffer.remove(cursor_pos - 1);
+                    cursor_pos -= 1;
                 }
                 KeyCode::Left => {
                     cursor_pos = cursor_pos.saturating_sub(1);
                 }
-                KeyCode::Right => {
-                    if cursor_pos < buffer.len() {
-                        cursor_pos += 1;
-                    }
+                KeyCode::Right if cursor_pos < buffer.len() => {
+                    cursor_pos += 1;
                 }
                 KeyCode::Up => {
                     if let Some(idx) = suggestion_index {

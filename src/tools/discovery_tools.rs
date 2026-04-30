@@ -163,7 +163,7 @@ pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Res
     let response = match method.to_uppercase().as_str() {
         "GET" => client.get(endpoint).send().await,
         "PUT" => client.put(endpoint).json(&payload).send().await,
-        "POST" | _ => client.post(endpoint).json(&payload).send().await,
+        _ => client.post(endpoint).json(&payload).send().await,
     }
     .map_err(|e| {
         anyhow!(

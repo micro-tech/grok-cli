@@ -101,15 +101,16 @@ fn save_task_file(path: &std::path::Path, data: &Value) -> Result<()> {
 /// - `description`   — concise overview of what the task involves.
 /// - `priority`      — `"high"` | `"medium"` | `"low"`.
 /// - `dependencies`  — IDs of tasks that must be `done` first (supports
-///                     decimal subtask IDs such as `5.2`).
+///   decimal subtask IDs such as `5.2`).
 /// - `details`       — in-depth implementation instructions.
 /// - `test_strategy` — verification approach (maps to `testStrategy` in JSON).
 /// - `subtasks`      — optional initial subtasks; each must have at least
-///                     a `"title"` key. IDs are auto-assigned as
-///                     `{parent_id}.1`, `{parent_id}.2`, …
+///   a `"title"` key. IDs are auto-assigned as
+///   `{parent_id}.1`, `{parent_id}.2`, …
 ///
 /// The new task is assigned `ID = floor(max_existing_id) + 1` and its
 /// `status` is always initialised to `"pending"`.
+#[allow(clippy::too_many_arguments)]
 pub fn task_create(
     title: &str,
     description: &str,
@@ -219,13 +220,13 @@ pub fn task_update(
     security: &SecurityPolicy,
 ) -> Result<String> {
     let valid_statuses = ["pending", "in_progress", "done", "deferred"];
-    if let Some(s) = status {
-        if !valid_statuses.contains(&s) {
-            return Err(anyhow!(
-                "Invalid status '{}'. Use: pending, in_progress, done, deferred",
-                s
-            ));
-        }
+    if let Some(s) = status
+        && !valid_statuses.contains(&s)
+    {
+        return Err(anyhow!(
+            "Invalid status '{}'. Use: pending, in_progress, done, deferred",
+            s
+        ));
     }
 
     let (task_file, mut data) = load_task_file(security)?;

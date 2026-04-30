@@ -1334,8 +1334,7 @@ async fn run_simulation(
     use colored::*;
 
     println!(
-        "{} {}",
-        "🔬".to_string(),
+        "🔬 {}",
         "Running simulation (dry-run)…".bright_blue().dimmed()
     );
     print!("{} ", "Thinking...".bright_yellow());

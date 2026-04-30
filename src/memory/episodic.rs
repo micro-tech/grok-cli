@@ -225,7 +225,7 @@ impl EpisodicMemory {
         }
 
         // Most recent first.
-        summaries.sort_by(|a, b| b.started_at.cmp(&a.started_at));
+        summaries.sort_by_key(|s| std::cmp::Reverse(s.started_at));
         self.index = Some(summaries.clone());
         Ok(summaries)
     }

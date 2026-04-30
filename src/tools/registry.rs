@@ -375,10 +375,10 @@ pub fn get_available_tool_definitions() -> Vec<Value> {
                 .get("function")
                 .and_then(|f| f.get("name"))
                 .and_then(|n| n.as_str())
+                && name == "web_search"
+                && !web_tools::is_web_search_configured()
             {
-                if name == "web_search" && !web_tools::is_web_search_configured() {
-                    return false;
-                }
+                return false;
             }
             true
         })
