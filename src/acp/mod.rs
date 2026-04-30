@@ -855,6 +855,26 @@ impl GrokAcpAgent {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         tools::list_code_definitions(path, &policy)
                     }
+                    "task_create" => {
+                        let title = args["title"].as_str().ok_or(anyhow!("Missing title"))?;
+                        let description = args["description"].as_str().ok_or(anyhow!("Missing description"))?;
+                        let priority = args["priority"].as_str().ok_or(anyhow!("Missing priority"))?;
+                        let dependencies_value = args["dependencies"].as_array().ok_or(anyhow!("Missing dependencies"))?;
+                        let dependencies: Result<Vec<f64>> = dependencies_value.iter().map(|v| v.as_f64().ok_or(anyhow!("Invalid dependency"))).collect();
+                        let details = args["details"].as_str().ok_or(anyhow!("Missing details"))?;
+                        let test_strategy = args["testStrategy"].as_str().ok_or(anyhow!("Missing testStrategy"))?;
+                        let subtasks_value = args["subtasks"].as_array().ok_or(anyhow!("Missing subtasks"))?;
+                        let subtasks: Vec<Value> = subtasks_value.clone();
+                        tools::task_create(title, description, priority, dependencies?, details, test_strategy, subtasks, &policy)
+                    }
+                    "task_update" => {
+                        let id = args["id"].as_f64().ok_or(anyhow!("Missing id"))?;
+                        let status = args["status"].as_str();
+                        let title = args["title"].as_str();
+                        let priority = args["priority"].as_str();
+                        let details = args["details"].as_str();
+                        tools::task_update(id, status, title, priority, details, &policy)
+                    }
                     _ => Err(anyhow!("Unknown tool: {}", function_name)),
                 };
 
