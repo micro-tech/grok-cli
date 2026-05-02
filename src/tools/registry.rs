@@ -12,7 +12,7 @@ use serde_json::{Value, json};
 
 use crate::tools::{
     ToolContext, agent_tools, discovery_tools, file_tools, lsp_tools, mcp_tools, memory_tools,
-    notebook_tools, plan_tools, shell_tools, skill_tools, system_tools, task_tools, web_tools,
+    notebook_tools, plan_tools, shell_tools, skill_tools, system_tools, task_graph_tools, task_tools, web_tools,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -140,6 +140,12 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
         }
 
         // ── Task management ──────────────────────────────────────────────
+        "execute_task_graph" => {
+            let graph_json = args["graph"]
+                .as_str()
+                .ok_or_else(|| anyhow!("Missing: graph"))?;
+            task_graph_tools::execute_task_graph(graph_json, ctx).await
+        }
         "task_create" => {
             let title = args["title"]
                 .as_str()
@@ -314,7 +320,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
 // get_tool_definitions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Return JSON tool definitions for all 31 registered tools.
+/// Return JSON tool definitions for all 32 registered tools.
 pub fn get_tool_definitions() -> Vec<Value> {
     vec![
         // ── File tools ──────────────────────────────────────────────────────
@@ -339,6 +345,7 @@ pub fn get_tool_definitions() -> Vec<Value> {
         // ── Task management ────────────────────────────────────────────
         json!({"type":"function","function":{"name":"task_create","description":"Create a new task in .zed/task_list.json following Task Builder rules. Auto-assigns the next available integer ID and sets status to 'pending'. All Task Builder fields are supported: title, description, priority, dependencies (integer or decimal subtask IDs like 5.2), details (implementation instructions), testStrategy (verification approach), and subtasks (auto-assigned decimal IDs {parent}.1, {parent}.2, …).","parameters":{"type":"object","properties":{"title":{"type":"string","description":"Brief, descriptive task title (required)"},"description":{"type":"string","description":"Concise description of what the task involves"},"priority":{"type":"string","enum":["high","medium","low"],"description":"Importance level — high: blocks progress; medium: important; low: deferrable. Default: medium"},"dependencies":{"type":"array","items":{"type":"number"},"description":"IDs of tasks (or subtasks, e.g. 5.2) that must be done before this one"},"details":{"type":"string","description":"In-depth implementation instructions for the task"},"testStrategy":{"type":"string","description":"Verification approach to confirm the task is complete"},"subtasks":{"type":"array","description":"Optional initial subtasks; IDs are auto-assigned as {parent_id}.1, {parent_id}.2, etc. Each subtask starts as 'pending'.","items":{"type":"object","properties":{"title":{"type":"string","description":"Subtask title (required)"},"dependencies":{"type":"array","items":{"type":"number"},"description":"Subtask-level dependency IDs"}},"required":["title"]}}},"required":["title"]}}}),
         json!({"type":"function","function":{"name":"task_update","description":"Update a task's status, title, priority, or details in .zed/task_list.json","parameters":{"type":"object","properties":{"id":{"type":"number","description":"Task ID (supports decimals for subtasks, e.g. 85.2)"},"status":{"type":"string","enum":["pending","in_progress","done","deferred"]},"title":{"type":"string"},"priority":{"type":"string","enum":["high","medium","low"]},"details":{"type":"string"}},"required":["id"]}}}),
+        json!({"type":"function","function":{"name":"execute_task_graph","description":"Execute a DAG-based multi-step task graph with dependency resolution","parameters":{"type":"object","properties":{"graph":{"type":"string","description":"JSON string representing the task graph"}},"required":["graph"]}}}),
         // ── Plan mode ────────────────────────────────────────────────────────
         json!({"type":"function","function":{"name":"enter_plan_mode","description":"Activate plan mode — the agent outlines a full plan before making any changes","parameters":{"type":"object","properties":{}}}}),
         json!({"type":"function","function":{"name":"exit_plan_mode","description":"Deactivate plan mode and begin executing the current plan","parameters":{"type":"object","properties":{}}}}),
@@ -401,7 +408,7 @@ mod tests {
 
     #[test]
     fn get_tool_definitions_has_31_tools() {
-        assert_eq!(get_tool_definitions().len(), 32);
+        assert_eq!(get_tool_definitions().len(), 33);
     }
 
     #[test]

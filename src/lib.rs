@@ -50,6 +50,7 @@ pub mod router;
 pub mod rpl;
 pub mod security;
 pub mod skills;
+pub mod task_graph;
 pub mod tools;
 pub mod utils;
 

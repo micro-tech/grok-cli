@@ -11,7 +11,25 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
-## [0.1.9] - 2024-10-03
+## [0.1.10] - 2024-10-04
+
+### Added
+
+- **Task Graph Engine** (Task 98) — Add a DAG-based multi-step execution engine to Grok-CLI.
+  - **`src/task_graph/mod.rs`** — Core task graph implementation with `TaskNode`, `ToolCall`, and `TaskGraph` structs. Supports JSON serialization for LLM-generated graphs.
+  - **`src/tools/task_graph_tools.rs`** — `execute_task_graph` tool that parses JSON graphs and executes them with dependency resolution.
+  - **DAG Executor** — Topological sort ensures correct execution order, detects cycles, and propagates errors.
+  - **Tool Loop Integration** — New `execute_task_graph` tool registered in the tool registry, allowing LLMs to orchestrate multi-step workflows.
+  - **Error Handling** — Structured error reporting for invalid graphs, cycles, and execution failures.
+  - **Unit Tests** — Basic tests for graph creation, topological sorting, and cycle detection.
+  - **33 tools** now available (up from 32) with full LLM schema support.
+
+### Fixed
+
+- **Tool Count Update** — Updated tool count from 31 to 33 in registry comments and tests to reflect the new `execute_task_graph` tool.
+
+### Source
+- AI (Claude Sonnet 4.6) — Implemented as Task 98 in `.zed/task_list.json`.
 
 ### Fixed
 

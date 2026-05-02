@@ -51,6 +51,7 @@ pub mod shell_tools;
 pub mod skill_tools;
 pub mod system_tools;
 pub mod task_tools;
+pub mod task_graph_tools;
 pub mod tool_context;
 pub mod tool_error;
 pub mod web_tools;
@@ -84,6 +85,7 @@ pub use memory_tools::save_memory;
 // ── Task management ───────────────────────────────────────────────────────────
 
 pub use task_tools::{task_create, task_update};
+pub use task_graph_tools::execute_task_graph;
 
 // ── Plan mode + worktrees ─────────────────────────────────────────────────────
 
