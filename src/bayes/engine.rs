@@ -17,7 +17,8 @@ use std::collections::HashMap;
 
 use crate::bayes::belief_graph::BeliefGraph;
 use crate::bayes::likelihoods::{
-    likelihood_from_model_confidence, likelihood_from_text, likelihood_from_tool_failure,
+    DEFAULT_INTENT_LIKELIHOOD_WEIGHT, likelihood_from_model_confidence, likelihood_from_text,
+    likelihood_from_tool_failure,
 };
 use crate::bayes::priors::{default_priors, priors_from_config};
 use crate::bayes::updater::bayes_update;
@@ -26,7 +27,7 @@ use crate::bayes::updater::bayes_update;
 const DEFAULT_CLARIFICATION_THRESHOLD: f32 = 0.4;
 const DEFAULT_UNCERTAINTY_THRESHOLD: f32 = 0.6;
 const DEFAULT_VAGUENESS_THRESHOLD: f32 = 0.6;
-const DEFAULT_INTENT_LIKELIHOOD_WEIGHT: f32 = 5.0;
+
 const DEFAULT_PROFILE_LEARNING_RATE: f32 = 0.1;
 
 /// The core Bayesian inference engine.
@@ -67,6 +68,21 @@ impl BayesianEngine {
         let priors = crate::bayes::profile::load_profile().unwrap_or_else(default_priors);
         Self::from_priors(
             priors,
+            DEFAULT_CLARIFICATION_THRESHOLD,
+            DEFAULT_UNCERTAINTY_THRESHOLD,
+            DEFAULT_VAGUENESS_THRESHOLD,
+            DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
+            DEFAULT_PROFILE_LEARNING_RATE,
+        )
+    }
+
+    /// Create a new engine using the compiled-in default priors.
+    ///
+    /// Unlike [`new`], this constructor never reads from the on-disk saved profile,
+    /// making it suitable for unit tests that require deterministic baseline behaviour.
+    pub fn new_with_default_priors() -> Self {
+        Self::from_priors(
+            default_priors(),
             DEFAULT_CLARIFICATION_THRESHOLD,
             DEFAULT_UNCERTAINTY_THRESHOLD,
             DEFAULT_VAGUENESS_THRESHOLD,
@@ -253,14 +269,14 @@ mod tests {
 
     #[test]
     fn test_engine_initialization() {
-        let engine = BayesianEngine::new();
+        let engine = BayesianEngine::new_with_default_priors();
         assert!(engine.probability("intent_question") > 0.0);
         assert_eq!(engine.best_intent(), Some("intent_question".to_string()));
     }
 
     #[test]
     fn test_engine_update_from_text() {
-        let mut engine = BayesianEngine::new();
+        let mut engine = BayesianEngine::new_with_default_priors();
         assert_eq!(engine.best_intent(), Some("intent_question".to_string()));
         engine.update_from_text("can you edit the config file");
         assert_eq!(engine.best_intent(), Some("intent_edit".to_string()));
@@ -300,11 +316,15 @@ mod tests {
     #[test]
     fn test_needs_clarification_gate() {
         // With a very low threshold the clarification gate should fire easily.
-        let config = BayesianConfig {
-            clarification_threshold: 0.01, // fires with almost any need_clarification signal
-            ..BayesianConfig::default()
-        };
-        let mut engine = BayesianEngine::new_with_config(&config);
+        // Use from_priors() directly so the test doesn't load the on-disk profile.
+        let mut engine = BayesianEngine::from_priors(
+            default_priors(),
+            0.01, // very low threshold — fires easily
+            DEFAULT_UNCERTAINTY_THRESHOLD,
+            DEFAULT_VAGUENESS_THRESHOLD,
+            DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
+            DEFAULT_PROFILE_LEARNING_RATE,
+        );
         engine.update_from_text("be careful, don't delete");
         assert!(engine.needs_clarification());
     }
@@ -330,11 +350,15 @@ mod tests {
 
     #[test]
     fn test_profile_learning_rate_applied() {
-        let config = BayesianConfig {
-            profile_learning_rate: 0.5, // 50 % boost — noticeable in test
-            ..BayesianConfig::default()
-        };
-        let mut engine = BayesianEngine::new_with_config(&config);
+        // Use from_priors directly to avoid loading the on-disk saved profile.
+        let mut engine = BayesianEngine::from_priors(
+            default_priors(),
+            DEFAULT_CLARIFICATION_THRESHOLD,
+            DEFAULT_UNCERTAINTY_THRESHOLD,
+            DEFAULT_VAGUENESS_THRESHOLD,
+            DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
+            0.5, // 50 % boost — noticeable in test
+        );
         let before = engine.probability("intent_edit");
         engine.update_profile("write_file");
         let after = engine.probability("intent_edit");

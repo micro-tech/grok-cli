@@ -172,22 +172,22 @@ pub fn parse_simulation_response(response: &str) -> SimulationResult {
                  desc: &mut String,
                  risk_ov: &mut Option<RiskLevel>,
                  args: &mut Vec<(String, String)>| {
-        if let Some(step) = idx {
-            if !tn.is_empty() {
-                let risk = risk_ov
-                    .take()
-                    .unwrap_or_else(|| RiskLevel::from_tool_name(tn));
-                let mut warnings = Vec::new();
-                build_warnings(tn, &risk, &mut warnings);
-                ops.push(SimulatedOperation {
-                    step,
-                    tool_name: std::mem::take(tn),
-                    description: std::mem::take(desc),
-                    risk_level: risk,
-                    arguments: std::mem::take(args),
-                    warnings,
-                });
-            }
+        if let Some(step) = idx
+            && !tn.is_empty()
+        {
+            let risk = risk_ov
+                .take()
+                .unwrap_or_else(|| RiskLevel::from_tool_name(tn));
+            let mut warnings = Vec::new();
+            build_warnings(tn, &risk, &mut warnings);
+            ops.push(SimulatedOperation {
+                step,
+                tool_name: std::mem::take(tn),
+                description: std::mem::take(desc),
+                risk_level: risk,
+                arguments: std::mem::take(args),
+                warnings,
+            });
         }
     };
 
@@ -358,14 +358,14 @@ fn detect_contradictions(ops: &[SimulatedOperation]) -> Vec<String> {
 
         match op.tool_name.as_str() {
             "read_file" => {
-                if let Some(path) = path_arg {
-                    if written.contains(path) {
-                        issues.push(format!(
-                            "Step {}: reading '{}' after it has already been written — \
-                             ensure the write completes successfully first.",
-                            op.step, path
-                        ));
-                    }
+                if let Some(path) = path_arg
+                    && written.contains(path)
+                {
+                    issues.push(format!(
+                        "Step {}: reading '{}' after it has already been written — \
+                         ensure the write completes successfully first.",
+                        op.step, path
+                    ));
                 }
             }
             "write_file" | "replace" => {
@@ -393,14 +393,14 @@ fn detect_contradictions(ops: &[SimulatedOperation]) -> Vec<String> {
                 }
             }
             "delete_file" | "delete_directory" => {
-                if let Some(path) = path_arg {
-                    if written.contains(path) {
-                        issues.push(format!(
-                            "Step {}: '{}' is written then deleted in the same plan — \
-                             this looks like a no-op or an error.",
-                            op.step, path
-                        ));
-                    }
+                if let Some(path) = path_arg
+                    && written.contains(path)
+                {
+                    issues.push(format!(
+                        "Step {}: '{}' is written then deleted in the same plan — \
+                         this looks like a no-op or an error.",
+                        op.step, path
+                    ));
                 }
             }
             _ => {}
@@ -440,7 +440,7 @@ pub fn display_simulation_result(result: &SimulationResult, original_input: &str
     println!(
         "{}  {}",
         "🔬 SIMULATION RESULT".bright_blue().bold(),
-        format!("(dry-run — nothing was executed)").dimmed()
+        "(dry-run — nothing was executed)".dimmed()
     );
     println!(
         "{}",
@@ -461,8 +461,7 @@ pub fn display_simulation_result(result: &SimulationResult, original_input: &str
         println!("  {} No operations predicted.", "ℹ".bright_blue());
     } else {
         println!(
-            "  {} {} operation(s) predicted:",
-            "📋".to_string(),
+            "  📋 {} operation(s) predicted:",
             result.operations.len().to_string().bright_white()
         );
         println!();

@@ -1,5 +1,3 @@
-use clap::CommandFactory;
-use clap_markdown::MarkdownOptions;
 use grok_cli::cli::app::Cli;
 use std::fs;
 use std::path::PathBuf;

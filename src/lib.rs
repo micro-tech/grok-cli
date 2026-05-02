@@ -39,12 +39,18 @@ pub mod agent;
 pub mod bayes;
 pub mod cli;
 pub mod config;
+pub mod context;
 pub mod display;
+pub mod engine;
 pub mod grok_client_ext;
 pub mod hooks;
 pub mod mcp;
+pub mod memory;
+pub mod router;
+pub mod rpl;
 pub mod security;
 pub mod skills;
+pub mod tools;
 pub mod utils;
 
 // Re-export grok_api types for use throughout the crate

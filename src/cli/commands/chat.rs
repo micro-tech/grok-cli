@@ -7,7 +7,7 @@
 // remain for external users and documentation purposes.
 #![allow(deprecated)]
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use colored::*;
 use serde_json::{Value, json};
 use std::env;
@@ -16,12 +16,16 @@ use std::io::{self, Write};
 use std::process::Command;
 
 use crate::acp::security::SecurityPolicy;
+use crate::acp::slash_commands;
 use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
 use crate::cli::{create_spinner, format_grok_response, print_error, print_info, print_success};
 use crate::config::{BayesianConfig, RateLimitConfig};
-use crate::utils::client::initialize_client;
-use crate::{GrokClient, ToolCall, content_to_string, extract_text_content};
+use crate::router::AppRouter;
+use crate::tools::registry as tool_registry;
+use crate::tools::tool_context::ToolContext;
+use crate::utils::client::initialize_router;
+use crate::{ToolCall, content_to_string, extract_text_content};
 
 pub struct ChatOptions<'a> {
     pub message: Vec<String>,
@@ -38,12 +42,7 @@ pub struct ChatOptions<'a> {
 }
 
 pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
-    let client = initialize_client(
-        options.api_key,
-        options.timeout_secs,
-        options.max_retries,
-        options.rate_limit_config,
-    )?;
+    let client = initialize_router(options.api_key, options.timeout_secs)?;
 
     if options.interactive {
         handle_interactive_chat(
@@ -70,7 +69,7 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
 }
 
 async fn handle_single_chat(
-    client: GrokClient,
+    client: AppRouter,
     message: &str,
     system: Option<String>,
     temperature: f32,
@@ -138,125 +137,35 @@ async fn handle_single_chat(
     Ok(())
 }
 
+/// Execute a tool call from the AI using the full tool registry (all 31 tools).
+/// Previously only ~9 tools were handled here; now every tool defined in
+/// `tools::registry::get_tool_definitions` is dispatched correctly.
 async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<()> {
     let name = &tool_call.function.name;
     let args: Value = serde_json::from_str(&tool_call.function.arguments)?;
+    let ctx = ToolContext::new(security.clone());
 
-    match name.as_str() {
-        "write_file" => {
-            let path = args["path"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing path"))?;
-            let content = args["content"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing content"))?;
-            let result = tools::write_file(path, content, security)?;
-            println!("  {} {}", "✓".green(), result);
-        }
-        "read_file" => {
-            let path = args["path"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing path"))?;
-            let content = tools::read_file(path, security)?;
-            println!(
-                "  {} Read {} bytes from {}",
-                "✓".green(),
-                content.len(),
-                path
-            );
-        }
-        "replace" => {
-            let path = args["path"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing path"))?;
-            let old = args["old_string"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing old_string"))?;
-            let new = args["new_string"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing new_string"))?;
-            let expected = args
-                .get("expected_replacements")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32);
-            let result = tools::replace(path, old, new, expected, security)?;
-            println!("  {} {}", "✓".green(), result);
-        }
-        "list_directory" => {
-            let path = args["path"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing path"))?;
-            let result = tools::list_directory(path, security)?;
-            println!("  {} Directory contents of {}:", "✓".green(), path);
-            for line in result.lines() {
+    println!("  {} Running: {}", "⚙".cyan(), name);
+    match tool_registry::execute_tool(name, &args, &ctx).await {
+        Ok(output) => {
+            println!("  {} {}", "✓".green(), name);
+            let lines: Vec<&str> = output.lines().collect();
+            for line in lines.iter().take(20) {
                 println!("    {}", line);
             }
-        }
-        "glob_search" => {
-            let pattern = args["pattern"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing pattern"))?;
-            let result = tools::glob_search(pattern, security)?;
-            println!("  {} Files matching '{}':", "✓".green(), pattern);
-            for line in result.lines() {
-                println!("    {}", line);
+            if lines.len() > 20 {
+                println!("    {} ({} more lines)", "...".dimmed(), lines.len() - 20);
             }
         }
-        "save_memory" => {
-            let fact = args["fact"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing fact"))?;
-            let result = tools::save_memory(fact)?;
-            println!("  {} {}", "✓".green(), result);
-        }
-        "run_shell_command" => {
-            let command = args["command"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing command"))?;
-            println!("  {} Executing: {}", "⚙".cyan(), command);
-            let result = tools::run_shell_command(command, security).await?;
-            println!("  {} Command output:", "✓".green());
-            for line in result.lines() {
-                println!("    {}", line);
-            }
-        }
-        "web_search" => {
-            let query = args["query"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing query"))?;
-            println!("  {} Searching for: {}", "🔍".cyan(), query);
-            match tools::web_search(query).await {
-                Ok(results) => {
-                    println!("  {} Search results:", "✓".green());
-                    println!("{}", results);
-                }
-                Err(e) => {
-                    println!("  {} Search failed: {}", "✗".red(), e);
-                }
-            }
-        }
-        "web_fetch" => {
-            let url = args["url"].as_str().ok_or_else(|| anyhow!("Missing url"))?;
-            println!("  {} Fetching: {}", "🔍".cyan(), url);
-            match tools::web_fetch(url).await {
-                Ok(content) => {
-                    println!("  {} Fetched {} bytes", "✓".green(), content.len());
-                }
-                Err(e) => {
-                    println!("  {} Fetch failed: {}", "✗".red(), e);
-                }
-            }
-        }
-        _ => {
-            println!("  {} Unsupported tool: {}", "⚠".yellow(), name);
+        Err(e) => {
+            print_error(&format!("Tool '{}' failed: {}", name, e));
         }
     }
-
     Ok(())
 }
 
 async fn handle_interactive_chat(
-    client: GrokClient,
+    client: AppRouter,
     system: Option<String>,
     temperature: f32,
     max_tokens: u32,
@@ -335,14 +244,14 @@ async fn handle_interactive_chat(
                 if lower_input == "/bayes" || lower_input == "/beliefs" {
                     show_belief_graph = !show_belief_graph;
                     if show_belief_graph {
-                        println!("{} {}", "✓".green(), "Belief graph visualization enabled.");
+                        println!("{} Belief graph visualization enabled.", "✓".green());
                         if enable_bayesian_router {
                             println!("{}", router.visualize_beliefs());
                         } else {
                             println!("{}", "⚠ Bayesian router is disabled in config.".yellow());
                         }
                     } else {
-                        println!("{} {}", "✓".green(), "Belief graph visualization disabled.");
+                        println!("{} Belief graph visualization disabled.", "✓".green());
                     }
                     continue;
                 }
@@ -504,6 +413,31 @@ fn handle_interactive_command(
             print_conversation_history(conversation_history);
             Ok(Some(CommandResult::Continue))
         }
+        // ── Slash commands (work in both ACP and CLI modes) ──────────────────
+        "/tools" | "tools" => {
+            println!("{}", slash_commands::format_tools_text());
+            Ok(Some(CommandResult::Continue))
+        }
+        "/help" => {
+            print_help();
+            Ok(Some(CommandResult::Continue))
+        }
+        "/clear" => {
+            if conversation_history
+                .first()
+                .and_then(|msg| msg.get("role"))
+                .and_then(|role| role.as_str())
+                == Some("system")
+            {
+                let system_msg = conversation_history[0].clone();
+                conversation_history.clear();
+                conversation_history.push(system_msg);
+            } else {
+                conversation_history.clear();
+            }
+            print_success("Conversation history cleared!");
+            Ok(Some(CommandResult::Continue))
+        }
         "ls" | "dir" => {
             match fs::read_dir(".") {
                 Ok(entries) => {
@@ -563,19 +497,31 @@ fn print_help() {
     println!();
     println!("{}", "Available commands:".cyan().bold());
     println!("  {} - Exit the chat session", "exit, quit, q".yellow());
-    println!("  {} - Show this help message", "help, h".yellow());
-    println!("  {} - Clear conversation history", "clear, cls".yellow());
+    println!("  {} - Show this help message", "help, h, /help".yellow());
+    println!(
+        "  {} - Clear conversation history",
+        "clear, cls, /clear".yellow()
+    );
     println!("  {} - Show conversation history", "history".yellow());
+    println!("  {} - List all available AI tools", "/tools".yellow());
     println!("  {} - List files in current directory", "ls, dir".yellow());
     println!("  {} - Change current directory", "cd <path>".yellow());
     println!("  {} - Execute shell command", "!<command>".yellow());
     println!();
     println!("{}", "Tool Support:".cyan().bold());
-    println!("  Grok can now automatically create files and directories!");
+    println!("  Grok has access to all 31 tools (file, shell, web, memory, tasks, LSP, MCP…).");
     println!("  Just ask naturally, e.g.:");
     println!("    {} 'Create a new Rust project structure'", "•".green());
     println!(
         "    {} 'Write a hello world program to main.rs'",
+        "•".green()
+    );
+    println!(
+        "    {} 'Search the web for Rust async examples'",
+        "•".green()
+    );
+    println!(
+        "    {} 'Run cargo check and show me the errors'",
         "•".green()
     );
     println!();

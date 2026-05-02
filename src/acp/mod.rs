@@ -12,10 +12,10 @@ use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
-use crate::GrokClient;
 use crate::config::Config;
 use crate::content_to_string;
 use crate::hooks::HookManager;
+use crate::router::AppRouter;
 
 pub mod protocol;
 pub mod security;
@@ -56,10 +56,11 @@ impl PermissionBridge {
 
 /// Grok AI agent implementation for ACP
 pub struct GrokAcpAgent {
-    /// Grok API client — `None` when no API key is configured at startup.
-    /// The key is only required when making actual API calls; the agent can
-    /// still respond to `initialize` and declare its auth requirements.
-    grok_client: Option<GrokClient>,
+    /// Application-level AI router — `None` when no API key is configured at
+    /// startup.  The key is only required when making actual API calls; the
+    /// agent can still respond to `initialize` and declare its auth
+    /// requirements without one.
+    router: Option<AppRouter>,
 
     /// Agent configuration
     config: Config,
@@ -240,15 +241,18 @@ impl GrokAcpAgent {
         // `initialize` (declaring its auth requirements) even before the user
         // has supplied a key, so we defer the hard error to the first actual
         // API call rather than failing here.
-        let grok_client = if let Some(ref api_key) = config.api_key {
-            match GrokClient::with_settings(api_key, config.timeout_secs, config.max_retries) {
-                Ok(client) => {
-                    info!("✓ Grok API client initialised");
-                    Some(client)
+        // Build the AppRouter only when an API key is available.
+        // Retries and Starlink-resilient back-off live inside GrokBackend;
+        // config.max_retries is no longer passed explicitly.
+        let router = if let Some(ref api_key) = config.api_key {
+            match AppRouter::new(api_key, config.timeout_secs) {
+                Ok(r) => {
+                    info!("✓ AppRouter initialised (timeout={}s)", config.timeout_secs);
+                    Some(r)
                 }
                 Err(e) => {
                     warn!(
-                        "Failed to create Grok client (will retry on first API call): {}",
+                        "Failed to create AppRouter (will retry on first API call): {}",
                         e
                     );
                     None
@@ -269,7 +273,7 @@ impl GrokAcpAgent {
         }
 
         Ok(Self {
-            grok_client,
+            router,
             config,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             capabilities,
@@ -279,13 +283,13 @@ impl GrokAcpAgent {
         })
     }
 
-    /// Return a reference to the underlying [`GrokClient`], or a descriptive
-    /// error if no API key was configured when the agent was created.
+    /// Return a reference to the [`AppRouter`], or a descriptive error if no
+    /// API key was configured when the agent was created.
     ///
     /// Call this inside any method that needs to reach the xAI API instead of
-    /// accessing `self.grok_client` directly.
-    fn get_client(&self) -> Result<&GrokClient> {
-        self.grok_client.as_ref().ok_or_else(|| {
+    /// accessing `self.router` directly.
+    fn get_router(&self) -> Result<&AppRouter> {
+        self.router.as_ref().ok_or_else(|| {
             anyhow!(
                 "API key not configured. \
                  Set the GROK_API_KEY environment variable and restart the agent, \
@@ -318,110 +322,20 @@ impl GrokAcpAgent {
                 "streaming".to_string(),
                 "function_calling".to_string(),
             ],
-            tools: vec![
-                ToolDefinition {
-                    name: "chat_complete".to_string(),
-                    description: "Generate chat completions using Grok AI".to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {
-                            "message": {
-                                "type": "string",
-                                "description": "The message to send to Grok"
-                            },
-                            "temperature": {
-                                "type": "number",
-                                "minimum": 0.0,
-                                "maximum": 2.0,
-                                "description": "Creativity level (0.0 to 2.0)"
-                            },
-                            "max_tokens": {
-                                "type": "integer",
-                                "minimum": 1,
-                                "maximum": 131072,
-                                "description": "Maximum tokens in response"
-                            }
-                        },
-                        "required": ["message"]
-                    }),
-                },
-                ToolDefinition {
-                    name: "code_explain".to_string(),
-                    description: "Explain code functionality and structure".to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {
-                            "code": {
-                                "type": "string",
-                                "description": "The code to explain"
-                            },
-                            "language": {
-                                "type": "string",
-                                "description": "Programming language (optional)"
-                            },
-                            "detail_level": {
-                                "type": "string",
-                                "enum": ["basic", "detailed", "expert"],
-                                "description": "Level of detail in explanation"
-                            }
-                        },
-                        "required": ["code"]
-                    }),
-                },
-                ToolDefinition {
-                    name: "code_review".to_string(),
-                    description: "Review code for issues and improvements".to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {
-                            "code": {
-                                "type": "string",
-                                "description": "The code to review"
-                            },
-                            "focus": {
-                                "type": "array",
-                                "items": {
-                                    "type": "string",
-                                    "enum": ["security", "performance", "style", "bugs", "maintainability"]
-                                },
-                                "description": "Areas to focus on during review"
-                            },
-                            "language": {
-                                "type": "string",
-                                "description": "Programming language"
-                            }
-                        },
-                        "required": ["code"]
-                    }),
-                },
-                ToolDefinition {
-                    name: "code_generate".to_string(),
-                    description: "Generate code from natural language descriptions".to_string(),
-                    parameters: json!({
-                        "type": "object",
-                        "properties": {
-                            "description": {
-                                "type": "string",
-                                "description": "Description of what to generate"
-                            },
-                            "language": {
-                                "type": "string",
-                                "description": "Target programming language"
-                            },
-                            "style": {
-                                "type": "string",
-                                "enum": ["functional", "object-oriented", "procedural"],
-                                "description": "Programming style preference"
-                            },
-                            "include_tests": {
-                                "type": "boolean",
-                                "description": "Whether to include unit tests"
-                            }
-                        },
-                        "required": ["description"]
-                    }),
-                },
-            ],
+            // Build the tool list live from the registry so this list
+            // automatically reflects any newly added tools without requiring
+            // manual updates here.
+            tools: crate::tools::registry::get_available_tool_definitions()
+                .iter()
+                .filter_map(|t| {
+                    let func = t.get("function")?;
+                    Some(ToolDefinition {
+                        name: func["name"].as_str()?.to_string(),
+                        description: func["description"].as_str()?.to_string(),
+                        parameters: func.get("parameters").cloned().unwrap_or(json!({})),
+                    })
+                })
+                .collect(),
         }
     }
 
@@ -458,6 +372,7 @@ impl GrokAcpAgent {
     }
 
     /// Check if a tool execution is permitted by the user
+    #[allow(dead_code)]
     pub(crate) async fn check_tool_permission(
         &self,
         session_id: &SessionId,
@@ -647,7 +562,7 @@ impl GrokAcpAgent {
                 loop {
                     attempt += 1;
                     match self
-                        .get_client()?
+                        .get_router()?
                         .chat_completion_with_history(
                             &session.messages,
                             temperature,
@@ -744,21 +659,9 @@ impl GrokAcpAgent {
             // Add assistant response to history
             session.messages.push(serde_json::to_value(&response_msg)?);
 
-            // Check finish_reason - if "stop", we're done regardless of tool_calls
-            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
-                let elapsed = start_time.elapsed();
-                let response_text = content_to_string(response_msg.content.as_ref());
-                info!(
-                    "✅ Model signaled completion (finish_reason: {:?}) in {:?} ({} loops, {} chars)",
-                    finish_reason,
-                    elapsed,
-                    loop_count,
-                    response_text.len()
-                );
-                return Ok(response_text);
-            }
-
-            // Check if we have tool calls to process
+            // Check if we have tool calls to process FIRST.
+            // finish_reason is checked AFTER the tool loop so that Grok's
+            // "stop" signal never short-circuits pending tool calls mid-flight.
             let has_tool_calls = response_msg
                 .tool_calls
                 .as_ref()
@@ -769,10 +672,11 @@ impl GrokAcpAgent {
             let response_text = content_to_string(response_msg.content.as_ref());
 
             if !has_tool_calls {
-                // No tool calls and no explicit stop - return content
+                // No tool calls — return whatever the model said (including "stop").
                 info!(
-                    "✨ Chat completion finished in {:?} ({} loops, {} chars)",
+                    "✨ Chat completion finished in {:?} (finish_reason: {:?}, {} loops, {} chars)",
                     elapsed,
+                    finish_reason,
                     loop_count,
                     response_text.len()
                 );
@@ -886,12 +790,12 @@ impl GrokAcpAgent {
                 let result = match function_name.as_str() {
                     "read_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::read_file(path, &policy)
+                        tools::read_file(path, &policy).await
                     }
                     "write_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
-                        tools::write_file(path, content, &policy)
+                        tools::write_file(path, content, &policy).await
                     }
                     "list_directory" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
@@ -920,7 +824,7 @@ impl GrokAcpAgent {
                             .ok_or(anyhow!("Missing new_string"))?;
                         let expected_replacements =
                             args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(path, old_string, new_string, expected_replacements, &policy)
+                        tools::replace(path, old_string, new_string, expected_replacements, &policy).await
                     }
                     "save_memory" => {
                         let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
@@ -945,11 +849,31 @@ impl GrokAcpAgent {
                                     .map(|s| s.to_string())
                             })
                             .collect();
-                        tools::read_multiple_files(paths?, &policy)
+                        tools::read_multiple_files(paths?, &policy).await
                     }
                     "list_code_definitions" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_code_definitions(path, &policy)
+                        tools::list_code_definitions(path, &policy).await
+                    }
+                    "task_create" => {
+                        let title = args["title"].as_str().ok_or(anyhow!("Missing title"))?;
+                        let description = args["description"].as_str().ok_or(anyhow!("Missing description"))?;
+                        let priority = args["priority"].as_str().ok_or(anyhow!("Missing priority"))?;
+                        let dependencies_value = args["dependencies"].as_array().ok_or(anyhow!("Missing dependencies"))?;
+                        let dependencies: Result<Vec<f64>> = dependencies_value.iter().map(|v| v.as_f64().ok_or(anyhow!("Invalid dependency"))).collect();
+                        let details = args["details"].as_str().ok_or(anyhow!("Missing details"))?;
+                        let test_strategy = args["testStrategy"].as_str().ok_or(anyhow!("Missing testStrategy"))?;
+                        let subtasks_value = args["subtasks"].as_array().ok_or(anyhow!("Missing subtasks"))?;
+                        let subtasks: Vec<Value> = subtasks_value.clone();
+                        tools::task_create(title, description, priority, dependencies?, details, test_strategy, subtasks, &policy)
+                    }
+                    "task_update" => {
+                        let id = args["id"].as_f64().ok_or(anyhow!("Missing id"))?;
+                        let status = args["status"].as_str();
+                        let title = args["title"].as_str();
+                        let priority = args["priority"].as_str();
+                        let details = args["details"].as_str();
+                        tools::task_update(id, status, title, priority, details, &policy)
                     }
                     _ => Err(anyhow!("Unknown tool: {}", function_name)),
                 };
@@ -1018,6 +942,17 @@ impl GrokAcpAgent {
 
             let loop_duration = loop_start.elapsed();
             info!("🔄 Loop iteration completed in {:?}", loop_duration);
+
+            // Post-tool-loop guard: if the model signalled "stop" alongside
+            // tool calls, return now instead of spinning up a redundant extra
+            // API iteration (the tools have already completed).
+            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
+                info!(
+                    "✅ Model flagged stop after tool execution — returning ({} loops)",
+                    loop_count
+                );
+                return Ok(String::new());
+            }
             // Continue loop to get next response from model with tool results
         }
     }
@@ -1144,7 +1079,7 @@ impl GrokAcpAgent {
             .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
 
         let response_with_finish = self
-            .get_client()?
+            .get_router()?
             .chat_completion_with_history(
                 &messages,
                 session.config.temperature,
@@ -1183,6 +1118,7 @@ impl GrokAcpAgent {
     /// to that tool within the same session skip the permission prompt.
     ///
     /// Silently no-ops if the session no longer exists.
+    #[allow(dead_code)]
     pub(crate) async fn set_always_allowed(&self, session_id: &SessionId, tool_name: &str) {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(&session_id.0) {
@@ -1359,7 +1295,7 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-        assert_eq!(config.model, "grok-4-1-fast-reasoning");
+        assert_eq!(config.model, "grok-code-fast-1");
         assert_eq!(config.temperature, 0.5);
         assert_eq!(config.max_tokens, 4096);
         assert!(config.system_prompt.is_some());

@@ -27,6 +27,16 @@ impl Router {
         }
     }
 
+    /// Create a router that uses the compiled-in default priors.
+    ///
+    /// Unlike [`new`], this never reads the on-disk saved profile, making it
+    /// deterministic for unit tests.
+    pub fn new_with_default_priors() -> Self {
+        Self {
+            bayes: BayesianEngine::new_with_default_priors(),
+        }
+    }
+
     /// Create a router whose engine is initialised from `[bayesian]` config.
     ///
     /// This applies configured priors, thresholds, likelihood weights, and
@@ -61,7 +71,7 @@ impl Router {
             "intent_edit" => RouterAction::UseTool("replace".to_string()),
             "intent_shell" => RouterAction::UseTool("run_shell_command".to_string()),
             "intent_search" => RouterAction::UseTool("web_search".to_string()),
-            "intent_question" | _ => RouterAction::NormalChat,
+            _ => RouterAction::NormalChat,
         }
     }
 
@@ -111,10 +121,12 @@ impl Router {
         all_tools
             .into_iter()
             .filter(|t| {
-                if let Some(function) = t.get("function") {
-                    if let Some(name) = function.get("name").and_then(|n| n.as_str()) {
-                        return keep.contains(&name);
-                    }
+                if let Some(name) = t
+                    .get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str())
+                {
+                    return keep.contains(&name);
                 }
                 true
             })
@@ -152,7 +164,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_shell_intent() {
-        let mut router = Router::new();
+        let mut router = Router::new_with_default_priors();
         let action = router.route("run the build command").await;
 
         assert!(matches!(action, RouterAction::UseTool(tool) if tool == "run_shell_command"));
@@ -160,7 +172,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_clarification_gate() {
-        let mut router = Router::new();
+        let mut router = Router::new_with_default_priors();
         let action = router.route("be careful, don't delete").await;
 
         assert!(matches!(action, RouterAction::AskClarification(_)));
@@ -172,7 +184,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_normal_chat() {
-        let mut router = Router::new();
+        let mut router = Router::new_with_default_priors();
         // Just a random statement
         let action = router.route("hello there").await;
         assert!(matches!(action, RouterAction::NormalChat));

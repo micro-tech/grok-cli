@@ -6,7 +6,7 @@ pub struct BeliefNode {
     pub probability: f32,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BeliefGraph {
     pub nodes: HashMap<String, BeliefNode>,
 }

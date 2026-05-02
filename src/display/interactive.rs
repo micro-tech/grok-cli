@@ -15,21 +15,24 @@ use std::io::{self, Write};
 use std::path::PathBuf;
 use tokio::time::{Duration, sleep};
 
-use crate::GrokClient;
 use crate::acp::security::SecurityPolicy;
+use crate::acp::slash_commands;
 use crate::acp::tools;
 use crate::config::Config;
+use crate::content_to_string;
 use crate::display::{
     BannerConfig, clear_current_line, format_directory_recommendation, format_grok_logo,
     format_welcome_banner,
 };
+use crate::router::AppRouter;
 use crate::skills::{AutoActivationEngine, list_skills};
+use crate::tools::registry as tool_registry;
+use crate::tools::tool_context::ToolContext;
 use crate::utils::context::{
     format_context_for_prompt, get_context_file_path, load_project_context,
 };
 use crate::utils::session::{list_sessions, load_session, save_session};
 use crate::utils::shell_permissions::{ApprovalMode, ShellPermissions};
-use crate::content_to_string;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 
@@ -189,7 +192,7 @@ pub async fn start_interactive_mode(
     // rather than loading all skills at startup
 
     let mut session = InteractiveSession::new(model.to_string(), project_context);
-    let client = GrokClient::new(api_key)?;
+    let client = AppRouter::new(api_key, 30)?;
 
     // Display startup elements
     if interactive_config.show_banner {
@@ -382,7 +385,7 @@ use crate::display::components::input::{Suggestion, read_input_with_suggestions}
 /// Main interactive loop
 async fn run_interactive_loop(
     session: &mut InteractiveSession,
-    client: &GrokClient,
+    client: &AppRouter,
     interactive_config: &InteractiveConfig,
     app_config: &mut Config,
 ) -> Result<bool> {
@@ -588,6 +591,7 @@ async fn run_interactive_loop(
 }
 
 /// Display the input prompt with proper cursor positioning
+#[allow(dead_code)]
 fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> Result<()> {
     let prompt = match config.prompt_style {
         PromptStyle::Simple => "> ".to_string(),
@@ -622,6 +626,7 @@ fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> R
 }
 
 /// Read user input from stdin with cursor cleanup
+#[allow(dead_code)]
 fn read_user_input() -> Result<String> {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
@@ -1094,108 +1099,9 @@ fn print_interactive_help() {
 
 /// Print available coding tools
 fn print_available_tools() {
-    use colored::*;
-
-    println!("{}", "Available Coding Tools:".bright_cyan().bold());
-    println!();
-    println!("{}", "These tools are available when using the ACP server or when Grok needs to perform file operations:".dimmed());
-    println!();
-
-    let tools = vec![
-        (
-            "read_file",
-            "Read the content of a file",
-            "read_file(path: string)",
-        ),
-        (
-            "write_file",
-            "Write content to a file",
-            "write_file(path: string, content: string)",
-        ),
-        (
-            "replace",
-            "Replace text in a file",
-            "replace(path: string, old_string: string, new_string: string)",
-        ),
-        (
-            "list_directory",
-            "List files and directories",
-            "list_directory(path: string)",
-        ),
-        (
-            "glob_search",
-            "Find files matching a pattern",
-            "glob_search(pattern: string)",
-        ),
-        (
-            "search_file_content",
-            "Search for text in files",
-            "search_file_content(path: string, pattern: string)",
-        ),
-        (
-            "run_shell_command",
-            "Execute a shell command",
-            "run_shell_command(command: string)",
-        ),
-        ("web_search", "Search the web", "web_search(query: string)"),
-        (
-            "web_fetch",
-            "Fetch content from a URL",
-            "web_fetch(url: string)",
-        ),
-        (
-            "save_memory",
-            "Save a fact to memory",
-            "save_memory(fact: string)",
-        ),
-    ];
-
-    println!("{}", "File Operations:".bright_yellow().bold());
-    for (name, desc, sig) in &tools[0..3] {
-        println!("  {} {}", name.bright_white().bold(), "-".dimmed());
-        println!("    {}", desc.dimmed());
-        println!("    {}", sig.bright_blue());
-        println!();
-    }
-
-    println!("{}", "File Search & Discovery:".bright_yellow().bold());
-    for (name, desc, sig) in &tools[3..6] {
-        println!("  {} {}", name.bright_white().bold(), "-".dimmed());
-        println!("    {}", desc.dimmed());
-        println!("    {}", sig.bright_blue());
-        println!();
-    }
-
-    println!("{}", "Execution & Web:".bright_yellow().bold());
-    for (name, desc, sig) in &tools[6..9] {
-        println!("  {} {}", name.bright_white().bold(), "-".dimmed());
-        println!("    {}", desc.dimmed());
-        println!("    {}", sig.bright_blue());
-        println!();
-    }
-
-    println!("{}", "Memory:".bright_yellow().bold());
-    for (name, desc, sig) in &tools[9..10] {
-        println!("  {} {}", name.bright_white().bold(), "-".dimmed());
-        println!("    {}", desc.dimmed());
-        println!("    {}", sig.bright_blue());
-        println!();
-    }
-
-    println!("{}", "Note:".bright_cyan());
-    println!(
-        "  {}",
-        "• Tools are automatically used by Grok when needed".dimmed()
-    );
-    println!(
-        "  {}",
-        "• For ACP server mode, use: grok acp stdio".dimmed()
-    );
-    println!(
-        "  {}",
-        "• All file operations respect security permissions".dimmed()
-    );
-    println!();
+    // Use the live registry so this always reflects the real tool count,
+    // identical to what /tools shows in ACP mode.
+    println!("{}", slash_commands::format_tools_text());
 }
 
 /// Print conversation history
@@ -1290,7 +1196,7 @@ fn print_session_status(session: &InteractiveSession) {
 
 /// Send message to Grok and handle response
 async fn send_to_grok(
-    client: &GrokClient,
+    client: &AppRouter,
     session: &mut InteractiveSession,
     input: &str,
 ) -> Result<()> {
@@ -1418,7 +1324,7 @@ async fn send_to_grok(
 /// it to describe what it *would* do without actually executing anything.
 /// The response is parsed and displayed as a structured simulation report.
 async fn run_simulation(
-    client: &GrokClient,
+    client: &AppRouter,
     session: &InteractiveSession,
     input: &str,
 ) -> Result<()> {
@@ -1428,8 +1334,7 @@ async fn run_simulation(
     use colored::*;
 
     println!(
-        "{} {}",
-        "🔬".to_string(),
+        "🔬 {}",
         "Running simulation (dry-run)…".bright_blue().dimmed()
     );
     print!("{} ", "Thinking...".bright_yellow());
@@ -1503,121 +1408,26 @@ async fn execute_tool_call_interactive(
     tool_call: &crate::ToolCall,
     security: &SecurityPolicy,
 ) -> Result<()> {
-    use anyhow::anyhow;
-
     let name = &tool_call.function.name;
     let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
+    let ctx = ToolContext::new(security.clone());
 
-    match name.as_str() {
-        "write_file" => {
-            let path = args["path"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing path"))?;
-            let content = args["content"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing content"))?;
-            let result = tools::write_file(path, content, security)?;
-            println!("  {} {}", "✓".green(), result);
-        }
-        "read_file" => {
-            let path = args["path"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing path"))?;
-            let content = tools::read_file(path, security)?;
-            println!(
-                "  {} Read {} bytes from {}",
-                "✓".green(),
-                content.len(),
-                path
-            );
-        }
-        "replace" => {
-            let path = args["path"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing path"))?;
-            let old = args["old_string"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing old_string"))?;
-            let new = args["new_string"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing new_string"))?;
-            let expected = args
-                .get("expected_replacements")
-                .and_then(|v| v.as_u64())
-                .map(|v| v as u32);
-            let result = tools::replace(path, old, new, expected, security)?;
-            println!("  {} {}", "✓".green(), result);
-        }
-        "list_directory" => {
-            let path = args["path"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing path"))?;
-            let result = tools::list_directory(path, security)?;
-            println!("  {} Directory contents of {}:", "✓".green(), path);
-            for line in result.lines() {
+    println!("  {} Running: {}", "⚙".cyan(), name);
+    match tool_registry::execute_tool(name, &args, &ctx).await {
+        Ok(output) => {
+            println!("  {} {}", "✓".green(), name);
+            let lines: Vec<&str> = output.lines().collect();
+            for line in lines.iter().take(20) {
                 println!("    {}", line);
             }
-        }
-        "glob_search" => {
-            let pattern = args["pattern"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing pattern"))?;
-            let result = tools::glob_search(pattern, security)?;
-            println!("  {} Files matching '{}':", "✓".green(), pattern);
-            for line in result.lines() {
-                println!("    {}", line);
+            if lines.len() > 20 {
+                println!("    {} ({} more lines)", "...".dimmed(), lines.len() - 20);
             }
         }
-        "save_memory" => {
-            let fact = args["fact"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing fact"))?;
-            let result = tools::save_memory(fact)?;
-            println!("  {} {}", "✓".green(), result);
-        }
-        "run_shell_command" => {
-            let command = args["command"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing command"))?;
-            println!("  {} Executing: {}", "⚙".cyan(), command);
-            let result = tools::run_shell_command(command, security).await?;
-            println!("  {} Command output:", "✓".green());
-            for line in result.lines() {
-                println!("    {}", line);
-            }
-        }
-        "web_search" => {
-            let query = args["query"]
-                .as_str()
-                .ok_or_else(|| anyhow!("Missing query"))?;
-            println!("  {} Searching for: {}", "🔍".cyan(), query);
-            match tools::web_search(query).await {
-                Ok(results) => {
-                    println!("  {} Search results:", "✓".green());
-                    println!("{}", results);
-                }
-                Err(e) => {
-                    println!("  {} Search failed: {}", "✗".red(), e);
-                }
-            }
-        }
-        "web_fetch" => {
-            let url = args["url"].as_str().ok_or_else(|| anyhow!("Missing url"))?;
-            println!("  {} Fetching: {}", "🔍".cyan(), url);
-            match tools::web_fetch(url).await {
-                Ok(content) => {
-                    println!("  {} Fetched {} bytes", "✓".green(), content.len());
-                }
-                Err(e) => {
-                    println!("  {} Fetch failed: {}", "✗".red(), e);
-                }
-            }
-        }
-        _ => {
-            println!("  {} Unsupported tool: {}", "⚠".yellow(), name);
+        Err(e) => {
+            eprintln!("  {} Tool '{}' failed: {}", "✗".red(), name, e);
         }
     }
-
     Ok(())
 }
 

@@ -11,6 +11,362 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
+<<<<<<< HEAD
+=======
+## [0.1.9] - 2024-10-03
+
+### Fixed
+
+- **ACP tool loop bug** (`src/acp/mod.rs`) — `finish_reason == "stop"` was
+  checked **before** tool-call processing, so when Grok returned `stop` +
+  tool calls together the loop bailed out early and tool results were never
+  appended to the message history.  Fix mirrors commit `7aa7c8b` from the
+  old branch: the `finish_reason` check now happens **after** the entire
+  tool-execution for-loop, and a post-loop guard returns early (without
+  spinning up a redundant API call) when the model signalled stop alongside
+  tool calls.
+
+### Added
+
+- **`src/rpl/`** (Task 92) — Reasoning Protocol Layer ported from `test-old_10`
+  commit `a6c6f82`.  Six source files: `layer.rs`, `logging.rs`, `schema.rs`,
+  `validation.rs`, `suppression.rs`, `mod.rs` (~2 550 lines total).
+  Registered as `pub mod rpl` in `src/lib.rs`. **76/76 tests pass.**
+
+- **`src/engine/state.rs` + `src/engine/mod.rs`** (Task 93) — FSM core ported
+  from `test-old_10`. Defines `EngineState`, `ReasoningEngineState`,
+  `PlanStep`, `StepAction`, `Hypothesis`, `TransitionError`, and friends.
+  Registered as `pub mod engine` in `src/lib.rs`. **17/17 tests pass.**
+
+- **`src/engine/` sub-modules** (Task 94) — Six supporting modules ported:
+  `beliefs.rs`, `planner.rs`, `memory_bridge.rs`, `arbitration.rs`,
+  `correction.rs`, `observability.rs`.  All compiled against the current
+  `PreRelese` API with zero fixes needed. **101 new tests pass.**
+
+- **`CpuRouter::with_rpl()` + `route_with_tools_traced()`** (Task 95) —
+  Re-added the optional `RplLayer` field, builder method, and the traced
+  route variant to `src/router/cpu_router.rs`. All existing router tests
+  unaffected.
+
+- **`tests/engine_integration.rs`** (Task 96) — 15 integration tests ported
+  from `test-old_10`, covering the full engine lifecycle (goal → plan →
+  execute → self-correct). **15/15 pass.**
+
+- **`src/agent/planner.rs`** (Task 97) — Replaced the mock stub with a real
+  `Planner` that drives `ReasoningEngineState` through AnalyzeGoal →
+  ExpandOptions → EvaluateOptions → CommitPlan. `Plan` wraps the committed
+  state and exposes `heuristic_confidence()`, `step_count()`, and
+  `first_step_action()`. **3/3 planner tests pass.**
+
+### Fixed — Clippy (`-D warnings`)
+
+- Resolved all 38 Clippy errors across 18 files: `sort_by` → `sort_by_key`
+  with `Reverse` (6×), collapsed nested `if`/`if-let` blocks (10×), doc
+  comment overindentation (6×), wildcard-in-or-pattern (2×), useless
+  `format!` / `.to_string()` in format args (3×), `manual_clamp` (2×),
+  `needless_borrow` (1×), `too_many_arguments` (1×, `#[allow]`),
+  `unreachable_patterns` (1×), added `Default` derive to `BeliefGraph`.
+
+- Fixed `test_profile_learning_rate_applied` test isolation: replaced
+  `BayesianEngine::new_with_config()` (reads `~/.grok/bayes_profile.json`)
+  with `from_priors(default_priors(), …)` for deterministic behaviour.
+
+### Verified
+
+- `cargo clippy -- -D warnings` → **zero errors**
+- `cargo test` → **610 lib + 15 engine_integration + 5 tool_loop + 3 acp +
+  13 tool_data_flow + 2 integration = 648 total, 0 failures**
+
+---
+
+## [0.1.9-pre] - 2026-04-02
+
+### Investigated — RPL + Reasoning Engine branch gap — AI: Claude Sonnet 4.6
+
+- Discovered that the full **Reasoning Protocol Layer** (`src/rpl/`, ~2 550 lines)
+  and **Reasoning Engine** (`src/engine/`, ~5 250 lines) were written on the
+  `test-old_10` branch (commit `a6c6f82`) but were **never merged** into
+  `PreRelese`.
+- Corrected `task_list.json`: tasks 69–84 (all RPL/Engine) reset from
+  `"done"` → `"pending"` (60 status fields updated).
+- Added 6 new tasks to track the porting work:
+  - **Task 92** — Port `src/rpl/` (6 files) from `test-old_10`
+  - **Task 93** — Port `src/engine/state.rs` (FSM core, 987 lines)
+  - **Task 94** — Port `src/engine/` sub-modules (6 stubs)
+  - **Task 95** — Wire RPL back into `CpuRouter`
+  - **Task 96** — Port `tests/engine_integration.rs`
+  - **Task 97** — Replace `agent/planner.rs` stub with real engine integration
+- Current state on `PreRelese`: `agent/planner.rs` is a stub with mock methods;
+  `agent/router.rs`, `agent/simulator.rs`, `agent/mode.rs` are complete.
+  `src/engine/` and `src/rpl/` directories do **not** exist on this branch.
+
+### Fixed
+
+- **Test isolation hardening** — AI: Claude Sonnet 4.6
+  - Seven lib tests were failing because `BayesianEngine::new()` and
+    `LongTermMemory::load_or_create()` read from `~/.grok/` at test time,
+    picking up on-disk data from real usage that corrupted expected values.
+  - Added `BayesianEngine::new_with_default_priors()` — same as `new()` but
+    always uses compiled-in `default_priors()` and never touches disk.
+  - Added `Router::new_with_default_priors()` — thin wrapper around the new
+    engine constructor for deterministic router unit tests.
+  - `grok_dir()` in `long_term.rs` now checks `GROK_GLOBAL_CONTEXT_DIR` env
+    var first, letting tests redirect long-term memory away from `~/.grok/`.
+  - Updated 7 unit tests across `bayes/engine.rs`, `agent/router.rs`, and
+    `memory/mod.rs` to use the isolated constructors or the env-var override.
+  - **Result**: 422 lib tests pass, 0 failures.
+
+- **`tests/integration_tests.rs`** — removed reference to deleted
+  `OperationalMode` enum (removed in the "drop OperationalMode" commit).
+  Replaced with two lean smoke tests that verify `AcpConfig` and `AppRouter`
+  are publicly accessible.
+
+- **`task_list.json`** — corrected status for tasks 42 and 51 from `"done"`
+  back to `"pending"`.  Both had all subtasks listed as pending and their
+  dependency chains unfinished; the `"done"` marking was a git-rebase
+  artefact.
+
+### Added
+
+- **Tools module restructuring** (`src/tools/`) — AI: Claude Sonnet 4.6
+  - Moved all tool implementations out of the monolithic `src/acp/tools.rs`
+    (1 166 lines) into a properly structured `src/tools/` module following the
+    Grok-CLI Tools Build Instructions spec.
+  - **`tool_error.rs`** — `ToolError` enum with nine structured variants:
+    `AccessDenied`, `FileNotFound`, `Io`, `InvalidArgument`, `Timeout`,
+    `Network`, `InvalidPattern`, `UnknownTool`, and `Other` (anyhow catch-all).
+    Both `std::io::Error` and `anyhow::Error` have `#[from]` conversions.
+  - **`tool_context.rs`** — `ToolContext` struct wrapping `SecurityPolicy`.
+    `Clone + Debug`, cheap to copy without `Arc`. Constructors: `::new(policy)`,
+    `::default_for_cwd()`, and `From<SecurityPolicy>`.
+  - **`file_tools.rs`** — eight file-system tools with identical signatures to
+    the previous `acp::tools` functions so no call-sites needed updating:
+    `read_file`, `read_multiple_files`, `list_code_definitions`, `write_file`,
+    `replace`, `list_directory`, `glob_search`, `search_file_content`.
+    Full external-access approval / audit flow preserved. 9 unit tests.
+  - **`shell_tools.rs`** — `run_shell_command` with 30-second hard timeout,
+    denylist validation, Windows PowerShell dispatch with `&&`→`;` rewriting.
+    2 unit tests.
+  - **`web_tools.rs`** — `web_search` (DuckDuckGo HTML scraping) and
+    `web_fetch` (URL GET with 30-second timeout, 10 000-char truncation).
+    Static regex patterns compiled once via `Lazy`. Starlink-resilient timeouts.
+    4 unit tests.
+  - **`memory_tools.rs`** — `save_memory` delegating to the long-term memory
+    store's atomic write path. 1 unit test.
+  - **`registry.rs`** — central `execute_tool(name, args, ctx)` async entry
+    point dispatching all 12 named tools. `get_tool_definitions()` and
+    `get_available_tool_definitions()` return LLM-facing JSON schemas.
+    5 unit tests.
+  - **`mod.rs`** — flat re-exports of all tool functions plus `ToolContext` and
+    `ToolError` so callers can write `tools::read_file(...)` or go through the
+    registry.
+  - **`src/acp/tools.rs`** reduced to a single `pub use crate::tools::*;`
+    re-export shim — all existing call-sites in `src/acp/mod.rs` continue to
+    compile unchanged; all 11 existing ACP tool tests preserved and still pass.
+  - **`src/lib.rs`** — added `pub mod tools;` to expose the new module
+    publicly.
+
+- **CPU router tool-execution loop** (`src/router/cpu_router.rs`) — AI: Claude Sonnet 4.6
+  - New `route_with_tools(req, context, max_iterations)` method implementing
+    the full agent/tool loop directly inside `CpuRouter`:
+    - Serializes message history to raw JSON so `tool_call_id` fields survive
+      round-trips (the typed `grok_api::Message` does not carry this field).
+    - Each iteration re-deserializes to typed messages, calls `route()` (which
+      already handles Starlink back-off retries via the backend), then checks
+      for tool calls.
+    - No tool calls → returns the final `RouterResponse` immediately.
+    - Tool calls present → dispatches each through `tools::registry::execute_tool`,
+      appends results as `"tool"` role messages, and loops.
+    - Exhausts `max_iterations` → `RouterError::MaxToolIterations(n)`.
+  - 2 new tests: happy path (no tools → text returned) and exhaustion path
+    (infinite tool calls → `MaxToolIterations` after 3 iterations).
+
+- **`RouterError` new variants** (`src/router/router_error.rs`) — AI: Claude Sonnet 4.6
+  - `ToolError(String)` — hard tool execution failure (tool name + message).
+  - `MaxToolIterations(u32)` — loop exhausted its iteration budget; the `u32`
+    is the cap that was hit, making error messages self-documenting.
+
+### Test Results
+  - **37/37 tools + ACP shim tests pass** (zero failures introduced).
+  - **3/3 new CPU router tool-loop tests pass**.
+  - Pre-existing failures in `agent::router`, `bayes::engine`, and
+    `tests/integration_tests.rs` are unrelated to this change.
+
+
+### Added
+
+- **Unified memory module** (`src/memory/`)
+  - New four-tier memory hierarchy replacing the scattered `Vec<Value>`,
+    `Vec<ConversationItem>`, and bare file-append patterns that existed before.
+  - **`types.rs`** — shared types used across all tiers: `ChatMessage` (with
+    `to_api_value()`, token estimation, builder constructors for system/user/
+    assistant/tool roles), `MemoryEntry` (UUID-keyed persistent fact with tags
+    and `MemorySource`), `EpisodeSummary` (completed-session metadata),
+    `MemoryKind` enum, and the `estimate_tokens` helper (1 token ≈ 4 chars).
+  - **`short_term.rs`** — `ShortTermMemory`: bounded, auto-trimming conversation
+    buffer.
+    - Configurable limits: `max_messages` (default 50) and `max_tokens` (default
+      6 000 estimated tokens).
+    - System messages are pinned at index 0 and never trimmed; `push_system()`
+      replaces an existing system message rather than appending.
+    - `push_tool_result(tool_call_id, content)` for OpenAI-compatible tool
+      messages.
+    - `clear_keep_system()` mirrors the `/clear` slash-command behaviour.
+    - `to_json_messages()` / `From<&ShortTermMemory>` emit the
+      `Vec<serde_json::Value>` format expected by `AppRouter` and all legacy
+      `chat_completion_with_history` call sites — **zero changes needed at call
+      sites**.
+    - `recent(n)` for sliding-window summarisation.
+    - 22 unit tests.
+  - **`long_term.rs`** — `LongTermMemory`: structured, persistent fact store.
+    - Dual-file storage: `~/.grok/memory.json` (canonical, machine-readable) +
+      `~/.grok/memory.md` (human-readable mirror regenerated on every save).
+    - Atomic write-then-rename on every flush — a Starlink drop mid-write never
+      corrupts the live store.
+    - Exact-text deduplication: saving an identical fact returns the existing ID.
+    - `search(query)` — case-insensitive substring match across fact text and
+      tags; results sorted newest-first.
+    - `by_tags(&[&str])` — filter facts that carry **all** of the supplied tags.
+    - `by_source(source)` — filter by `MemorySource` (User / Inferred / System).
+    - `to_prompt_section(max_facts)` — Markdown block ready for system-prompt
+      injection, capped at 20 facts by default.
+    - Free functions `save_fact_to_default_store` and `load_prompt_section` for
+      call sites that don't hold a `LongTermMemory` instance.
+    - 19 unit tests.
+  - **`episodic.rs`** — `EpisodicMemory`: archive of completed sessions.
+    - Each session stored in `~/.grok/sessions/<session_id>/` with
+      `episode.json` (summary + key facts) and `transcript.json` (full
+      `Vec<ChatMessage>`).
+    - `save(summary, transcript)` — atomic write for both files.
+    - `update_summary(summary)` — patch key facts after AI summarisation without
+      re-writing the transcript.
+    - `list()` / `refresh()` — sorted most-recent-first; result cached in
+      memory between calls.
+    - `recent(n)`, `exists(id)`, `delete(id)`.
+    - `to_prompt_context(max_episodes)` — Markdown section of recent episodes
+      with key facts for system-prompt injection.
+    - Backward-compat free functions `save_episode_from_session` and
+      `list_episode_ids` so `utils/session.rs` callers keep working.
+    - 17 unit tests.
+  - **`working.rs`** — `WorkingMemory`: project context injection.
+    - Thin typed wrapper over `utils::context` (no duplicated file-discovery
+      logic).
+    - `load_for_project(dir)` — highest-priority single context file.
+    - `load_and_merge(dir)` — all context files merged, deduplicated.
+    - `from_content(str)` — construct from pre-loaded text (tests / templates).
+    - `to_prompt_section()` — returns the formatted block or an empty string
+      when no context is loaded (safe to unconditionally append).
+    - `reload()` — re-reads from disk mid-session for `/reload-context`.
+    - `append(extra)` / `set_content(content)` — runtime enrichment with skill
+      definitions or per-session rules.
+    - `display_summary()` — one-liner for the `/context` command.
+    - 17 unit tests.
+  - **`mod.rs`** — `MemoryStore` unified facade.
+    - `new_for_session(model, project_dir, base_system_prompt)` — boots all
+      four tiers, builds an enriched system prompt (base + working context +
+      long-term facts) and pushes it into short-term memory.
+    - `remember(fact, tags)` / `remember_inferred(fact, tags)` — convenience
+      wrappers around `LongTermMemory::save_fact`.
+    - `save_episode(title)` — archives the current short-term transcript to
+      episodic memory.
+    - `reload_context()` — reloads working memory and rebuilds the system
+      prompt in-place.
+    - `build_system_prompt()` — returns the assembled prompt string without
+      mutating state (for logging / display).
+    - `status_line()` — one-liner suitable for the session footer.
+    - `recent_episode_context(n)` — pulls recent episode summaries for
+      system-prompt injection.
+    - `minimal()` — isolated per-call temp-dir store for unit tests and
+      single-shot command handlers.
+    - 13 unit tests.
+  - **Total: 97 / 97 new memory unit tests pass** (`cargo test --lib memory`).
+
+- **`acp/tools.rs` — `save_memory` migrated to `LongTermMemory`**
+  - The bare `OpenOptions::append` implementation is replaced with a call to
+    `memory::long_term::save_fact_to_default_store`.
+  - Gains atomic writes, deduplication, structured JSON storage, and the
+    Markdown mirror — all transparently, with no change to the tool's public
+    interface or the model's function-calling schema.
+
+- **CPU Router module** (`src/router/`)
+  - New unified AI dispatch layer that routes every inference request through a
+    single `CpuRouter` + `GrokBackend` stack instead of talking to the Grok API
+    directly at each call site.
+  - **`backend.rs`** — async `Backend` trait (via `async-trait`) with `kind()`,
+    `is_available()`, and `async send()`. `BackendKind` enum (`Grok`) derives
+    `PartialEq`/`Eq` for pattern-matching in the router.
+  - **`cpu_router.rs`** — `CpuRouter` dispatches requests to the matching backend
+    based on the model-name prefix (`"grok-*"` → `GrokBackend`). Falls back to
+    the first available backend for unrecognised prefixes. Manual `Debug` impl so
+    `Arc<CpuRouter>` can be used inside `AppRouter`.
+  - **`request.rs`** — `RouterRequest` with typed `Vec<grok_api::Message>` and
+    `Vec<ToolDefinition>` fields. Builder helpers: `with_temperature()`,
+    `with_max_tokens()`, `with_tools()`, `with_json_tools()` (accepts raw
+    `Vec<Value>` from existing call sites without a double-serde round-trip).
+    `ToolDefinition` / `FunctionDefinition` match the OpenAI/xAI function-calling
+    schema so they serialise cleanly to the wire format.
+  - **`response.rs`** — `RouterResponse` with `text`, `tool_calls`, `raw` JSON,
+    `model`, and `usage` (`UsageStats`). Convenience helpers `has_tool_calls()`,
+    `text_or_empty()`, and `into_message_with_finish_reason()` — the last one
+    converts a `RouterResponse` back into the `MessageWithFinishReason` type used
+    throughout the rest of the codebase, enabling zero-change call sites.
+  - **`router_error.rs`** — `RouterError` enum with variants:
+    `BackendUnavailable`, `BackendError`, `Serialization`, `Network` (Starlink
+    drop / timeout), `Auth` (HTTP 401 — fatal, never retried), `RateLimit`
+    (HTTP 429 — retried with back-off), `Unknown`.
+  - **`backends/grok.rs`** — `GrokBackend` wraps the existing `GrokClient`:
+    - `new(api_key)` and `new_with_timeout(api_key, timeout_secs)` constructors.
+    - **Starlink-resilient retry loop**: up to 4 retries with exponential
+      back-off (`BASE * 2^attempt`) capped at 30 s plus random jitter (0–500 ms)
+      to avoid thundering-herd on reconnect.
+    - Smart error classification: auth errors abort immediately; network errors
+      and rate-limits are retried; backend/serialisation errors are not.
+    - Inner `GrokClient` is configured with `max_retries = 1` so retry logic
+      lives entirely in `GrokBackend::send`, not in two layers at once.
+    - 12 unit tests covering construction, back-off math, error classification,
+      and retryability decisions.
+  - **`app_router.rs`** — `AppRouter`: a `Clone`-able (`Arc<CpuRouter>`) shim
+    that exposes the **same async method signatures as `GrokClient`**:
+    - `chat_completion(message, system_prompt, temperature, max_tokens, model)`
+    - `chat_completion_with_history(messages, temperature, max_tokens, model, tools)`
+    - Accepts `&[serde_json::Value]` messages and `Option<Vec<Value>>` tools so
+      existing call sites compile without touching their method bodies.
+    - 3 unit tests: rejects empty key, accepts placeholder key, clone shares Arc.
+  - Added `async-trait = "0.1"` to `Cargo.toml`.
+  - Registered `pub mod router` in `src/lib.rs`.
+  - **19 / 19** new router unit tests pass (`cargo test --lib router`).
+
+- **AppRouter wired into all CLI and display call sites**
+  (`src/cli/commands/chat.rs`, `src/cli/commands/code.rs`,
+  `src/display/interactive.rs`, `src/utils/client.rs`)
+  - Added `initialize_router(api_key, timeout_secs) -> Result<AppRouter>` to
+    `utils/client.rs` alongside the legacy `initialize_client` (kept for
+    `acp/mod.rs` which has not yet been migrated).
+  - **`cli/commands/chat.rs`** — `handle_chat`, `handle_single_chat`, and
+    `handle_interactive_chat` now use `AppRouter` instead of `GrokClient`.
+    Constructor changed from `initialize_client(key, timeout, retries, limits)`
+    to `initialize_router(key, timeout)`. Method call bodies are unchanged.
+  - **`cli/commands/code.rs`** — `handle_code_action` and all four inner
+    handlers (`handle_code_explain`, `handle_code_review`, `handle_code_generate`,
+    `handle_code_fix`) use `AppRouter`. Unused `RateLimitConfig` and
+    `initialize_client` imports removed.
+  - **`display/interactive.rs`** — `start_interactive_mode` constructs
+    `AppRouter::new(api_key, 30)` instead of `GrokClient::new(api_key)`.
+    `run_interactive_loop`, `send_to_grok`, and `run_simulation` updated to
+    accept `&AppRouter`.
+
+### Pending
+
+- `acp/mod.rs` migration to `AppRouter` (tracked as Task 83) — the ACP session
+  handler still constructs `GrokClient` directly; it will be migrated in the
+  next pre-release cycle once the session-state refactor is complete.
+
+### Source
+- AI (Claude Sonnet 4.6)
+
+---
+
+>>>>>>> PreRelese
 ## [0.1.8] - 2026-04-02
 
 ### Added
