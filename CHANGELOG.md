@@ -11,7 +11,7 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
-## [Unreleased] — Tasks 92-97 + ACP bug fix — AI: Claude Sonnet 4.6
+## [0.1.9] - 2024-10-03
 
 ### Fixed
 
