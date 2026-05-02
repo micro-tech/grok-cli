@@ -812,7 +812,9 @@ impl GrokAcpAgent {
                     }
                     "run_shell_command" => {
                         let command = args["command"].as_str().ok_or(anyhow!("Missing command"))?;
-                        tools::run_shell_command(command, &policy).await
+                        // Honour project config; fall back to built-in 300 s default.
+                        let shell_timeout = self.config.tools.shell.command_timeout_secs;
+                        tools::run_shell_command(command, &policy, shell_timeout).await
                     }
                     "replace" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
@@ -824,7 +826,8 @@ impl GrokAcpAgent {
                             .ok_or(anyhow!("Missing new_string"))?;
                         let expected_replacements =
                             args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(path, old_string, new_string, expected_replacements, &policy).await
+                        tools::replace(path, old_string, new_string, expected_replacements, &policy)
+                            .await
                     }
                     "save_memory" => {
                         let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
@@ -857,15 +860,37 @@ impl GrokAcpAgent {
                     }
                     "task_create" => {
                         let title = args["title"].as_str().ok_or(anyhow!("Missing title"))?;
-                        let description = args["description"].as_str().ok_or(anyhow!("Missing description"))?;
-                        let priority = args["priority"].as_str().ok_or(anyhow!("Missing priority"))?;
-                        let dependencies_value = args["dependencies"].as_array().ok_or(anyhow!("Missing dependencies"))?;
-                        let dependencies: Result<Vec<f64>> = dependencies_value.iter().map(|v| v.as_f64().ok_or(anyhow!("Invalid dependency"))).collect();
+                        let description = args["description"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing description"))?;
+                        let priority = args["priority"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing priority"))?;
+                        let dependencies_value = args["dependencies"]
+                            .as_array()
+                            .ok_or(anyhow!("Missing dependencies"))?;
+                        let dependencies: Result<Vec<f64>> = dependencies_value
+                            .iter()
+                            .map(|v| v.as_f64().ok_or(anyhow!("Invalid dependency")))
+                            .collect();
                         let details = args["details"].as_str().ok_or(anyhow!("Missing details"))?;
-                        let test_strategy = args["testStrategy"].as_str().ok_or(anyhow!("Missing testStrategy"))?;
-                        let subtasks_value = args["subtasks"].as_array().ok_or(anyhow!("Missing subtasks"))?;
+                        let test_strategy = args["testStrategy"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing testStrategy"))?;
+                        let subtasks_value = args["subtasks"]
+                            .as_array()
+                            .ok_or(anyhow!("Missing subtasks"))?;
                         let subtasks: Vec<Value> = subtasks_value.clone();
-                        tools::task_create(title, description, priority, dependencies?, details, test_strategy, subtasks, &policy)
+                        tools::task_create(
+                            title,
+                            description,
+                            priority,
+                            dependencies?,
+                            details,
+                            test_strategy,
+                            subtasks,
+                            &policy,
+                        )
                     }
                     "task_update" => {
                         let id = args["id"].as_f64().ok_or(anyhow!("Missing id"))?;

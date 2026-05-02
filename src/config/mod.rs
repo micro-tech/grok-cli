@@ -554,6 +554,12 @@ pub struct ShellConfig {
     pub show_color: bool,
     #[serde(default)]
     pub inactivity_timeout: u32,
+    /// Hard timeout (seconds) applied to every `run_shell_command` call.
+    /// 300 s is the default — enough for `cargo build` and `git` operations
+    /// on slow connections.  Set to 0 to use the built-in default.
+    /// Env override: `GROK_SHELL_TIMEOUT`
+    #[serde(default = "default_shell_command_timeout")]
+    pub command_timeout_secs: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -1088,6 +1094,10 @@ impl Default for ToolsConfig {
     }
 }
 
+fn default_shell_command_timeout() -> u64 {
+    300
+}
+
 impl Default for ShellConfig {
     fn default() -> Self {
         Self {
@@ -1095,6 +1105,7 @@ impl Default for ShellConfig {
             pager: String::new(),
             show_color: false,
             inactivity_timeout: 0,
+            command_timeout_secs: default_shell_command_timeout(),
         }
     }
 }

@@ -3,7 +3,6 @@
 //! Loads project-specific knowledge from `knowledge/` directory.
 //! Supports .md and .json files with relevance scoring.
 
-use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
@@ -56,7 +55,7 @@ impl KnowledgeLoader {
     }
 
     /// Get relevant knowledge for a query.
-    pub fn get_relevant(&self, query: &str) -> Vec<&KnowledgeEntry> {
+    pub fn get_relevant(&self, _query: &str) -> Vec<&KnowledgeEntry> {
         self.entries
             .iter()
             .filter(|e| e.relevance_score > 0.0)

@@ -68,6 +68,15 @@ pub enum SlashCommand {
 
     /// `/tools` — list all 32 LLM-callable tools available in this session.
     Tools,
+
+    /// `/bayes show` — display current Bayesian belief state.
+    BayesShow,
+
+    /// `/bayes reset` — reset Bayesian belief state.
+    BayesReset,
+
+    /// `/bayes explain` — explain current Bayesian reasoning.
+    BayesExplain,
 }
 
 // ---------------------------------------------------------------------------
@@ -109,6 +118,12 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         "/clear" => Some(SlashCommand::Clear),
         "/context" => Some(SlashCommand::Context),
         "/tools" => Some(SlashCommand::Tools),
+        "/bayes" => match args.as_str() {
+            "show" => Some(SlashCommand::BayesShow),
+            "reset" => Some(SlashCommand::BayesReset),
+            "explain" => Some(SlashCommand::BayesExplain),
+            _ => None,
+        },
         _ => None, // unknown command — let the AI handle the raw text
     }
 }
@@ -174,7 +189,10 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Clear
         | SlashCommand::Model { .. }
         | SlashCommand::Context
-        | SlashCommand::Tools => None,
+        | SlashCommand::Tools
+        | SlashCommand::BayesShow
+        | SlashCommand::BayesReset
+        | SlashCommand::BayesExplain => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {

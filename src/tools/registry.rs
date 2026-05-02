@@ -12,7 +12,8 @@ use serde_json::{Value, json};
 
 use crate::tools::{
     ToolContext, agent_tools, discovery_tools, file_tools, lsp_tools, mcp_tools, memory_tools,
-    notebook_tools, plan_tools, shell_tools, skill_tools, system_tools, task_graph_tools, task_tools, web_tools,
+    notebook_tools, plan_tools, shell_tools, skill_tools, system_tools, task_graph_tools,
+    task_tools, web_tools,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,7 +104,10 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
             let command = args["command"]
                 .as_str()
                 .ok_or_else(|| anyhow!("Missing: command"))?;
-            shell_tools::run_shell_command(command, policy).await
+            // Pass 0 → uses the built-in 300 s default.
+            // The ACP path (acp/mod.rs) reads the value from
+            // config.tools.shell.command_timeout_secs instead.
+            shell_tools::run_shell_command(command, policy, 0).await
         }
 
         // ── Web ──────────────────────────────────────────────────────────────

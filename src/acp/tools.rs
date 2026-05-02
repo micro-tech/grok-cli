@@ -28,7 +28,7 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    #[test]
+    #[tokio::test]
     async fn test_file_operations() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
@@ -46,13 +46,13 @@ mod tests {
         assert!(read_result.is_ok());
         assert_eq!(read_result.unwrap(), "Hello, world!");
 
-        // Test list_directory
-        let list_result = list_directory(temp_dir.path().to_str().unwrap(), &security).await;
+        // Test list_directory (sync — no .await needed)
+        let list_result = list_directory(temp_dir.path().to_str().unwrap(), &security);
         assert!(list_result.is_ok());
         assert!(list_result.unwrap().contains("test.txt"));
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_read_multiple_files() {
         let temp_dir = TempDir::new().unwrap();
         let file1 = temp_dir.path().join("file1.txt");
@@ -76,7 +76,7 @@ mod tests {
         assert!(output.contains("Content 2"));
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_list_code_definitions() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test_code.rs");
@@ -111,7 +111,7 @@ mod tests {
         assert!(!output.contains("println!"));
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_glob_search() {
         let temp_dir = TempDir::new().unwrap();
         let file1 = temp_dir.path().join("file1.txt");
@@ -123,12 +123,13 @@ mod tests {
         security.add_trusted_directory(temp_dir.path());
 
         let pattern = temp_dir.path().join("*.txt");
-        let result = glob_search(pattern.to_str().unwrap(), &security).await;
+        // glob_search is sync — no .await needed.
+        let result = glob_search(pattern.to_str().unwrap(), &security);
         assert!(result.is_ok());
         assert!(result.unwrap().contains("file1.txt"));
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_search_content() {
         let temp_dir = TempDir::new().unwrap();
         let file1 = temp_dir.path().join("test_grep.txt");
@@ -137,14 +138,15 @@ mod tests {
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
 
-        let result = search_file_content(file1.to_str().unwrap(), "hello", &security).await;
+        // search_file_content is sync — no .await needed.
+        let result = search_file_content(file1.to_str().unwrap(), "hello", &security);
         assert!(result.is_ok());
         let output = result.unwrap();
         assert!(output.contains("1: hello world"));
         assert!(output.contains("3: hello rust"));
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_replace() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("replace.txt");
@@ -192,7 +194,7 @@ mod tests {
         assert!(tools.iter().any(|t| t["function"]["name"] == "web_fetch"));
     }
 
-    #[test]
+    #[tokio::test]
     #[serial]
     async fn test_web_search_works_without_keys() {
         unsafe {
@@ -208,7 +210,7 @@ mod tests {
         }
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_web_fetch_invalid_url() {
         let result = web_fetch("not-a-valid-url").await;
         assert!(result.is_err());
@@ -216,7 +218,7 @@ mod tests {
         assert!(error_msg.contains("Failed to fetch") || error_msg.contains("invalid"));
     }
 
-    #[test]
+    #[tokio::test]
     async fn test_web_fetch_timeout() {
         let result = web_fetch("http://10.255.255.1").await;
         assert!(result.is_err());

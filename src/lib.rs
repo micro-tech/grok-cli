@@ -44,6 +44,7 @@ pub mod display;
 pub mod engine;
 pub mod grok_client_ext;
 pub mod hooks;
+pub mod knowledge;
 pub mod mcp;
 pub mod memory;
 pub mod router;
@@ -52,6 +53,7 @@ pub mod security;
 pub mod skills;
 pub mod task_graph;
 pub mod session;
+pub mod tools;
 pub mod utils;
 
 // Re-export grok_api types for use throughout the crate

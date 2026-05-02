@@ -151,6 +151,13 @@ enable_interactive_shell = false
 show_color = true
 inactivity_timeout = 300
 
+# Hard timeout for every `run_shell_command` tool call (seconds).
+# 30 s was the old hardcoded value — far too short for `cargo build` or
+# `git` on slow / Starlink connections.  300 s (5 min) is the new default.
+# Increase further if your build times regularly exceed this.
+# Set to 0 to use the built-in default (300 s).
+command_timeout_secs = 300
+
 # Security Configuration
 [security]
 disable_yolo_mode = false
