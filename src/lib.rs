@@ -269,7 +269,31 @@ pub enum AuditAction {
     },
 }
 
-// Re-export commonly used types and functions
+#[derive(Subcommand, Clone, Debug)]
+pub enum ToolsAction {
+    /// List all available tools with their names and descriptions
+    List,
+    /// Show full details of a specific tool's schema
+    Describe {
+        /// Name of the tool to describe
+        name: String,
+    },
+    /// Show usage examples for a specific tool
+    Examples {
+        /// Name of the tool to show examples for
+        name: String,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum BayesAction {
+    /// Show current Bayesian belief state
+    Show,
+    /// Reset Bayesian beliefs to defaults
+    Reset,
+    /// Explain the current belief reasoning
+    Explain,
+}
 pub use config::{Config, ConfigSource, RateLimitConfig};
 #[allow(deprecated)]
 pub use display::{

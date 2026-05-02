@@ -3,7 +3,7 @@ use std::pin::Pin;
 use std::future::Future;
 
 use serde::{Deserialize, Serialize};
-use crate::tools::{ToolContext, ToolError, execute_tool};
+use crate::tools::{ToolContext, execute_tool};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskNode {

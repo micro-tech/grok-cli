@@ -132,6 +132,12 @@ pub enum Commands {
         action: crate::cli::commands::skills::SkillsCommand,
     },
 
+    /// Manage tool introspection
+    Tools {
+        #[command(subcommand)]
+        action: crate::ToolsAction,
+    },
+
     /// Interactive setup wizard — enter your xAI API key and save it.
     ///
     /// This is the Terminal Auth entry point declared in the ACP `initialize`
@@ -322,6 +328,9 @@ pub async fn run() -> Result<()> {
         }
         Some(Commands::Skills { action }) => {
             crate::cli::commands::skills::handle_skills_command(action.clone()).await?;
+        }
+        Some(Commands::Tools { action }) => {
+            crate::cli::commands::tools::handle_tools_command(action.clone()).await?;
         }
         Some(Commands::Setup) => {
             crate::cli::commands::setup::handle_setup().await?;

@@ -184,6 +184,71 @@ pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Res
     }
 }
 
+// ── list_tools ─────────────────────────────────────────────────────────────
+
+/// Return a list of all available tools with their names and descriptions.
+pub fn list_tools() -> Result<String> {
+    let all_tools = crate::tools::registry::get_tool_definitions();
+    let list: Vec<String> = all_tools
+        .iter()
+        .map(|t| {
+            let name = t
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("?");
+            let desc = t
+                .get("function")
+                .and_then(|f| f.get("description"))
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
+            format!("{}: {}", name, desc)
+        })
+        .collect();
+    Ok(list.join("\n"))
+}
+
+// ── describe_tool ────────────────────────────────────────────────────────────
+
+/// Return the full JSON schema for a specific tool.
+pub fn describe_tool(name: &str) -> Result<String> {
+    let all_tools = crate::tools::registry::get_tool_definitions();
+    for t in all_tools {
+        if let Some(n) = t
+            .get("function")
+            .and_then(|f| f.get("name"))
+            .and_then(|n| n.as_str())
+        {
+            if n == name {
+                return Ok(serde_json::to_string_pretty(&t).unwrap());
+            }
+        }
+    }
+    Err(anyhow!("Tool '{}' not found", name))
+}
+
+// ── tool_examples ────────────────────────────────────────────────────────────
+
+/// Return usage examples for a specific tool.
+pub fn tool_examples(name: &str) -> Result<String> {
+    // Hardcoded examples for some tools
+    match name {
+        "read_file" => Ok(r##"Examples for read_file:
+1. Read a configuration file: {"path": "config.toml"}
+2. Read a source code file: {"path": "src/main.rs"}"##.to_string()),
+        "write_file" => Ok(r##"Examples for write_file:
+1. Create a new file: {"path": "notes.txt", "content": "My notes"}
+2. Update an existing file: {"path": "README.md", "content": "# Updated Title\n\nNew content"}"##.to_string()),
+        "run_shell_command" => Ok(r##"Examples for run_shell_command:
+1. List files: {"command": "ls -la"}
+2. Check git status: {"command": "git status"}"##.to_string()),
+        "web_search" => Ok(r##"Examples for web_search:
+1. Search for Rust documentation: {"query": "rust async tutorial"}
+2. Search for news: {"query": "latest AI news"}"##.to_string()),
+        _ => Ok(format!("No examples available for tool '{}'", name)),
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
