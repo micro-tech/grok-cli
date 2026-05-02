@@ -37,6 +37,9 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 - **Context File Merging** - Automatically merges all available context files with source annotations
 - **Extension System** - Extend functionality with custom hooks and plugins
 - **Project-Aware AI** - Agent automatically understands your project conventions
+- **Local Knowledge Pack Loader** - Load project-specific knowledge from `knowledge/` directory with relevance scoring
+- **Session DNA System** - Persistent personality and behavior configuration file for customized AI interactions
+- **Plugin Sandbox for Custom Tools** - Dynamic compilation and loading of custom Rust tools from `tools/custom/`
 
 ### ✨ Beautiful Interactive Experience
 - **Adaptive ASCII Art Logo** - Stunning terminal graphics that adapt to your screen size

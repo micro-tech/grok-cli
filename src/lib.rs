@@ -51,7 +51,7 @@ pub mod rpl;
 pub mod security;
 pub mod skills;
 pub mod task_graph;
-pub mod tools;
+pub mod session;
 pub mod utils;
 
 // Re-export grok_api types for use throughout the crate

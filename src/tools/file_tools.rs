@@ -470,41 +470,41 @@ mod tests {
         SecurityPolicy::with_working_directory(dir.path().to_path_buf())
     }
 
-    #[test]
-    fn write_then_read_file() {
+    #[tokio::test]
+    async fn write_then_read_file() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("hello.txt");
         let path_str = path.to_str().unwrap();
 
-        write_file(path_str, "Hello, world!", &security).unwrap();
+        write_file(path_str, "Hello, world!", &security).await.unwrap();
         let content = read_file(path_str, &security).unwrap();
         assert_eq!(content, "Hello, world!");
     }
 
-    #[test]
-    fn read_file_missing_returns_err() {
+    #[tokio::test]
+    async fn read_file_missing_returns_err() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
-        let result = read_file("non_existent_file.txt", &security);
+        let result = read_file("non_existent_file.txt", &security).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn read_multiple_files_partial_errors() {
+    #[tokio::test]
+    async fn read_multiple_files_partial_errors() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("a.txt");
         let path_str = path.to_str().unwrap().to_string();
-        write_file(path_str.as_str(), "content", &security).unwrap();
+        write_file(path_str.as_str(), "content", &security).await.unwrap();
 
         let result =
-            read_multiple_files(vec![path_str, "missing.txt".to_string()], &security).unwrap();
+            read_multiple_files(vec![path_str, "missing.txt".to_string()], &security).await.unwrap();
         assert!(result.contains("content"));
         assert!(result.contains("Error"));
     }
 
-    #[test]
+    #[tokio::test]
     fn list_directory_returns_entries() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
@@ -515,7 +515,7 @@ mod tests {
         assert!(result.contains("test.txt"));
     }
 
-    #[test]
+    #[tokio::test]
     fn glob_search_finds_files() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
@@ -526,52 +526,52 @@ mod tests {
         assert!(result.contains("a.rs"), "expected a.rs in: {}", result);
     }
 
-    #[test]
-    fn replace_text_in_file() {
+    #[tokio::test]
+    async fn replace_text_in_file() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("r.txt");
         let path_str = path.to_str().unwrap();
 
         write_file(path_str, "foo bar foo", &security).unwrap();
-        replace(path_str, "foo", "baz", None, &security).unwrap();
+        replace(path_str, "foo", "baz", None, &security).await.unwrap();
         let content = read_file(path_str, &security).unwrap();
         assert_eq!(content, "baz bar baz");
     }
 
-    #[test]
-    fn replace_not_found_returns_err() {
+    #[tokio::test]
+    async fn replace_not_found_returns_err() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("r2.txt");
         let path_str = path.to_str().unwrap();
 
         write_file(path_str, "hello world", &security).unwrap();
-        let result = replace(path_str, "notfound", "x", None, &security);
+        let result = replace(path_str, "notfound", "x", None, &security).await;
         assert!(result.is_err());
     }
 
-    #[test]
+    #[tokio::test]
     fn search_file_content_finds_match() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("code.rs");
         let path_str = path.to_str().unwrap();
-        write_file(path_str, "fn main() {}\nfn helper() {}", &security).unwrap();
+        write_file(path_str, "fn main() {}\nfn helper() {}", &security).await.unwrap();
 
         let result = search_file_content(path_str, "fn ", &security).unwrap();
         assert!(result.contains("fn main") || result.contains("fn helper"));
     }
 
-    #[test]
-    fn list_code_definitions_finds_fns() {
+    #[tokio::test]
+    async fn list_code_definitions_finds_fns() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("src.rs");
         let path_str = path.to_str().unwrap();
-        write_file(path_str, "pub fn foo() {}\nstruct Bar {}", &security).unwrap();
+        write_file(path_str, "pub fn foo() {}\nstruct Bar {}", &security).await.unwrap();
 
-        let result = list_code_definitions(path_str, &security).unwrap();
+        let result = list_code_definitions(path_str, &security).await.unwrap();
         assert!(result.contains("fn foo") || result.contains("struct Bar"));
     }
 

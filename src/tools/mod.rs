@@ -46,7 +46,7 @@ pub mod mcp_tools;
 pub mod memory_tools;
 pub mod notebook_tools;
 pub mod plan_tools;
-pub mod registry;
+pub mod sandbox;
 pub mod shell_tools;
 pub mod skill_tools;
 pub mod system_tools;
