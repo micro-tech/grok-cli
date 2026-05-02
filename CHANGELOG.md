@@ -11,8 +11,8 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
-<<<<<<< HEAD
-=======
+
+
 ## [0.1.9] - 2024-10-03
 
 ### Fixed
@@ -366,7 +366,7 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
->>>>>>> PreRelese
+
 ## [0.1.8] - 2026-04-02
 
 ### Added
