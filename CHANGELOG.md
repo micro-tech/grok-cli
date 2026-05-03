@@ -15,6 +15,33 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Added
 
+- **Task 102 — Wire KnowledgeLoader into session startup** (`src/knowledge/loader.rs`, `src/acp/mod.rs`)
+  - Added `pub fn get_all(&self) -> &[KnowledgeEntry]` to `KnowledgeLoader` so callers can retrieve all entries without filtering.
+  - In `initialize_session`, after constructing `SessionData`, calls `KnowledgeLoader::load()` on the `knowledge/` directory.  For each `*.md` / `*.json` file found, the content is formatted as `## <source>\n<content>` and pushed onto `session_data.messages` as a `system` role message with a `## Project Knowledge` header.  The count is traced via `tracing::info!`.
+  - Source: AI (Claude Sonnet 4.6)
+
+- **Task 103 — Wire SessionDna into session startup** (`src/session/dna.rs`, `src/acp/mod.rs`)
+  - In `initialize_session`, immediately after the knowledge injection block, calls `SessionDna::load()`.  If a `system` message was created by the knowledge block the DNA fields (tone, verbosity) are appended to it; otherwise a fresh `system` message is created from the DNA content alone.  Session DNA injection is traced via `tracing::debug!`.
+  - Source: AI (Claude Sonnet 4.6)
+
+- **Task 106 — Goal Mode System** (`src/acp/mod.rs`, `src/acp/slash_commands.rs`, `src/cli/commands/acp.rs`)
+  - **`SessionData`**: added `current_goal: Option<String>` field; initialised to `None` in `initialize_session` and in the test helper.
+  - **`SessionData::refine_prompt`**: step 4 — if a goal is active the text `[Active Goal: ... — interpret this message in the context of achieving this goal.]` is appended to every refined prompt.
+  - **`GrokAcpAgent`**: three new `pub async fn` methods — `set_session_goal`, `clear_session_goal`, `get_session_goal` — that write/read `session.current_goal` under the sessions `RwLock`.
+  - **`SlashCommand`** enum: two new variants — `Goal { text: String }` and `GoalClear`.
+  - **`parse_slash_command`**: `/goal clear` (case-insensitive) → `GoalClear`; `/goal <text>` → `Goal { text }`; bare `/goal` → `Goal { text: "" }`.
+  - **`BuiltinResult`** enum: three new variants — `SetGoal(String)`, `ClearGoal`, `ShowGoal`.
+  - **`handle_builtin`**: `Goal { text }` with empty text → `ShowGoal`; with non-empty text → `SetGoal(text)`; `GoalClear` → `ClearGoal`.
+  - **`command_to_prompt`**: `Goal { .. }` and `GoalClear` added to the built-ins arm (returns `None` — no AI round-trip).
+  - **`get_available_commands`**: added `goal` (with input hint) and `goal clear` entries.
+  - **`handle_session_prompt`** in `acp.rs`: dispatches `SetGoal`, `ClearGoal`, `ShowGoal` to the corresponding agent methods.
+  - **Tests added** (8 new): `test_parse_goal_with_text`, `test_parse_goal_clear`, `test_parse_goal_clear_case_insensitive`, `test_parse_goal_empty`, `test_parse_goal_empty_routes_to_show_goal`, `test_goal_is_builtin`, `test_goal_clear_is_builtin`, `test_goal_set_result_contains_text`.
+  - Source: AI (Claude Sonnet 4.6)
+
+### Fixed
+
+- **`src/visualizer.rs` raw string delimiter collision** — the `generate_pipeline_dot` function used `r#"..."#` as its raw string delimiter but the DOT graph body contained `"#RRGGBB` hex colour codes that prematurely closed the string, causing dozens of Rust syntax errors.  Fixed by rewriting the string as a regular escaped string literal (using `\"` for embedded quotes, `\\n` for DOT label newlines, and `{{` / `}}` for literal braces).  Also renamed `\u{2500}` horizontal-rule sequences to plain `-` dashes which DOT renders identically without triggering `format!` positional-argument errors.  Source: AI (Claude Sonnet 4.6)
+
 - **State Machine Visualizer — Task 107** (`src/visualizer.rs`, `src/lib.rs`, `src/cli/app.rs`, `src/acp/slash_commands.rs`, `src/cli/commands/acp.rs`)
   - New `pub mod visualizer` with two public functions:
     - `generate_pipeline_dot(config: Option<&Config>) -> String` — emits a valid Graphviz DOT digraph of the full Grok-CLI routing pipeline (entry → slash-dispatch → Bayesian router → context manager → Grok API → tool loop → memory subsystem → response). Reads live Bayesian priors, `max_context_tokens`, `compression_threshold`, and `max_tool_loop_iterations` from the loaded config so the graph reflects actual runtime settings.
