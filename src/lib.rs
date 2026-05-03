@@ -50,11 +50,12 @@ pub mod memory;
 pub mod router;
 pub mod rpl;
 pub mod security;
+pub mod session;
 pub mod skills;
 pub mod task_graph;
-pub mod session;
 pub mod tools;
 pub mod utils;
+pub mod visualizer;
 
 // Re-export grok_api types for use throughout the crate
 pub use grok_api::{

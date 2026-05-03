@@ -84,6 +84,16 @@ pub enum SlashCommand {
     /// `/recall <N>` — restore archived chunk N back into active context.
     /// `/recall` without an argument lists archives (same as `/archives`).
     Recall { chunk_id: Option<u32> },
+
+    /// `/goal <text>` -- set a persistent session goal.
+    /// `/goal` with no argument shows the current goal.
+    Goal { text: String },
+
+    /// `/goal clear` -- remove the active goal.
+    GoalClear,
+
+    /// `/visualize` — display the pipeline state machine as a DOT graph.
+    Visualize,
 }
 
 // ---------------------------------------------------------------------------
@@ -136,7 +146,15 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
             let id = args.parse::<u32>().ok();
             Some(SlashCommand::Recall { chunk_id: id })
         }
-        _ => None, // unknown command — let the AI handle the raw text
+        "/goal" => {
+            if args.eq_ignore_ascii_case("clear") {
+                Some(SlashCommand::GoalClear)
+            } else {
+                Some(SlashCommand::Goal { text: args })
+            }
+        }
+        "/visualize" => Some(SlashCommand::Visualize),
+        _ => None, // unknown command -- let the AI handle the raw text
     }
 }
 
@@ -179,6 +197,18 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "Show current session configuration and active context",
         ),
         AvailableCommand::new(
+            "bayes show",
+            "Display the current Bayesian belief-state graph (intent probabilities)",
+        ),
+        AvailableCommand::new(
+            "bayes reset",
+            "Reset Bayesian priors to defaults and clear the learned profile",
+        ),
+        AvailableCommand::new(
+            "bayes explain",
+            "Explain what the current Bayesian state means for routing and intent",
+        ),
+        AvailableCommand::new(
             "archives",
             "List all archived context chunks for this session",
         ),
@@ -186,7 +216,17 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "recall",
             "Restore an archived context chunk back into the active window",
         )
-        .with_input("chunk number (e.g. 1, 2, 3) — omit to list archives"),
+        .with_input("chunk number (e.g. 1, 2, 3) -- omit to list archives"),
+        AvailableCommand::new(
+            "goal",
+            "Set a persistent session goal that shapes all message interpretation",
+        )
+        .with_input("goal description -- e.g. 'refactor the auth module for safety'"),
+        AvailableCommand::new("goal clear", "Remove the active session goal"),
+        AvailableCommand::new(
+            "visualize",
+            "Display the Grok-CLI routing pipeline as a DOT/Graphviz graph",
+        ),
     ]
 }
 
@@ -215,7 +255,10 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::BayesReset
         | SlashCommand::BayesExplain
         | SlashCommand::Archives
-        | SlashCommand::Recall { .. } => None,
+        | SlashCommand::Recall { .. }
+        | SlashCommand::Goal { .. }
+        | SlashCommand::GoalClear
+        | SlashCommand::Visualize => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -352,6 +395,20 @@ pub enum BuiltinResult {
     ShowContext,
     /// Recall an archived context chunk. `None` = list all archives.
     RecallArchive(Option<u32>),
+    /// Display the current Bayesian belief-state graph for this session.
+    ShowBayes,
+    /// Reset the Bayesian priors for this session back to defaults.
+    ResetBayes,
+    /// Explain what the current Bayesian state means in plain English.
+    ExplainBayes,
+    /// Set the active session goal -- handled in the ACP session layer.
+    SetGoal(String),
+    /// Clear the active goal.
+    ClearGoal,
+    /// Show the current goal.
+    ShowGoal,
+    /// Show the pipeline visualizer graph.
+    ShowVisualizer,
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -371,6 +428,18 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::Tools => Some(BuiltinResult::Text(format_tools_text())),
         SlashCommand::Archives => Some(BuiltinResult::Text(format_archives_text(None))),
         SlashCommand::Recall { chunk_id } => Some(BuiltinResult::RecallArchive(*chunk_id)),
+        SlashCommand::BayesShow => Some(BuiltinResult::ShowBayes),
+        SlashCommand::BayesReset => Some(BuiltinResult::ResetBayes),
+        SlashCommand::BayesExplain => Some(BuiltinResult::ExplainBayes),
+        SlashCommand::Goal { text } => {
+            if text.trim().is_empty() {
+                Some(BuiltinResult::ShowGoal)
+            } else {
+                Some(BuiltinResult::SetGoal(text.clone()))
+            }
+        }
+        SlashCommand::GoalClear => Some(BuiltinResult::ClearGoal),
+        SlashCommand::Visualize => Some(BuiltinResult::ShowVisualizer),
         _ => None, // AI-assisted command
     }
 }
@@ -806,13 +875,81 @@ mod tests {
             .map(|c| c.name)
             .collect();
         for required in &[
-            "help", "web", "explain", "review", "plan", "test", "fix", "clear",
+            "help",
+            "web",
+            "explain",
+            "review",
+            "plan",
+            "test",
+            "fix",
+            "clear",
+            "bayes show",
+            "bayes reset",
+            "bayes explain",
         ] {
             assert!(
                 names.contains(&required.to_string()),
                 "command '/{required}' missing from advertised list"
             );
         }
+    }
+
+    // ── Bayes slash commands ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_bayes_show() {
+        assert_eq!(
+            parse_slash_command("/bayes show"),
+            Some(SlashCommand::BayesShow)
+        );
+    }
+
+    #[test]
+    fn test_parse_bayes_reset() {
+        assert_eq!(
+            parse_slash_command("/bayes reset"),
+            Some(SlashCommand::BayesReset)
+        );
+    }
+
+    #[test]
+    fn test_parse_bayes_explain() {
+        assert_eq!(
+            parse_slash_command("/bayes explain"),
+            Some(SlashCommand::BayesExplain)
+        );
+    }
+
+    #[test]
+    fn test_parse_bayes_unknown_subcommand_returns_none() {
+        // Unknown /bayes sub-commands should fall through to the AI.
+        assert_eq!(parse_slash_command("/bayes foobar"), None);
+    }
+
+    #[test]
+    fn test_bayes_show_is_builtin() {
+        let result = handle_builtin(&SlashCommand::BayesShow);
+        assert!(matches!(result, Some(BuiltinResult::ShowBayes)));
+    }
+
+    #[test]
+    fn test_bayes_reset_is_builtin() {
+        let result = handle_builtin(&SlashCommand::BayesReset);
+        assert!(matches!(result, Some(BuiltinResult::ResetBayes)));
+    }
+
+    #[test]
+    fn test_bayes_explain_is_builtin() {
+        let result = handle_builtin(&SlashCommand::BayesExplain);
+        assert!(matches!(result, Some(BuiltinResult::ExplainBayes)));
+    }
+
+    #[test]
+    fn test_bayes_commands_no_ai_prompt() {
+        // All bayes variants must be handled without an AI round-trip.
+        assert!(command_to_prompt(&SlashCommand::BayesShow).is_none());
+        assert!(command_to_prompt(&SlashCommand::BayesReset).is_none());
+        assert!(command_to_prompt(&SlashCommand::BayesExplain).is_none());
     }
 
     // --- format helpers ---
@@ -832,5 +969,87 @@ mod tests {
         assert!(ctx.contains("sess_123"));
         assert!(ctx.contains("grok-3"));
         assert!(ctx.contains("10"));
+    }
+
+    // --- Goal slash commands (Task 106) ---
+
+    #[test]
+    fn test_parse_goal_with_text() {
+        let cmd = parse_slash_command("/goal refactor auth");
+        assert_eq!(
+            cmd,
+            Some(SlashCommand::Goal {
+                text: "refactor auth".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_goal_clear() {
+        let cmd = parse_slash_command("/goal clear");
+        assert_eq!(cmd, Some(SlashCommand::GoalClear));
+    }
+
+    #[test]
+    fn test_parse_goal_clear_case_insensitive() {
+        assert_eq!(
+            parse_slash_command("/goal CLEAR"),
+            Some(SlashCommand::GoalClear)
+        );
+        assert_eq!(
+            parse_slash_command("/goal Clear"),
+            Some(SlashCommand::GoalClear)
+        );
+    }
+
+    #[test]
+    fn test_parse_goal_empty() {
+        // Empty /goal (no argument) parses to Goal { text: "" }
+        let cmd = parse_slash_command("/goal");
+        assert_eq!(
+            cmd,
+            Some(SlashCommand::Goal {
+                text: String::new()
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_goal_empty_routes_to_show_goal() {
+        // handle_builtin turns an empty text into ShowGoal
+        let cmd = SlashCommand::Goal {
+            text: String::new(),
+        };
+        let result = handle_builtin(&cmd);
+        assert!(matches!(result, Some(BuiltinResult::ShowGoal)));
+    }
+
+    #[test]
+    fn test_goal_is_builtin() {
+        let cmd = SlashCommand::Goal {
+            text: "improve test coverage".to_string(),
+        };
+        let result = handle_builtin(&cmd);
+        assert!(matches!(result, Some(BuiltinResult::SetGoal(_))));
+        // Must not produce an AI prompt
+        assert!(command_to_prompt(&cmd).is_none());
+    }
+
+    #[test]
+    fn test_goal_clear_is_builtin() {
+        let result = handle_builtin(&SlashCommand::GoalClear);
+        assert!(matches!(result, Some(BuiltinResult::ClearGoal)));
+        // Must not produce an AI prompt
+        assert!(command_to_prompt(&SlashCommand::GoalClear).is_none());
+    }
+
+    #[test]
+    fn test_goal_set_result_contains_text() {
+        let goal = "refactor the auth module for safety".to_string();
+        let cmd = SlashCommand::Goal { text: goal.clone() };
+        match handle_builtin(&cmd) {
+            Some(BuiltinResult::SetGoal(text)) => assert_eq!(text, goal),
+            other => panic!("expected SetGoal, got {:?}", other),
+        }
     }
 }

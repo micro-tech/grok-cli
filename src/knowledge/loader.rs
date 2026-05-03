@@ -54,6 +54,11 @@ impl KnowledgeLoader {
         if content.contains(query) { 1.0 } else { 0.5 }
     }
 
+    /// Get all loaded knowledge entries.
+    pub fn get_all(&self) -> &[KnowledgeEntry] {
+        &self.entries
+    }
+
     /// Get relevant knowledge for a query.
     pub fn get_relevant(&self, _query: &str) -> Vec<&KnowledgeEntry> {
         self.entries

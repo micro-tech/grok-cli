@@ -13,6 +13,47 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased] - 2026-05-02
 
+### Added
+
+- **State Machine Visualizer — Task 107** (`src/visualizer.rs`, `src/lib.rs`, `src/cli/app.rs`, `src/acp/slash_commands.rs`, `src/cli/commands/acp.rs`)
+  - New `pub mod visualizer` with two public functions:
+    - `generate_pipeline_dot(config: Option<&Config>) -> String` — emits a valid Graphviz DOT digraph of the full Grok-CLI routing pipeline (entry → slash-dispatch → Bayesian router → context manager → Grok API → tool loop → memory subsystem → response). Reads live Bayesian priors, `max_context_tokens`, `compression_threshold`, and `max_tool_loop_iterations` from the loaded config so the graph reflects actual runtime settings.
+    - `generate_pipeline_markdown(config: Option<&Config>) -> String` — wraps the DOT in a Markdown ` ```dot ` code block with render instructions, for use in ACP sessions.
+  - New CLI subcommand `grok visualize [--output <path>]`:
+    - Without `--output`: prints DOT to stdout (pipe-friendly: `grok visualize | dot -Tpng -o pipeline.png`).
+    - With `--output <file>`: writes DOT to disk and prints a render hint.
+  - New ACP slash command `/visualize` — classified as a built-in (no AI round-trip); returns the Markdown-wrapped DOT graph directly in the session response.
+  - 3 unit tests pass: `dot_output_is_valid_digraph`, `dot_contains_default_priors`, `markdown_wraps_in_code_block`.
+  - `cargo build` and `cargo clippy -- -D warnings` both clean.
+  - Source: AI (Claude Sonnet 4.6) — Task 107 completion
+
+### Fixed
+
+- **`/bayes show`, `/bayes reset`, `/bayes explain` not appearing in Zed `/` palette** (`src/acp/slash_commands.rs`, `src/acp/mod.rs`, `src/cli/commands/acp.rs`)
+  - Root cause (3 separate bugs):
+    1. Commands were missing from `get_available_commands()` — Zed never learned they existed.
+    2. `handle_builtin` returned `None` for all three — they silently fell through to the AI with the raw `/bayes …` text.
+    3. No agent methods existed to read/reset/explain the session's `bayes_engine`.
+  - Fix: Added three new `BuiltinResult` variants (`ShowBayes`, `ResetBayes`, `ExplainBayes`); wired `handle_builtin`; added three `pub async fn` methods on `GrokAcpAgent` (`get_bayes_visualize`, `reset_bayes`, `get_bayes_explain`) that access `session.bayes_engine` directly; dispatched them in `handle_session_prompt`; added the three command entries to `get_available_commands`.
+  - Added 8 new tests: `test_parse_bayes_show/reset/explain`, `test_parse_bayes_unknown_subcommand_returns_none`, `test_bayes_show/reset/explain_is_builtin`, `test_bayes_commands_no_ai_prompt`.
+  - Source: AI (Claude Sonnet 4.6) — Task 100 completion
+
+### Maintenance — Tasks 98–108 Audit
+
+- **Task list audit** (`.zed/task_list.json`) — verified actual code vs. claimed status for tasks 98–108:
+
+  | Task | Was | Corrected to | Reason |
+  |------|-----|-------------|--------|
+  | 99.1 | `pending` | `done` | `describe_tool`, `tool_examples`, `tool_search` exist in `discovery_tools.rs` |
+  | 99.2 | `pending` | `done` | `ToolsAction::Describe` and `ToolsAction::Examples` wired in `cli/commands/tools.rs` |
+  | 102  | `done` | `pending` | `KnowledgeLoader` exists in `knowledge/loader.rs` but is never called from any session or ACP path |
+  | 103  | `done` | `pending` | `SessionDna::load()` exists in `session/dna.rs` but `inject_into_prompt` is never called during session init |
+  | 105  | `pending` | `done` | Fully implemented in `agent/simulator.rs` + wired in `display/interactive.rs` with `/simulate on\|off` |
+
+  - Tasks 98, 100, 101, 104, 106, 107, 108 — no status change needed.
+  - `notes` fields added to tasks 102, 103, 105 explaining the wiring gap or implementation detail.
+  - Source: AI (Claude Sonnet 4.6)
+
 ### Added (Tasks 108.1 & 108.2)
 
 - **New `src/memory/context_archive.rs`** — Per-session context archive (Task 108.1)

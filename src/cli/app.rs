@@ -146,6 +146,16 @@ pub enum Commands {
     /// configured an API key, presenting this interactive wizard inside their
     /// built-in terminal.
     Setup,
+
+    /// Export the Grok-CLI routing pipeline as a DOT/Graphviz graph.
+    ///
+    /// Prints DOT to stdout by default. Pipe to Graphviz to render:
+    ///   grok visualize | dot -Tsvg -o pipeline.svg
+    Visualize {
+        /// Save DOT output to a file instead of printing to stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 /// Main application entry point
@@ -334,6 +344,25 @@ pub async fn run() -> Result<()> {
         }
         Some(Commands::Setup) => {
             crate::cli::commands::setup::handle_setup().await?;
+        }
+        Some(Commands::Visualize { output }) => {
+            // Load live Bayesian priors and ACP settings from config.
+            let dot = crate::visualizer::generate_pipeline_dot(Some(&config));
+            match output {
+                Some(path) => {
+                    std::fs::write(path, &dot).map_err(|e| {
+                        anyhow::anyhow!("Failed to write DOT file to {}: {}", path.display(), e)
+                    })?;
+                    println!("✅ Pipeline graph saved to: {}", path.display());
+                    println!(
+                        "   Render with: dot -Tsvg {} -o pipeline.svg",
+                        path.display()
+                    );
+                }
+                None => {
+                    print!("{}", dot);
+                }
+            }
         }
         None => {
             // Default to interactive mode

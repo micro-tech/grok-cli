@@ -1137,6 +1137,35 @@ where
                     Err(e) => format!("❌ Could not retrieve context: {e}"),
                 },
                 // Full recall injection is implemented in a follow-up task.
+                BuiltinResult::ShowBayes => match agent.get_bayes_visualize(&session_id).await {
+                    Ok(text) => text,
+                    Err(e) => format!("❌ Bayesian state unavailable: {e}"),
+                },
+                BuiltinResult::ResetBayes => match agent.reset_bayes(&session_id).await {
+                    Ok(text) => text,
+                    Err(e) => format!("❌ Could not reset Bayesian priors: {e}"),
+                },
+                BuiltinResult::ExplainBayes => match agent.get_bayes_explain(&session_id).await {
+                    Ok(text) => text,
+                    Err(e) => format!("Bayesian explanation unavailable: {e}"),
+                },
+                BuiltinResult::SetGoal(goal) => {
+                    match agent.set_session_goal(&session_id, goal).await {
+                        Ok(text) => text,
+                        Err(e) => format!("Could not set goal: {e}"),
+                    }
+                }
+                BuiltinResult::ClearGoal => match agent.clear_session_goal(&session_id).await {
+                    Ok(text) => text,
+                    Err(e) => format!("Could not clear goal: {e}"),
+                },
+                BuiltinResult::ShowGoal => match agent.get_session_goal(&session_id).await {
+                    Ok(text) => text,
+                    Err(e) => format!("Could not retrieve goal: {e}"),
+                },
+                BuiltinResult::ShowVisualizer => {
+                    crate::visualizer::generate_pipeline_markdown(None)
+                }
                 // For now we display the archive listing so the user can see
                 // what is available and confirm the command was recognised.
                 BuiltinResult::RecallArchive(chunk_id) => {

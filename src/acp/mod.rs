@@ -111,6 +111,11 @@ struct SessionData {
 
     /// Bayesian inference engine for this session
     bayes_engine: crate::bayes::BayesianEngine,
+
+    /// Active session goal set via `/goal <text>`.
+    /// Injected into every refined prompt as a system note so the model
+    /// always interprets messages through the lens of this goal.
+    current_goal: Option<String>,
 }
 
 impl SessionData {
@@ -157,6 +162,14 @@ impl SessionData {
             refined_message = format!(
                 "{}\n\n[System Note: The user's request is vague. Propose possible interpretations to help clarify their goal.]",
                 refined_message
+            );
+        }
+
+        // 4. Active Goal injection
+        if let Some(ref goal) = self.current_goal {
+            refined_message = format!(
+                "{}\n\n[Active Goal: {}  — interpret this message in the context of achieving this goal.]",
+                refined_message, goal
             );
         }
 
@@ -353,7 +366,7 @@ impl GrokAcpAgent {
             session_config.model = model.clone();
         }
 
-        let session_data = SessionData {
+        let mut session_data = SessionData {
             cwd,
             messages: Vec::new(),
             config: session_config,
@@ -362,7 +375,63 @@ impl GrokAcpAgent {
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
+            current_goal: None,
         };
+
+        // --- Task 102: Knowledge Pack Loader ---
+        // Load project-local knowledge files (knowledge/*.md, knowledge/*.json) and
+        // inject them as a system message so the model has project-specific context.
+        if let Ok(knowledge) = crate::knowledge::loader::KnowledgeLoader::load() {
+            let entries = knowledge.get_all();
+            if !entries.is_empty() {
+                let combined: String = entries
+                    .iter()
+                    .map(|e| format!("## {}\n{}", e.source, e.content))
+                    .collect::<Vec<_>>()
+                    .join("\n\n---\n\n");
+                session_data.messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": format!("## Project Knowledge\n\nThe following project-specific knowledge has been loaded from the `knowledge/` directory:\n\n{}", combined),
+                }));
+                tracing::info!(
+                    "Injected {} knowledge pack(s) into session {}",
+                    entries.len(),
+                    session_id.0
+                );
+            }
+        }
+
+        // --- Task 103: Session DNA ---
+        // Load session_dna.json (tone, verbosity, coding_style, etc.) and append
+        // its fields to the system prompt so the model adopts the user's preferred
+        // persona and style throughout the session.
+        let dna = crate::session::dna::SessionDna::load();
+        if let Some(sys_msg) = session_data
+            .messages
+            .iter_mut()
+            .find(|m| m["role"] == "system")
+        {
+            if let Some(content) = sys_msg["content"].as_str() {
+                let mut prompt = content.to_string();
+                dna.inject_into_prompt(&mut prompt);
+                sys_msg["content"] = serde_json::Value::String(prompt);
+            }
+        } else {
+            // No system message yet -- create one from DNA alone
+            let mut prompt = String::new();
+            dna.inject_into_prompt(&mut prompt);
+            if !prompt.trim().is_empty() {
+                session_data.messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": prompt.trim().to_string(),
+                }));
+            }
+        }
+        tracing::debug!(
+            "Session DNA injected: tone={}, verbosity={}",
+            dna.tone,
+            dna.verbosity
+        );
 
         let mut sessions = self.sessions.write().await;
         sessions.insert(session_id.0.clone(), session_data);
@@ -1353,6 +1422,142 @@ impl GrokAcpAgent {
         &self.capabilities
     }
 
+    // ── Bayesian engine commands (───────────────────────────────────────────────
+
+    /// Return an ASCII bar-chart of the current Bayesian belief state for a session.
+    ///
+    /// Used by the `/bayes show` slash command.
+    pub async fn get_bayes_visualize(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found — no Bayesian state to display.".to_string()),
+            Some(session) => {
+                let vis = session.bayes_engine.visualize();
+                let best = session
+                    .bayes_engine
+                    .best_intent()
+                    .unwrap_or_else(|| "(none)".to_string());
+                Ok(format!(
+                    "## 🧠 Bayesian Belief State\n\n\
+                     **Best intent:** `{best}`\n\n\
+                     ```\n{vis}\n```",
+                ))
+            }
+        }
+    }
+
+    /// Reset the Bayesian engine for a session back to compiled-in defaults.
+    ///
+    /// Used by the `/bayes reset` slash command.
+    pub async fn reset_bayes(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found — nothing to reset.".to_string()),
+            Some(session) => {
+                session.bayes_engine = crate::bayes::BayesianEngine::new_with_default_priors();
+                info!("Bayesian engine reset for session: {}", session_id.0);
+                Ok(
+                    "✅ Bayesian priors reset to defaults. The engine will re-learn from \
+                    the next few messages."
+                        .to_string(),
+                )
+            }
+        }
+    }
+
+    /// Return a plain-English explanation of the current Bayesian state for a session.
+    ///
+    /// Used by the `/bayes explain` slash command.
+    pub async fn get_bayes_explain(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found — no Bayesian state to explain.".to_string()),
+            Some(session) => {
+                let e = &session.bayes_engine;
+                let best = e.best_intent().unwrap_or_else(|| "(none)".to_string());
+                let intent_label = match best.as_str() {
+                    "intent_edit" => "editing files / writing code",
+                    "intent_shell" => "running shell commands",
+                    "intent_search" => "searching the web or codebase",
+                    "intent_question" => "answering a question",
+                    _ => "an unrecognised intent",
+                };
+                let clarify = if e.needs_clarification() {
+                    "🟡 **Clarification gate is OPEN** — the engine thinks a clarifying \
+                     question may be needed before proceeding."
+                } else {
+                    "🟢 **Clarification gate is closed** — the intent is clear enough to act."
+                };
+                let uncertain = if e.is_high_uncertainty() {
+                    "⚠️  **High uncertainty** — system uncertainty notes will be injected \
+                     into prompts to encourage the AI to ask before making changes."
+                } else {
+                    "✅ **Uncertainty is low** — the AI can proceed with reasonable confidence."
+                };
+                let vague = if e.is_vague() {
+                    "🟡 **Vagueness flag is SET** — the last message appeared vague; the AI \
+                     will be prompted to propose alternative interpretations."
+                } else {
+                    "🟢 **No vagueness detected** — the request was specific enough."
+                };
+                Ok(format!(
+                    "## 🧠 Bayesian State Explanation\n\n\
+                     **Most likely intent:** `{best}` ({intent_label})\n\n\
+                     {clarify}\n\n\
+                     {uncertain}\n\n\
+                     {vague}\n\n\
+                     Use `/bayes show` to see the raw probability bar-chart, \
+                     or `/bayes reset` to wipe the learned priors."
+                ))
+            }
+        }
+    }
+
+    /// Set the active goal for a session (used by the `/goal <text>` slash command).
+    pub async fn set_session_goal(&self, session_id: &SessionId, goal: String) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found -- goal not set.".to_string()),
+            Some(session) => {
+                session.current_goal = Some(goal.clone());
+                info!("Goal set for session {}: {}", session_id.0, goal);
+                Ok(format!(
+                    "**Goal set:** {}\n\nAll subsequent messages will be interpreted through \
+                     the lens of this goal. Type `/goal clear` to remove it.",
+                    goal
+                ))
+            }
+        }
+    }
+
+    /// Clear the active goal for a session (used by the `/goal clear` slash command).
+    pub async fn clear_session_goal(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                session.current_goal = None;
+                info!("Goal cleared for session {}", session_id.0);
+                Ok(
+                    "Goal cleared. Messages will be interpreted without a persistent goal."
+                        .to_string(),
+                )
+            }
+        }
+    }
+
+    /// Return the current goal for a session (used by `/goal show`).
+    pub async fn get_session_goal(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => Ok(match &session.current_goal {
+                Some(goal) => format!("**Current goal:** {}", goal),
+                None => "No active goal set. Use `/goal <description>` to set one.".to_string(),
+            }),
+        }
+    }
+
     /// Clear the conversation history for a session (used by the `/clear` slash command).
     pub async fn clear_session_history(&self, session_id: &SessionId) -> Result<()> {
         let mut sessions = self.sessions.write().await;
@@ -1669,6 +1874,7 @@ mod tests {
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new(),
+            current_goal: None,
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);
