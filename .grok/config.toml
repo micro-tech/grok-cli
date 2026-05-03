@@ -225,7 +225,17 @@ max_tool_loop_iterations = 100
 # Set to true only when using a client that supports session/request_permission.
 require_permission = false
 permission_timeout_secs = 300
+# Keep 80 turns of conversation history by count…
 max_history_messages = 80
+# …but also enforce a hard token budget so large file reads
+# cannot blow past the 256 k token context window.
+max_context_tokens = 220000
+# Truncate individual tool-result messages larger than this (chars).
+max_tool_result_chars = 30000
+# Enable auto-summarization when context fills up.
+auto_compress = true
+compression_threshold = 0.75
+compression_chunk_ratio = 0.40
 
 [mcp.servers.github]
 type = "stdio"

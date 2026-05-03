@@ -11,6 +11,60 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
+## [Unreleased] - 2026-05-02
+
+### Added (Task 108.3)
+
+- **New `AcpConfig` fields for intelligent auto-compression** (`src/config/mod.rs`)
+  - `auto_compress: bool` (default `true`) — master switch for AI-powered context
+    summarization. When enabled, the oldest message chunk is summarized and archived
+    to disk instead of being silently dropped when the context fills up.
+    Set to `false` to revert to the previous drop-only behaviour.
+  - `compression_threshold: f32` (default `0.75`) — fraction of `max_context_tokens`
+    at which auto-compression fires (0.0–1.0). At the default, compression triggers
+    when the estimated prompt exceeds 75 % of the token budget.
+  - `compression_chunk_ratio: f32` (default `0.40`) — fraction of current non-system
+    messages to compress per compression event. At the default, the oldest 40 % of
+    messages are archived each time, with a minimum of 4 messages enforced.
+  - Three matching `default_*` functions and `AcpConfig::default()` wired up.
+  - Both `config.example.toml` and `.grok/config.toml` updated with commented
+    documentation for all three new settings.
+  - Source: AI (Claude Sonnet 4.6) — Task 108.3
+
+### Fixed
+
+- **Context-window overflow — "maximum prompt length" API error** (`src/acp/mod.rs`, `src/config/mod.rs`)
+  - Root cause: history trimming was purely count-based (`max_history_messages`).
+    When tool calls returned large file contents, even 80 messages could balloon
+    to 674 790 tokens, far exceeding the model's 256 000-token limit.
+  - Fix — three-layer defence in `handle_chat_completion`:
+    1. **Per-message truncation** (`truncate_tool_results`): tool-result messages
+       are capped at `max_tool_result_chars` (default 30 000 chars ≈ 7 500 tokens)
+       so a single large file read cannot flood the context.
+    2. **Count-based trim** (existing): keeps the most recent
+       `max_history_messages` turns.
+    3. **Token-budget trim** (`trim_to_token_budget`): estimates total tokens
+       (4 chars ≈ 1 token) and drops oldest messages until the history fits
+       within `max_context_tokens` (default 220 000, leaving 36 k headroom for
+       the response and tool schemas).
+  - **Better error message**: when the API still rejects the request with
+    "maximum prompt length", the error is caught before the retry loop, logged
+    clearly, and returned with actionable `/clear` + config-tuning advice.
+  - Added `max_context_tokens` and `max_tool_result_chars` to `AcpConfig` with
+    serde defaults and `Default` impl; documented in `config.example.toml` and
+    `.grok/config.toml`.
+  - Source: AI (Claude Sonnet 4.6)
+
+- **Clippy warnings** (various files)
+  - `src/acp/mod.rs`: `ptr_arg`, `collapsible_if`
+  - `src/cli/commands/tools.rs`: `collapsible_if`
+  - `src/knowledge/loader.rs`: `collapsible_if`
+  - `src/task_graph/mod.rs`: `new_without_default`, `type_complexity`
+  - `src/session/dna.rs`: `collapsible_if`
+  - `src/tools/discovery_tools.rs`: `collapsible_if`
+  - `src/tools/sandbox.rs`: `needless_borrows_for_generic_args`
+  - Source: AI (Claude Sonnet 4.6)
+
 ## [Unreleased] - Bug fixes from grok-errors.log analysis
 
 ### Fixed

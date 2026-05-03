@@ -33,11 +33,14 @@ impl PluginSandbox {
         tracing::info!("Compiling custom tool: {}", path.display());
         // Simulate compilation
         let output = Command::new("rustc")
-            .args(&["--crate-type", "dylib", "-o", "temp.dylib"])
+            .args(["--crate-type", "dylib", "-o", "temp.dylib"])
             .arg(path)
             .output()?;
         if !output.status.success() {
-            tracing::warn!("Compilation failed: {}", String::from_utf8_lossy(&output.stderr));
+            tracing::warn!(
+                "Compilation failed: {}",
+                String::from_utf8_lossy(&output.stderr)
+            );
         }
         // Load dylib (placeholder)
         Ok(())

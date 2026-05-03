@@ -8,7 +8,11 @@ pub async fn handle_tools_command(command: crate::ToolsAction) -> Result<()> {
             println!("{}", "Available Tools".bright_cyan().bold());
             println!(
                 "  {} — tools for interacting with the system",
-                format!("{} tool(s)", crate::tools::registry::get_tool_definitions().len()).dimmed()
+                format!(
+                    "{} tool(s)",
+                    crate::tools::registry::get_tool_definitions().len()
+                )
+                .dimmed()
             );
             println!();
 
@@ -17,19 +21,17 @@ pub async fn handle_tools_command(command: crate::ToolsAction) -> Result<()> {
                     .get("function")
                     .and_then(|f| f.get("name"))
                     .and_then(|n| n.as_str())
-                {
-                    if let Some(desc) = tool
+                    && let Some(desc) = tool
                         .get("function")
                         .and_then(|f| f.get("description"))
                         .and_then(|d| d.as_str())
-                    {
-                        println!(
-                            "  {} {}  [{}]",
-                            "•".bright_white(),
-                            name.bright_yellow().bold(),
-                            desc.dimmed()
-                        );
-                    }
+                {
+                    println!(
+                        "  {} {}  [{}]",
+                        "•".bright_white(),
+                        name.bright_yellow().bold(),
+                        desc.dimmed()
+                    );
                 }
             }
 
@@ -45,10 +47,7 @@ pub async fn handle_tools_command(command: crate::ToolsAction) -> Result<()> {
         crate::ToolsAction::Describe { name } => {
             match crate::tools::discovery_tools::describe_tool(&name) {
                 Ok(schema) => {
-                    println!(
-                        "{}",
-                        format!("Tool Schema: {}", name).bright_cyan().bold()
-                    );
+                    println!("{}", format!("Tool Schema: {}", name).bright_cyan().bold());
                     println!();
                     println!("{}", schema);
                 }

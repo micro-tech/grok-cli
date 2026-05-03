@@ -479,7 +479,15 @@ impl GrokAcpAgent {
 
         info!("📚 Session history: {} messages", session.messages.len());
 
-        // Trim history to prevent unbounded context growth.
+        // ── 1. Per-message truncation ────────────────────────────────────────
+        // Cap individual tool-result messages so a single large file read
+        // cannot consume the whole context window.
+        let max_tool_chars = self.config.acp.max_tool_result_chars;
+        if max_tool_chars > 0 {
+            truncate_tool_results(&mut session.messages, max_tool_chars);
+        }
+
+        // ── 2. Count-based trim ──────────────────────────────────────────────
         // Keep the most recent max_history_messages entries so the model always
         // has fresh context without exceeding the API context window.
         // We trim here (after adding the user turn) so we never split a
@@ -491,6 +499,25 @@ impl GrokAcpAgent {
             debug!(
                 "Trimmed {} old messages from session history (keeping last {})",
                 trim_count, max_history
+            );
+        }
+
+        // ── 3. Token-budget trim ─────────────────────────────────────────────
+        // Even within the message-count limit, rich tool outputs can bloat
+        // the context beyond the model's token window.  Estimate tokens
+        // (4 chars ≈ 1 token) and drop oldest messages until we fit.
+        let max_ctx_tokens = self.config.acp.max_context_tokens;
+        let estimated = estimate_tokens(&session.messages);
+        if estimated > max_ctx_tokens {
+            let before = session.messages.len();
+            trim_to_token_budget(&mut session.messages, max_ctx_tokens);
+            warn!(
+                "⚠️  Context trimmed by token budget: ~{} estimated tokens > {} limit. \
+                 Dropped {} old messages (kept {}).",
+                estimated,
+                max_ctx_tokens,
+                before - session.messages.len(),
+                session.messages.len()
             );
         }
 
@@ -574,6 +601,40 @@ impl GrokAcpAgent {
                     {
                         Ok(resp) => break resp,
                         Err(e) => {
+                            // ── Detect "prompt too long" before anything else ─────────
+                            // This is not a network error; retrying will not help.
+                            // Give the user clear guidance instead.
+                            {
+                                let raw = e.to_string();
+                                let lower = raw.to_lowercase();
+                                if lower.contains("maximum prompt length")
+                                    || lower.contains("prompt length")
+                                    || (lower.contains("invalid argument")
+                                        && lower.contains("token"))
+                                {
+                                    let current_est = estimate_tokens(&session.messages);
+                                    error!("❌ Context-window overflow: {}", raw);
+                                    return Err(anyhow!(
+                                        "Context window overflow — the request was too large \
+                                         for the model.\n\
+                                         Estimated tokens in history: ~{}\n\
+                                         \n\
+                                         💡 Quick fixes:\n\
+                                         • Type `/clear` to reset the conversation history.\n\
+                                         • Lower `max_history_messages` in .grok/config.toml \
+                                           (currently {}).\n\
+                                         • Lower `max_context_tokens` in .grok/config.toml \
+                                           (currently {}).\n\
+                                         • Lower `max_tool_result_chars` in .grok/config.toml \
+                                           (currently {}) to truncate large file reads earlier.",
+                                        current_est,
+                                        self.config.acp.max_history_messages,
+                                        self.config.acp.max_context_tokens,
+                                        self.config.acp.max_tool_result_chars,
+                                    ));
+                                }
+                            }
+
                             let is_retriable = crate::utils::network::detect_network_drop(&e) || {
                                 let msg = e.to_string().to_lowercase();
                                 msg.contains("timeout")
@@ -1310,6 +1371,71 @@ impl GrokAcpAgent {
                 "max_context_length": self.capabilities.max_context_length
             }
         }))
+    }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Token-management helpers
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Rough token estimate: 4 characters ≈ 1 token (standard heuristic for
+/// mixed prose/code/JSON).  We serialise each message value so that all
+/// fields (role, content, tool_calls …) are counted, not just the visible
+/// text.
+#[inline]
+fn estimate_tokens(messages: &[Value]) -> usize {
+    messages
+        .iter()
+        .map(|m| m.to_string().len().saturating_add(3) / 4) // +3 for per-message overhead
+        .sum()
+}
+
+/// Remove the oldest messages (from index 0 upward) until the estimated
+/// token count is ≤ `budget`.  Always keeps at least the last message so
+/// the user turn is never lost.
+fn trim_to_token_budget(messages: &mut Vec<Value>, budget: usize) {
+    while messages.len() > 1 && estimate_tokens(messages) > budget {
+        messages.remove(0);
+    }
+}
+
+/// Truncate the `content` field of tool-result messages (role = "tool")
+/// that exceed `max_chars` characters.  A truncation notice is appended so
+/// the model knows the output was cut.
+fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
+    for msg in messages.iter_mut() {
+        // Only touch tool-result messages
+        if msg.get("role").and_then(|r| r.as_str()) != Some("tool") {
+            continue;
+        }
+        if let Some(content) = msg.get_mut("content") {
+            match content {
+                Value::String(s) if s.len() > max_chars => {
+                    let truncated = &s[..max_chars];
+                    *s = format!(
+                        "{}\n\n[... output truncated to {} chars to fit context window ...]",
+                        truncated, max_chars
+                    );
+                }
+                // Array-of-content-blocks form used by some providers
+                Value::Array(blocks) => {
+                    for block in blocks.iter_mut() {
+                        if let Some(text) = block.get_mut("text")
+                            && let Some(s) = text.as_str()
+                            && s.len() > max_chars
+                        {
+                            let truncated = &s[..max_chars];
+                            *text = Value::String(format!(
+                                "{}\n\n[... output truncated to {} chars to fit \
+                                 context window ...]",
+                                truncated, max_chars
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
     }
 }
 

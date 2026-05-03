@@ -61,6 +61,37 @@ permission_timeout_secs = 300
 # Default: 40
 max_history_messages = 40
 
+# Soft token budget for the full outgoing request (history + system prompt +
+# tool definitions).  Messages are trimmed from the oldest end when the
+# estimated token count exceeds this value.  The Grok-3 / grok-beta context
+# window is 256 000 tokens; this default leaves ~36 k headroom for the model
+# response and tool schemas.
+# Default: 220000
+max_context_tokens = 220000
+
+# Maximum characters per tool-result message.  Large file reads are the most
+# common source of context-window overflow; this truncates them early while
+# preserving the conversation structure.
+# Set to 0 to disable per-message truncation.
+# Default: 30000  (~7 500 tokens)
+max_tool_result_chars = 30000
+
+# Enable automatic context summarization when approaching the token limit.
+# When triggered the oldest messages are summarized by the AI and archived to
+# disk; a compact notice replaces them so the model knows history is available.
+# Set to false to revert to the old drop-only behaviour.
+# Default: true
+auto_compress = true
+
+# Fraction of max_context_tokens at which compression fires (0.0-1.0).
+# Default: 0.75  (fires at 75% of the token budget)
+compression_threshold = 0.75
+
+# Fraction of current non-system messages compressed per event (0.0-1.0).
+# Minimum of 4 messages is always enforced.
+# Default: 0.40
+compression_chunk_ratio = 0.40
+
 # ── Network (Starlink-optimised) ─────────────────────────────────────────────
 [network]
 # Enable Starlink-specific retry heuristics (satellite drop detection).

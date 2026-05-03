@@ -218,10 +218,9 @@ pub fn describe_tool(name: &str) -> Result<String> {
             .get("function")
             .and_then(|f| f.get("name"))
             .and_then(|n| n.as_str())
+            && n == name
         {
-            if n == name {
-                return Ok(serde_json::to_string_pretty(&t).unwrap());
-            }
+            return Ok(serde_json::to_string_pretty(&t).unwrap());
         }
     }
     Err(anyhow!("Tool '{}' not found", name))
@@ -235,16 +234,20 @@ pub fn tool_examples(name: &str) -> Result<String> {
     match name {
         "read_file" => Ok(r##"Examples for read_file:
 1. Read a configuration file: {"path": "config.toml"}
-2. Read a source code file: {"path": "src/main.rs"}"##.to_string()),
+2. Read a source code file: {"path": "src/main.rs"}"##
+            .to_string()),
         "write_file" => Ok(r##"Examples for write_file:
 1. Create a new file: {"path": "notes.txt", "content": "My notes"}
-2. Update an existing file: {"path": "README.md", "content": "# Updated Title\n\nNew content"}"##.to_string()),
+2. Update an existing file: {"path": "README.md", "content": "# Updated Title\n\nNew content"}"##
+            .to_string()),
         "run_shell_command" => Ok(r##"Examples for run_shell_command:
 1. List files: {"command": "ls -la"}
-2. Check git status: {"command": "git status"}"##.to_string()),
+2. Check git status: {"command": "git status"}"##
+            .to_string()),
         "web_search" => Ok(r##"Examples for web_search:
 1. Search for Rust documentation: {"query": "rust async tutorial"}
-2. Search for news: {"query": "latest AI news"}"##.to_string()),
+2. Search for news: {"query": "latest AI news"}"##
+            .to_string()),
         _ => Ok(format!("No examples available for tool '{}'", name)),
     }
 }

@@ -46,6 +46,8 @@
 
 // ── Sub-modules ───────────────────────────────────────────────────────────────
 
+pub mod context_archive;
+pub mod context_compressor;
 pub mod episodic;
 pub mod long_term;
 pub mod short_term;
@@ -56,6 +58,7 @@ pub mod working;
 
 // ── Convenience re-exports ────────────────────────────────────────────────────
 
+pub use context_archive::{ArchiveIndex, ChunkMeta, ContextArchive, ContextChunk};
 pub use episodic::EpisodicMemory;
 pub use long_term::LongTermMemory;
 pub use short_term::ShortTermMemory;

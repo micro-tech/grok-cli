@@ -177,6 +177,47 @@ pub struct AcpConfig {
     /// Default: 40
     #[serde(default = "default_max_history_messages")]
     pub max_history_messages: usize,
+
+    /// Soft token budget for the outgoing request (prompt + history).
+    /// Messages are trimmed from the oldest end until the estimated token
+    /// count fits within this limit.  Leave ~36 k headroom for the model
+    /// response and tool definitions.
+    /// Grok-3 / grok-beta context window = 256 k tokens.
+    /// Default: 220_000
+    #[serde(default = "default_max_context_tokens")]
+    pub max_context_tokens: usize,
+
+    /// Maximum number of characters kept per tool-result message before
+    /// it is truncated.  Large file reads are the most common cause of
+    /// context-window overflow; truncating them here keeps the history
+    /// manageable without losing the conversation structure.
+    /// 0 = no per-message truncation.
+    /// Default: 30_000  (~7 500 tokens)
+    #[serde(default = "default_max_tool_result_chars")]
+    pub max_tool_result_chars: usize,
+
+    /// Enable automatic context summarization when the active context approaches
+    /// the token limit.  When triggered, the oldest messages are summarized by
+    /// the AI and archived to disk; a compact notice replaces them in the active
+    /// window so the model knows the history exists and can recall it.
+    /// Set to `false` to revert to the old drop-only behaviour.
+    /// Default: true
+    #[serde(default = "default_auto_compress")]
+    pub auto_compress: bool,
+
+    /// Fraction of `max_context_tokens` at which auto-compression fires (0.0–1.0).
+    /// When estimated prompt tokens exceed `max_context_tokens * compression_threshold`,
+    /// the oldest chunk is summarized and archived.
+    /// Default: 0.75  (fires at 75 % of the token budget)
+    #[serde(default = "default_compression_threshold")]
+    pub compression_threshold: f32,
+
+    /// Fraction of current non-system messages to compress per compression event.
+    /// E.g. 0.40 compresses the oldest 40 % of messages each time.
+    /// Minimum of 4 messages is always enforced.
+    /// Default: 0.40
+    #[serde(default = "default_compression_chunk_ratio")]
+    pub compression_chunk_ratio: f32,
 }
 
 /// Network configuration optimized for satellite connections
@@ -915,6 +956,26 @@ fn default_max_history_messages() -> usize {
     40
 }
 
+fn default_max_context_tokens() -> usize {
+    220_000
+}
+
+fn default_auto_compress() -> bool {
+    true
+}
+
+fn default_compression_threshold() -> f32 {
+    0.75
+}
+
+fn default_compression_chunk_ratio() -> f32 {
+    0.40
+}
+
+fn default_max_tool_result_chars() -> usize {
+    30_000
+}
+
 fn default_permission_timeout_secs() -> u64 {
     300
 }
@@ -960,6 +1021,11 @@ impl Default for AcpConfig {
             require_permission: true,
             permission_timeout_secs: default_permission_timeout_secs(),
             max_history_messages: default_max_history_messages(),
+            max_context_tokens: default_max_context_tokens(),
+            max_tool_result_chars: default_max_tool_result_chars(),
+            auto_compress: default_auto_compress(),
+            compression_threshold: default_compression_threshold(),
+            compression_chunk_ratio: default_compression_chunk_ratio(),
         }
     }
 }

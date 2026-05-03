@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
-use std::pin::Pin;
 use std::future::Future;
+use std::pin::Pin;
 
-use serde::{Deserialize, Serialize};
 use crate::tools::{ToolContext, execute_tool};
+use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskNode {
@@ -18,9 +18,18 @@ pub struct ToolCall {
     pub arguments: serde_json::Value,
 }
 
+/// Boxed async result type used by [`TaskGraph::execute`].
+type ExecuteFuture<'a> = Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error>>> + 'a>>;
+
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskGraph {
     pub nodes: HashMap<String, TaskNode>,
+}
+
+impl Default for TaskGraph {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl TaskGraph {
@@ -34,7 +43,7 @@ impl TaskGraph {
         self.nodes.insert(node.id.clone(), node);
     }
 
-    pub fn execute(&self, context: &ToolContext) -> Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error>>> + '_>> {
+    pub fn execute(&self, context: &ToolContext) -> ExecuteFuture<'_> {
         let nodes = self.nodes.clone();
         let context = context.clone();
         Box::pin(async move {
@@ -61,7 +70,13 @@ impl TaskGraph {
         })
     }
 
-    fn topo_sort_static(id: &str, nodes: &HashMap<String, TaskNode>, visited: &mut HashSet<String>, visiting: &mut HashSet<String>, sorted: &mut Vec<String>) -> Result<(), Box<dyn std::error::Error>> {
+    fn topo_sort_static(
+        id: &str,
+        nodes: &HashMap<String, TaskNode>,
+        visited: &mut HashSet<String>,
+        visiting: &mut HashSet<String>,
+        sorted: &mut Vec<String>,
+    ) -> Result<(), Box<dyn std::error::Error>> {
         if visiting.contains(id) {
             return Err("Cycle detected in task graph".into());
         }
@@ -130,7 +145,14 @@ mod tests {
         let mut visiting = HashSet::new();
         for id in graph.nodes.keys() {
             if !visited.contains(id) {
-                TaskGraph::topo_sort_static(id, &graph.nodes, &mut visited, &mut visiting, &mut sorted).unwrap();
+                TaskGraph::topo_sort_static(
+                    id,
+                    &graph.nodes,
+                    &mut visited,
+                    &mut visiting,
+                    &mut sorted,
+                )
+                .unwrap();
             }
         }
         assert_eq!(sorted, vec!["1", "2"]);
@@ -161,7 +183,13 @@ mod tests {
         let mut sorted = Vec::new();
         let mut visited = HashSet::new();
         let mut visiting = HashSet::new();
-        let result = TaskGraph::topo_sort_static("1", &graph.nodes, &mut visited, &mut visiting, &mut sorted);
+        let result = TaskGraph::topo_sort_static(
+            "1",
+            &graph.nodes,
+            &mut visited,
+            &mut visiting,
+            &mut sorted,
+        );
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("Cycle detected"));
     }
