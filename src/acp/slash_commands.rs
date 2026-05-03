@@ -77,6 +77,13 @@ pub enum SlashCommand {
 
     /// `/bayes explain` — explain current Bayesian reasoning.
     BayesExplain,
+
+    /// `/archives` — list all context archive chunks for this session.
+    Archives,
+
+    /// `/recall <N>` — restore archived chunk N back into active context.
+    /// `/recall` without an argument lists archives (same as `/archives`).
+    Recall { chunk_id: Option<u32> },
 }
 
 // ---------------------------------------------------------------------------
@@ -124,6 +131,11 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
             "explain" => Some(SlashCommand::BayesExplain),
             _ => None,
         },
+        "/archives" => Some(SlashCommand::Archives),
+        "/recall" => {
+            let id = args.parse::<u32>().ok();
+            Some(SlashCommand::Recall { chunk_id: id })
+        }
         _ => None, // unknown command — let the AI handle the raw text
     }
 }
@@ -166,6 +178,15 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "context",
             "Show current session configuration and active context",
         ),
+        AvailableCommand::new(
+            "archives",
+            "List all archived context chunks for this session",
+        ),
+        AvailableCommand::new(
+            "recall",
+            "Restore an archived context chunk back into the active window",
+        )
+        .with_input("chunk number (e.g. 1, 2, 3) — omit to list archives"),
     ]
 }
 
@@ -192,7 +213,9 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Tools
         | SlashCommand::BayesShow
         | SlashCommand::BayesReset
-        | SlashCommand::BayesExplain => None,
+        | SlashCommand::BayesExplain
+        | SlashCommand::Archives
+        | SlashCommand::Recall { .. } => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -327,6 +350,8 @@ pub enum BuiltinResult {
     SwitchModel(String),
     /// Display session context/config info — the caller supplies the text.
     ShowContext,
+    /// Recall an archived context chunk. `None` = list all archives.
+    RecallArchive(Option<u32>),
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -344,6 +369,8 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         }
         SlashCommand::Context => Some(BuiltinResult::ShowContext),
         SlashCommand::Tools => Some(BuiltinResult::Text(format_tools_text())),
+        SlashCommand::Archives => Some(BuiltinResult::Text(format_archives_text(None))),
+        SlashCommand::Recall { chunk_id } => Some(BuiltinResult::RecallArchive(*chunk_id)),
         _ => None, // AI-assisted command
     }
 }
@@ -376,7 +403,7 @@ pub fn format_tools_text() -> String {
             "🐚 Shell"
         } else if name.starts_with("web") {
             "🌐 Web"
-        } else if name.starts_with("save_memory") {
+        } else if name.starts_with("save_memory") || name.starts_with("recall_context") {
             "🧠 Memory"
         } else if name.starts_with("sleep") || name.starts_with("synthetic") {
             "⚙️  System"
@@ -522,6 +549,57 @@ pub fn format_model_list() -> String {
     lines.push("Example: `/model grok-3` — switches the current session to Grok 3.".to_string());
 
     lines.join("\n")
+}
+
+/// Format the `/archives` listing for a session.
+///
+/// `session_id` is `None` when called from `handle_builtin` (the ACP caller
+/// will supply it); pass `Some(id)` to load live data for a specific session.
+pub fn format_archives_text(session_id: Option<&str>) -> String {
+    let sid = match session_id {
+        Some(s) => s.to_string(),
+        None => return "📦 **Context Archives**\n\n_(session ID required to list archives — use `/archives` from within a session)_".to_string(),
+    };
+
+    match crate::memory::context_archive::ContextArchive::for_session(&sid) {
+        Err(e) => format!("❌ Could not open archive: {}", e),
+        Ok(archive) => {
+            let chunks = archive.list_chunks();
+            if chunks.is_empty() {
+                return "📦 **Context Archives**\n\nNo archived chunks yet for this session.\n\
+                         Archives are created automatically when the context window fills up."
+                    .to_string();
+            }
+
+            let mut lines = vec![
+                "📦 **Context Archives**".to_string(),
+                String::new(),
+                format!(
+                    "**{}** chunk(s) | **~{}** tokens archived total",
+                    chunks.len(),
+                    archive.total_tokens_archived()
+                ),
+                String::new(),
+                "| # | Date | Messages | Tokens Saved | Summary |".to_string(),
+                "|---|------|----------|-------------|---------|".to_string(),
+            ];
+
+            for c in chunks {
+                lines.push(format!(
+                    "| {} | {} | {} | ~{} | {} |",
+                    c.chunk_id,
+                    c.created_at.format("%m-%d %H:%M"),
+                    c.message_count,
+                    c.estimated_tokens_saved,
+                    c.summary_preview,
+                ));
+            }
+
+            lines.push(String::new());
+            lines.push("Type `/recall N` to restore a chunk into your active context.".to_string());
+            lines.join("\n")
+        }
+    }
 }
 
 /// Build a context summary string for the `/context` command.

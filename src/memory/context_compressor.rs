@@ -150,13 +150,13 @@ fn parse_summary_response(text: &str) -> (String, Vec<String>) {
     let mut in_facts = false;
 
     for line in text.lines() {
-        if line.starts_with("SUMMARY:") {
-            summary = line["SUMMARY:".len()..].trim().to_string();
+        if let Some(rest) = line.strip_prefix("SUMMARY:") {
+            summary = rest.trim().to_string();
             in_facts = false;
         } else if line.trim() == "FACTS:" {
             in_facts = true;
-        } else if in_facts && line.starts_with("- ") {
-            facts.push(line["- ".len()..].trim().to_string());
+        } else if in_facts && let Some(rest) = line.strip_prefix("- ") {
+            facts.push(rest.trim().to_string());
         }
     }
 

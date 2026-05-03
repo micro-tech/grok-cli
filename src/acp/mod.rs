@@ -521,6 +521,139 @@ impl GrokAcpAgent {
             );
         }
 
+        // ── 4. Smart compression (summarise-and-archive instead of drop) ──────
+        // When the context exceeds the compression threshold we call the AI to
+        // summarise the oldest chunk of messages, archive the raw messages to
+        // disk, and replace them with a compact notice.  If the API call fails
+        // (Starlink drop) we restore the drained messages and fall through.
+        if self.config.acp.auto_compress {
+            let threshold = (self.config.acp.max_context_tokens as f64
+                * self.config.acp.compression_threshold as f64)
+                as usize;
+            let estimated = estimate_tokens(&session.messages);
+
+            if estimated > threshold {
+                // Collect indices of non-system messages (preserve system at index 0).
+                let non_system_indices: Vec<usize> = session
+                    .messages
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+                    .map(|(i, _)| i)
+                    .collect();
+
+                let compress_count = ((non_system_indices.len() as f64
+                    * self.config.acp.compression_chunk_ratio as f64)
+                    as usize)
+                    .max(4)
+                    .min(non_system_indices.len());
+
+                if compress_count > 0 {
+                    // Drain the oldest `compress_count` non-system messages.
+                    // They start at the first non-system index; because messages
+                    // are ordered and non_system_indices[0] is the lowest index,
+                    // we can drain a contiguous slice.
+                    let start = non_system_indices[0];
+                    let end = non_system_indices
+                        .get(compress_count - 1)
+                        .copied()
+                        .unwrap_or(start);
+                    let to_compress: Vec<Value> = session.messages.drain(start..=end).collect();
+
+                    let tokens_saved = estimate_tokens(&to_compress);
+                    let model = session.config.model.clone();
+
+                    match self.get_router() {
+                        Ok(router) => {
+                            match crate::memory::context_compressor::compress(
+                                &to_compress,
+                                router,
+                                &model,
+                            )
+                            .await
+                            {
+                                Ok((summary, key_facts)) => {
+                                    use crate::memory::context_archive::{
+                                        ContextArchive, ContextChunk,
+                                    };
+                                    match ContextArchive::for_session(&session_id.0) {
+                                        Ok(mut archive) => {
+                                            let chunk_id = archive.next_chunk_id();
+                                            let chunk = ContextChunk {
+                                                chunk_id,
+                                                session_id: session_id.0.clone(),
+                                                created_at: chrono::Utc::now(),
+                                                message_count: to_compress.len(),
+                                                estimated_tokens_saved: tokens_saved,
+                                                summary,
+                                                key_facts,
+                                                raw_messages: to_compress,
+                                            };
+                                            if let Err(e) = archive.save_chunk(&chunk) {
+                                                warn!(
+                                                    "⚠️  Failed to save context archive chunk: {}",
+                                                    e
+                                                );
+                                            }
+                                            let insert_at = if session
+                                                .messages
+                                                .first()
+                                                .and_then(|m| m.get("role"))
+                                                .and_then(|r| r.as_str())
+                                                == Some("system")
+                                            {
+                                                1
+                                            } else {
+                                                0
+                                            };
+                                            let notice = build_archive_notice(&chunk);
+                                            session.messages.insert(insert_at, notice);
+                                            warn!(
+                                                "📦 Archived {} messages → chunk #{} \
+                                                 (~{} tokens saved). \
+                                                 Active context: {} messages.",
+                                                chunk.message_count,
+                                                chunk_id,
+                                                tokens_saved,
+                                                session.messages.len()
+                                            );
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                "⚠️  Could not open context archive, \
+                                                 messages dropped: {}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    // Compression failed — restore drained messages so
+                                    // we don't silently lose history.
+                                    warn!(
+                                        "⚠️  Context compression failed (network drop?): {}. \
+                                         Restoring {} messages.",
+                                        e,
+                                        to_compress.len()
+                                    );
+                                    for (offset, msg) in to_compress.into_iter().enumerate() {
+                                        session.messages.insert(start + offset, msg);
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("⚠️  No router available for compression: {}", e);
+                            // Restore messages
+                            for (offset, msg) in to_compress.into_iter().enumerate() {
+                                session.messages.insert(start + offset, msg);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // Extract options
         let temperature = options
             .as_ref()
@@ -1439,6 +1572,52 @@ fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
     }
 }
 
+/// Build the compact system-role archive notice injected into the active
+/// context after a chunk is compressed and saved.
+///
+/// The notice is intentionally short (≤ 400 chars) to minimise its own
+/// token footprint while giving the model enough information to decide
+/// whether it needs to recall the archived content.
+fn build_archive_notice(chunk: &crate::memory::context_archive::ContextChunk) -> Value {
+    let ts = chunk.created_at.format("%Y-%m-%d %H:%M UTC").to_string();
+
+    let facts = if chunk.key_facts.is_empty() {
+        String::new()
+    } else {
+        let bullets: String = chunk
+            .key_facts
+            .iter()
+            .take(5)
+            .map(|f| format!("\n\u{2022} {f}"))
+            .collect();
+        format!("\nKey facts:{}", bullets)
+    };
+
+    // Keep summary under ~200 chars for the notice
+    let preview: String = chunk.summary.chars().take(200).collect();
+    let preview = if chunk.summary.len() > 200 {
+        format!("{}\u{2026}", preview)
+    } else {
+        preview
+    };
+
+    let content = format!(
+        "[\u{1F4E6} Context Archive #{id} | {ts} | {count} messages]\n\
+         Summary: {preview}{facts}\n\
+         Type `/recall {id}` or say \"recall archive {id}\" to restore this context.",
+        id = chunk.chunk_id,
+        ts = ts,
+        count = chunk.message_count,
+        preview = preview,
+        facts = facts,
+    );
+
+    json!({
+        "role": "system",
+        "content": content,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1688,5 +1867,35 @@ mod tests {
             assert!(result.is_err(), "Should timeout and return error");
             assert!(result.unwrap_err().to_string().contains("Timed out"));
         }
+    }
+
+    #[test]
+    fn build_archive_notice_has_correct_role_and_chunk_id() {
+        use crate::memory::context_archive::ContextChunk;
+        use chrono::Utc;
+
+        let chunk = ContextChunk {
+            chunk_id: 3,
+            session_id: "test-sess".to_string(),
+            created_at: Utc::now(),
+            message_count: 12,
+            estimated_tokens_saved: 4500,
+            summary: "We discussed Rust async patterns.".to_string(),
+            key_facts: vec![
+                "tokio is used".to_string(),
+                "async/await preferred".to_string(),
+            ],
+            raw_messages: vec![],
+        };
+
+        let notice = build_archive_notice(&chunk);
+        assert_eq!(notice["role"], "system");
+        let content = notice["content"].as_str().unwrap();
+        assert!(content.contains("#3"), "should contain chunk id");
+        assert!(content.contains("/recall 3"), "should contain recall hint");
+        assert!(
+            content.contains("12 messages"),
+            "should contain message count"
+        );
     }
 }

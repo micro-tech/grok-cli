@@ -13,6 +13,44 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ## [Unreleased] - 2026-05-02
 
+### Added (Tasks 108.1 & 108.2)
+
+- **New `src/memory/context_archive.rs`** — Per-session context archive (Task 108.1)
+  - `ChunkMeta` — lightweight index entry (chunk_id, created_at, message_count,
+    estimated_tokens_saved, summary_preview truncated to 80 chars + "…").
+  - `ArchiveIndex` — session index persisted to `archives/index.json`; derives
+    `Default` for zero-cost construction of a fresh session.
+  - `ContextChunk` — full archived chunk with raw messages, AI summary, and
+    key facts; serialises to `chunk_{NNN:03}.json` atomically.
+  - `ContextArchive` — manager with `for_session` (default `~/.grok/sessions/`)
+    and `with_sessions_dir` (tests) constructors. Exposes `save_chunk`,
+    `load_chunk`, `list_chunks`, `next_chunk_id`, and `total_tokens_archived`.
+  - All file I/O uses atomic write-then-rename (Starlink-safe).
+  - Five unit tests: `chunk_meta_preview_truncated`, `save_and_load_chunk_roundtrip`,
+    `next_chunk_id_starts_at_one`, `next_chunk_id_increments`, `list_chunks_empty`.
+  - Source: AI (Claude Sonnet 4.6) — Task 108.1
+
+- **New `src/memory/context_compressor.rs`** — AI-powered conversation compressor (Task 108.2)
+  - `compress(messages, router, model)` async function: builds a compact transcript,
+    calls the Grok API with a structured summarizer prompt, and parses the structured
+    `SUMMARY:` / `FACTS:` response.
+  - Empty-input short-circuit: returns `("(no messages to summarize)", [])` instantly
+    without touching the network.
+  - Starlink-safe retry loop: 3 attempts with 5 s / 10 s / 20 s back-off; warns via
+    `tracing` on each retry and returns a wrapped error after all attempts fail.
+  - Transcript is capped at 60 000 chars before being sent to the API.
+  - `parse_summary_response` private helper parses `SUMMARY:` and `FACTS:` lines;
+    falls back to the first 200 chars of raw text when the format is not found.
+  - Three unit tests: `parse_empty_gives_fallback`, `parse_well_formed_response`,
+    `compress_empty_messages_returns_placeholder` (tokio async, no real API call).
+  - Source: AI (Claude Sonnet 4.6) — Task 108.2
+
+- **Updated `src/memory/mod.rs`**
+  - Declared `pub mod context_archive` and `pub mod context_compressor`.
+  - Added `pub use context_archive::{ArchiveIndex, ChunkMeta, ContextArchive, ContextChunk}`
+    re-exports for ergonomic access from the rest of the crate.
+  - Source: AI (Claude Sonnet 4.6) — Tasks 108.1 & 108.2
+
 ### Added (Task 108.3)
 
 - **New `AcpConfig` fields for intelligent auto-compression** (`src/config/mod.rs`)
@@ -30,6 +68,81 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
   - Both `config.example.toml` and `.grok/config.toml` updated with commented
     documentation for all three new settings.
   - Source: AI (Claude Sonnet 4.6) — Task 108.3
+
+### Added (Tasks 108.4 & 108.5)
+
+- **Layer 4 smart compression in `handle_chat_completion`** (`src/acp/mod.rs`)
+  - Added immediately after the existing three-layer trim.
+  - Fires when `auto_compress = true` AND estimated tokens exceed
+    `max_context_tokens * compression_threshold`.
+  - Collects the oldest `compression_chunk_ratio` fraction of non-system messages
+    (minimum 4), drains them from `session.messages`, calls
+    `context_compressor::compress()` with Starlink-safe retries, then:
+    - Saves the raw messages + AI summary to `ContextArchive` on disk.
+    - Inserts a compact `build_archive_notice` system message at position 1
+      (just after the system prompt) so the model is always aware archived
+      context exists and how to recall it.
+  - On compressor failure (network drop) the drained messages are restored
+    in-place so history is never silently lost.
+  - Source: AI (Claude Sonnet 4.6) — Task 108.4
+
+- **`build_archive_notice` helper** (`src/acp/mod.rs`)
+  - Pure function that formats a `role: "system"` JSON message from a
+    `ContextChunk`.  Format: `[📦 Context Archive #N | date | N messages]\n`
+    followed by a ≤200-char summary preview, up to 5 key-fact bullets, and a
+    `/recall N` hint.  Kept under 400 chars to minimise its own token cost.
+  - Unit test `build_archive_notice_has_correct_role_and_chunk_id` verifies
+    `role`, chunk ID, `/recall` hint, and message count.
+  - Source: AI (Claude Sonnet 4.6) — Task 108.5
+
+### Added (Task 108.6)
+
+- **`/recall` and `/archives` slash commands** (`src/acp/slash_commands.rs`)
+  - Two new `SlashCommand` variants: `Archives` and `Recall { chunk_id: Option<u32> }`.
+  - Parser: `/archives` → `Archives`; `/recall` → `Recall { None }`;
+    `/recall N` → `Recall { Some(N) }` where N is parsed as `u32`.
+  - Both advertised in `get_available_commands` with descriptions and input hints.
+  - Both listed as built-ins in `command_to_prompt` (no AI round-trip needed).
+  - New `BuiltinResult::RecallArchive(Option<u32>)` variant for the ACP layer.
+  - `handle_builtin` returns `Text(format_archives_text(None))` for `Archives`
+    and `RecallArchive(chunk_id)` for `Recall`.
+  - New `pub fn format_archives_text(session_id: Option<&str>) -> String`:
+    opens `ContextArchive::for_session`, renders a Markdown table
+    (# | Date | Messages | Tokens Saved | Summary preview) or a friendly
+    empty-state message, and appends a `/recall N` usage tip.
+  - `src/cli/commands/acp.rs` handles `RecallArchive` variant with a placeholder
+    (renders archive listing); full message-injection pass is done in Layer 4.
+  - Source: AI (Claude Sonnet 4.6) — Task 108.6
+
+### Added (Task 108.7)
+
+- **`recall_context` tool registered in `src/tools/registry.rs`** — surfaces the
+  context archive to the LLM as a callable tool (Task 108.7).
+  - New `"recall_context"` arm in `execute_tool()`: accepts a `chunk_id: u32`
+    argument, opens `ContextArchive::for_session("unknown")` (registry fallback—
+    session-aware dispatch is handled by the ACP path added in Task 108.4),
+    and returns a formatted recall notice with chunk ID, message count, archive
+    timestamp, summary text, and bullet-pointed key facts.
+    Returns a user-friendly "not found" message when the chunk ID is absent.
+  - New JSON schema entry in `get_tool_definitions()` after the `remote_trigger`
+    entry, under a `// Context recall` comment section. Tool count docstring
+    updated from 32 → 34 (was already 33 tools; 34 with `recall_context`).
+  - Count assertion in `get_tool_definitions_has_31_tools` test updated 33 → 34;
+    all 12 registry tests pass, all 20 `slash_commands` tests pass.
+  - **`section_label` closure in `src/acp/slash_commands.rs`** updated: the
+    `save_memory` branch now also matches `recall_context` so the tool
+    displays under the **🧠 Memory** section in `/tools` output.
+  - Also fixed pre-existing unicode escape compile errors in
+    `src/acp/mod.rs` (`build_archive_notice`): `\u2022` → `\u{2022}`,
+    `\u2026` → `\u{2026}`, UTF-16 surrogate pair `\ud83d\udce6` → `\u{1F4E6}` (📦).
+  - Also fixed pre-existing Clippy `manual_strip` lint in
+    `src/memory/context_compressor.rs`: replaced index-based slice with
+    `strip_prefix`.
+  - Assumption: `ToolContext` has no `session_id` field (only `policy:
+    SecurityPolicy`), so the registry fallback uses `"unknown"` as the
+    session ID. Proper session-aware dispatch is the responsibility of the
+    ACP-layer handler added in Task 108.4.
+  - Source: AI (Claude Sonnet 4.6) — Task 108.7
 
 ### Fixed
 

@@ -1136,6 +1136,17 @@ where
                     }
                     Err(e) => format!("❌ Could not retrieve context: {e}"),
                 },
+                // Full recall injection is implemented in a follow-up task.
+                // For now we display the archive listing so the user can see
+                // what is available and confirm the command was recognised.
+                BuiltinResult::RecallArchive(chunk_id) => {
+                    slash_commands::format_archives_text(Some(&session_id.0))
+                        + &chunk_id
+                            .map(|id| {
+                                format!("\n\n_Use `/recall {id}` once full recall support lands._")
+                            })
+                            .unwrap_or_default()
+                }
             };
 
             send_text_update(writer, &session_id.0, &response_text).await?;

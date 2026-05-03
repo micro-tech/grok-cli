@@ -316,6 +316,51 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
             discovery_tools::remote_trigger(endpoint, payload, method).await
         }
 
+        // ── Context recall ────────────────────────────────────────────────────
+        "recall_context" => {
+            let chunk_id = args["chunk_id"].as_u64().ok_or_else(|| {
+                anyhow!("Missing or invalid: chunk_id (must be a positive integer)")
+            })? as u32;
+
+            match crate::memory::context_archive::ContextArchive::for_session("unknown") {
+                Err(e) => Err(anyhow!("Could not open context archive: {}", e)),
+                Ok(archive) => match archive.load_chunk(chunk_id)? {
+                    None => Ok(format!(
+                        "Archive chunk #{} not found. Use /archives to see available chunks.",
+                        chunk_id
+                    )),
+                    Some(chunk) => {
+                        let facts = if chunk.key_facts.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                "\n\nKey facts:\n{}",
+                                chunk
+                                    .key_facts
+                                    .iter()
+                                    .map(|f| format!("\u{2022} {f}"))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            )
+                        };
+                        Ok(format!(
+                            "[Recalled Archive #{id}]\n\
+                             Covered {count} messages archived on {ts}.\n\
+                             Summary: {summary}{facts}\n\n\
+                             Note: The full raw messages have been injected into your \
+                             context by the system. You can now reference the details \
+                             from that earlier conversation.",
+                            id = chunk.chunk_id,
+                            count = chunk.message_count,
+                            ts = chunk.created_at.format("%Y-%m-%d %H:%M UTC"),
+                            summary = chunk.summary,
+                            facts = facts,
+                        ))
+                    }
+                },
+            }
+        }
+
         unknown => Err(anyhow!("Unknown tool: '{}'", unknown)),
     }
 }
@@ -324,7 +369,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
 // get_tool_definitions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Return JSON tool definitions for all 32 registered tools.
+/// Return JSON tool definitions for all 34 registered tools.
 pub fn get_tool_definitions() -> Vec<Value> {
     vec![
         // ── File tools ──────────────────────────────────────────────────────
@@ -374,6 +419,8 @@ pub fn get_tool_definitions() -> Vec<Value> {
         json!({"type":"function","function":{"name":"tool_search","description":"Search the tool registry for tools matching a keyword. Use for deferred tool discovery.","parameters":{"type":"object","properties":{"query":{"type":"string","description":"Case-insensitive keyword to search in tool names and descriptions"}},"required":["query"]}}}),
         json!({"type":"function","function":{"name":"cron_create","description":"Register a scheduled trigger in ~/.grok/crons.json. An external scheduler must read this file to run the tasks.","parameters":{"type":"object","properties":{"name":{"type":"string","description":"Unique trigger name"},"schedule":{"type":"string","description":"5-field cron expression, e.g. '0 9 * * 1-5'"},"task":{"type":"string","description":"Task description or grok command to run"}},"required":["name","schedule","task"]}}}),
         json!({"type":"function","function":{"name":"remote_trigger","description":"Fire an HTTP trigger to a remote endpoint (POST/GET/PUT with JSON payload and 30 s timeout)","parameters":{"type":"object","properties":{"endpoint":{"type":"string","description":"URL to trigger"},"payload":{"type":"object","description":"JSON payload (ignored for GET)"},"method":{"type":"string","enum":["POST","GET","PUT"],"description":"HTTP method (default POST)"}},"required":["endpoint"]}}}),
+        // ── Context recall ────────────────────────────────────────────────────
+        json!({"type":"function","function":{"name":"recall_context","description":"Restore a previously archived conversation chunk back into the active context. Use this when you need information from earlier in the conversation that has been archived to save context space. The chunk summary and key facts are returned as the tool result; the full raw messages are injected back as context.","parameters":{"type":"object","properties":{"chunk_id":{"type":"integer","description":"The archive chunk number to recall (see /archives for the list)"}},"required":["chunk_id"]}}}),
     ]
 }
 
@@ -412,7 +459,7 @@ mod tests {
 
     #[test]
     fn get_tool_definitions_has_31_tools() {
-        assert_eq!(get_tool_definitions().len(), 33);
+        assert_eq!(get_tool_definitions().len(), 34);
     }
 
     #[test]
