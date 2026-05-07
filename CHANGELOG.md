@@ -11,6 +11,19 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
+## [Unreleased] - 2026-05-08
+
+### Fixed
+
+- **Bug: file access denied when Zed sends a file URI with a line-number anchor as the workspace hint** (`src/cli/commands/acp.rs`)
+  - **Root cause**: Zed sometimes sends URIs like `file:///H:/GitHub/bot/src/io/web_server/mod.rs#L1:854` as the workspace root in ACP `initialize` / `session/new` messages.  The `#L1:854` fragment was NOT being stripped by `resolve_workspace_path()`, so the path `H:\GitHub\bot\src\io\web_server\mod.rs#L1:854` was registered as a trusted root.  This is a *file path with a line-number suffix*, not a directory, so `starts_with()` checks against it always failed — every subsequent file access was denied with an "Access denied" error.
+  - **Fix 1 — fragment stripping**: `resolve_workspace_path()` now truncates the input at the first `#` character before processing the URI scheme, so `mod.rs#L1:854` becomes `mod.rs` before any further handling.
+  - **Fix 2 — file-to-directory promotion**: `register_workspace_root()` now calls `find_workspace_root_from_path()` after resolving the raw path.  If the resolved path is a *file* (e.g. an @-mentioned source file rather than a project root directory), the function walks up the directory tree looking for project markers (`.git`, `Cargo.toml`, `package.json`, etc.) and trusts the outermost project root instead of the individual file path.
+  - **Observed symptom**: After switching the model config to `grok-4.3`, the ACP config became parseable for the first time (previous TOML had the invalid `max_context_tokens = 1,000,000` with commas which caused parse failure and fallback to defaults).  With a correctly parsed config, the workspace trust path was exercised and the line-number bug surfaced.
+  - Source: Human (John McConnell) + AI (Claude Sonnet 4.6)
+
+---
+
 ## [Unreleased] - 2026-05-02
 
 ### Added

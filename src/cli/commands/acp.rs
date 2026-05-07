@@ -517,6 +517,18 @@ where
 /// but un-canonicalized path is returned instead of failing — this is
 /// intentional because we must never silently drop a legitimate workspace root.
 fn resolve_workspace_path(raw: &str) -> PathBuf {
+    // ── Step 0: strip URI fragment (#L1:854, #anchor, etc.) ─────────────────
+    // Zed appends line-number anchors to @-mentioned file URIs (e.g.
+    // "file:///H:/GitHub/bot/mod.rs#L1:854").  We must remove the fragment
+    // before treating the remainder as a file-system path, otherwise the
+    // file's name would be something like "mod.rs#L1:854" which never
+    // canonicalises and ends up registered as a bogus trusted root.
+    let raw = if let Some(pos) = raw.find('#') {
+        &raw[..pos]
+    } else {
+        raw
+    };
+
     // Strip file:// URI scheme (handles file:// and file:///)
     let stripped = if raw.starts_with("file:///") {
         // URL-decode the path component
@@ -594,8 +606,16 @@ fn resolve_workspace_path(raw: &str) -> PathBuf {
 /// still add it so the user doesn't lose access.
 fn register_workspace_root(agent: &GrokAcpAgent, raw_path: &str) {
     let resolved = resolve_workspace_path(raw_path);
-    info!("Registering workspace root as trusted: {:?}", resolved);
-    agent.security.add_trusted_directory(&resolved);
+    // If the resolved path points to a file rather than a directory (common
+    // when Zed sends an @-mentioned file URI as the workspace hint), walk up
+    // the directory tree to find the real project root by looking for markers
+    // such as .git, Cargo.toml, package.json, etc.
+    let workspace_root = find_workspace_root_from_path(&resolved);
+    info!(
+        "Registering workspace root as trusted: {:?} (resolved from {:?})",
+        workspace_root, resolved
+    );
+    agent.security.add_trusted_directory(&workspace_root);
 }
 
 /// Walk up from a file path to find the project workspace root by looking for
