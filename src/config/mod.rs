@@ -446,7 +446,7 @@ fn default_theme() -> String {
 }
 
 fn default_model() -> String {
-    "grok-4-1-fast-reasoning".to_string()
+    "grok-4.3".to_string()
 }
 
 fn default_temperature() -> f32 {
@@ -2803,7 +2803,7 @@ mod tests {
     #[tokio::test]
     async fn test_config_default() {
         let config = Config::default();
-        assert_eq!(config.default_model, "grok-4-1-fast-reasoning");
+        assert_eq!(config.default_model, "grok-4.3");
         assert_eq!(config.default_temperature, 0.7);
         assert!(config.validate().is_ok());
     }
@@ -2830,7 +2830,7 @@ mod tests {
         // Test getting values
         assert_eq!(
             config.get_value("default_model").unwrap(),
-            "grok-4-1-fast-reasoning"
+            "grok-4.3"
         );
         assert_eq!(config.get_value("ui.colors").unwrap(), "true");
 

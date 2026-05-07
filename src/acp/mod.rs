@@ -225,7 +225,7 @@ pub struct ToolDefinition {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            model: "grok-code-fast-1".to_string(),
+            model: "grok-4.3".to_string(),
             temperature: 0.5, // Lower temperature for more deterministic coding output
             max_tokens: 4096,
             system_prompt: Some(
@@ -315,12 +315,7 @@ impl GrokAcpAgent {
     fn create_capabilities() -> GrokAgentCapabilities {
         GrokAgentCapabilities {
             models: vec![
-                "grok-4-1-fast-reasoning".to_string(),
-                "grok-4-1-fast-non-reasoning".to_string(),
-                "grok-code-fast-1".to_string(),
-                "grok-4-fast-reasoning".to_string(),
-                "grok-4-fast-non-reasoning".to_string(),
-                "grok-4-0709".to_string(),
+                "grok-4.3".to_string(),
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
                 "grok-2-vision-1212".to_string(),

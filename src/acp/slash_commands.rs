@@ -190,7 +190,7 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         AvailableCommand::new("fix", "Diagnose and fix a bug or error")
             .with_input("problem description, error message, or file path"),
         AvailableCommand::new("model", "Switch to a different Grok model for this session")
-            .with_input("model name (e.g. grok-3, grok-4-0709, grok-3-mini)"),
+            .with_input("model name (e.g. grok-3, grok-4.3, grok-3-mini)"),
         AvailableCommand::new("clear", "Clear the current conversation history"),
         AvailableCommand::new(
             "context",
@@ -591,12 +591,7 @@ pub fn format_help_text() -> String {
 /// Format the model list shown when `/model` is called with no argument.
 pub fn format_model_list() -> String {
     let models = [
-        ("grok-4-1-fast-reasoning", "Default — fast + reasoning"),
-        ("grok-4-1-fast-non-reasoning", "Fast, no reasoning overhead"),
-        ("grok-code-fast-1", "Optimised for code tasks"),
-        ("grok-4-fast-reasoning", "Grok 4 with reasoning"),
-        ("grok-4-fast-non-reasoning", "Grok 4 standard"),
-        ("grok-4-0709", "Grok 4 (July 2025 checkpoint)"),
+        ("grok-4.3", "Default — latest model with thinking"),
         ("grok-3", "Grok 3 — large context"),
         ("grok-3-mini", "Grok 3 Mini — lightweight"),
         ("grok-2-vision-1212", "Grok 2 with vision"),
