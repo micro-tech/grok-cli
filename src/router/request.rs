@@ -48,6 +48,9 @@ pub struct RouterRequest {
     pub max_tokens: Option<u32>,
     /// Sampling temperature (0.0 – 2.0).
     pub temperature: Option<f32>,
+    /// Reasoning effort for thinking-capable models (`"low"` / `"high"`).
+    /// `None` means no extended reasoning (standard response).
+    pub reasoning_effort: Option<String>,
 }
 
 impl RouterRequest {
@@ -59,6 +62,7 @@ impl RouterRequest {
             tools: Vec::new(),
             max_tokens: None,
             temperature: None,
+            reasoning_effort: None,
         }
     }
 
@@ -77,6 +81,13 @@ impl RouterRequest {
     /// Set the sampling temperature.
     pub fn with_temperature(mut self, temperature: f32) -> Self {
         self.temperature = Some(temperature);
+        self
+    }
+
+    /// Set the reasoning effort for thinking-capable models.
+    /// Ignored for models that do not support `reasoning_effort`.
+    pub fn with_reasoning_effort(mut self, effort: impl Into<String>) -> Self {
+        self.reasoning_effort = Some(effort.into());
         self
     }
 

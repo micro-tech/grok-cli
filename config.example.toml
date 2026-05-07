@@ -13,7 +13,9 @@
 api_key = "xai-your-api-key-here"
 default_model = "grok-4.3"
 default_temperature = 0.7
-default_max_tokens = 256000
+# Output token budget (not the context window size).
+# grok-4.3 supports up to 32 768 output tokens; 16 384 is a safe default.
+default_max_tokens = 16384
 
 # Request timeout in seconds.
 # LLM responses can be slow, especially with large max_tokens or many tool
@@ -62,12 +64,19 @@ permission_timeout_secs = 300
 max_history_messages = 40
 
 # Soft token budget for the full outgoing request (history + system prompt +
-# tool definitions).  Messages are trimmed from the oldest end when the
-# estimated token count exceeds this value.  The Grok-3 / grok-beta context
-# window is 256 000 tokens; this default leaves ~36 k headroom for the model
-# response and tool schemas.
+# tool definitions) — used for grok-3 and older models.
+# The Grok-3 / grok-beta context window is 256 000 tokens; this default
+# leaves ~36 k headroom for the model response and tool schemas.
 # Default: 220000
 max_context_tokens = 220000
+
+# Soft token budget for grok-4.x models (grok-4.3 and later).
+# grok-4.3 exposes a 1 048 576-token context window.  This budget leaves
+# ~50 k headroom for model response + tool definitions.
+# When the active model starts with "grok-4" this value takes effect
+# instead of max_context_tokens.
+# Default: 950000
+grok4_max_context_tokens = 950000
 
 # Maximum characters per tool-result message.  Large file reads are the most
 # common source of context-window overflow; this truncates them early while
@@ -91,6 +100,15 @@ compression_threshold = 0.75
 # Minimum of 4 messages is always enforced.
 # Default: 0.40
 compression_chunk_ratio = 0.40
+
+# Reasoning / thinking mode for grok-4.3 and grok-3-mini.
+# - off  : standard response, no chain-of-thought (default and fastest)
+# - low  : light reasoning; slightly slower, more thorough
+# - high : deep reasoning; most thorough, slowest, highest token cost
+# Sending this to models that do not support it returns an API error.
+# Change per-session with the /think slash command or the --thinking CLI flag.
+# Default: off
+thinking_mode = "off"
 
 # ── Network (Starlink-optimised) ─────────────────────────────────────────────
 [network]

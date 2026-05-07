@@ -87,7 +87,7 @@ impl GrokClient {
     }
 
     /// Send chat completion with conversation history and optional tools
-    /// Returns (Message, finish_reason)
+    /// Returns (Message, finish_reason, thinking_content)
     pub async fn chat_completion_with_history(
         &self,
         messages: &[Value],
@@ -95,6 +95,7 @@ impl GrokClient {
         max_tokens: u32,
         model: &str,
         tools: Option<Vec<Value>>,
+        reasoning_effort: Option<&str>,
     ) -> Result<MessageWithFinishReason> {
         // Convert JSON messages to ChatMessage format
         let chat_messages: Vec<ChatMessage> = messages
@@ -123,7 +124,11 @@ impl GrokClient {
                         let tool_call_id = msg.get("tool_call_id")?.as_str()?;
                         // Fallback: report tool result as user message since tool role is missing in grok_api
                         // This ensures the model sees the result even if native tool role is not supported
-                        Some(ChatMessage::user(format!("Tool result (ID: {}): {}", tool_call_id, content.unwrap_or(""))))
+                        Some(ChatMessage::user(format!(
+                            "Tool result (ID: {}): {}",
+                            tool_call_id,
+                            content.unwrap_or("")
+                        )))
                     }
                     _ => None,
                 }
@@ -141,6 +146,12 @@ impl GrokClient {
         if let Some(tool_defs) = tools {
             // Convert tools to the format expected by grok_api
             request = request.tools(tool_defs);
+        }
+
+        // Add reasoning_effort if the caller requested a thinking mode.
+        // Only send this for models that support it (e.g. grok-4.3, grok-3-mini).
+        if let Some(effort) = reasoning_effort {
+            request = request.reasoning_effort(effort);
         }
 
         let response = request.send().await?;
@@ -165,11 +176,14 @@ impl GrokClient {
     }
 }
 
-/// Message with finish_reason for proper loop control
+/// Message with finish_reason and optional thinking content for proper loop control
 #[derive(Debug, Clone)]
 pub struct MessageWithFinishReason {
     pub message: Message,
     pub finish_reason: Option<String>,
+    /// Chain-of-thought reasoning produced by the model when `reasoning_effort`
+    /// was set.  `None` for models / modes that do not return a reasoning trace.
+    pub thinking_content: Option<String>,
 }
 
 /// Convert ChatResponse to Message format with finish_reason
@@ -178,9 +192,12 @@ fn convert_response_to_message_with_finish_reason(
 ) -> Result<MessageWithFinishReason> {
     // Get the first choice
     if let Some(choice) = response.choices.first() {
+        // Extract the reasoning / thinking content if the model produced one.
+        let thinking_content = choice.message.reasoning_content.clone();
         Ok(MessageWithFinishReason {
             message: choice.message.clone(),
             finish_reason: choice.finish_reason.clone(),
+            thinking_content,
         })
     } else {
         // Fallback if no choices
@@ -191,8 +208,10 @@ fn convert_response_to_message_with_finish_reason(
                     .content()
                     .map(|s| MessageContent::Text(s.to_string())),
                 tool_calls: None,
+                reasoning_content: None,
             },
             finish_reason: Some("stop".to_string()),
+            thinking_content: None,
         })
     }
 }

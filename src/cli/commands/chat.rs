@@ -20,7 +20,7 @@ use crate::acp::slash_commands;
 use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
 use crate::cli::{create_spinner, format_grok_response, print_error, print_info, print_success};
-use crate::config::{BayesianConfig, RateLimitConfig};
+use crate::config::{BayesianConfig, RateLimitConfig, ThinkingMode};
 use crate::router::AppRouter;
 use crate::tools::registry as tool_registry;
 use crate::tools::tool_context::ToolContext;
@@ -39,6 +39,8 @@ pub struct ChatOptions<'a> {
     pub max_retries: u32,
     pub rate_limit_config: RateLimitConfig,
     pub bayesian: BayesianConfig,
+    /// Reasoning / thinking mode (from `--thinking` CLI flag).
+    pub thinking_mode: ThinkingMode,
 }
 
 pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
@@ -52,6 +54,7 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
             options.max_tokens,
             options.model,
             options.bayesian,
+            options.thinking_mode,
         )
         .await
     } else {
@@ -63,6 +66,7 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
             options.temperature,
             options.max_tokens,
             options.model,
+            options.thinking_mode,
         )
         .await
     }
@@ -75,6 +79,7 @@ async fn handle_single_chat(
     temperature: f32,
     max_tokens: u32,
     model: &str,
+    thinking_mode: ThinkingMode,
 ) -> Result<()> {
     print_info(&format!("Sending message to Grok (model: {})...", model));
 
@@ -97,7 +102,14 @@ async fn handle_single_chat(
     let tools = tools::get_available_tool_definitions();
 
     let result = client
-        .chat_completion_with_history(&messages, temperature, max_tokens, model, Some(tools))
+        .chat_completion_with_history(
+            &messages,
+            temperature,
+            max_tokens,
+            model,
+            Some(tools),
+            thinking_mode.as_api_str(),
+        )
         .await;
 
     spinner.finish_and_clear();
@@ -171,6 +183,7 @@ async fn handle_interactive_chat(
     max_tokens: u32,
     model: &str,
     bayesian_config: BayesianConfig,
+    thinking_mode: ThinkingMode,
 ) -> Result<()> {
     println!("{}", "🤖 Interactive Grok Chat Session".cyan().bold());
     println!("{}", format!("Model: {}", model).dimmed());
@@ -320,6 +333,7 @@ async fn handle_interactive_chat(
                         max_tokens,
                         model,
                         Some(active_tools),
+                        thinking_mode.as_api_str(),
                     )
                     .await?;
 

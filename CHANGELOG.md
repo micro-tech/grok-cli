@@ -15,6 +15,31 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Added
 
+- **Task 109 — grok-4.3 Full Support / 1 Million Token Context Window** (`src/acp/mod.rs`, `src/config/mod.rs`, `config.example.toml`)
+  - `create_capabilities()` now advertises `max_context_length = 1_048_576` (up from 131_072) reflecting grok-4.3's 1 M token window.  Added `"1m_context"` and `"vision"` to the features list.
+  - New `AcpConfig` field `grok4_max_context_tokens: usize` (default `950_000`).  When the active model starts with `"grok-4"` this budget is used for Layer 3 (token-budget trim) and Layer 4 (compression threshold) instead of the legacy `max_context_tokens` (220 k) that was calibrated for grok-3.
+  - New free function `model_context_budget(model, legacy, grok4) -> usize` selects the appropriate budget without branching at call-sites.
+  - `SessionConfig::default()` `max_tokens` (output) raised from `4096` to `16_384` to match grok-4.3's higher output limits.
+  - `default_max_tokens()` in `Config` corrected from `256_000` (accidentally set to the input context window size) to `16_384` (output budget).
+  - `config.example.toml` updated: `default_max_tokens = 16384`, added `grok4_max_context_tokens = 950000` under `[acp]`.
+  - Source: AI (Claude Sonnet 4.6)
+
+- **Task 110 — grok-4.3 Thinking Modes / reasoning_effort Support** (`src/config/mod.rs`, `src/grok_client_ext.rs`, `src/router/`, `src/acp/mod.rs`, `src/acp/slash_commands.rs`, `src/cli/`)
+  - New `ThinkingMode` enum (`Off` / `Low` / `High`) in `src/config/mod.rs` with `as_api_str()` and `from_str_ci()` helpers.
+  - `AcpConfig::thinking_mode` and `SessionConfig::thinking_mode` fields — session defaults to `Off`.
+  - `reasoning_effort: Option<String>` added to `ChatRequest` and `ChatRequestBuilder` in the local `grok_api` crate (`../grok_crate/grok_api/src/`).
+  - `reasoning_content: Option<String>` added to `grok_api::Message` so the API response field is captured.
+  - `GrokClient::chat_completion_with_history` accepts `reasoning_effort: Option<&str>` and passes it to the builder.
+  - `AppRouter::chat_completion_with_history` and `RouterRequest` carry `reasoning_effort` end-to-end through `GrokBackend::send`.
+  - `RouterResponse::thinking_content` and `MessageWithFinishReason::thinking_content` propagate the reasoning trace from the API response to callers.
+  - `handle_chat_completion` in `src/acp/mod.rs` surfaces thinking content as a `<details><summary>🧠 Thinking…</summary>` collapsible block prepended to the main response.
+  - New `/think [off|low|high]` slash command — `parse_slash_command`, `handle_builtin` (`BuiltinResult::SetThinkingMode`), `get_available_commands`, `command_to_prompt`.
+  - New `GrokAcpAgent::set_thinking_mode` and `get_thinking_mode` methods dispatched from `handle_session_prompt` in `src/cli/commands/acp.rs`.
+  - `--thinking <off|low|high>` CLI flag added to `grok chat`; wired through `ChatOptions::thinking_mode`.
+  - `config.example.toml` and `CONFIGURATION.md` updated with thinking-mode documentation.
+  - 9 new unit tests: `ThinkingMode` serialisation, `/think` parse variants (off/low/high/case-insensitive/unknown), builtin classification.
+  - Source: AI (Claude Sonnet 4.6)
+
 - **Task 102 — Wire KnowledgeLoader into session startup** (`src/knowledge/loader.rs`, `src/acp/mod.rs`)
   - Added `pub fn get_all(&self) -> &[KnowledgeEntry]` to `KnowledgeLoader` so callers can retrieve all entries without filtering.
   - In `initialize_session`, after constructing `SessionData`, calls `KnowledgeLoader::load()` on the `knowledge/` directory.  For each `*.md` / `*.json` file found, the content is formatted as `## <source>\n<content>` and pushed onto `session_data.messages` as a `system` role message with a `## Project Knowledge` header.  The count is traced via `tracing::info!`.

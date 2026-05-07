@@ -89,7 +89,14 @@ Do not include any other text.";
 
     for attempt in 0..MAX_RETRIES {
         match router
-            .chat_completion_with_history(&summarizer_messages, 0.3, 1024, model, None)
+            .chat_completion_with_history(
+                &summarizer_messages,
+                0.3,
+                1024,
+                model,
+                None,
+                None, // no thinking mode for compression calls
+            )
             .await
         {
             Ok(resp) => {

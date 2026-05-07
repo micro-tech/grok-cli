@@ -25,6 +25,7 @@
 //! 4. Handle it in [`command_to_prompt`] (AI) **or** [`handle_builtin`] (direct).
 
 use super::protocol::AvailableCommand;
+use crate::config::ThinkingMode;
 
 // ---------------------------------------------------------------------------
 // Command enum
@@ -94,6 +95,13 @@ pub enum SlashCommand {
 
     /// `/visualize` — display the pipeline state machine as a DOT graph.
     Visualize,
+
+    /// `/think [off|low|high]` — set or display the reasoning mode.
+    /// `/think` without an argument shows the current mode.
+    /// `/think off` disables reasoning.
+    /// `/think low` enables light reasoning.
+    /// `/think high` enables deep reasoning.
+    Think { mode: Option<ThinkingMode> },
 }
 
 // ---------------------------------------------------------------------------
@@ -154,6 +162,15 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
             }
         }
         "/visualize" => Some(SlashCommand::Visualize),
+        "/think" => {
+            if args.is_empty() {
+                // `/think` with no arg — show current mode
+                Some(SlashCommand::Think { mode: None })
+            } else {
+                // `/think off|low|high` — None for unknown args (AI responds)
+                ThinkingMode::from_str_ci(&args).map(|m| SlashCommand::Think { mode: Some(m) })
+            }
+        }
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -227,6 +244,11 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "visualize",
             "Display the Grok-CLI routing pipeline as a DOT/Graphviz graph",
         ),
+        AvailableCommand::new(
+            "think",
+            "Set or show the reasoning mode (off / low / high).  \"high\" gives the most thorough answers; \"off\" (default) gives the fastest.",
+        )
+        .with_input("off | low | high -- omit to show the current mode"),
     ]
 }
 
@@ -258,7 +280,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Recall { .. }
         | SlashCommand::Goal { .. }
         | SlashCommand::GoalClear
-        | SlashCommand::Visualize => None,
+        | SlashCommand::Visualize
+        | SlashCommand::Think { .. } => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -409,6 +432,9 @@ pub enum BuiltinResult {
     ShowGoal,
     /// Show the pipeline visualizer graph.
     ShowVisualizer,
+    /// Set the thinking/reasoning mode for this session.
+    /// `None` means the user typed `/think` with no argument (show current mode).
+    SetThinkingMode(Option<crate::config::ThinkingMode>),
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -440,6 +466,7 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         }
         SlashCommand::GoalClear => Some(BuiltinResult::ClearGoal),
         SlashCommand::Visualize => Some(BuiltinResult::ShowVisualizer),
+        SlashCommand::Think { mode } => Some(BuiltinResult::SetThinkingMode(mode.clone())),
         _ => None, // AI-assisted command
     }
 }
@@ -1046,5 +1073,94 @@ mod tests {
             Some(BuiltinResult::SetGoal(text)) => assert_eq!(text, goal),
             other => panic!("expected SetGoal, got {:?}", other),
         }
+    }
+
+    // ── Task 110: /think slash command tests ────────────────────────────────────────
+
+    #[test]
+    fn test_parse_think_no_arg_shows_current_mode() {
+        let result = parse_slash_command("/think");
+        assert!(matches!(result, Some(SlashCommand::Think { mode: None })));
+    }
+
+    #[test]
+    fn test_parse_think_off() {
+        let result = parse_slash_command("/think off");
+        assert!(matches!(
+            result,
+            Some(SlashCommand::Think {
+                mode: Some(crate::config::ThinkingMode::Off)
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_low() {
+        let result = parse_slash_command("/think low");
+        assert!(matches!(
+            result,
+            Some(SlashCommand::Think {
+                mode: Some(crate::config::ThinkingMode::Low)
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_high() {
+        let result = parse_slash_command("/think high");
+        assert!(matches!(
+            result,
+            Some(SlashCommand::Think {
+                mode: Some(crate::config::ThinkingMode::High)
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_case_insensitive() {
+        assert!(matches!(
+            parse_slash_command("/think HIGH"),
+            Some(SlashCommand::Think {
+                mode: Some(crate::config::ThinkingMode::High)
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_unknown_arg_returns_none() {
+        // Unknown argument — fall through to AI
+        assert!(parse_slash_command("/think ultra").is_none());
+    }
+
+    #[test]
+    fn test_think_is_builtin() {
+        let cmd = SlashCommand::Think {
+            mode: Some(crate::config::ThinkingMode::High),
+        };
+        let result = handle_builtin(&cmd);
+        assert!(matches!(
+            result,
+            Some(BuiltinResult::SetThinkingMode(Some(_)))
+        ));
+        // Must not produce an AI prompt
+        assert!(command_to_prompt(&cmd).is_none());
+    }
+
+    #[test]
+    fn test_thinking_mode_serialises_correctly() {
+        use crate::config::ThinkingMode;
+        assert_eq!(ThinkingMode::Off.as_api_str(), None);
+        assert_eq!(ThinkingMode::Low.as_api_str(), Some("low"));
+        assert_eq!(ThinkingMode::High.as_api_str(), Some("high"));
+    }
+
+    #[test]
+    fn test_thinking_mode_from_str_ci() {
+        use crate::config::ThinkingMode;
+        assert_eq!(ThinkingMode::from_str_ci("off"), Some(ThinkingMode::Off));
+        assert_eq!(ThinkingMode::from_str_ci("none"), Some(ThinkingMode::Off));
+        assert_eq!(ThinkingMode::from_str_ci("LOW"), Some(ThinkingMode::Low));
+        assert_eq!(ThinkingMode::from_str_ci("High"), Some(ThinkingMode::High));
+        assert_eq!(ThinkingMode::from_str_ci("ultra"), None);
     }
 }

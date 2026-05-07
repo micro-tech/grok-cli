@@ -229,7 +229,7 @@ permission_timeout_secs = 300
 max_history_messages = 80
 # …but also enforce a hard token budget so large file reads
 # cannot blow past the 256 k token context window.
-max_context_tokens = 220000
+max_context_tokens = 1,000,000
 # Truncate individual tool-result messages larger than this (chars).
 max_tool_result_chars = 30000
 # Enable auto-summarization when context fills up.

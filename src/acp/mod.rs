@@ -12,7 +12,7 @@ use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
-use crate::config::Config;
+use crate::config::{Config, ThinkingMode};
 use crate::content_to_string;
 use crate::hooks::HookManager;
 use crate::router::AppRouter;
@@ -191,6 +191,10 @@ pub struct SessionConfig {
 
     /// System prompt for this session
     pub system_prompt: Option<String>,
+
+    /// Reasoning / thinking mode for this session.
+    /// Passed as `reasoning_effort` to the API for models that support it.
+    pub thinking_mode: ThinkingMode,
 }
 
 /// Agent capabilities for ACP
@@ -227,7 +231,9 @@ impl Default for SessionConfig {
         Self {
             model: "grok-4.3".to_string(),
             temperature: 0.5, // Lower temperature for more deterministic coding output
-            max_tokens: 4096,
+            // grok-4.3 supports higher output token limits; 16 384 balances
+            // detailed responses with reasonable response times.
+            max_tokens: 16_384,
             system_prompt: Some(
                 "You are an expert software engineer and coding assistant. \
                 Your primary goal is to write high-quality, efficient, and maintainable code. \
@@ -242,6 +248,7 @@ impl Default for SessionConfig {
                 6. Suggest tests to verify your code when appropriate."
                     .to_string(),
             ),
+            thinking_mode: ThinkingMode::Off,
         }
     }
 }
@@ -315,13 +322,16 @@ impl GrokAcpAgent {
     fn create_capabilities() -> GrokAgentCapabilities {
         GrokAgentCapabilities {
             models: vec![
-                "grok-4.3".to_string(),
+                "grok-4.3".to_string(), // Default — 1 M token context
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
                 "grok-2-vision-1212".to_string(),
                 "grok-2".to_string(), // Fallback
             ],
-            max_context_length: 131072,
+            // grok-4.3 exposes a 1,048,576-token context window.
+            // This is reported here so ACP clients (e.g. Zed) can make
+            // informed decisions about context insertion.
+            max_context_length: 1_048_576,
             features: vec![
                 "chat_completion".to_string(),
                 "code_generation".to_string(),
@@ -329,6 +339,8 @@ impl GrokAcpAgent {
                 "code_explanation".to_string(),
                 "streaming".to_string(),
                 "function_calling".to_string(),
+                "1m_context".to_string(),
+                "vision".to_string(),
             ],
             // Build the tool list live from the registry so this list
             // automatically reflects any newly added tools without requiring
@@ -570,7 +582,13 @@ impl GrokAcpAgent {
         // Even within the message-count limit, rich tool outputs can bloat
         // the context beyond the model's token window.  Estimate tokens
         // (4 chars ≈ 1 token) and drop oldest messages until we fit.
-        let max_ctx_tokens = self.config.acp.max_context_tokens;
+        // Use a model-aware budget: grok-4.x gets the 1 M-token budget;
+        // grok-3 and older use the legacy 220 k budget.
+        let max_ctx_tokens = model_context_budget(
+            &session.config.model,
+            self.config.acp.max_context_tokens,
+            self.config.acp.grok4_max_context_tokens,
+        );
         let estimated = estimate_tokens(&session.messages);
         if estimated > max_ctx_tokens {
             let before = session.messages.len();
@@ -591,9 +609,14 @@ impl GrokAcpAgent {
         // disk, and replace them with a compact notice.  If the API call fails
         // (Starlink drop) we restore the drained messages and fall through.
         if self.config.acp.auto_compress {
-            let threshold = (self.config.acp.max_context_tokens as f64
-                * self.config.acp.compression_threshold as f64)
-                as usize;
+            // Use the same model-aware budget for the compression threshold.
+            let active_ctx_budget = model_context_budget(
+                &session.config.model,
+                self.config.acp.max_context_tokens,
+                self.config.acp.grok4_max_context_tokens,
+            );
+            let threshold =
+                (active_ctx_budget as f64 * self.config.acp.compression_threshold as f64) as usize;
             let estimated = estimate_tokens(&session.messages);
 
             if estimated > threshold {
@@ -793,6 +816,7 @@ impl GrokAcpAgent {
                             max_tokens,
                             &session.config.model,
                             Some(tool_defs.clone()),
+                            session.config.thinking_mode.as_api_str(),
                         )
                         .await
                     {
@@ -911,8 +935,16 @@ impl GrokAcpAgent {
 
             let response_msg = response_with_finish.message;
             let finish_reason = response_with_finish.finish_reason.as_deref();
+            let thinking_content = response_with_finish.thinking_content;
 
             info!("📋 Finish reason: {:?}", finish_reason);
+
+            // If the model produced a reasoning/thinking trace, log it and
+            // prepend it as a collapsible block before the main response.
+            if let Some(ref tc) = thinking_content {
+                let think_tokens = tc.len() / 4;
+                debug!("🧠 Thinking trace received: ~{} tokens", think_tokens);
+            }
 
             // Add assistant response to history
             session.messages.push(serde_json::to_value(&response_msg)?);
@@ -938,7 +970,16 @@ impl GrokAcpAgent {
                     loop_count,
                     response_text.len()
                 );
-                return Ok(response_text);
+                // Prepend thinking block if present
+                let final_response = if let Some(tc) = thinking_content {
+                    format!(
+                        "<details><summary>\u{1f9e0} Thinking\u{2026}</summary>\n\n{}\n\n</details>\n\n{}",
+                        tc, response_text
+                    )
+                } else {
+                    response_text
+                };
+                return Ok(final_response);
             }
 
             // We have tool calls to process
@@ -1369,6 +1410,7 @@ impl GrokAcpAgent {
                 session.config.max_tokens,
                 &session.config.model,
                 None,
+                None, // no thinking mode for code operations
             )
             .await?;
 
@@ -1645,6 +1687,37 @@ impl GrokAcpAgent {
         Ok(())
     }
 
+    /// Set the thinking / reasoning mode for a session.
+    ///
+    /// The mode is stored in `SessionConfig::thinking_mode` and passed as
+    /// `reasoning_effort` in every subsequent API call.
+    pub async fn set_thinking_mode(
+        &self,
+        session_id: &SessionId,
+        mode: ThinkingMode,
+    ) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            let old = &session.config.thinking_mode;
+            info!(
+                "Thinking mode: {:?} → {:?} for session: {}",
+                old, mode, session_id.0
+            );
+            session.config.thinking_mode = mode;
+            Ok(())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
+    }
+
+    /// Get the current thinking mode for a session.
+    pub async fn get_thinking_mode(&self, session_id: &SessionId) -> Option<ThinkingMode> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .map(|s| s.config.thinking_mode.clone())
+    }
+
     /// Clean up expired sessions
     pub async fn cleanup_sessions(&self, max_age: std::time::Duration) -> Result<usize> {
         let mut sessions = self.sessions.write().await;
@@ -1721,6 +1794,20 @@ fn estimate_tokens(messages: &[Value]) -> usize {
         .iter()
         .map(|m| m.to_string().len().saturating_add(3) / 4) // +3 for per-message overhead
         .sum()
+}
+
+/// Select the appropriate context-token budget based on the active model.
+///
+/// - grok-4.x models (grok-4.3 and later) have a 1 M token context window;
+///   use `grok4_budget` for those.
+/// - All other models (grok-3, grok-2, …) use `legacy_budget`.
+#[inline]
+fn model_context_budget(model: &str, legacy_budget: usize, grok4_budget: usize) -> usize {
+    if model.starts_with("grok-4") {
+        grok4_budget
+    } else {
+        legacy_budget
+    }
 }
 
 /// Remove the oldest messages (from index 0 upward) until the estimated
@@ -1825,9 +1912,10 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-        assert_eq!(config.model, "grok-code-fast-1");
+        assert_eq!(config.model, "grok-4.3");
         assert_eq!(config.temperature, 0.5);
-        assert_eq!(config.max_tokens, 4096);
+        // grok-4.3 supports higher output token limits; default raised to 16_384
+        assert_eq!(config.max_tokens, 16_384);
         assert!(config.system_prompt.is_some());
     }
 
@@ -1837,7 +1925,13 @@ mod tests {
         assert!(!capabilities.models.is_empty());
         assert!(!capabilities.features.is_empty());
         assert!(!capabilities.tools.is_empty());
-        assert!(capabilities.max_context_length > 0);
+        // grok-4.3 exposes a 1 M token context window
+        assert_eq!(capabilities.max_context_length, 1_048_576);
+        // grok-4.3 must be the first / default model
+        assert_eq!(capabilities.models[0], "grok-4.3");
+        // 1m_context and vision feature flags
+        assert!(capabilities.features.contains(&"1m_context".to_string()));
+        assert!(capabilities.features.contains(&"vision".to_string()));
     }
 
     #[tokio::test]
@@ -2098,5 +2192,31 @@ mod tests {
             content.contains("12 messages"),
             "should contain message count"
         );
+    }
+
+    // ── Task 109: model_context_budget ─────────────────────────────────────────
+
+    #[test]
+    fn test_model_context_budget_grok4_uses_grok4_budget() {
+        assert_eq!(model_context_budget("grok-4.3", 220_000, 950_000), 950_000);
+        assert_eq!(
+            model_context_budget("grok-4-latest", 220_000, 950_000),
+            950_000
+        );
+        assert_eq!(model_context_budget("grok-4", 220_000, 950_000), 950_000);
+    }
+
+    #[test]
+    fn test_model_context_budget_legacy_models_use_legacy_budget() {
+        assert_eq!(model_context_budget("grok-3", 220_000, 950_000), 220_000);
+        assert_eq!(
+            model_context_budget("grok-3-mini", 220_000, 950_000),
+            220_000
+        );
+        assert_eq!(
+            model_context_budget("grok-2-latest", 220_000, 950_000),
+            220_000
+        );
+        assert_eq!(model_context_budget("grok-beta", 220_000, 950_000), 220_000);
     }
 }

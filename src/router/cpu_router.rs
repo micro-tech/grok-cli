@@ -108,6 +108,7 @@ impl CpuRouter {
                 tools: req.tools.clone(),
                 max_tokens: req.max_tokens,
                 temperature: req.temperature,
+                reasoning_effort: req.reasoning_effort.clone(),
             };
 
             // Call the backend (retries + back-off happen inside `route`).
@@ -135,6 +136,7 @@ impl CpuRouter {
                     raw: serde_json::Value::Null,
                     model: req.model.clone(),
                     usage: None,
+                    thinking_content: None,
                 });
             }
 
@@ -330,6 +332,7 @@ mod tests {
                     raw: serde_json::Value::Null,
                     model: req.model.clone(),
                     usage: None,
+                    thinking_content: None,
                 })
             }
         }

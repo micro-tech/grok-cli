@@ -1263,6 +1263,7 @@ async fn send_to_grok(
             session.max_tokens,
             &session.model,
             Some(tools),
+            None, // reasoning_effort: not exposed in interactive mode yet
         )
         .await
     {
@@ -1385,6 +1386,7 @@ async fn run_simulation(
             session.max_tokens,
             &session.model,
             None, // no tools — simulation must not execute
+            None, // no reasoning effort for simulation
         )
         .await
     {

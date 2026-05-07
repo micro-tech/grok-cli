@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{error, info};
 
-use crate::config::{Config, ConfigSource};
+use crate::config::{Config, ConfigSource, ThinkingMode};
 use crate::display::banner::{BannerConfig, format_welcome_banner};
 use crate::display::interactive::{InteractiveConfig, PromptStyle, start_interactive_mode};
 use crate::utils::auth::{require_api_key, resolve_api_key};
@@ -56,6 +56,11 @@ pub enum Commands {
         /// Maximum tokens in response
         #[arg(long, default_value = "4096")]
         max_tokens: u32,
+
+        /// Reasoning / thinking mode for grok-4.3 (off, low, high).
+        /// \"high\" gives the most thorough answers at higher cost.
+        #[arg(long, value_name = "MODE")]
+        thinking: Option<String>,
     },
 
     /// Code-related operations
@@ -212,8 +217,15 @@ pub async fn run() -> Result<()> {
             system,
             temperature,
             max_tokens,
+            thinking,
         }) => {
             let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn);
+            // Parse the --thinking flag; unrecognised values are silently treated
+            // as Off so the CLI never hard-fails on a typo.
+            let thinking_mode = thinking
+                .as_deref()
+                .and_then(ThinkingMode::from_str_ci)
+                .unwrap_or(ThinkingMode::Off);
             crate::cli::commands::chat::handle_chat(crate::cli::commands::chat::ChatOptions {
                 message: message.clone(),
                 interactive: *interactive,
@@ -226,6 +238,7 @@ pub async fn run() -> Result<()> {
                 max_retries: config.max_retries,
                 rate_limit_config: config.rate_limits,
                 bayesian: config.bayesian.clone(),
+                thinking_mode,
             })
             .await?;
         }
@@ -277,6 +290,7 @@ pub async fn run() -> Result<()> {
                 max_retries: config.max_retries,
                 rate_limit_config: config.rate_limits,
                 bayesian: config.bayesian.clone(),
+                thinking_mode: ThinkingMode::Off,
             })
             .await?;
         }

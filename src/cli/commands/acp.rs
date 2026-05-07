@@ -1166,6 +1166,46 @@ where
                 BuiltinResult::ShowVisualizer => {
                     crate::visualizer::generate_pipeline_markdown(None)
                 }
+                BuiltinResult::SetThinkingMode(opt_mode) => {
+                    match opt_mode {
+                        Some(mode) => {
+                            let label = mode
+                                .as_api_str()
+                                .map(|s| s.to_string())
+                                .unwrap_or_else(|| "off".to_string());
+                            match agent.set_thinking_mode(&session_id, mode).await {
+                                Ok(()) => format!(
+                                    "✅ Thinking mode set to **{}**.\n\n\
+                                     This session will now send `reasoning_effort = \"{}\"` \
+                                     to grok-4.3.\n\
+                                     Use `/think off` to disable.",
+                                    label, label
+                                ),
+                                Err(e) => format!("❌ Could not set thinking mode: {e}"),
+                            }
+                        }
+                        None => {
+                            // Show current mode
+                            match agent.get_thinking_mode(&session_id).await {
+                                Some(mode) => {
+                                    let label = mode
+                                        .as_api_str()
+                                        .map(|s| s.to_string())
+                                        .unwrap_or_else(|| "off".to_string());
+                                    format!(
+                                        "🧠 Current thinking mode: **{}**\n\n\
+                                         Available modes:\n\
+                                         - `off` — standard response, no reasoning trace (default)\n\
+                                         - `low` — light reasoning; faster\n\
+                                         - `high` — deep reasoning; most thorough",
+                                        label
+                                    )
+                                }
+                                None => "Session not found.".to_string(),
+                            }
+                        }
+                    }
+                }
                 // For now we display the archive listing so the user can see
                 // what is available and confirm the command was recognised.
                 BuiltinResult::RecallArchive(chunk_id) => {
