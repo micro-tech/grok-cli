@@ -1,6 +1,8 @@
 default_model = "grok-4.3"
 default_temperature = 0.7
-default_max_tokens = 256000
+# Output token budget (not the context window).
+# grok-4.3 supports up to 32 768 output tokens; 16 384 is a safe default.
+default_max_tokens = 16384
 timeout_secs = 300
 max_retries = 5
 
@@ -68,7 +70,7 @@ update_check_hours = 24
 [ui.interactive.key_bindings]
 
 [model]
-name = "grok-43"
+name = "grok-4.3"
 max_session_turns = 200
 summarize_tool_output = false
 compression_threshold = 0.0
@@ -227,15 +229,24 @@ require_permission = false
 permission_timeout_secs = 300
 # Keep 80 turns of conversation history by count…
 max_history_messages = 80
-# …but also enforce a hard token budget so large file reads
-# cannot blow past the 256 k token context window.
-max_context_tokens = 1,000,000
+# Token budget for grok-3 and older models (256 k window, ~36 k headroom).
+max_context_tokens = 220000
+# Token budget for grok-4.x models (1 M window, ~50 k headroom).
+# When the active model starts with "grok-4" this value is used instead of
+# max_context_tokens above.
+grok4_max_context_tokens = 950000
 # Truncate individual tool-result messages larger than this (chars).
 max_tool_result_chars = 30000
 # Enable auto-summarization when context fills up.
 auto_compress = true
 compression_threshold = 0.75
 compression_chunk_ratio = 0.40
+# Reasoning / thinking mode for grok-4.3 and grok-3-mini.
+# off  = standard response, fastest (default)
+# low  = light reasoning, slightly more thorough
+# high = deep reasoning, most thorough but slower and more expensive
+# Change per-session with /think or the --thinking CLI flag.
+thinking_mode = "off"
 
 [mcp.servers.github]
 type = "stdio"
