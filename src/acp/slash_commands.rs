@@ -214,17 +214,10 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "Show current session configuration and active context",
         ),
         AvailableCommand::new(
-            "bayes show",
-            "Display the current Bayesian belief-state graph (intent probabilities)",
-        ),
-        AvailableCommand::new(
-            "bayes reset",
-            "Reset Bayesian priors to defaults and clear the learned profile",
-        ),
-        AvailableCommand::new(
-            "bayes explain",
-            "Explain what the current Bayesian state means for routing and intent",
-        ),
+            "bayes",
+            "Inspect or reset the Bayesian intent engine — shows belief state, resets priors, or explains current routing",
+        )
+        .with_input("show | reset | explain"),
         AvailableCommand::new(
             "archives",
             "List all archived context chunks for this session",
@@ -236,10 +229,9 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         .with_input("chunk number (e.g. 1, 2, 3) -- omit to list archives"),
         AvailableCommand::new(
             "goal",
-            "Set a persistent session goal that shapes all message interpretation",
+            "Set, view, or clear the persistent session goal that shapes all message interpretation",
         )
-        .with_input("goal description -- e.g. 'refactor the auth module for safety'"),
-        AvailableCommand::new("goal clear", "Remove the active session goal"),
+        .with_input("goal text — e.g. 'refactor auth'. Type 'clear' to remove the active goal, or omit to show it"),
         AvailableCommand::new(
             "visualize",
             "Display the Grok-CLI routing pipeline as a DOT/Graphviz graph",
@@ -905,9 +897,12 @@ mod tests {
             "test",
             "fix",
             "clear",
-            "bayes show",
-            "bayes reset",
-            "bayes explain",
+            "bayes", // was "bayes show", "bayes reset", "bayes explain"
+            "archives",
+            "recall",
+            "goal",
+            "visualize",
+            "think",
         ] {
             assert!(
                 names.contains(&required.to_string()),

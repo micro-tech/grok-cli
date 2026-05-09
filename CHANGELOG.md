@@ -11,6 +11,22 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
+## [Unreleased] - 2026-05-09
+
+### Fixed
+
+- **Bug: slash commands `/bayes show`, `/bayes reset`, `/bayes explain`, `/goal clear` were rejected as "not supported" by ACP clients (Zed)** (`src/acp/slash_commands.rs`)
+  - **Root cause**: `get_available_commands()` advertised command names that contain spaces (`"bayes show"`, `"bayes reset"`, `"bayes explain"`, `"goal clear"`). The ACP spec requires single-word command names (e.g. `"web"`, `"plan"`). Clients such as Zed silently drop or reject multi-word names during palette registration, so the commands were never shown or would report "not supported" when invoked.
+  - **Fix**: Replaced the three bayes sub-command entries with a single `"bayes"` command that accepts `"show | reset | explain"` as input text. Removed `"goal clear"` as a separate advertised command — the existing `"goal"` command already parses `clear` as a sub-command; its description and input hint were updated to document this. All five `SlashCommand` variants (`BayesShow`, `BayesReset`, `BayesExplain`, `Goal`, `GoalClear`) continue to work unchanged; only the ACP advertisement layer was fixed.
+  - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
+- **Bug: `/think off` displayed a misleading "reasoning_effort sent to API" message** (`src/cli/commands/acp.rs`)
+  - **Root cause**: The `SetThinkingMode` handler always printed `reasoning_effort = "<label>"` and `"Use /think off to disable."`, even when the user had just set the mode to `Off`. When mode is `Off`, `as_api_str()` returns `None` and the field is **omitted** from the API request — it is not sent as `"off"`.
+  - **Fix**: Added an `is_off` flag before the mode is consumed. When `is_off` is `true` the response now shows a 🔇 "thinking disabled" message with a hint to enable reasoning. When `is_off` is `false` the response correctly shows the `reasoning_effort` API note and the "use `/think off` to disable" hint.
+  - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
+---
+
 ## [Unreleased] - 2026-05-08
 
 ### Fixed

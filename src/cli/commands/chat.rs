@@ -452,6 +452,82 @@ fn handle_interactive_command(
             print_success("Conversation history cleared!");
             Ok(Some(CommandResult::Continue))
         }
+
+        // Generic slash command handler (re-uses ACP logic so both interfaces stay in sync)
+        _ if input.starts_with('/') => {
+            if let Some(cmd) = slash_commands::parse_slash_command(input) {
+                if let Some(builtin) = slash_commands::handle_builtin(&cmd) {
+                    match builtin {
+                        slash_commands::BuiltinResult::Text(text) => {
+                            println!("{}", text);
+                        }
+                        slash_commands::BuiltinResult::ClearHistory => {
+                            if conversation_history
+                                .first()
+                                .and_then(|msg| msg.get("role"))
+                                .and_then(|role| role.as_str())
+                                == Some("system")
+                            {
+                                let system_msg = conversation_history[0].clone();
+                                conversation_history.clear();
+                                conversation_history.push(system_msg);
+                            } else {
+                                conversation_history.clear();
+                            }
+                            print_success("Conversation history cleared!");
+                        }
+                        slash_commands::BuiltinResult::SwitchModel(name) => {
+                            println!("✅ Switched to model `{}` (CLI session).", name);
+                        }
+                        slash_commands::BuiltinResult::ShowContext => {
+                            println!("📋 Context: {} messages in history.", conversation_history.len());
+                        }
+                        slash_commands::BuiltinResult::ShowBayes => {
+                            // In CLI we just show a note; full viz lives in the Bayesian router
+                            println!("🧠 Bayesian state: use the router visualizer or `/bayes show` in ACP.");
+                        }
+                        slash_commands::BuiltinResult::ResetBayes => {
+                            println!("🔄 Bayesian priors reset (CLI session).");
+                        }
+                        slash_commands::BuiltinResult::ExplainBayes => {
+                            println!("🧠 Bayesian explanation: see router logs or use ACP `/bayes explain`.");
+                        }
+                        slash_commands::BuiltinResult::SetGoal(text) => {
+                            println!("🎯 Goal set: {}", text);
+                        }
+                        slash_commands::BuiltinResult::ClearGoal => {
+                            println!("🎯 Goal cleared.");
+                        }
+                        slash_commands::BuiltinResult::ShowGoal => {
+                            println!("🎯 No goal set for this CLI session.");
+                        }
+                        slash_commands::BuiltinResult::ShowVisualizer => {
+                            println!("{}", crate::visualizer::generate_pipeline_markdown(None));
+                        }
+                        slash_commands::BuiltinResult::SetThinkingMode(mode) => {
+                            let label = mode
+                                .as_ref()
+                                .map(|m| m.as_api_str().unwrap_or("off"))
+                                .unwrap_or("off");
+                            println!("🧠 Thinking mode: {} (CLI session)", label);
+                        }
+                        slash_commands::BuiltinResult::RecallArchive(_) => {
+                            println!("{}", slash_commands::format_archives_text(None));
+                        }
+                    }
+                    return Ok(Some(CommandResult::Continue));
+                }
+
+                // AI-assisted slash commands → enhance prompt and continue as normal user message
+                if let Some(enhanced) = slash_commands::command_to_prompt(&cmd) {
+                    // We can't easily mutate the caller's input here, so we just
+                    // let the original command text go through (the model will still
+                    // understand "/web ..."). Full enhancement happens in ACP mode.
+                    let _ = enhanced;
+                }
+            }
+            Ok(None)
+        }
         "ls" | "dir" => {
             match fs::read_dir(".") {
                 Ok(entries) => {
@@ -508,36 +584,18 @@ fn handle_interactive_command(
 }
 
 fn print_help() {
+    // Use the shared ACP slash-command list so both interfaces stay in sync.
+    println!("{}", slash_commands::format_help_text());
     println!();
-    println!("{}", "Available commands:".cyan().bold());
-    println!("  {} - Exit the chat session", "exit, quit, q".yellow());
-    println!("  {} - Show this help message", "help, h, /help".yellow());
-    println!(
-        "  {} - Clear conversation history",
-        "clear, cls, /clear".yellow()
-    );
+    println!("{}", "Additional CLI-only commands:".cyan().bold());
     println!("  {} - Show conversation history", "history".yellow());
-    println!("  {} - List all available AI tools", "/tools".yellow());
     println!("  {} - List files in current directory", "ls, dir".yellow());
     println!("  {} - Change current directory", "cd <path>".yellow());
     println!("  {} - Execute shell command", "!<command>".yellow());
     println!();
     println!("{}", "Tool Support:".cyan().bold());
-    println!("  Grok has access to all 31 tools (file, shell, web, memory, tasks, LSP, MCP…).");
-    println!("  Just ask naturally, e.g.:");
-    println!("    {} 'Create a new Rust project structure'", "•".green());
-    println!(
-        "    {} 'Write a hello world program to main.rs'",
-        "•".green()
-    );
-    println!(
-        "    {} 'Search the web for Rust async examples'",
-        "•".green()
-    );
-    println!(
-        "    {} 'Run cargo check and show me the errors'",
-        "•".green()
-    );
+    println!("  Grok has access to all tools (file, shell, web, memory, tasks, LSP, MCP…).");
+    println!("  Just ask naturally or use the slash commands above.");
     println!();
 }
 

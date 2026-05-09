@@ -1189,23 +1189,33 @@ where
                 BuiltinResult::SetThinkingMode(opt_mode) => {
                     match opt_mode {
                         Some(mode) => {
+                            let is_off = matches!(mode, crate::config::ThinkingMode::Off);
                             let label = mode
                                 .as_api_str()
                                 .map(|s| s.to_string())
                                 .unwrap_or_else(|| "off".to_string());
                             match agent.set_thinking_mode(&session_id, mode).await {
-                                Ok(()) => format!(
-                                    "✅ Thinking mode set to **{}**.\n\n\
-                                     This session will now send `reasoning_effort = \"{}\"` \
-                                     to grok-4.3.\n\
-                                     Use `/think off` to disable.",
-                                    label, label
-                                ),
+                                Ok(()) => {
+                                    if is_off {
+                                        "🔇 Thinking mode **disabled**. Standard fast responses — \
+                                         no reasoning trace will be generated.\n\n\
+                                         Use `/think low` or `/think high` to enable reasoning."
+                                            .to_string()
+                                    } else {
+                                        format!(
+                                            "🧠 Thinking mode set to **{label}**.\n\n\
+                                             Subsequent responses will include a reasoning trace \
+                                             (`reasoning_effort = \"{label}\"` sent to the API). \
+                                             Responses may be slower but more thorough.\n\n\
+                                             Use `/think off` to disable.",
+                                        )
+                                    }
+                                }
                                 Err(e) => format!("❌ Could not set thinking mode: {e}"),
                             }
                         }
                         None => {
-                            // Show current mode
+                            // Show current mode — unchanged
                             match agent.get_thinking_mode(&session_id).await {
                                 Some(mode) => {
                                     let label = mode
@@ -1229,12 +1239,14 @@ where
                 // For now we display the archive listing so the user can see
                 // what is available and confirm the command was recognised.
                 BuiltinResult::RecallArchive(chunk_id) => {
-                    slash_commands::format_archives_text(Some(&session_id.0))
-                        + &chunk_id
-                            .map(|id| {
-                                format!("\n\n_Use `/recall {id}` once full recall support lands._")
-                            })
-                            .unwrap_or_default()
+                    let base = slash_commands::format_archives_text(Some(&session_id.0));
+                    match chunk_id {
+                        Some(id) => format!(
+                            "{}\n\n_Recall of chunk {} will be fully implemented in a follow-up._",
+                            base, id
+                        ),
+                        None => base,
+                    }
                 }
             };
 
