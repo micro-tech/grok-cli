@@ -16,6 +16,7 @@ use crate::config::{Config, ThinkingMode};
 use crate::content_to_string;
 use crate::hooks::HookManager;
 use crate::router::AppRouter;
+use serde::{Deserialize, Serialize};
 
 pub mod protocol;
 pub mod security;
@@ -178,7 +179,7 @@ impl SessionData {
 }
 
 /// Session-specific configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionConfig {
     /// Model to use for this session
     pub model: String,
@@ -195,6 +196,18 @@ pub struct SessionConfig {
     /// Reasoning / thinking mode for this session.
     /// Passed as `reasoning_effort` to the API for models that support it.
     pub thinking_mode: ThinkingMode,
+}
+
+/// Snapshot of a session that can be written to disk and reloaded.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PersistedSession {
+    pub(crate) session_id: String,
+    pub(crate) cwd: String,
+    pub(crate) messages: Vec<serde_json::Value>,
+    pub(crate) config: SessionConfig,
+    pub(crate) current_goal: Option<String>,
+    pub(crate) always_allow: Vec<String>,
+    pub(crate) saved_at_unix: u64,
 }
 
 /// Agent capabilities for ACP
@@ -1738,6 +1751,145 @@ impl GrokAcpAgent {
         }
 
         Ok(cleaned)
+    }
+
+    /// Returns the path to the sessions persistence directory: ~/.grok/sessions/
+    fn sessions_dir() -> Option<std::path::PathBuf> {
+        dirs::home_dir().map(|h| h.join(".grok").join("sessions"))
+    }
+
+    /// Persist session state to ~/.grok/sessions/<id>.json
+    /// Called automatically after each successful prompt response.
+    /// Retries up to 3 times on I/O errors (Starlink-safe).
+    pub async fn save_session_to_disk(&self, session_id: &SessionId) -> Result<()> {
+        let state = {
+            let sessions = self.sessions.read().await;
+            let Some(session) = sessions.get(&session_id.0) else {
+                return Ok(());
+            };
+            PersistedSession {
+                session_id: session_id.0.clone(),
+                cwd: session.cwd.clone(),
+                messages: session.messages.clone(),
+                config: session.config.clone(),
+                current_goal: session.current_goal.clone(),
+                always_allow: session.always_allow.iter().cloned().collect(),
+                saved_at_unix: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            }
+        };
+
+        let Some(dir) = Self::sessions_dir() else {
+            return Ok(());
+        };
+
+        for attempt in 1u32..=3 {
+            match tokio::fs::create_dir_all(&dir).await {
+                Ok(()) => break,
+                Err(e) if attempt < 3 => {
+                    warn!(
+                        "save_session: create_dir failed (attempt {}): {}",
+                        attempt, e
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                        .await;
+                }
+                Err(e) => return Err(anyhow!("save_session: cannot create sessions dir: {}", e)),
+            }
+        }
+
+        let path = dir.join(format!("{}.json", session_id.0));
+        let json = serde_json::to_string_pretty(&state)?;
+
+        for attempt in 1u32..=3 {
+            match tokio::fs::write(&path, &json).await {
+                Ok(()) => {
+                    info!(
+                        "Session '{}' persisted to {:?} ({} messages)",
+                        session_id.0,
+                        path,
+                        state.messages.len()
+                    );
+                    return Ok(());
+                }
+                Err(e) if attempt < 3 => {
+                    warn!("save_session: write failed (attempt {}): {}", attempt, e);
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                        .await;
+                }
+                Err(e) => return Err(anyhow!("save_session: write failed: {}", e)),
+            }
+        }
+        Ok(())
+    }
+
+    /// Load a persisted session from ~/.grok/sessions/<id>.json.
+    /// Returns None if no saved state exists or if the file cannot be parsed.
+    pub async fn load_session_from_disk(&self, session_id: &str) -> Option<PersistedSession> {
+        let dir = Self::sessions_dir()?;
+        let path = dir.join(format!("{}.json", session_id));
+
+        for attempt in 1u32..=3 {
+            match tokio::fs::read_to_string(&path).await {
+                Ok(content) => {
+                    return serde_json::from_str::<PersistedSession>(&content)
+                        .map_err(|e| warn!("load_session: parse error for '{}': {}", session_id, e))
+                        .ok();
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+                Err(e) if attempt < 3 => {
+                    warn!("load_session: read failed (attempt {}): {}", attempt, e);
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                        .await;
+                }
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+
+    /// Restore a session from a `PersistedSession` snapshot loaded from disk.
+    pub async fn restore_session_from_disk(&self, state: PersistedSession) -> Result<()> {
+        let sid = SessionId::new(state.session_id.clone());
+        // Initialize a fresh session with the saved config
+        self.initialize_session(sid.clone(), state.cwd.clone(), Some(state.config))
+            .await?;
+        // Overwrite the parts that initialize_session can't set
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&state.session_id) {
+            session.messages = state.messages;
+            session.current_goal = state.current_goal;
+            session.always_allow = state.always_allow.into_iter().collect();
+        }
+        info!("Session '{}' restored from disk", sid.0);
+        Ok(())
+    }
+
+    /// Clone an existing session into a new session ID (session/fork support).
+    pub async fn fork_session(&self, source_id: &SessionId, new_id: SessionId) -> Result<()> {
+        let forked = {
+            let sessions = self.sessions.read().await;
+            let source = sessions
+                .get(&source_id.0)
+                .ok_or_else(|| anyhow!("fork_session: source '{}' not found", source_id.0))?;
+            SessionData {
+                cwd: source.cwd.clone(),
+                messages: source.messages.clone(),
+                config: source.config.clone(),
+                created_at: std::time::Instant::now(),
+                last_activity: std::time::Instant::now(),
+                always_allow: source.always_allow.clone(),
+                client_commands: source.client_commands.clone(),
+                bayes_engine: crate::bayes::BayesianEngine::new_with_default_priors(),
+                current_goal: source.current_goal.clone(),
+            }
+        };
+        let mut sessions = self.sessions.write().await;
+        sessions.insert(new_id.0.clone(), forked);
+        info!("Session '{}' forked → '{}'", source_id.0, new_id.0);
+        Ok(())
     }
 
     /// Return a list of currently active session IDs.

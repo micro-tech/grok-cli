@@ -354,6 +354,8 @@ where
             (handle_session_list(&params, agent).await, false)
         } else if method == AGENT_METHOD_NAMES.session_load {
             (handle_session_load(&params, agent, writer).await, false)
+        } else if method == "session/fork" {
+            (handle_session_fork(&params, agent).await, false)
         } else if method == "session/set_model" {
             (handle_session_set_model(&params, agent).await, false)
         } else {
@@ -1036,10 +1038,19 @@ where
         }
     }
 
-    // Re-create the session in memory if it no longer exists.
-    if !agent.session_exists(&session_id_str).await {
+    // Try to restore from disk first
+    if let Some(persisted) = agent.load_session_from_disk(&session_id_str).await {
+        let msg_count = persisted.messages.len();
         info!(
-            "session/load: session '{}' not in memory — re-creating",
+            "session/load: restoring '{}' from disk ({} messages)",
+            session_id_str, msg_count
+        );
+        if let Err(e) = agent.restore_session_from_disk(persisted).await {
+            warn!("session/load: restore from disk failed: {}", e);
+        }
+    } else if !agent.session_exists(&session_id_str).await {
+        info!(
+            "session/load: no saved state for '{}' — creating fresh session",
             session_id_str
         );
         let new_sid = SessionId::new(session_id_str.clone());
@@ -1052,15 +1063,12 @@ where
             .await
         {
             warn!(
-                "session/load: failed to re-create session '{}': {}",
+                "session/load: failed to create fresh session '{}': {}",
                 session_id_str, e
             );
         }
     } else {
-        info!(
-            "session/load: session '{}' already in memory — resuming",
-            session_id_str
-        );
+        info!("session/load: '{}' already in memory", session_id_str);
     }
 
     // Re-advertise slash commands so the client's command palette is populated.
@@ -1074,6 +1082,29 @@ where
     // Per the ACP spec the agent MUST respond with null when done replaying.
     // Since we have no history to replay, we respond immediately.
     Ok(serde_json::Value::Null)
+}
+
+/// Handle a `session/fork` request — clone the source session into a new session ID.
+async fn handle_session_fork(params: &Value, agent: &GrokAcpAgent) -> Result<Value> {
+    let session_id_str = params
+        .get("sessionId")
+        .or_else(|| params.get("session_id"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| anyhow!("session/fork: missing sessionId"))?;
+
+    let new_id = format!(
+        "{}-fork-{}",
+        session_id_str,
+        &uuid::Uuid::new_v4().to_string()[..8]
+    );
+
+    let source_sid = SessionId::new(session_id_str);
+    let new_sid = SessionId::new(new_id.clone());
+
+    agent.fork_session(&source_sid, new_sid).await?;
+
+    info!("session/fork: '{}' → '{}'", session_id_str, new_id);
+    Ok(json!({ "newSessionId": new_id }))
 }
 
 async fn handle_session_prompt<W>(
@@ -1502,6 +1533,11 @@ where
     };
     let _ = chat_logger::log_assistant(&final_text);
     send_text_update(writer, &session_id.0, &final_text).await?;
+
+    // Auto-save session to disk for resume support (task 111.5)
+    if let Err(e) = agent.save_session_to_disk(&session_id).await {
+        warn!("Auto-save failed for '{}': {}", session_id.0, e);
+    }
 
     Ok(serde_json::to_value(PromptResponse::new(
         StopReason::EndTurn,

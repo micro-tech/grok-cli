@@ -15,6 +15,24 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ### Added
 
+- **Task 111.5 done — Session resume: disk persistence + restore** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`)
+  - Added `Serialize, Deserialize` to `SessionConfig` so sessions can be serialised.
+  - Added `pub(crate) struct PersistedSession` — a JSON-serialisable snapshot of a session (id, cwd, messages, config, goal, always-allow list, unix timestamp).
+  - Added three methods to `GrokAcpAgent`:
+    - `sessions_dir()` — returns `~/.grok/sessions/`
+    - `save_session_to_disk(session_id)` — writes `~/.grok/sessions/<id>.json` with up to 3 retries on I/O failure (Starlink-safe).
+    - `load_session_from_disk(session_id)` — reads and deserialises the file; returns `None` if missing; up to 3 retries.
+    - `restore_session_from_disk(state)` — re-initialises the session then overwrites messages, goal, and always-allow from the snapshot.
+  - `handle_session_load` now checks disk first: restores if found, creates fresh session if not, or resumes in-memory session if already present.
+  - `handle_session_prompt` auto-saves to disk after every successful AI response (at end of function, before final `Ok`).
+  - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
+- **Task 111.7 done — Session fork** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`)
+  - Added `fork_session(source_id, new_id)` to `GrokAcpAgent` — clones messages, config, goal, and always-allow into a new session ID with a fresh Bayesian engine.
+  - Added `handle_session_fork(params, agent)` function that generates a `<source>-fork-<8-char uuid>` ID and returns `{ "newSessionId": "..." }`.
+  - Registered `session/fork` in `handle_json_rpc` immediately before the `session/set_model` branch.
+  - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
 - **Task 111.1 done — ACP migration audit** (`Doc/acp-migration-map.md`)
   - Produced `Doc/acp-migration-map.md`: full classification of all 48 types in `src/acp/protocol.rs` against `agent_client_protocol::schema::*` as REPLACE (28 types, 58%), EXTEND (8 types, 17%), or KEEP (12 types, 25%). Includes Phase B implementation order, Phase C feature table, and a risk register.
   - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
@@ -42,6 +60,26 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
   - **Total replaced across all Phase B-1 work: 11 types.** All remaining local types in `protocol.rs` are either EXTEND (grok-specific fields), KEEP (wire-format incompatible or no crate equivalent), or DEFERRED (await 111.3 connection-layer rewrite).
   - **655/655** lib tests pass. Clippy clean.
   - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
+- **Task 111.5 done — Session resume: full disk persistence** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`)
+  - Added `Serialize, Deserialize` to `SessionConfig` so the full session config (model, temperature, max_tokens, system_prompt, thinking_mode) is serialisable.
+  - Added `PersistedSession` struct capturing: session ID, cwd, conversation messages, config, active goal, always-allowed tools, and a Unix save timestamp.
+  - `GrokAcpAgent::save_session_to_disk()` — writes `~/.grok/sessions/<id>.json` after every prompt. Starlink-safe: retries 3× with exponential backoff on I/O errors.
+  - `GrokAcpAgent::load_session_from_disk()` — reads and deserialises the snapshot; returns `None` on `NotFound` (clean first-run experience). Also 3-retry.
+  - `GrokAcpAgent::restore_session_from_disk()` — calls `initialize_session` with the saved config, then overwrites messages, goal, and always-allow set.
+  - `handle_session_load` updated: now tries disk restore first; falls back to fresh session if no snapshot exists. Previously always returned `null` with no history.
+  - Auto-save hooked at the end of `handle_session_prompt` (single call-site before final `Ok()`). Sessions are therefore persisted after every AI response turn.
+  - **655/655** tests pass.
+  - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
+- **Task 111.7 done — Session fork: `session/fork` handler** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`)
+  - `GrokAcpAgent::fork_session()` deep-clones an existing session (messages, config, goal, always-allow, client_commands) into a new session ID with a fresh `BayesianEngine`. Released via a two-phase read-lock → write-lock pattern to avoid deadlock.
+  - `handle_session_fork()` async function added in `acp.rs`: extracts `sessionId` from params, generates `<original>-fork-<8 hex chars>` as the new ID, calls `fork_session`, returns `{ "newSessionId": "..." }`.
+  - `session/fork` branch wired into `handle_json_rpc` dispatch (before `session/set_model`).
+  - **655/655** tests pass.
+  - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
+- **Tasks 111.6 and 111.8 deferred** — Elicitation (structured permission dialogs) and MCP-over-ACP bridging (exposing tools as an MCP server) both require the connection-layer rewrite (111.3) to be done first. They remain blocked behind 111.3.
 
 ---
 
