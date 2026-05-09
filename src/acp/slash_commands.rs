@@ -144,7 +144,7 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         "/context" => Some(SlashCommand::Context),
         "/tools" => Some(SlashCommand::Tools),
         "/bayes" => match args.as_str() {
-            "show" => Some(SlashCommand::BayesShow),
+            "show" | "" => Some(SlashCommand::BayesShow),
             "reset" => Some(SlashCommand::BayesReset),
             "explain" => Some(SlashCommand::BayesExplain),
             _ => None,
@@ -924,6 +924,8 @@ mod tests {
             parse_slash_command("/bayes show"),
             Some(SlashCommand::BayesShow)
         );
+        assert_eq!(parse_slash_command("/bayes"), Some(SlashCommand::BayesShow));
+        assert_eq!(parse_slash_command("/BAYES"), Some(SlashCommand::BayesShow));
     }
 
     #[test]
