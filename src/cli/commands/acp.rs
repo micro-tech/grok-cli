@@ -961,7 +961,8 @@ async fn handle_session_list(params: &Value, agent: &GrokAcpAgent) -> Result<Val
 
     info!("session/list called (cwd filter: {:?})", req.cwd);
 
-    let cwd_filter = req.cwd.as_deref().unwrap_or("");
+    // cwd is now Option<PathBuf> (crate type); convert to &str for filtering.
+    let cwd_filter = req.cwd.as_deref().and_then(|p| p.to_str()).unwrap_or("");
 
     let agent_sids = agent.list_sessions().await;
     let mut sessions = Vec::new();

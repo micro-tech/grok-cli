@@ -24,7 +24,7 @@
 //! 3. Add an [`AvailableCommand`] entry in [`get_available_commands`].
 //! 4. Handle it in [`command_to_prompt`] (AI) **or** [`handle_builtin`] (direct).
 
-use super::protocol::AvailableCommand;
+use super::protocol::{AvailableCommand, AvailableCommandInput, UnstructuredCommandInput};
 use crate::config::ThinkingMode;
 
 // ---------------------------------------------------------------------------
@@ -182,6 +182,11 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
 /// Build the list of [`AvailableCommand`] entries sent to ACP clients via the
 /// `available_commands_update` notification immediately after session creation.
 pub fn get_available_commands() -> Vec<AvailableCommand> {
+    // Helper closure to keep call sites concise.
+    // Wraps a hint string in the crate's AvailableCommandInput::Unstructured variant.
+    let input =
+        |hint: &str| AvailableCommandInput::Unstructured(UnstructuredCommandInput::new(hint));
+
     vec![
         AvailableCommand::new("help", "Show all available slash commands and their usage"),
         AvailableCommand::new(
@@ -189,25 +194,25 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "List all LLM-callable tools available in this session (file, shell, web, task, …)",
         ),
         AvailableCommand::new("web", "Research a topic or search the web for information")
-            .with_input("query to research"),
+            .input(input("query to research")),
         AvailableCommand::new(
             "explain",
             "Get a thorough explanation of code, a file, or a concept",
         )
-        .with_input("code, file path, or concept to explain"),
+        .input(input("code, file path, or concept to explain")),
         AvailableCommand::new(
             "review",
             "Comprehensive code review: bugs, security, performance, style",
         )
-        .with_input("code or file path to review"),
+        .input(input("code or file path to review")),
         AvailableCommand::new("plan", "Create a detailed step-by-step implementation plan")
-            .with_input("description of what to plan"),
+            .input(input("description of what to plan")),
         AvailableCommand::new("test", "Help write, run, or debug tests")
-            .with_input("test description or file path (optional)"),
+            .input(input("test description or file path (optional)")),
         AvailableCommand::new("fix", "Diagnose and fix a bug or error")
-            .with_input("problem description, error message, or file path"),
+            .input(input("problem description, error message, or file path")),
         AvailableCommand::new("model", "Switch to a different Grok model for this session")
-            .with_input("model name (e.g. grok-3, grok-4.3, grok-3-mini)"),
+            .input(input("model name (e.g. grok-3, grok-4.3, grok-3-mini)")),
         AvailableCommand::new("clear", "Clear the current conversation history"),
         AvailableCommand::new(
             "context",
@@ -217,7 +222,7 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "bayes",
             "Inspect or reset the Bayesian intent engine — shows belief state, resets priors, or explains current routing",
         )
-        .with_input("show | reset | explain"),
+        .input(input("show | reset | explain")),
         AvailableCommand::new(
             "archives",
             "List all archived context chunks for this session",
@@ -226,12 +231,14 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "recall",
             "Restore an archived context chunk back into the active window",
         )
-        .with_input("chunk number (e.g. 1, 2, 3) -- omit to list archives"),
+        .input(input("chunk number (e.g. 1, 2, 3) -- omit to list archives")),
         AvailableCommand::new(
             "goal",
             "Set, view, or clear the persistent session goal that shapes all message interpretation",
         )
-        .with_input("goal text — e.g. 'refactor auth'. Type 'clear' to remove the active goal, or omit to show it"),
+        .input(input(
+            "goal text — e.g. 'refactor auth'. Type 'clear' to remove the active goal, or omit to show it",
+        )),
         AvailableCommand::new(
             "visualize",
             "Display the Grok-CLI routing pipeline as a DOT/Graphviz graph",
@@ -240,7 +247,7 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "think",
             "Set or show the reasoning mode (off / low / high).  \"high\" gives the most thorough answers; \"off\" (default) gives the fastest.",
         )
-        .with_input("off | low | high -- omit to show the current mode"),
+        .input(input("off | low | high -- omit to show the current mode")),
     ]
 }
 
@@ -589,7 +596,15 @@ pub fn format_help_text() -> String {
         let input_hint = cmd
             .input
             .as_ref()
-            .map(|i| format!(" `<{}>`", i.hint))
+            .map(|i| {
+                // AvailableCommandInput is a non-exhaustive enum from the crate;
+                // match on the only current variant to extract the hint.
+                if let AvailableCommandInput::Unstructured(u) = i {
+                    format!(" `<{}>`", u.hint)
+                } else {
+                    String::new()
+                }
+            })
             .unwrap_or_default();
         lines.push(format!(
             "- **`/{}{}`** — {}",
@@ -1159,5 +1174,32 @@ mod tests {
         assert_eq!(ThinkingMode::from_str_ci("LOW"), Some(ThinkingMode::Low));
         assert_eq!(ThinkingMode::from_str_ci("High"), Some(ThinkingMode::High));
         assert_eq!(ThinkingMode::from_str_ci("ultra"), None);
+    }
+
+    // --- AvailableCommandInput wire-format verification ---
+
+    #[test]
+    fn test_available_command_input_serializes_to_hint_object() {
+        use crate::acp::protocol::{AvailableCommandInput, UnstructuredCommandInput};
+        let input = AvailableCommandInput::Unstructured(UnstructuredCommandInput::new("my hint"));
+        let json = serde_json::to_string(&input).expect("serialization failed");
+        // Must produce {"hint":"my hint"} — NOT {"Unstructured":{"hint":"my hint"}}
+        assert_eq!(
+            json, r#"{"hint":"my hint"}"#,
+            "AvailableCommandInput wire format changed — check serde tag"
+        );
+    }
+
+    #[test]
+    fn test_available_command_round_trips_with_input() {
+        use crate::acp::protocol::{
+            AvailableCommand, AvailableCommandInput, UnstructuredCommandInput,
+        };
+        let cmd = AvailableCommand::new("web", "Search the web").input(
+            AvailableCommandInput::Unstructured(UnstructuredCommandInput::new("query")),
+        );
+        let json = serde_json::to_value(&cmd).expect("serialization failed");
+        assert_eq!(json["name"], "web");
+        assert_eq!(json["input"]["hint"], "query");
     }
 }

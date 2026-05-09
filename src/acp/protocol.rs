@@ -1,6 +1,73 @@
 use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
 
+// ---------------------------------------------------------------------------
+// Official crate re-exports (Task 111.2 — Phase B-1 migration)
+// Types marked REPLACE in Doc/acp-migration-map.md that are wire-format
+// identical to their agent_client_protocol::schema counterparts.
+// ---------------------------------------------------------------------------
+// NOTE: We do NOT yet replace types that are EXTEND or have serde differences.
+// Those require careful per-type validation in later migration steps.
+// ---------------------------------------------------------------------------
+// Replaced in subtask 111.2-step1:
+//   Group 1 — Leaf types: Implementation, SessionListCapabilities,
+//             ToolCallStatus, ToolKind
+//   Group 2 — Slash-command types: AvailableCommand, AvailableCommandInput,
+//             AvailableCommandsUpdate, UnstructuredCommandInput
+//
+// Replaced in subtask 111.2-step2 (this session):
+//   Group 3 — Session list types: ListSessionsRequest, ListSessionsResponse,
+//             SessionInfo.  Backward-compat aliases added for old names
+//             (SessionListRequest, SessionListResponse).
+//             SessionLoadRequest NOT replaced — crate requires cwd: PathBuf
+//             (non-optional) and mcp_servers: Vec<McpServer>, both differ from
+//             our wire contract; callsite also uses .session_id.0 as String.
+//   Group 4 — TextContent: crate adds optional annotations/meta fields
+//             (skipped in serialisation via skip_serializing_none);
+//             wire format is identical; ::new(text) method present.
+//
+// NOT replaced:
+//   StopReason — crate variants differ (missing StopSequence, ToolUse;
+//     adds MaxTurnRequests, Refusal, Cancelled). Wire format mismatch.
+//   ToolCallLocation — crate uses path:PathBuf + line:Option<u32> instead of
+//     uri:String + range:Option<ToolCallRange>; completely different wire format.
+//   ToolCallRange / Position — no crate equivalents.
+//   ContentBlock — crate is #[non_exhaustive] with different inner types
+//     (EmbeddedResource vs ResourceContent). HIGH RISK. SKIP.
+//   ContentChunk — #[non_exhaustive], construction patterns differ. SKIP.
+//   ToolCall / ToolCallUpdate — use ToolCallId newtype (not String). SKIP.
+//   SessionNotification / SessionUpdate — EXTEND, needs connection-layer rewrite.
+//   SessionId — Arc<str> vs String internally, 100+ callsites. SKIP.
+//   PromptRequest — depends on SessionId and ContentBlock. SKIP.
+//   PromptResponse — depends on StopReason. SKIP.
+// ---------------------------------------------------------------------------
+pub use agent_client_protocol::schema::{
+    // Group 2 — Slash-command advertisement types
+    AvailableCommand,
+    AvailableCommandInput,
+    AvailableCommandsUpdate,
+    // Group 1 — Leaf types
+    Implementation,
+    // Group 3 — Session list / info types
+    ListSessionsRequest,
+    ListSessionsResponse,
+    SessionInfo,
+    SessionListCapabilities,
+    // Group 4 — Simple text wrapper
+    TextContent,
+    ToolCallStatus,
+    ToolKind,
+    UnstructuredCommandInput,
+};
+
+// Backward-compatible aliases for Group 3 name changes.
+// Old name             New crate name
+// SessionListRequest → ListSessionsRequest
+// SessionListResponse → ListSessionsResponse
+// (SessionInfo kept its name — no alias needed.)
+pub type SessionListRequest = ListSessionsRequest;
+pub type SessionListResponse = ListSessionsResponse;
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct SessionId(pub String);
 
@@ -55,9 +122,8 @@ pub struct SessionCapabilities {
     pub list: Option<SessionListCapabilities>,
 }
 
-/// Capability marker for `session/list`.  No fields — presence signals support.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SessionListCapabilities {}
+// `SessionListCapabilities` is now re-exported from agent_client_protocol::schema
+// (see the pub use block at the top of this file).
 
 impl Default for SessionCapabilities {
     fn default() -> Self {
@@ -300,10 +366,7 @@ impl InitializeResponse {
         Self {
             protocol_version: version.into(),
             agent_capabilities: AgentCapabilities::new(),
-            agent_info: Implementation {
-                name: "grok-cli".to_string(),
-                version: env!("CARGO_PKG_VERSION").to_string(),
-            },
+            agent_info: Implementation::new("grok-cli", env!("CARGO_PKG_VERSION")),
             auth_methods: Vec::new(),
         }
     }
@@ -325,20 +388,10 @@ impl InitializeResponse {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Implementation {
-    pub name: String,
-    pub version: String,
-}
-
-impl Implementation {
-    pub fn new(name: impl Into<String>, version: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            version: version.into(),
-        }
-    }
-}
+// `Implementation` is now re-exported from agent_client_protocol::schema
+// (see the pub use block at the top of this file).
+// The crate's Implementation::new(name, version) has the same signature.
+// Extra optional fields (title, meta) are None by default and omitted from JSON.
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct NewSessionRequest {
@@ -503,16 +556,11 @@ pub enum ContentBlock {
     ResourceLink(ResourceLinkContent),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct TextContent {
-    pub text: String,
-}
-
-impl TextContent {
-    pub fn new(text: impl Into<String>) -> Self {
-        Self { text: text.into() }
-    }
-}
+// `TextContent` is now re-exported from agent_client_protocol::schema
+// (see the pub use block at the top of this file).
+// The crate version adds optional `annotations` and `meta` fields, both
+// `None` by default and omitted via `#[skip_serializing_none]`.  Wire format
+// is identical to our previous single-field struct.  `::new(text)` is present.
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ResourceContent {
@@ -590,25 +638,11 @@ pub enum SessionUpdate {
     ToolCallUpdate(ToolCallUpdate),
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolKind {
-    Read,
-    Edit,
-    Search,
-    Execute,
-    Think,
-    Other,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ToolCallStatus {
-    Pending,
-    InProgress,
-    Completed,
-    Failed,
-}
+// `ToolKind` and `ToolCallStatus` are now re-exported from agent_client_protocol::schema
+// (see the pub use block at the top of this file).
+// ToolKind: crate is a superset (adds Delete, Move, Fetch, SwitchMode) — safe because
+//   we only construct Execute and never match exhaustively.
+// ToolCallStatus: identical 4-variant set (Pending, InProgress, Completed, Failed).
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -684,63 +718,20 @@ impl ContentChunk {
 // ---------------------------------------------------------------------------
 // Slash-command advertisement types (ACP `available_commands_update`)
 // ---------------------------------------------------------------------------
-
-/// Input specification for a slash command — currently only unstructured text.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AvailableCommandInput {
-    /// Hint text shown in the client UI when no input has been typed yet.
-    pub hint: String,
-}
-
-impl AvailableCommandInput {
-    pub fn new(hint: impl Into<String>) -> Self {
-        Self { hint: hint.into() }
-    }
-}
-
-/// A single slash command that the agent advertises to ACP clients.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AvailableCommand {
-    /// Command name without leading slash (e.g. `"web"`, `"plan"`).
-    pub name: String,
-    /// Human-readable description shown in the client command palette.
-    pub description: String,
-    /// Optional input specification. Omitted for commands that take no args.
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub input: Option<AvailableCommandInput>,
-}
-
-impl AvailableCommand {
-    /// Create a command that accepts no additional input.
-    pub fn new(name: impl Into<String>, description: impl Into<String>) -> Self {
-        Self {
-            name: name.into(),
-            description: description.into(),
-            input: None,
-        }
-    }
-
-    /// Builder-style helper: attach a text-input hint to this command.
-    pub fn with_input(mut self, hint: impl Into<String>) -> Self {
-        self.input = Some(AvailableCommandInput::new(hint));
-        self
-    }
-}
-
-/// Payload carried inside a `SessionUpdate::AvailableCommandsUpdate` notification.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct AvailableCommandsUpdate {
-    #[serde(rename = "availableCommands")]
-    pub available_commands: Vec<AvailableCommand>,
-}
-
-impl AvailableCommandsUpdate {
-    pub fn new(commands: Vec<AvailableCommand>) -> Self {
-        Self {
-            available_commands: commands,
-        }
-    }
-}
+// All three types are now re-exported from agent_client_protocol::schema
+// (see the pub use block at the top of this file).
+//
+// Wire format verification:
+//   - AvailableCommandsUpdate: field "availableCommands" serialised by
+//     camelCase rename_all — identical to our previous explicit rename.
+//   - AvailableCommand: name/description/input fields; extra meta field
+//     is None by default and omitted via skip_serializing_none.
+//   - AvailableCommandInput: #[serde(untagged)] enum with single Unstructured
+//     variant — serialises to {"hint":"..."} same as our previous struct.
+//
+// Callsite change in slash_commands.rs:
+//   .with_input(hint)  →  .input(AvailableCommandInput::Unstructured(
+//                              UnstructuredCommandInput::new(hint)))
 
 // ---------------------------------------------------------------------------
 // ACP Gemini-style permission types (session/request_permission RPC)
@@ -975,68 +966,18 @@ pub const AGENT_METHOD_NAMES: MethodNames = MethodNames {
 // ---------------------------------------------------------------------------
 // session/list types
 // ---------------------------------------------------------------------------
-
-/// Request body for `session/list`.  All fields are optional.
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SessionListRequest {
-    /// Filter sessions by working directory (absolute path).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cwd: Option<String>,
-    /// Cursor from a previous response for pagination.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub cursor: Option<String>,
-}
-
-/// One entry in the `session/list` response.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionInfo {
-    #[serde(rename = "sessionId")]
-    pub session_id: String,
-    pub cwd: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub title: Option<String>,
-    #[serde(rename = "updatedAt", skip_serializing_if = "Option::is_none")]
-    pub updated_at: Option<String>,
-}
-
-impl SessionInfo {
-    pub fn new(session_id: impl Into<String>, cwd: impl Into<String>) -> Self {
-        Self {
-            session_id: session_id.into(),
-            cwd: cwd.into(),
-            title: None,
-            updated_at: None,
-        }
-    }
-
-    pub fn with_title(mut self, title: impl Into<String>) -> Self {
-        self.title = Some(title.into());
-        self
-    }
-
-    pub fn with_updated_at(mut self, ts: impl Into<String>) -> Self {
-        self.updated_at = Some(ts.into());
-        self
-    }
-}
-
-/// Response body for `session/list`.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SessionListResponse {
-    pub sessions: Vec<SessionInfo>,
-    /// Present only when more pages are available.
-    #[serde(rename = "nextCursor", skip_serializing_if = "Option::is_none")]
-    pub next_cursor: Option<String>,
-}
-
-impl SessionListResponse {
-    pub fn new(sessions: Vec<SessionInfo>) -> Self {
-        Self {
-            sessions,
-            next_cursor: None,
-        }
-    }
-}
+// `SessionListRequest`, `SessionInfo`, and `SessionListResponse` are now
+// re-exported from agent_client_protocol::schema under their canonical crate
+// names (`ListSessionsRequest`, `SessionInfo`, `ListSessionsResponse`).
+// The old names remain available via the type aliases declared at the top of
+// this file.  Key field-type changes from our previous local definitions:
+//   • ListSessionsRequest::cwd  is now Option<PathBuf> (was Option<String>)
+//   • SessionInfo::session_id   is now schema::SessionId  (Arc<str>-backed)
+//   • SessionInfo::cwd          is now PathBuf            (was String)
+// All changes are wire-format compatible (PathBuf ↔ String in JSON).
+// Callsite update: handle_session_list in cli/commands/acp.rs now uses
+//   req.cwd.as_deref().and_then(|p| p.to_str()).unwrap_or("")
+// instead of req.cwd.as_deref().unwrap_or("").
 
 // ---------------------------------------------------------------------------
 // session/load types

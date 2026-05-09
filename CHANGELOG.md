@@ -11,6 +11,40 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
+## [Unreleased] - 2026-05-10
+
+### Added
+
+- **Task 111.1 done — ACP migration audit** (`Doc/acp-migration-map.md`)
+  - Produced `Doc/acp-migration-map.md`: full classification of all 48 types in `src/acp/protocol.rs` against `agent_client_protocol::schema::*` as REPLACE (28 types, 58%), EXTEND (8 types, 17%), or KEEP (12 types, 25%). Includes Phase B implementation order, Phase C feature table, and a risk register.
+  - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
+- **Task 111.2 done — Schema leaf-type swap + wire-format verification** (`Cargo.toml`, `src/acp/protocol.rs`, `src/acp/slash_commands.rs`)
+  - Added `agent-client-protocol = "0.11"` to `[dependencies]`; resolves to v0.11.1. New transitive deps: `rmcp v1.6.0`, `futures-concurrency v7.7.1`, `tokio-util v0.7.18`, `tower v0.5.3`, `agent-client-protocol-derive v0.11.0`.
+  - Replaced 7 types in `src/acp/protocol.rs` with `pub use` re-exports from `agent_client_protocol::schema`: `ToolKind`, `ToolCallStatus`, `Implementation`, `SessionListCapabilities`, `AvailableCommandsUpdate`, `AvailableCommand`, `AvailableCommandInput` / `UnstructuredCommandInput`.
+  - `StopReason` intentionally **skipped** — crate variant set differs (adds `MaxTurnRequests`, `Refusal`, `Cancelled`; does not have our `StopSequence`/`ToolUse` wire names). Local definition kept.
+  - Updated all 11 `.with_input()` call sites in `slash_commands.rs` to the crate builder API: `.input(AvailableCommandInput::Unstructured(UnstructuredCommandInput::new(...)))`. Introduced a local `input(hint)` helper closure in `get_available_commands()` for readability.
+  - Fixed two broken test-import paths left by an interrupted sub-agent (`super::protocol` → `crate::acp::protocol`).
+  - Added 2 new wire-format regression tests: `test_available_command_input_serializes_to_hint_object` confirms `AvailableCommandInput` still serialises to `{"hint":"..."}` (not as a tagged enum); `test_available_command_round_trips_with_input` confirms `AvailableCommand.input.hint` round-trips through JSON.
+  - **655/655** lib tests pass. Clippy clean.
+  - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
+- **Task 111.3 deferred — Connection-layer rewrite blocked; migration map updated** (`Doc/acp-migration-map.md`)
+  - Investigated the crate's `Agent` API: it is a unit struct with a `Builder<Agent, NullHandler, NullRun>` builder (not a trait to implement). Handlers are registered via `on_receive_request!` / `on_receive_notification!` macros and a `ConnectionTo<Agent>` context.
+  - **Why deferred:** (1) Our `handle_session_prompt` does bidirectional streaming — sending chunk / tool-call `session/update` notifications *while* awaiting the AI response — which does not map cleanly to a per-request callback. (2) `SessionId` is `Arc<str>`-backed in the crate vs. `String`-backed in our code; migrating touches ~100 callsites. (3) The `PermissionBridge` pattern (permission RPC mid-tool-execution) has no obvious equivalent in the crate's request model. (4) No automated integration tests exist to verify Zed/Gemini CLI compatibility after the rewrite.
+  - Migration map updated: `SessionId`, `PermissionKind`, `PermissionOption` reclassified from REPLACE → **KEEP** based on actual crate API inspection. Pre-requisites for 111.3 documented in the map.
+  - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
+- **Task 111.2 continued — 4 more REPLACE types swapped** (`src/acp/protocol.rs`, `src/cli/commands/acp.rs`)
+  - **`TextContent`** — local definition removed; `pub use agent_client_protocol::schema::TextContent` added. Extra crate fields (`annotations`, `meta`) are `skip_serializing_none` — wire format `{"text":"..."}` unchanged.
+  - **`ListSessionsRequest`** (type alias `SessionListRequest`), **`ListSessionsResponse`** (type alias `SessionListResponse`), **`SessionInfo`** — all re-exported from crate. Callsite updated for `cwd: Option<PathBuf>` → `.as_deref().and_then(|p| p.to_str()).unwrap_or("")` conversion.
+  - Additional reclassifications — REPLACE → **KEEP**: `ToolCallLocation` (crate uses `path: PathBuf` + `line: u32`, completely different wire format from our `uri: String` + `range`); `ToolCallRange` and `Position` (no crate equivalents exist); `SessionLoadRequest` (crate `cwd` is non-optional `PathBuf`, `mcp_servers: Vec<McpServer>` vs `Vec<Value>`).
+  - **Total replaced across all Phase B-1 work: 11 types.** All remaining local types in `protocol.rs` are either EXTEND (grok-specific fields), KEEP (wire-format incompatible or no crate equivalent), or DEFERRED (await 111.3 connection-layer rewrite).
+  - **655/655** lib tests pass. Clippy clean.
+  - Source: AI (Claude Sonnet 4.6) on request from Human (John McConnell)
+
+---
+
 ## [Unreleased] - 2026-05-09
 
 ### Fixed
