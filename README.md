@@ -572,10 +572,13 @@ cargo clippy
 
 ## 📚 Documentation
 
-- [ZED_INTEGRATION.md](docs/ZED_INTEGRATION.md) - Complete Zed editor integration guide
-- [FIXES.md](FIXES.md) - Recent bug fixes and solutions
-- [SETUP.md](SETUP.md) - Detailed setup instructions
-- [TESTING_TOOLS.md](TESTING_TOOLS.md) - Testing documentation
+- [CONFIGURATION.md](Doc/CONFIGURATION.md) — Configuration options
+- [CONTRIBUTING.md](Doc/CONTRIBUTING.md) — How to contribute
+- [FIXES.md](Doc/FIXES.md) — Recent bug fixes
+- [SETUP.md](Doc/SETUP.md) — Detailed setup
+- [TROUBLESHOOTING.md](Doc/TROUBLESHOOTING.md) — Troubleshooting guide
+- [TESTING_TOOLS.md](Doc/TESTING_TOOLS.md) — Testing documentation
+- Full changelog history in [Doc/CHANGELOG.md](Doc/CHANGELOG.md) (this file is summary)
 
 ## 📄 License
 
