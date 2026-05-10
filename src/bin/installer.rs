@@ -125,8 +125,12 @@ fn install_windows() {
     println!("{}", "Setting up audit logging...".cyan());
     setup_audit_directory();
 
+    // 12. Setup Session DNA
+    println!("{}", "Setting up Session DNA...".cyan());
+    setup_session_dna(&root_dir);
+
     println!("\n{}", "Installation Complete!".green().bold());
-    println!("Version: 0.1.8-pre");
+    println!("Version: 0.2.1-pre");
     println!("\nNew features in this version:");
     println!("  • External file access with security controls");
     println!("  • Audit logging for compliance tracking");
@@ -251,6 +255,33 @@ fn setup_audit_directory() {
         }
     } else {
         eprintln!("Failed to locate home directory for audit setup.");
+    }
+}
+
+#[cfg(windows)]
+fn setup_session_dna(root_dir: &Path) {
+    if let Some(home_dir) = dirs::home_dir() {
+        let grok_dir = home_dir.join(".grok");
+        if !grok_dir.exists()
+            && let Err(e) = fs::create_dir_all(&grok_dir)
+        {
+            eprintln!("Failed to create .grok directory: {}", e);
+            return;
+        }
+
+        let source_dna = root_dir.join("session_dna.json");
+        let target_dna = grok_dir.join("session_dna.json");
+
+        if source_dna.exists() {
+            match fs::copy(&source_dna, &target_dna) {
+                Ok(_) => println!("Session DNA installed to {}", target_dna.display()),
+                Err(e) => eprintln!("Failed to install session_dna.json: {}", e),
+            }
+        } else {
+            println!("No session_dna.json found in project root, skipping Session DNA setup.");
+        }
+    } else {
+        eprintln!("Failed to locate home directory for Session DNA setup.");
     }
 }
 
