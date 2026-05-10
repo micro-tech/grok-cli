@@ -57,6 +57,9 @@ pub mod tools;
 pub mod utils;
 pub mod visualizer;
 
+#[cfg(feature = "tgs-rag")]
+pub mod rag;
+
 // Re-export grok_api types for use throughout the crate
 pub use grok_api::{
     ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, MessageContent, ToolCall,
