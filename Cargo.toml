@@ -1,6 +1,6 @@
 [package]
 name = "grok-cli"
-version = "0.2.0-pre"
+version = "0.2.1-pre"
 edition = "2024"
 authors = ["john mcconnell john.microtech@gmail.com"]
 description = "A CLI tool for interacting with Grok AI via X API"
@@ -29,7 +29,7 @@ reqwest = { version = "0.13.3", features = [
     "http2",
 ], default-features = false }
 # Async runtime
-tokio = { version = "1.52.1", features = ["full"] }
+tokio = { version = "1.52.3", features = ["full"] }
 # JSON handling
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -71,7 +71,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Terminal size detection
 terminal_size = "0.4"
 # TOML configuration parsing
-toml = "1.1.0"
+toml = "1.1.2+spec-1.1.0"
 
 # Terminal detection
 is-terminal = "0.4"
