@@ -542,12 +542,16 @@ async fn handle_session_prompt_v2(
             )));
             let notif = SessionNotification::new(session_id.clone(), update);
             send_session_notif(&notif, &cx);
-            agent.save_session_to_disk(&session_id).await.ok();
-            return responder
+            // Respond first so Zed closes the turn immediately — save_session_to_disk
+            // can block on a read-lock if another request holds the write lock, and we
+            // must not delay the PromptResponse while that resolves.
+            let r = responder
                 .respond(agent_client_protocol::schema::PromptResponse::new(
                     agent_client_protocol::schema::StopReason::EndTurn,
                 ))
                 .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+            agent.save_session_to_disk(&session_id).await.ok();
+            return r;
         }
 
         // AI-assisted slash command
@@ -562,12 +566,14 @@ async fn handle_session_prompt_v2(
             )));
             let notif = SessionNotification::new(session_id.clone(), update);
             send_session_notif(&notif, &cx);
-            agent.save_session_to_disk(&session_id).await.ok();
-            return responder
+            // Same rationale: send PromptResponse before the potentially-blocked disk save.
+            let r = responder
                 .respond(agent_client_protocol::schema::PromptResponse::new(
                     agent_client_protocol::schema::StopReason::EndTurn,
                 ))
                 .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+            agent.save_session_to_disk(&session_id).await.ok();
+            return r;
         }
     }
 
@@ -585,13 +591,16 @@ async fn handle_session_prompt_v2(
     let notif = SessionNotification::new(session_id.clone(), update);
     send_session_notif(&notif, &cx);
 
-    agent.save_session_to_disk(&session_id).await.ok();
-
-    responder
+    // Respond before saving to disk: the disk save may briefly contend on the
+    // sessions read-lock (if another request holds the write lock), and we must
+    // not delay the PromptResponse while that resolves.
+    let r = responder
         .respond(agent_client_protocol::schema::PromptResponse::new(
             agent_client_protocol::schema::StopReason::EndTurn,
         ))
-        .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))
+        .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+    agent.save_session_to_disk(&session_id).await.ok();
+    r
 }
 
 /// Run an AI call, stream chunk/tool notifications via cx, and return the

@@ -11,6 +11,45 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased] - 2026-05-10
 
+### Bug Fixes
+
+- **ACP protocol `text` → `content` rename** (`src/acp/protocol.rs`)
+  `ToolCallContent::Text` was serialised with `"type": "text"`, but
+  `agent-client-protocol-schema` ≥ 0.12 renamed that variant to `"content"`.
+  Zed was logging `"skipped malformed list entry … unknown variant text"` and
+  silently dropping every tool-call content block sent to the editor.
+  Fixed by changing `#[serde(rename = "text")]` → `#[serde(rename = "content")]`.
+  *(Source: human observation / AI fix)*
+
+- **Slash commands blocked / `PromptResponse` delayed** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`)
+  `handle_chat_completion` held the `sessions` write lock for its **entire duration**,
+  including all async API calls (which can take 10–300 s).  Any slash command that
+  needed even a read lock (`/context`) or a write lock (`/clear`, `/model`, `/think`)
+  was blocked for that entire duration.  Additionally, `save_session_to_disk` was
+  called *before* `responder.respond(EndTurn)` in all three paths of
+  `handle_session_prompt_v2`; if the read lock inside `save_session_to_disk` was
+  contested, Zed never received the `PromptResponse` and the turn appeared to hang.
+
+  Two fixes applied:
+  1. **Lock-window reduction** — the write lock is now held only for the brief setup
+     phase (user-message push, trimming, compression).  The session state is cloned
+     out before the lock is released, the API call loop runs with no lock held, and a
+     brief write lock is re-acquired only for per-iteration and final state syncs.
+  2. **`PromptResponse`-before-save ordering** — `responder.respond(EndTurn)` is now
+     called *before* `save_session_to_disk` in all three response paths so Zed always
+     closes the turn immediately, regardless of lock contention on the disk save.
+  *(Source: human report / AI analysis & fix)*
+
+- **Context-window overflow in multi-turn tool loops** (`src/acp/acp.rs`)
+  The token-budget trimming (steps 1-4) ran only **once**, before the tool
+  loop, but each loop iteration appends an assistant message plus one or more
+  tool-result messages.  After many iterations of large file reads the context
+  could balloon to 12 M tokens, triggering a 400 from the API.
+  Fixed by re-running `truncate_tool_results`, the count guard, and
+  `trim_to_token_budget` at the **top of every loop iteration** before the API
+  call.  A `WARN` log is emitted whenever mid-loop trimming fires.
+  *(Source: human log report / AI fix)*
+
 ### Highlights
 
 - **ACP connection-layer rewrite** (Task 111.3) — Replaced manual JSON-RPC dispatch with `Agent.builder() + ByteStreams`. Full typed handlers for `initialize`, `session/new`, `session/prompt`, etc.
