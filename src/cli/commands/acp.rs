@@ -12,22 +12,20 @@
 use anyhow::{Result, anyhow};
 use colored::*;
 use serde_json::{Value, json};
-use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
+
 use tokio::net::TcpListener;
-use tokio::sync::{RwLock, oneshot};
+use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
 use crate::acp::protocol::{
-    AGENT_METHOD_NAMES, AcpModeInfo, AcpModelInfo, AcpModelsInfo, AcpModesInfo, AgentCapabilities,
-    AuthEnvVar, AuthMethod, AvailableCommandsUpdate, ContentBlock, ContentChunk, Implementation,
+    AcpModeInfo, AcpModelInfo, AcpModelsInfo, AcpModesInfo, AgentCapabilities, AuthEnvVar,
+    AuthMethod, AvailableCommandsUpdate, ContentBlock, ContentChunk, Implementation,
     InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
-    PermissionOutcome, PromptRequest, PromptResponse, SessionId, SessionInfo, SessionListRequest,
-    SessionListResponse, SessionLoadRequest, SessionNotification, SessionUpdate, StopReason,
-    TextContent,
+    PermissionOutcome, PromptRequest, SessionId, SessionInfo, SessionListRequest,
+    SessionListResponse, SessionLoadRequest, SessionNotification, SessionUpdate, TextContent,
 };
 use crate::acp::slash_commands::{
     self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
@@ -238,8 +236,8 @@ where
         PromptResponse as AcpPromptResp,
     };
     use agent_client_protocol::{
-        Agent, ByteStreams, Client, ConnectionTo, Dispatch, Handled, Responder,
-        on_receive_dispatch, on_receive_notification, on_receive_request,
+        Agent, ByteStreams, Client, ConnectionTo, Dispatch, Responder, on_receive_dispatch,
+        on_receive_notification, on_receive_request,
     };
     use std::sync::atomic::{AtomicBool, Ordering};
     use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
@@ -248,13 +246,13 @@ where
     let initialized = Arc::new(AtomicBool::new(false));
 
     // Each handler closure needs its own Arc handle.
-    let a_init  = Arc::clone(&agent);
-    let a_new   = Arc::clone(&agent);
+    let a_init = Arc::clone(&agent);
+    let a_new = Arc::clone(&agent);
     let a_prompt = Arc::clone(&agent);
-    let a_list  = Arc::clone(&agent);
-    let a_load  = Arc::clone(&agent);
+    let a_list = Arc::clone(&agent);
+    let a_load = Arc::clone(&agent);
     let a_notif = Arc::clone(&agent);
-    let a_ext   = Arc::clone(&agent);
+    let a_ext = Arc::clone(&agent);
     let init_new = Arc::clone(&initialized);
 
     let transport = ByteStreams::new(writer.compat_write(), reader.compat());
@@ -354,9 +352,7 @@ where
         )
         // ── session/load ──────────────────────────────────────────────────────
         .on_receive_request(
-            move |req: AcpLoadReq,
-                  responder: Responder<AcpLoadResp>,
-                  cx: ConnectionTo<Client>| {
+            move |req: AcpLoadReq, responder: Responder<AcpLoadResp>, cx: ConnectionTo<Client>| {
                 let agent = Arc::clone(&a_load);
                 async move {
                     // Convert crate's LoadSessionRequest → Value for our handler.
@@ -376,14 +372,11 @@ where
                     // since we don't know the exact crate-required fields at
                     // compile time (the crate type is #[non_exhaustive]).
                     // Our handler returns null (no history); the spec allows null.
-                    let resp: AcpLoadResp = [
-                        json!({"content": []}),
-                        json!({"messages": []}),
-                        json!({}),
-                    ]
-                    .into_iter()
-                    .find_map(|j| serde_json::from_value(j).ok())
-                    .ok_or_else(|| anyhow!("Cannot construct LoadSessionResponse"))?;
+                    let resp: AcpLoadResp =
+                        [json!({"content": []}), json!({"messages": []}), json!({})]
+                            .into_iter()
+                            .find_map(|j| serde_json::from_value(j).ok())
+                            .ok_or_else(|| anyhow!("Cannot construct LoadSessionResponse"))?;
                     responder.respond(resp)?;
                     // Re-advertise commands so the client's command palette is populated.
                     if !sid.is_empty() {
@@ -410,8 +403,7 @@ where
         .on_receive_dispatch(
             {
                 let agent = Arc::clone(&a_ext);
-                move |msg: Dispatch<ClientRequest, ClientNotification>,
-                      cx: ConnectionTo<Client>| {
+                move |msg: Dispatch<ClientRequest, ClientNotification>, cx: ConnectionTo<Client>| {
                     let agent = Arc::clone(&agent);
                     async move { handle_extension_dispatch(msg, cx, agent).await }
                 }
@@ -471,6 +463,24 @@ fn local_notif_to_crate(
     serde_json::from_value(json).map_err(|e| anyhow!("deserialize crate notif: {e}"))
 }
 
+/// Convert a local `SessionNotification` to the crate's type and send it via
+/// `cx`. Logs a warning if either step fails so callers don't need to handle
+/// the error themselves (notifications are best-effort — a failure must not
+/// abort the session).
+fn send_session_notif(
+    notif: &SessionNotification,
+    cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
+) {
+    match local_notif_to_crate(notif) {
+        Ok(crate_notif) => {
+            if let Err(e) = cx.send_notification(crate_notif) {
+                warn!("cx.send_notification failed: {e}");
+            }
+        }
+        Err(e) => warn!("local_notif_to_crate failed (notification dropped): {e}"),
+    }
+}
+
 // ---------------------------------------------------------------------------
 // 111.3 handler: session/prompt — runs in cx.spawn() for non-blocking I/O.
 // ---------------------------------------------------------------------------
@@ -484,7 +494,7 @@ async fn handle_session_prompt_v2(
     // Convert the crate's PromptRequest → our local type via JSON serde.
     let local_req: PromptRequest = serde_json::to_value(&req)
         .and_then(|v| serde_json::from_value(v))
-        .map_err(|e| agent_client_protocol::Error::new(-32603, format!("")))?;
+        .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
 
     let session_id = SessionId::new(local_req.session_id.0.clone());
 
@@ -514,7 +524,7 @@ async fn handle_session_prompt_v2(
             .respond(agent_client_protocol::schema::PromptResponse::new(
                 agent_client_protocol::schema::StopReason::EndTurn,
             ))
-            .map_err(|e| agent_client_protocol::Error::new(-32603, format!("")))?;
+            .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
         return Ok(());
     }
 
@@ -531,16 +541,13 @@ async fn handle_session_prompt_v2(
                 TextContent::new(&text),
             )));
             let notif = SessionNotification::new(session_id.clone(), update);
-            if let Ok(crate_notif) = local_notif_to_crate(&notif) {
-                cx.send_notification(crate_notif)
-                    .map_err(|e| agent_client_protocol::Error::new(-32603, format!("")))?;
-            }
+            send_session_notif(&notif, &cx);
             agent.save_session_to_disk(&session_id).await.ok();
             return responder
                 .respond(agent_client_protocol::schema::PromptResponse::new(
                     agent_client_protocol::schema::StopReason::EndTurn,
                 ))
-                .map_err(|e| agent_client_protocol::Error::new(-32603, format!("")));
+                .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
         }
 
         // AI-assisted slash command
@@ -548,22 +555,19 @@ async fn handle_session_prompt_v2(
             let _ = chat_logger::log_user(&message_text);
             let text = run_ai_and_collect(&agent, &session_id, &ai_prompt, &cx)
                 .await
-                .map_err(|e| agent_client_protocol::Error::new(-32603, format!("")))?;
+                .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
             let _ = chat_logger::log_assistant(&text);
             let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
                 TextContent::new(&text),
             )));
             let notif = SessionNotification::new(session_id.clone(), update);
-            if let Ok(crate_notif) = local_notif_to_crate(&notif) {
-                cx.send_notification(crate_notif)
-                    .map_err(|e| agent_client_protocol::Error::new(-32603, format!("")))?;
-            }
+            send_session_notif(&notif, &cx);
             agent.save_session_to_disk(&session_id).await.ok();
             return responder
                 .respond(agent_client_protocol::schema::PromptResponse::new(
                     agent_client_protocol::schema::StopReason::EndTurn,
                 ))
-                .map_err(|e| agent_client_protocol::Error::new(-32603, format!("")));
+                .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
         }
     }
 
@@ -571,7 +575,7 @@ async fn handle_session_prompt_v2(
     let _ = chat_logger::log_user(&message_text);
     let text = run_ai_and_collect(&agent, &session_id, &message_text, &cx)
         .await
-        .map_err(|e| agent_client_protocol::Error::new(-32603, format!("")))?;
+        .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
     let _ = chat_logger::log_assistant(&text);
 
     // Send final text chunk
@@ -579,10 +583,7 @@ async fn handle_session_prompt_v2(
         TextContent::new(&text),
     )));
     let notif = SessionNotification::new(session_id.clone(), update);
-    if let Ok(crate_notif) = local_notif_to_crate(&notif) {
-        cx.send_notification(crate_notif)
-            .map_err(|e| agent_client_protocol::Error::new(-32603, format!("")))?;
-    }
+    send_session_notif(&notif, &cx);
 
     agent.save_session_to_disk(&session_id).await.ok();
 
@@ -590,7 +591,7 @@ async fn handle_session_prompt_v2(
         .respond(agent_client_protocol::schema::PromptResponse::new(
             agent_client_protocol::schema::StopReason::EndTurn,
         ))
-        .map_err(|e| agent_client_protocol::Error::new(-32603, format!("")))
+        .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))
 }
 
 /// Run an AI call, stream chunk/tool notifications via cx, and return the
@@ -617,11 +618,7 @@ async fn run_ai_and_collect(
             update = rx.recv() => {
                 if let Some(update) = update {
                     let notif = SessionNotification::new(session_id.clone(), update);
-                    if let Ok(crate_notif) = local_notif_to_crate(&notif) {
-                        if let Err(e) = cx.send_notification(crate_notif) {
-                            warn!("send_notification error: {e}");
-                        }
-                    }
+                    send_session_notif(&notif, cx);
                 }
             }
             // Auto-approve permission requests (full elicitation in 111.6)
@@ -764,7 +761,6 @@ async fn handle_client_notification_v2(
     notif: agent_client_protocol::schema::ClientNotification,
     agent: &GrokAcpAgent,
 ) {
-    use agent_client_protocol::schema::ClientNotification;
     // Serialize to Value so we can inspect method-agnostic fields
     match serde_json::to_value(&notif) {
         Ok(json) => {
@@ -830,295 +826,6 @@ async fn handle_extension_dispatch(
             Ok(())
         }
     }
-}
-
-// ---------------------------------------------------------------------------
-// 111.3 untyped catch-all: session/fork, session/set_model, and any method
-// not recognised as a standard ClientRequest variant.
-// UntypedMessage gives us the raw method name + params as serde_json::Value.
-// ---------------------------------------------------------------------------
-
-async fn handle_untyped_dispatch(
-    msg: agent_client_protocol::Dispatch<
-        agent_client_protocol::UntypedMessage,
-        agent_client_protocol::UntypedMessage,
-    >,
-    cx: agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
-    agent: Arc<GrokAcpAgent>,
-) -> std::result::Result<(), agent_client_protocol::Error> {
-    use agent_client_protocol::Dispatch;
-
-    match msg {
-        Dispatch::Request(req, responder) => {
-            // UntypedMessage exposes raw JSON. Extract method + params.
-            let raw = serde_json::to_value(&req).unwrap_or_else(|_| json!({}));
-            let method = raw["method"].as_str().unwrap_or("").to_string();
-            let params = raw.get("params").cloned().unwrap_or_else(|| json!({}));
-
-            info!("Untyped dispatch: method='{}'", method);
-
-            let result: Result<Value> = match method.as_str() {
-                "session/fork" => handle_session_fork(&params, &agent).await,
-                "session/set_model" => handle_session_set_model(&params, &agent).await,
-                "session/load" => {
-                    let writer_stub = tokio::io::sink();
-                    handle_session_load(
-                        &params,
-                        &agent,
-                        &mut tokio::io::BufWriter::new(writer_stub),
-                    )
-                    .await
-                }
-                other => {
-                    warn!("Unhandled ACP method: '{}'", other);
-                    Err(anyhow!("Method not found: {other}"))
-                }
-            };
-
-            match result {
-                Ok(val) => {
-                    responder
-                        .respond(val)
-                        .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
-                    // Re-send commands update after session/load
-                    if method == "session/load" {
-                        let sid = params["sessionId"].as_str().unwrap_or("");
-                        if !sid.is_empty() {
-                            send_available_commands_update_cx(&cx, sid)
-                                .unwrap_or_else(|e| warn!("commands update: {e}"));
-                        }
-                    }
-                    Ok(())
-                }
-                Err(e) => Err(agent_client_protocol::Error::method_not_found()),
-            }
-        }
-        Dispatch::Notification(_) => Ok(()), // ignore unknown notifications
-        Dispatch::Response(result, router) => {
-            router
-                .respond_with_result(result)
-                .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
-            Ok(())
-        }
-    }
-}
-
-async fn handle_json_rpc<W>(
-    msg: &Value,
-    writer: &mut W,
-    agent: &GrokAcpAgent,
-    pending_permissions: &mut HashMap<String, oneshot::Sender<PermissionOutcome>>,
-    msg_rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
-    initialized: &mut bool,
-) -> Result<()>
-where
-    W: tokio::io::AsyncWrite + Unpin,
-{
-    // Check if it's a request (has "method" and "id")
-    if let (Some(method), Some(id)) = (msg.get("method").and_then(|m| m.as_str()), msg.get("id")) {
-        info!("Handling request: {} (id: {})", method, id);
-
-        let params = msg.get("params").cloned().unwrap_or(json!({}));
-
-        let (response_result, is_method_not_found) = if method == AGENT_METHOD_NAMES.initialize {
-            *initialized = true;
-            (handle_initialize(&params, agent).await, false)
-        } else if method == AGENT_METHOD_NAMES.session_new {
-            // Task 29: if initialize was never sent, apply safe defaults now.
-            ensure_default_initialized(agent, initialized);
-            (handle_session_new(&params, agent).await, false)
-        } else if method == AGENT_METHOD_NAMES.session_prompt {
-            // Auto-recover stale session IDs: clients that reconnect after a
-            // grok restart send the session ID from their previous connection.
-            // Rather than returning "Session not found" (which causes clients
-            // like Gemini CLI and Zed to report "Available commands: none"),
-            // we silently create the session on-demand and re-advertise our
-            // available commands so the client is fully up to speed.
-            let stale_sid = params
-                .get("sessionId")
-                .or_else(|| params.get("session_id"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string());
-            if let Some(ref sid) = stale_sid
-                && !agent.session_exists(sid).await
-            {
-                warn!(
-                    "session/prompt arrived with unknown session '{}' — \
-                     auto-creating session and re-sending available_commands_update",
-                    sid
-                );
-                let new_sid = SessionId::new(sid.clone());
-                let fallback_cwd = std::env::current_dir()
-                    .unwrap_or_default()
-                    .to_string_lossy()
-                    .to_string();
-                if let Err(e) = agent
-                    .initialize_session(new_sid, fallback_cwd, Some(SessionConfig::default()))
-                    .await
-                {
-                    warn!("Failed to auto-create session '{}': {}", sid, e);
-                } else {
-                    // Re-advertise commands so the client can see them now.
-                    if let Err(e) = send_available_commands_update(writer, sid).await {
-                        warn!("Failed to re-send available_commands_update: {}", e);
-                    }
-                }
-            }
-            (
-                handle_session_prompt(&params, agent, writer, pending_permissions, msg_rx).await,
-                false,
-            )
-        } else if method == AGENT_METHOD_NAMES.session_list {
-            (handle_session_list(&params, agent).await, false)
-        } else if method == AGENT_METHOD_NAMES.session_load {
-            (handle_session_load(&params, agent, writer).await, false)
-        } else if method == "session/fork" {
-            (handle_session_fork(&params, agent).await, false)
-        } else if method == "session/set_model" {
-            (handle_session_set_model(&params, agent).await, false)
-        } else {
-            warn!("Unknown method: {}", method);
-            (Err(anyhow!("Method not found: {}", method)), true)
-        };
-
-        let response = match response_result {
-            Ok(result) => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": result
-            }),
-            Err(e) => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "error": {
-                    "code": if is_method_not_found { -32601 } else { -32603 },
-                    "message": e.to_string()
-                }
-            }),
-        };
-
-        // Send response
-        let response_str = serde_json::to_string(&response)?;
-        writer.write_all(response_str.as_bytes()).await?;
-        writer.write_all(b"\n").await?;
-        writer.flush().await?;
-
-        // After a successful session/new, advertise available slash commands.
-        // Per the ACP spec the agent MAY send `available_commands_update`
-        // immediately after the session is created.
-        if method == AGENT_METHOD_NAMES.session_new
-            && let Some(session_id) = response
-                .get("result")
-                .and_then(|r| r.get("sessionId"))
-                .and_then(|s| s.as_str())
-        {
-            info!(
-                "Sending available_commands_update for session: {}",
-                session_id
-            );
-            if let Err(e) = send_available_commands_update(writer, session_id).await {
-                warn!("Failed to send available_commands_update: {}", e);
-            }
-        }
-    } else if let Some(id) = msg.get("id").and_then(|i| i.as_str()) {
-        // This is a JSON-RPC response (has id, no method).
-        // Check if it's a response to a pending permission request.
-        if let Some(sender) = pending_permissions.remove(id) {
-            info!("Received response for pending permission request: {}", id);
-            if let Some(result) = msg.get("result") {
-                match serde_json::from_value::<PermissionOutcome>(result.clone()) {
-                    Ok(outcome) => {
-                        let _ = sender.send(outcome);
-                    }
-                    Err(e) => {
-                        error!("Failed to parse permission outcome: {}", e);
-                        let _ = sender.send(PermissionOutcome::cancel());
-                    }
-                }
-            } else if msg.get("error").is_some() {
-                // Client returned a JSON-RPC error.
-                // Zed DOES support session/request_permission — an error here
-                // indicates a payload format mismatch.  Auto-approve so tools
-                // are not silently blocked while the issue is diagnosed.
-                // Set acp.require_permission = false to skip prompts entirely.
-                warn!(
-                    "Client returned error for permission request {} — \
-                     possible payload mismatch; auto-approving this tool call.",
-                    id
-                );
-                let _ = sender.send(PermissionOutcome::proceed_once());
-            } else {
-                warn!("Received response for {} but it has no 'result' field", id);
-                let _ = sender.send(PermissionOutcome::cancel());
-            }
-        } else {
-            debug!("Received response with unknown id: {}", id);
-        }
-    } else if let Some(method) = msg.get("method").and_then(|m| m.as_str()) {
-        // Notification (no id field — no response should be sent)
-        info!("Received notification: {}", method);
-
-        // Task 28: handle session/update notifications from the client.
-        // Gemini CLI sends this after session/new to advertise its own commands.
-        if method == "session/update"
-            && let Some(params) = msg.get("params")
-        {
-            let session_id_str = params
-                .get("sessionId")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-
-            if let Some(update) = params.get("update") {
-                let update_kind = update
-                    .get("sessionUpdate")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("");
-
-                match update_kind {
-                    "available_commands_update" => {
-                        let commands: Vec<String> = update
-                            .get("availableCommands")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|c| {
-                                        c.get("name").and_then(|n| n.as_str()).map(str::to_string)
-                                    })
-                                    .collect()
-                            })
-                            .unwrap_or_default();
-
-                        info!(
-                            "Received client available_commands_update with {} command(s) \
-                                 for session '{}'",
-                            commands.len(),
-                            session_id_str
-                        );
-                        for cmd in &commands {
-                            debug!("  Client command: {}", cmd);
-                        }
-
-                        // Store for future passthrough support (task 28.2)
-                        if !session_id_str.is_empty() {
-                            let sid = SessionId::new(session_id_str);
-                            if let Err(e) = agent.set_client_commands(&sid, commands).await {
-                                warn!("Failed to store client commands: {}", e);
-                            }
-                        }
-                    }
-                    other => {
-                        debug!(
-                            "Received unhandled session/update kind '{}' — ignoring",
-                            other
-                        );
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(())
 }
 
 /// Resolve a raw workspace path string sent by a client into a `PathBuf` that
@@ -1630,7 +1337,7 @@ async fn handle_session_set_model(params: &Value, agent: &GrokAcpAgent) -> Resul
 async fn handle_session_load<W>(
     params: &Value,
     agent: &GrokAcpAgent,
-    writer: &mut W,
+    _writer: &mut W, // sink stub — commands update sent via cx in the typed handler
 ) -> Result<Value>
 where
     W: tokio::io::AsyncWrite + Unpin,
@@ -1689,16 +1396,11 @@ where
         info!("session/load: '{}' already in memory", session_id_str);
     }
 
-    // Re-advertise slash commands so the client's command palette is populated.
-    if let Err(e) = send_available_commands_update(writer, &session_id_str).await {
-        warn!(
-            "session/load: failed to send available_commands_update: {}",
-            e
-        );
-    }
+    // Note: available_commands_update is sent by the typed session/load handler
+    // in run_acp_session via send_available_commands_update_cx(cx, sid).
+    // The writer here is a sink stub so we skip the writer-based send.
 
     // Per the ACP spec the agent MUST respond with null when done replaying.
-    // Since we have no history to replay, we respond immediately.
     Ok(serde_json::Value::Null)
 }
 
@@ -1725,528 +1427,6 @@ async fn handle_session_fork(params: &Value, agent: &GrokAcpAgent) -> Result<Val
     Ok(json!({ "newSessionId": new_id }))
 }
 
-async fn handle_session_prompt<W>(
-    params: &Value,
-    agent: &GrokAcpAgent,
-    writer: &mut W,
-    pending_permissions: &mut HashMap<String, oneshot::Sender<PermissionOutcome>>,
-    msg_rx: &mut tokio::sync::mpsc::UnboundedReceiver<String>,
-) -> Result<Value>
-where
-    W: tokio::io::AsyncWrite + Unpin,
-{
-    let req: PromptRequest = serde_json::from_value(params.clone())
-        .map_err(|e| anyhow!("Invalid session/prompt parameters: {}", e))?;
-
-    let session_id = SessionId::new(req.session_id.0.clone());
-
-    // Extract text from prompt.
-    let mut message_text = String::new();
-    for block in req.prompt {
-        match block {
-            ContentBlock::Text(text) => message_text.push_str(&text.text),
-            ContentBlock::ResourceLink(link) => {
-                trust_workspace_from_uri(&link.uri, agent);
-                message_text.push_str(&format!("\n[Resource: {} ({})]", link.name, link.uri));
-            }
-            ContentBlock::Resource(res) => {
-                let crate::acp::protocol::EmbeddedResourceResource::TextResourceContents(text_res) =
-                    res.resource;
-                trust_workspace_from_uri(&text_res.uri, agent);
-                message_text.push_str(&format!(
-                    "\n[Context: {}]\n{}\n",
-                    text_res.uri, text_res.text
-                ));
-            }
-        }
-    }
-
-    if message_text.is_empty() {
-        return Err(anyhow!("Empty prompt received"));
-    }
-
-    // Create PermissionBridge for this prompt execution
-    let (perm_bridge, mut perm_req_rx) = PermissionBridge::new();
-    let perm_bridge_arc = Arc::new(perm_bridge);
-
-    // --- Slash command detection & dispatch ---
-    if let Some(cmd) = parse_slash_command(&message_text) {
-        info!("Slash command detected: {:?}", cmd);
-
-        if let Some(builtin) = handle_builtin(&cmd) {
-            let response_text = match builtin {
-                BuiltinResult::Text(text) => text,
-                BuiltinResult::ClearHistory => {
-                    let _ = agent.clear_session_history(&session_id).await;
-                    let _ = chat_logger::log_system("Conversation history cleared");
-                    "✅ Conversation history cleared. Starting fresh!".to_string()
-                }
-                BuiltinResult::SwitchModel(model_name) => {
-                    match agent
-                        .set_session_model(&session_id, model_name.clone())
-                        .await
-                    {
-                        Ok(()) => format!("✅ Switched to model **`{model_name}`**."),
-                        Err(e) => format!("❌ Could not switch model: {e}"),
-                    }
-                }
-                BuiltinResult::ShowContext => match agent.get_session_config(&session_id).await {
-                    Ok(cfg) => {
-                        let msg_count = agent
-                            .get_session_message_count(&session_id)
-                            .await
-                            .unwrap_or(0);
-                        format_context_text(
-                            &session_id.0,
-                            &cfg.model,
-                            cfg.temperature,
-                            cfg.max_tokens,
-                            msg_count,
-                        )
-                    }
-                    Err(e) => format!("❌ Could not retrieve context: {e}"),
-                },
-                // Full recall injection is implemented in a follow-up task.
-                BuiltinResult::ShowBayes => match agent.get_bayes_visualize(&session_id).await {
-                    Ok(text) => text,
-                    Err(e) => format!("❌ Bayesian state unavailable: {e}"),
-                },
-                BuiltinResult::ResetBayes => match agent.reset_bayes(&session_id).await {
-                    Ok(text) => text,
-                    Err(e) => format!("❌ Could not reset Bayesian priors: {e}"),
-                },
-                BuiltinResult::ExplainBayes => match agent.get_bayes_explain(&session_id).await {
-                    Ok(text) => text,
-                    Err(e) => format!("Bayesian explanation unavailable: {e}"),
-                },
-                BuiltinResult::SetGoal(goal) => {
-                    match agent.set_session_goal(&session_id, goal).await {
-                        Ok(text) => text,
-                        Err(e) => format!("Could not set goal: {e}"),
-                    }
-                }
-                BuiltinResult::ClearGoal => match agent.clear_session_goal(&session_id).await {
-                    Ok(text) => text,
-                    Err(e) => format!("Could not clear goal: {e}"),
-                },
-                BuiltinResult::ShowGoal => match agent.get_session_goal(&session_id).await {
-                    Ok(text) => text,
-                    Err(e) => format!("Could not retrieve goal: {e}"),
-                },
-                BuiltinResult::ShowVisualizer => {
-                    crate::visualizer::generate_pipeline_markdown(None)
-                }
-                BuiltinResult::SetThinkingMode(opt_mode) => {
-                    match opt_mode {
-                        Some(mode) => {
-                            let is_off = matches!(mode, crate::config::ThinkingMode::Off);
-                            let label = mode
-                                .as_api_str()
-                                .map(|s| s.to_string())
-                                .unwrap_or_else(|| "off".to_string());
-                            match agent.set_thinking_mode(&session_id, mode).await {
-                                Ok(()) => {
-                                    if is_off {
-                                        "🔇 Thinking mode **disabled**. Standard fast responses — \
-                                         no reasoning trace will be generated.\n\n\
-                                         Use `/think low` or `/think high` to enable reasoning."
-                                            .to_string()
-                                    } else {
-                                        format!(
-                                            "🧠 Thinking mode set to **{label}**.\n\n\
-                                             Subsequent responses will include a reasoning trace \
-                                             (`reasoning_effort = \"{label}\"` sent to the API). \
-                                             Responses may be slower but more thorough.\n\n\
-                                             Use `/think off` to disable.",
-                                        )
-                                    }
-                                }
-                                Err(e) => format!("❌ Could not set thinking mode: {e}"),
-                            }
-                        }
-                        None => {
-                            // Show current mode — unchanged
-                            match agent.get_thinking_mode(&session_id).await {
-                                Some(mode) => {
-                                    let label = mode
-                                        .as_api_str()
-                                        .map(|s| s.to_string())
-                                        .unwrap_or_else(|| "off".to_string());
-                                    format!(
-                                        "🧠 Current thinking mode: **{}**\n\n\
-                                         Available modes:\n\
-                                         - `off` — standard response, no reasoning trace (default)\n\
-                                         - `low` — light reasoning; faster\n\
-                                         - `high` — deep reasoning; most thorough",
-                                        label
-                                    )
-                                }
-                                None => "Session not found.".to_string(),
-                            }
-                        }
-                    }
-                }
-                // For now we display the archive listing so the user can see
-                // what is available and confirm the command was recognised.
-                BuiltinResult::RecallArchive(chunk_id) => {
-                    let base = slash_commands::format_archives_text(Some(&session_id.0));
-                    match chunk_id {
-                        Some(id) => format!(
-                            "{}\n\n_Recall of chunk {} will be fully implemented in a follow-up._",
-                            base, id
-                        ),
-                        None => base,
-                    }
-                }
-            };
-
-            send_text_update(writer, &session_id.0, &response_text).await?;
-            return Ok(serde_json::to_value(PromptResponse::new(
-                StopReason::EndTurn,
-            ))?);
-        }
-
-        if let Some(ai_prompt) = slash_commands::command_to_prompt(&cmd) {
-            let _ = chat_logger::log_user(&message_text);
-
-            // Use the same select! loop as the normal chat path so that:
-            //   1. Tool-call progress updates (ToolCall / ToolCallUpdate) are
-            //      forwarded to the client while the AI is working.
-            //   2. Permission requests are properly handled (perm_req_rx polled).
-            //   3. Incoming client messages (e.g. session/cancel) are not lost.
-            let (slash_tx, mut slash_rx) = tokio::sync::mpsc::unbounded_channel();
-            let slash_chat_fut = agent.handle_chat_completion(
-                &session_id,
-                &ai_prompt,
-                None,
-                Some(slash_tx),
-                Some(perm_bridge_arc.clone()),
-            );
-            tokio::pin!(slash_chat_fut);
-
-            let slash_response;
-            loop {
-                tokio::select! {
-                    // 1. Forward tool-call / chunk updates to the client
-                    update = slash_rx.recv() => {
-                        if let Some(update) = update {
-                            let params = SessionNotification::new(session_id.clone(), update);
-                            let notification = json!({
-                                "jsonrpc": "2.0",
-                                "method": "session/update",
-                                "params": params
-                            });
-                            let msg = serde_json::to_string(&notification)?;
-                            writer.write_all(msg.as_bytes()).await?;
-                            writer.write_all(b"\n").await?;
-                            writer.flush().await?;
-                        }
-                    }
-
-                    // 2. Permission requests from the agent
-                    perm_req = perm_req_rx.recv() => {
-                        if let Some((req_id, params, outcome_tx)) = perm_req {
-                            info!("Slash cmd: forwarding permission request {} to client", req_id);
-                            let request = json!({
-                                "jsonrpc": "2.0",
-                                "id": req_id,
-                                "method": "session/request_permission",
-                                "params": params
-                            });
-                            let msg = serde_json::to_string(&request)?;
-                            if let Err(e) = writer.write_all(msg.as_bytes()).await {
-                                error!("Failed to write permission request: {}", e);
-                                let _ = outcome_tx.send(PermissionOutcome::cancel());
-                                continue;
-                            }
-                            writer.write_all(b"\n").await?;
-                            writer.flush().await?;
-                            pending_permissions.insert(req_id.clone(), outcome_tx);
-                        }
-                    }
-
-                    // 3. Incoming client messages (e.g. permission responses / cancel)
-                    line = msg_rx.recv() => {
-                        match line {
-                            Some(line) => {
-                                if let Ok(json_msg) = serde_json::from_str::<Value>(&line) {
-                                    let id_opt = json_msg.get("id")
-                                        .and_then(|v| v.as_str().map(str::to_string)
-                                            .or_else(|| v.as_u64().map(|n| n.to_string())));
-                                    if let Some(id) = id_opt
-                                        && let Some(sender) = pending_permissions.remove(&id)
-                                    {
-                                        if let Some(result) = json_msg.get("result") {
-                                            match serde_json::from_value::<PermissionOutcome>(result.clone()) {
-                                                Ok(outcome) => { let _ = sender.send(outcome); }
-                                                Err(_) => { let _ = sender.send(PermissionOutcome::cancel()); }
-                                            }
-                                        } else if json_msg.get("error").is_some() {
-                                            warn!("Slash cmd: client error for permission {} — auto-approving", id);
-                                            let _ = sender.send(PermissionOutcome::proceed_once());
-                                        } else {
-                                            let _ = sender.send(PermissionOutcome::cancel());
-                                        }
-                                    }
-                                }
-                            }
-                            None => {
-                                warn!("Client disconnected while processing slash command");
-                                return Err(anyhow!("Client disconnected during slash command"));
-                            }
-                        }
-                    }
-
-                    // 4. Final result from the AI
-                    res = &mut slash_chat_fut => {
-                        slash_response = res?;
-                        break;
-                    }
-                }
-            }
-
-            let slash_text = if slash_response.is_empty() {
-                "[No response content]".to_string()
-            } else {
-                slash_response
-            };
-            let _ = chat_logger::log_assistant(&slash_text);
-            send_text_update(writer, &session_id.0, &slash_text).await?;
-            return Ok(serde_json::to_value(PromptResponse::new(
-                StopReason::EndTurn,
-            ))?);
-        }
-    }
-
-    // Log user prompt
-    let _ = chat_logger::log_user(&message_text);
-
-    info!("Calling Grok API for session {}...", session_id.0);
-    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-    let chat_fut = agent.handle_chat_completion(
-        &session_id,
-        &message_text,
-        None,
-        Some(tx),
-        Some(perm_bridge_arc),
-    );
-    tokio::pin!(chat_fut);
-
-    let response_text;
-    loop {
-        tokio::select! {
-            // 1. Agent updates (notifications like tool calls)
-            update = rx.recv() => {
-                if let Some(update) = update {
-                    let params = SessionNotification::new(session_id.clone(), update);
-                    let notification = json!({
-                        "jsonrpc": "2.0",
-                        "method": "session/update",
-                        "params": params
-                    });
-                    let msg = serde_json::to_string(&notification)?;
-                    writer.write_all(msg.as_bytes()).await?;
-                    writer.write_all(b"\n").await?;
-                    writer.flush().await?;
-                }
-            }
-
-            // 2. Permission requests from the agent
-            perm_req = perm_req_rx.recv() => {
-                if let Some((req_id, params, outcome_tx)) = perm_req {
-                    info!("Forwarding permission request {} to client (tool: {})",
-                          req_id, params.tool_call.tool_call_id);
-                    let request = json!({
-                        "jsonrpc": "2.0",
-                        "id": req_id,
-                        "method": "session/request_permission",
-                        "params": params
-                    });
-
-                    let msg = serde_json::to_string(&request)?;
-                    if let Err(e) = writer.write_all(msg.as_bytes()).await {
-                        error!("Failed to write permission request: {}", e);
-                        let _ = outcome_tx.send(PermissionOutcome::cancel());
-                        continue;
-                    }
-                    writer.write_all(b"\n").await?;
-                    writer.flush().await?;
-
-                    // Track this pending permission so handle_json_rpc can complete it
-                    pending_permissions.insert(req_id.clone(), outcome_tx);
-                }
-            }
-
-            // 3. New messages from the client (e.g. permission responses)
-            line = msg_rx.recv() => {
-                match line {
-                    Some(line) => {
-                        if let Ok(json_msg) = serde_json::from_str::<Value>(&line) {
-                            // Check if it's a response to a pending permission request.
-                            // We handle this directly here to avoid async recursion with handle_json_rpc.
-                            // Accept both string and numeric JSON-RPC response IDs.
-                            let id_opt = json_msg.get("id")
-                                .and_then(|v| v.as_str().map(str::to_string)
-                                    .or_else(|| v.as_u64().map(|n| n.to_string())));
-                            if let Some(id) = id_opt {
-                                if let Some(sender) = pending_permissions.remove(&id) {
-                                    info!("Received response for pending permission request: {}", id);
-                                    if let Some(result) = json_msg.get("result") {
-                                        match serde_json::from_value::<PermissionOutcome>(result.clone()) {
-                                            Ok(outcome) => {
-                                                let _ = sender.send(outcome);
-                                            }
-                                            Err(e) => {
-                                                error!("Failed to parse permission outcome: {}", e);
-                                                let _ = sender.send(PermissionOutcome::cancel());
-                                            }
-                                        }
-                                    } else if json_msg.get("error").is_some() {
-                                        // Client returned a JSON-RPC error (e.g. "Method not found").
-                                        // Zed DOES support session/request_permission — if we get an
-                                        // error it means a payload format mismatch.  Auto-approve so
-                                        // tools are not silently blocked while the issue is diagnosed.
-                                        // To skip permission prompts entirely, set
-                                        // acp.require_permission = false in your config.
-                                        warn!(
-                                            "Client returned error for permission request {} — \
-                                             possible payload mismatch; auto-approving this tool call.",
-                                            id
-                                        );
-                                        let _ = sender.send(PermissionOutcome::proceed_once());
-                                    } else {
-                                        warn!("Received response for {} but it has no 'result' field", id);
-                                        let _ = sender.send(PermissionOutcome::cancel());
-                                    }
-                                } else {
-                                    // If it's not a permission response, it might be a new request.
-                                    // In that case, we should probably ignore it or log a warning
-                                    // because we are busy processing a prompt.
-                                    debug!("Received message with unknown/untethered id while in prompt: {}", id);
-                                }
-                            }
-                        }
-                    }
-                    None => {
-                        // The channel was closed (e.g., client disconnected).
-                        // Break out of the loop to avoid an infinite spin.
-                        warn!("Client disconnected while processing prompt");
-                        return Err(anyhow!("Client disconnected during prompt"));
-                    }
-                }
-            }
-
-            // 4. Final chat result
-            res = &mut chat_fut => {
-                response_text = res?;
-                break;
-            }
-        }
-    }
-
-    let final_text = if response_text.is_empty() {
-        "[No response content]".to_string()
-    } else {
-        response_text
-    };
-    let _ = chat_logger::log_assistant(&final_text);
-    send_text_update(writer, &session_id.0, &final_text).await?;
-
-    // Auto-save session to disk for resume support (task 111.5)
-    if let Err(e) = agent.save_session_to_disk(&session_id).await {
-        warn!("Auto-save failed for '{}': {}", session_id.0, e);
-    }
-
-    Ok(serde_json::to_value(PromptResponse::new(
-        StopReason::EndTurn,
-    ))?)
-}
-
-/// Send an `available_commands_update` notification to the client advertising
-/// all slash commands that this agent supports.
-///
-/// Per the ACP spec this is a JSON-RPC notification (no `id` field) sent over
-/// the same channel as regular responses.  It MUST be sent after the
-/// `session/new` response so the client can populate its command palette.
-async fn send_available_commands_update<W>(writer: &mut W, session_id: &str) -> Result<()>
-where
-    W: tokio::io::AsyncWrite + Unpin,
-{
-    let commands = slash_commands::get_available_commands();
-    let count = commands.len();
-
-    let update = SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(commands));
-    let params = SessionNotification::new(SessionId::new(session_id), update);
-
-    let notification = json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": params
-    });
-
-    let msg = serde_json::to_string(&notification)?;
-    info!(
-        "Sending available_commands_update ({} commands) for session {}",
-        count, session_id
-    );
-    debug!("available_commands_update payload: {}", msg);
-
-    writer.write_all(msg.as_bytes()).await?;
-    writer.write_all(b"\n").await?;
-    writer.flush().await?;
-
-    info!("available_commands_update sent successfully");
-    Ok(())
-}
-
-/// Helper to send text update notification
-async fn send_text_update<W>(writer: &mut W, session_id: &str, text: &str) -> Result<()>
-where
-    W: tokio::io::AsyncWrite + Unpin,
-{
-    info!(
-        "Sending text update for session {}: {} chars",
-        session_id,
-        text.len()
-    );
-    debug!("Text content: {}", text);
-
-    // Create the content block with text
-    let content = ContentBlock::Text(TextContent::new(text));
-    debug!("Created content block: {:?}", content);
-
-    // Create the update chunk
-    let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(content));
-    debug!("Created update: {:?}", update);
-
-    // Create the notification params
-    let params = SessionNotification::new(SessionId::new(session_id), update);
-    debug!("Created notification params: {:?}", params);
-
-    // ACP uses `session/update` notification
-    let notification = json!({
-        "jsonrpc": "2.0",
-        "method": "session/update",
-        "params": params
-    });
-
-    let msg = serde_json::to_string(&notification)?;
-    info!("Sending notification JSON:");
-    info!("{}", msg);
-
-    // Pretty print for debugging
-    if let Ok(pretty) = serde_json::to_string_pretty(&notification) {
-        debug!("Pretty notification:\n{}", pretty);
-    }
-
-    writer.write_all(msg.as_bytes()).await?;
-    writer.write_all(b"\n").await?;
-    writer.flush().await?;
-    info!("Text update notification sent successfully");
-    Ok(())
-}
-
-/// Test ACP connection to a running server
 async fn test_acp_connection(address: &str, config: &Config) -> Result<()> {
     print_info(&format!("Testing ACP connection to {}", address));
 
