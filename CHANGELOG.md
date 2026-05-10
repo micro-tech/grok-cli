@@ -26,10 +26,12 @@ See [Doc/CHANGELOG_FULL.md](Doc/CHANGELOG_FULL.md) for the complete unreleased n
 
 ## [0.1.10] — 2024-10-04 (Summary)
 
-- Task Graph Engine, Skill Auto-Activation, Session DNA, Plugin Sandbox
+- Task Graph Engine, Skill Auto-Activation, **Session DNA**, Plugin Sandbox
 - External directory access with approval + audit logging
 - Chat logging, search, and replay
 - ACP workspace access fixes
+
+See [Doc/SESSION_DNA.md](Doc/SESSION_DNA.md) for details on the Session DNA system.
 
 ---
 
