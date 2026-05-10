@@ -15,7 +15,7 @@ impl TreeSitterScanner {
     pub fn new() -> Self {
         let mut parser = Parser::new();
         parser
-            .set_language(tree_sitter_rust::language())
+            .set_language(&tree_sitter_rust::LANGUAGE.into())
             .expect("Failed to load tree-sitter-rust grammar");
         Self { parser }
     }
@@ -31,7 +31,7 @@ impl TreeSitterScanner {
         let root = tree.root_node();
 
         for i in 0..root.child_count() {
-            if let Some(child) = root.child(i) {
+            if let Some(child) = root.child(i as u32) {
                 match child.kind() {
                     "function_item" | "struct_item" | "enum_item" | "trait_item" | "impl_item" => {
                         if let Some(name_node) = child.child_by_field_name("name") {

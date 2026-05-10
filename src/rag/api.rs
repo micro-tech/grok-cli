@@ -1,6 +1,6 @@
 //! TGS-RAG public API.
 
-use crate::rag::graph::ProjectGraph;
+use crate::rag::graph::{GraphNode, ProjectGraph};
 use crate::rag::retrieval::hybrid::HybridRetriever;
 use crate::rag::retrieval::graph_expansion::expand_with_neighbors;
 use crate::rag::retrieval::reranker::rerank;
@@ -27,7 +27,8 @@ impl TgsRag {
 
         rerank(&mut results);
 
-        let expanded = expand_with_neighbors(&self.graph, &results.iter().map(|(n, _)| *n).collect::<Vec<_>>(), 3);
+        let seeds: Vec<&GraphNode> = results.iter().map(|(n, _)| *n).collect();
+        let expanded = expand_with_neighbors(&self.graph, &seeds, 3);
         let compressed = compress_context(&expanded, self.config.max_context_tokens);
 
         compressed

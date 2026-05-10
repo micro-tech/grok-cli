@@ -4,7 +4,7 @@
 //! and that tool loops are properly detected and terminated.
 
 use grok_cli::GrokClient;
-use serde_json::{Value, json};
+use serde_json::json;
 
 /// Test that tool messages are correctly formatted with ChatMessage::tool()
 #[tokio::test]
@@ -62,6 +62,7 @@ async fn test_tool_message_format() {
                     }
                 }
             })]),
+            None,
         )
         .await;
 
@@ -125,7 +126,7 @@ async fn test_tool_loop_prevention() {
         }
 
         let result = client
-            .chat_completion_with_history(&messages, 0.7, 150, "grok-2-latest", Some(tools.clone()))
+            .chat_completion_with_history(&messages, 0.7, 150, "grok-2-latest", Some(tools.clone()), None)
             .await
             .expect("API call failed");
 

@@ -3,7 +3,7 @@
 //! Combines tree-sitter scanning + syn extraction to build and update
 //! the semantic entity graph for a project.
 
-use crate::rag::graph::{GraphEdge, GraphNode, NodeKind, ProjectGraph};
+use crate::rag::graph::{GraphNode, NodeKind, ProjectGraph};
 use crate::rag::parser::{syn_extractor::SynExtractor, tree_sitter_scanner::TreeSitterScanner};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;

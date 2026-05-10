@@ -27,8 +27,9 @@ impl Bm25Index {
         let mut freqs = HashMap::new();
         for token in tokens {
             let t = token.to_lowercase();
-            *freqs.entry(t.clone()).or_insert(0) += 1;
-            self.index.entry(t).or_default().insert(doc_id.clone(), *freqs.get(&t).unwrap());
+            let count = freqs.entry(t.clone()).or_insert(0);
+            *count += 1;
+            self.index.entry(t).or_default().insert(doc_id.clone(), *count);
         }
 
         // update average doc length

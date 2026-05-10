@@ -2,11 +2,9 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use crate::rag::graph::{GraphNode, NodeKind, ProjectGraph};
-    use crate::rag::parser::syn_extractor::SynExtractor;
-    use crate::rag::parser::tree_sitter_scanner::TreeSitterScanner;
     use crate::rag::index::bm25::Bm25Index;
+    use crate::rag::parser::syn_extractor::SynExtractor;
     use crate::rag::retrieval::hybrid::HybridRetriever;
     use std::path::PathBuf;
 

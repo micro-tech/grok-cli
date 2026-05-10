@@ -33,7 +33,7 @@ pub enum Visibility {
 }
 
 /// A node in the semantic entity graph.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct GraphNode {
     pub id: NodeId,
     pub kind: NodeKind,
@@ -45,7 +45,6 @@ pub struct GraphNode {
     pub signature: Option<String>,
     pub visibility: Visibility,
     pub attributes: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
     pub embedding: Option<Vec<f32>>,
 }
 

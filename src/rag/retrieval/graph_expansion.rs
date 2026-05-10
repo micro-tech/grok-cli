@@ -3,11 +3,11 @@
 use crate::rag::graph::{GraphNode, ProjectGraph};
 use std::collections::HashSet;
 
-pub fn expand_with_neighbors(
-    graph: &ProjectGraph,
-    seed_nodes: &[&GraphNode],
+pub fn expand_with_neighbors<'a>(
+    graph: &'a ProjectGraph,
+    seed_nodes: &'a [&'a GraphNode],
     max_neighbors: usize,
-) -> Vec<&GraphNode> {
+) -> Vec<&'a GraphNode> {
     let mut seen = HashSet::new();
     let mut results = Vec::new();
 

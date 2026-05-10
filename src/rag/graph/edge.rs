@@ -15,7 +15,7 @@ pub enum EdgeKind {
 }
 
 /// An edge in the semantic entity graph.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct GraphEdge {
     pub from: Uuid,
     pub to: Uuid,
