@@ -6,19 +6,22 @@
 
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
-> **Latest (v0.1.10)**: Session persistence, hierarchical config, skill auto-activation, ACP workspace fixes, external directory access, and chat logging.
+> **Latest (v0.1.10)**: Session DNA, session persistence + fork, hierarchical config, skill auto-activation, ACP improvements, external access, chat logging, and context compression.
 
 ## ✨ Features
 
 - **Interactive Terminal UI** — Gemini-style rich prompts, adaptive ASCII art, progress indicators, and color output
 - **Session Persistence** — Save, load, list, and fork conversations (`/save`, `/load`, `/list`)
+- **Session DNA** — Persistent personality & behavior config (`session_dna.json`) injected into system prompts
 - **Skill Auto-Activation** — Skills activate automatically based on project context and keywords
 - **Task Graph Engine** — Run complex multi-step workflows with dependency resolution
 - **Hierarchical Configuration** — Project-local overrides via `.grok/config.toml`
 - **Context Discovery** — Merges `.zed/rules`, `.claude.md`, `GEMINI.md`, and more
 - **External Access Controls** — Securely read files outside the project with approval + audit logging
 - **Chat Logging & Replay** — Automatic logging with search and history replay
-- **Zed Editor Integration** — Full Agent Client Protocol (ACP) support
+- **Context Compression** — AI-powered summarization + archiving when context fills up
+- **Zed Editor Integration** — Full Agent Client Protocol (ACP) support with session resume/fork
+- **Thinking Modes** — `/think off|low|high` for controllable reasoning effort
 - **Code Intelligence** — Explain, review, generate, and refactor across any language
 - **Starlink Optimizations** — Smart retries and timeout handling for satellite connections
 

@@ -1,5 +1,8 @@
 # Grok CLI Configuration Guide
 
+> **Full detailed version** — This is the complete configuration reference.
+> For a quick overview, see the [root README](../README.md).
+
 This document explains how to configure the Grok CLI using `.env` files.
 
 ## Model Context Budgets
@@ -585,4 +588,4 @@ grok query "What is the meaning of life?"
 - View help: `grok --help`
 - Check version: `grok --version`
 
-For more information, see the [README](README.md) or [API documentation](docs/API.md).
+For more information, see the [root README](../README.md).
