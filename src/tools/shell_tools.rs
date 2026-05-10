@@ -6,8 +6,11 @@ use tokio::process::Command;
 use tokio::time::{Duration, timeout};
 use tracing::warn;
 
-/// Hard execution timeout for every shell command.
-const SHELL_COMMAND_TIMEOUT_SECS: u64 = 30;
+/// Default hard execution timeout for every shell command.
+/// 300 s (5 min) is a safer default on Windows — `cargo build` and
+/// `git status` on slow or Starlink-connected machines routinely exceed 30 s.
+/// Override by passing an explicit value to [`run_shell_command`].
+const DEFAULT_SHELL_TIMEOUT_SECS: u64 = 300;
 
 /// Run a shell command with a hard execution timeout.
 ///
@@ -19,18 +22,32 @@ const SHELL_COMMAND_TIMEOUT_SECS: u64 = 30;
 /// - On **Windows**, PowerShell is invoked with `-NonInteractive -NoProfile
 ///   -ExecutionPolicy Bypass` to prevent profile side-effects and hangs.
 ///   Bash-style `&&` chaining is rewritten to PowerShell `;`.
-/// - Execution is bounded by [`SHELL_COMMAND_TIMEOUT_SECS`]; if the process
-///   does not finish in time an error is returned (the child is killed by the
-///   OS when the `Command` future is dropped).
+/// - Execution is bounded by `timeout_secs` (defaults to
+///   [`DEFAULT_SHELL_TIMEOUT_SECS`] when 0 is passed); if the process does not
+///   finish in time an error is returned (the child is killed by the OS when
+///   the `Command` future is dropped).
 ///
 /// # Errors
 /// Returns an error if the command is on the denylist, fails to spawn, or
 /// exceeds the timeout.
-pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Result<String> {
+///
+/// Pass `timeout_secs = 0` to use the built-in [`DEFAULT_SHELL_TIMEOUT_SECS`]
+/// default (300 s).  Pass an explicit value to honour the project config
+/// (`tools.shell.command_timeout_secs`).
+pub async fn run_shell_command(
+    command: &str,
+    security: &SecurityPolicy,
+    timeout_secs: u64,
+) -> Result<String> {
     security.validate_shell_command(command)?;
 
     let cwd = security.working_directory().to_path_buf();
-    let timeout_duration = Duration::from_secs(SHELL_COMMAND_TIMEOUT_SECS);
+    let effective_timeout = if timeout_secs == 0 {
+        DEFAULT_SHELL_TIMEOUT_SECS
+    } else {
+        timeout_secs
+    };
+    let timeout_duration = Duration::from_secs(effective_timeout);
 
     let spawn_result = if cfg!(target_os = "windows") {
         // Convert bash-style && to PowerShell-style ; for command chaining.
@@ -61,12 +78,12 @@ pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Resu
         Err(_) => {
             warn!(
                 command = %command,
-                timeout_secs = SHELL_COMMAND_TIMEOUT_SECS,
+                timeout_secs = effective_timeout,
                 "Shell command timed out"
             );
             return Err(anyhow!(
                 "Command timed out after {}s: {}",
-                SHELL_COMMAND_TIMEOUT_SECS,
+                effective_timeout,
                 command
             ));
         }
@@ -93,7 +110,7 @@ mod tests {
     #[tokio::test]
     async fn echo_command_succeeds() {
         let policy = SecurityPolicy::new();
-        let result = run_shell_command("echo hello", &policy).await;
+        let result = run_shell_command("echo hello", &policy, 0).await;
         assert!(result.is_ok(), "echo should succeed: {:?}", result);
         let out = result.unwrap();
         assert!(
@@ -107,7 +124,7 @@ mod tests {
     async fn blocked_command_is_rejected() {
         let policy = SecurityPolicy::new();
         // "rm -rf" is on the denylist; must be rejected before spawning.
-        let result = run_shell_command("rm -rf /tmp/should_not_exist", &policy).await;
+        let result = run_shell_command("rm -rf /tmp/should_not_exist", &policy, 0).await;
         assert!(result.is_err(), "dangerous command should be blocked");
     }
 }

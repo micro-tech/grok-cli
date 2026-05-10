@@ -28,8 +28,8 @@ mod tests {
     use std::fs;
     use tempfile::TempDir;
 
-    #[test]
-    fn test_file_operations() {
+    #[tokio::test]
+    async fn test_file_operations() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
         let path_str = file_path.to_str().unwrap();
@@ -38,22 +38,22 @@ mod tests {
         security.add_trusted_directory(temp_dir.path());
 
         // Test write_file
-        let write_result = write_file(path_str, "Hello, world!", &security);
+        let write_result = write_file(path_str, "Hello, world!", &security).await;
         assert!(write_result.is_ok());
 
         // Test read_file
-        let read_result = read_file(path_str, &security);
+        let read_result = read_file(path_str, &security).await;
         assert!(read_result.is_ok());
         assert_eq!(read_result.unwrap(), "Hello, world!");
 
-        // Test list_directory
+        // Test list_directory (sync — no .await needed)
         let list_result = list_directory(temp_dir.path().to_str().unwrap(), &security);
         assert!(list_result.is_ok());
         assert!(list_result.unwrap().contains("test.txt"));
     }
 
-    #[test]
-    fn test_read_multiple_files() {
+    #[tokio::test]
+    async fn test_read_multiple_files() {
         let temp_dir = TempDir::new().unwrap();
         let file1 = temp_dir.path().join("file1.txt");
         let file2 = temp_dir.path().join("file2.txt");
@@ -68,7 +68,7 @@ mod tests {
             file2.to_str().unwrap().to_string(),
         ];
 
-        let result = read_multiple_files(paths, &security);
+        let result = read_multiple_files(paths, &security).await;
         assert!(result.is_ok());
         let output = result.unwrap();
         assert!(output.contains("--- File:"));
@@ -76,8 +76,8 @@ mod tests {
         assert!(output.contains("Content 2"));
     }
 
-    #[test]
-    fn test_list_code_definitions() {
+    #[tokio::test]
+    async fn test_list_code_definitions() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test_code.rs");
         let code = r#"
@@ -100,7 +100,7 @@ mod tests {
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
 
-        let result = list_code_definitions(file_path.to_str().unwrap(), &security);
+        let result = list_code_definitions(file_path.to_str().unwrap(), &security).await;
         assert!(result.is_ok());
         let output = result.unwrap();
         assert!(output.contains("struct MyStruct"));
@@ -111,8 +111,8 @@ mod tests {
         assert!(!output.contains("println!"));
     }
 
-    #[test]
-    fn test_glob_search() {
+    #[tokio::test]
+    async fn test_glob_search() {
         let temp_dir = TempDir::new().unwrap();
         let file1 = temp_dir.path().join("file1.txt");
         let file2 = temp_dir.path().join("file2.rs");
@@ -123,13 +123,14 @@ mod tests {
         security.add_trusted_directory(temp_dir.path());
 
         let pattern = temp_dir.path().join("*.txt");
+        // glob_search is sync — no .await needed.
         let result = glob_search(pattern.to_str().unwrap(), &security);
         assert!(result.is_ok());
         assert!(result.unwrap().contains("file1.txt"));
     }
 
-    #[test]
-    fn test_search_content() {
+    #[tokio::test]
+    async fn test_search_content() {
         let temp_dir = TempDir::new().unwrap();
         let file1 = temp_dir.path().join("test_grep.txt");
         fs::write(&file1, "hello world\nfoo bar\nhello rust").unwrap();
@@ -137,6 +138,7 @@ mod tests {
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
 
+        // search_file_content is sync — no .await needed.
         let result = search_file_content(file1.to_str().unwrap(), "hello", &security);
         assert!(result.is_ok());
         let output = result.unwrap();
@@ -144,8 +146,8 @@ mod tests {
         assert!(output.contains("3: hello rust"));
     }
 
-    #[test]
-    fn test_replace() {
+    #[tokio::test]
+    async fn test_replace() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("replace.txt");
         let path_str = file_path.to_str().unwrap();
@@ -156,24 +158,24 @@ mod tests {
         fs::write(&file_path, "Hello world, hello universe").unwrap();
 
         // Test successful replace
-        let result = replace(path_str, "hello", "hi", None, &security);
+        let result = replace(path_str, "hello", "hi", None, &security).await;
         assert!(result.is_ok());
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Hello world, hi universe");
 
         // Test replace with expected count
-        let result = replace(path_str, "universe", "cosmos", Some(1), &security);
+        let result = replace(path_str, "universe", "cosmos", Some(1), &security).await;
         assert!(result.is_ok());
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Hello world, hi cosmos");
 
         // Test replace not found
-        let result = replace(path_str, "missing", "nothing", None, &security);
+        let result = replace(path_str, "missing", "nothing", None, &security).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
 
         // Test replace count mismatch
-        let result = replace(path_str, "hi", "hey", Some(5), &security);
+        let result = replace(path_str, "hi", "hey", Some(5), &security).await;
         assert!(result.is_err());
         assert!(
             result

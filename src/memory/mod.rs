@@ -46,6 +46,8 @@
 
 // ── Sub-modules ───────────────────────────────────────────────────────────────
 
+pub mod context_archive;
+pub mod context_compressor;
 pub mod episodic;
 pub mod long_term;
 pub mod short_term;
@@ -56,6 +58,7 @@ pub mod working;
 
 // ── Convenience re-exports ────────────────────────────────────────────────────
 
+pub use context_archive::{ArchiveIndex, ChunkMeta, ContextArchive, ContextChunk};
 pub use episodic::EpisodicMemory;
 pub use long_term::LongTermMemory;
 pub use short_term::ShortTermMemory;
@@ -506,6 +509,7 @@ fn generate_session_id() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
     use std::fs;
     use tempfile::tempdir;
 
@@ -605,11 +609,14 @@ mod tests {
         assert!(sys.contains("base prompt"));
     }
 
+    // GROK_GLOBAL_CONTEXT_DIR is a global env-var — must not run in parallel
+    // with other tests that also set it.
     #[test]
+    #[serial]
     fn new_for_session_no_prompt_no_context_has_no_system_message() {
         let dir = tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
-        // Point global context dir at an empty temp dir so ~/.grok/memory.md
+        // Point global context dir at an empty temp dir so ~/.grok/memory.json
         // or context.md from the developer's machine doesn't bleed into the test.
         let empty_global = tempdir().unwrap();
         unsafe { std::env::set_var("GROK_GLOBAL_CONTEXT_DIR", empty_global.path()) };

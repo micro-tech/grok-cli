@@ -34,4 +34,4 @@ This document outlines recent bug fixes and solutions for common issues encounte
 
 If you encounter a problem not covered here, please report it on our [GitHub Issues page](https://github.com/microtech/grok-cli/issues). Include details such as your Grok CLI version, operating system, and steps to reproduce the issue.
 
-For more troubleshooting tips, refer to the [README.md](README.md) or [ZED_INTEGRATION.md](docs/ZED_INTEGRATION.md) for specific integration issues.
+For more troubleshooting tips, refer to the [TROUBLESHOOTING.md](TROUBLESHOOTING.md).

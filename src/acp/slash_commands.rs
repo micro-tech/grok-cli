@@ -24,7 +24,8 @@
 //! 3. Add an [`AvailableCommand`] entry in [`get_available_commands`].
 //! 4. Handle it in [`command_to_prompt`] (AI) **or** [`handle_builtin`] (direct).
 
-use super::protocol::AvailableCommand;
+use super::protocol::{AvailableCommand, AvailableCommandInput, UnstructuredCommandInput};
+use crate::config::ThinkingMode;
 
 // ---------------------------------------------------------------------------
 // Command enum
@@ -68,6 +69,39 @@ pub enum SlashCommand {
 
     /// `/tools` — list all 32 LLM-callable tools available in this session.
     Tools,
+
+    /// `/bayes show` — display current Bayesian belief state.
+    BayesShow,
+
+    /// `/bayes reset` — reset Bayesian belief state.
+    BayesReset,
+
+    /// `/bayes explain` — explain current Bayesian reasoning.
+    BayesExplain,
+
+    /// `/archives` — list all context archive chunks for this session.
+    Archives,
+
+    /// `/recall <N>` — restore archived chunk N back into active context.
+    /// `/recall` without an argument lists archives (same as `/archives`).
+    Recall { chunk_id: Option<u32> },
+
+    /// `/goal <text>` -- set a persistent session goal.
+    /// `/goal` with no argument shows the current goal.
+    Goal { text: String },
+
+    /// `/goal clear` -- remove the active goal.
+    GoalClear,
+
+    /// `/visualize` — display the pipeline state machine as a DOT graph.
+    Visualize,
+
+    /// `/think [off|low|high]` — set or display the reasoning mode.
+    /// `/think` without an argument shows the current mode.
+    /// `/think off` disables reasoning.
+    /// `/think low` enables light reasoning.
+    /// `/think high` enables deep reasoning.
+    Think { mode: Option<ThinkingMode> },
 }
 
 // ---------------------------------------------------------------------------
@@ -109,7 +143,35 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         "/clear" => Some(SlashCommand::Clear),
         "/context" => Some(SlashCommand::Context),
         "/tools" => Some(SlashCommand::Tools),
-        _ => None, // unknown command — let the AI handle the raw text
+        "/bayes" => match args.as_str() {
+            "show" | "" => Some(SlashCommand::BayesShow),
+            "reset" => Some(SlashCommand::BayesReset),
+            "explain" => Some(SlashCommand::BayesExplain),
+            _ => None,
+        },
+        "/archives" => Some(SlashCommand::Archives),
+        "/recall" => {
+            let id = args.parse::<u32>().ok();
+            Some(SlashCommand::Recall { chunk_id: id })
+        }
+        "/goal" => {
+            if args.eq_ignore_ascii_case("clear") {
+                Some(SlashCommand::GoalClear)
+            } else {
+                Some(SlashCommand::Goal { text: args })
+            }
+        }
+        "/visualize" => Some(SlashCommand::Visualize),
+        "/think" => {
+            if args.is_empty() {
+                // `/think` with no arg — show current mode
+                Some(SlashCommand::Think { mode: None })
+            } else {
+                // `/think off|low|high` — None for unknown args (AI responds)
+                ThinkingMode::from_str_ci(&args).map(|m| SlashCommand::Think { mode: Some(m) })
+            }
+        }
+        _ => None, // unknown command -- let the AI handle the raw text
     }
 }
 
@@ -120,6 +182,11 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
 /// Build the list of [`AvailableCommand`] entries sent to ACP clients via the
 /// `available_commands_update` notification immediately after session creation.
 pub fn get_available_commands() -> Vec<AvailableCommand> {
+    // Helper closure to keep call sites concise.
+    // Wraps a hint string in the crate's AvailableCommandInput::Unstructured variant.
+    let input =
+        |hint: &str| AvailableCommandInput::Unstructured(UnstructuredCommandInput::new(hint));
+
     vec![
         AvailableCommand::new("help", "Show all available slash commands and their usage"),
         AvailableCommand::new(
@@ -127,30 +194,60 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "List all LLM-callable tools available in this session (file, shell, web, task, …)",
         ),
         AvailableCommand::new("web", "Research a topic or search the web for information")
-            .with_input("query to research"),
+            .input(input("query to research")),
         AvailableCommand::new(
             "explain",
             "Get a thorough explanation of code, a file, or a concept",
         )
-        .with_input("code, file path, or concept to explain"),
+        .input(input("code, file path, or concept to explain")),
         AvailableCommand::new(
             "review",
             "Comprehensive code review: bugs, security, performance, style",
         )
-        .with_input("code or file path to review"),
+        .input(input("code or file path to review")),
         AvailableCommand::new("plan", "Create a detailed step-by-step implementation plan")
-            .with_input("description of what to plan"),
+            .input(input("description of what to plan")),
         AvailableCommand::new("test", "Help write, run, or debug tests")
-            .with_input("test description or file path (optional)"),
+            .input(input("test description or file path (optional)")),
         AvailableCommand::new("fix", "Diagnose and fix a bug or error")
-            .with_input("problem description, error message, or file path"),
+            .input(input("problem description, error message, or file path")),
         AvailableCommand::new("model", "Switch to a different Grok model for this session")
-            .with_input("model name (e.g. grok-3, grok-4-0709, grok-3-mini)"),
+            .input(input("model name (e.g. grok-3, grok-4.3, grok-3-mini)")),
         AvailableCommand::new("clear", "Clear the current conversation history"),
         AvailableCommand::new(
             "context",
             "Show current session configuration and active context",
         ),
+        AvailableCommand::new(
+            "bayes",
+            "Inspect or reset the Bayesian intent engine — shows belief state, resets priors, or explains current routing",
+        )
+        .input(input("show | reset | explain")),
+        AvailableCommand::new(
+            "archives",
+            "List all archived context chunks for this session",
+        ),
+        AvailableCommand::new(
+            "recall",
+            "Restore an archived context chunk back into the active window",
+        )
+        .input(input("chunk number (e.g. 1, 2, 3) -- omit to list archives")),
+        AvailableCommand::new(
+            "goal",
+            "Set, view, or clear the persistent session goal that shapes all message interpretation",
+        )
+        .input(input(
+            "goal text — e.g. 'refactor auth'. Type 'clear' to remove the active goal, or omit to show it",
+        )),
+        AvailableCommand::new(
+            "visualize",
+            "Display the Grok-CLI routing pipeline as a DOT/Graphviz graph",
+        ),
+        AvailableCommand::new(
+            "think",
+            "Set or show the reasoning mode (off / low / high).  \"high\" gives the most thorough answers; \"off\" (default) gives the fastest.",
+        )
+        .input(input("off | low | high -- omit to show the current mode")),
     ]
 }
 
@@ -174,7 +271,16 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Clear
         | SlashCommand::Model { .. }
         | SlashCommand::Context
-        | SlashCommand::Tools => None,
+        | SlashCommand::Tools
+        | SlashCommand::BayesShow
+        | SlashCommand::BayesReset
+        | SlashCommand::BayesExplain
+        | SlashCommand::Archives
+        | SlashCommand::Recall { .. }
+        | SlashCommand::Goal { .. }
+        | SlashCommand::GoalClear
+        | SlashCommand::Visualize
+        | SlashCommand::Think { .. } => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -309,6 +415,25 @@ pub enum BuiltinResult {
     SwitchModel(String),
     /// Display session context/config info — the caller supplies the text.
     ShowContext,
+    /// Recall an archived context chunk. `None` = list all archives.
+    RecallArchive(Option<u32>),
+    /// Display the current Bayesian belief-state graph for this session.
+    ShowBayes,
+    /// Reset the Bayesian priors for this session back to defaults.
+    ResetBayes,
+    /// Explain what the current Bayesian state means in plain English.
+    ExplainBayes,
+    /// Set the active session goal -- handled in the ACP session layer.
+    SetGoal(String),
+    /// Clear the active goal.
+    ClearGoal,
+    /// Show the current goal.
+    ShowGoal,
+    /// Show the pipeline visualizer graph.
+    ShowVisualizer,
+    /// Set the thinking/reasoning mode for this session.
+    /// `None` means the user typed `/think` with no argument (show current mode).
+    SetThinkingMode(Option<crate::config::ThinkingMode>),
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -326,6 +451,21 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         }
         SlashCommand::Context => Some(BuiltinResult::ShowContext),
         SlashCommand::Tools => Some(BuiltinResult::Text(format_tools_text())),
+        SlashCommand::Archives => Some(BuiltinResult::Text(format_archives_text(None))),
+        SlashCommand::Recall { chunk_id } => Some(BuiltinResult::RecallArchive(*chunk_id)),
+        SlashCommand::BayesShow => Some(BuiltinResult::ShowBayes),
+        SlashCommand::BayesReset => Some(BuiltinResult::ResetBayes),
+        SlashCommand::BayesExplain => Some(BuiltinResult::ExplainBayes),
+        SlashCommand::Goal { text } => {
+            if text.trim().is_empty() {
+                Some(BuiltinResult::ShowGoal)
+            } else {
+                Some(BuiltinResult::SetGoal(text.clone()))
+            }
+        }
+        SlashCommand::GoalClear => Some(BuiltinResult::ClearGoal),
+        SlashCommand::Visualize => Some(BuiltinResult::ShowVisualizer),
+        SlashCommand::Think { mode } => Some(BuiltinResult::SetThinkingMode(mode.clone())),
         _ => None, // AI-assisted command
     }
 }
@@ -358,7 +498,7 @@ pub fn format_tools_text() -> String {
             "🐚 Shell"
         } else if name.starts_with("web") {
             "🌐 Web"
-        } else if name.starts_with("save_memory") {
+        } else if name.starts_with("save_memory") || name.starts_with("recall_context") {
             "🧠 Memory"
         } else if name.starts_with("sleep") || name.starts_with("synthetic") {
             "⚙️  System"
@@ -456,7 +596,15 @@ pub fn format_help_text() -> String {
         let input_hint = cmd
             .input
             .as_ref()
-            .map(|i| format!(" `<{}>`", i.hint))
+            .map(|i| {
+                // AvailableCommandInput is a non-exhaustive enum from the crate;
+                // match on the only current variant to extract the hint.
+                if let AvailableCommandInput::Unstructured(u) = i {
+                    format!(" `<{}>`", u.hint)
+                } else {
+                    String::new()
+                }
+            })
             .unwrap_or_default();
         lines.push(format!(
             "- **`/{}{}`** — {}",
@@ -477,12 +625,7 @@ pub fn format_help_text() -> String {
 /// Format the model list shown when `/model` is called with no argument.
 pub fn format_model_list() -> String {
     let models = [
-        ("grok-4-1-fast-reasoning", "Default — fast + reasoning"),
-        ("grok-4-1-fast-non-reasoning", "Fast, no reasoning overhead"),
-        ("grok-code-fast-1", "Optimised for code tasks"),
-        ("grok-4-fast-reasoning", "Grok 4 with reasoning"),
-        ("grok-4-fast-non-reasoning", "Grok 4 standard"),
-        ("grok-4-0709", "Grok 4 (July 2025 checkpoint)"),
+        ("grok-4.3", "Default — latest model with thinking"),
         ("grok-3", "Grok 3 — large context"),
         ("grok-3-mini", "Grok 3 Mini — lightweight"),
         ("grok-2-vision-1212", "Grok 2 with vision"),
@@ -504,6 +647,57 @@ pub fn format_model_list() -> String {
     lines.push("Example: `/model grok-3` — switches the current session to Grok 3.".to_string());
 
     lines.join("\n")
+}
+
+/// Format the `/archives` listing for a session.
+///
+/// `session_id` is `None` when called from `handle_builtin` (the ACP caller
+/// will supply it); pass `Some(id)` to load live data for a specific session.
+pub fn format_archives_text(session_id: Option<&str>) -> String {
+    let sid = match session_id {
+        Some(s) => s.to_string(),
+        None => return "📦 **Context Archives**\n\n_(session ID required to list archives — use `/archives` from within a session)_".to_string(),
+    };
+
+    match crate::memory::context_archive::ContextArchive::for_session(&sid) {
+        Err(e) => format!("❌ Could not open archive: {}", e),
+        Ok(archive) => {
+            let chunks = archive.list_chunks();
+            if chunks.is_empty() {
+                return "📦 **Context Archives**\n\nNo archived chunks yet for this session.\n\
+                         Archives are created automatically when the context window fills up."
+                    .to_string();
+            }
+
+            let mut lines = vec![
+                "📦 **Context Archives**".to_string(),
+                String::new(),
+                format!(
+                    "**{}** chunk(s) | **~{}** tokens archived total",
+                    chunks.len(),
+                    archive.total_tokens_archived()
+                ),
+                String::new(),
+                "| # | Date | Messages | Tokens Saved | Summary |".to_string(),
+                "|---|------|----------|-------------|---------|".to_string(),
+            ];
+
+            for c in chunks {
+                lines.push(format!(
+                    "| {} | {} | {} | ~{} | {} |",
+                    c.chunk_id,
+                    c.created_at.format("%m-%d %H:%M"),
+                    c.message_count,
+                    c.estimated_tokens_saved,
+                    c.summary_preview,
+                ));
+            }
+
+            lines.push(String::new());
+            lines.push("Type `/recall N` to restore a chunk into your active context.".to_string());
+            lines.join("\n")
+        }
+    }
 }
 
 /// Build a context summary string for the `/context` command.
@@ -710,13 +904,86 @@ mod tests {
             .map(|c| c.name)
             .collect();
         for required in &[
-            "help", "web", "explain", "review", "plan", "test", "fix", "clear",
+            "help",
+            "web",
+            "explain",
+            "review",
+            "plan",
+            "test",
+            "fix",
+            "clear",
+            "bayes", // was "bayes show", "bayes reset", "bayes explain"
+            "archives",
+            "recall",
+            "goal",
+            "visualize",
+            "think",
         ] {
             assert!(
                 names.contains(&required.to_string()),
                 "command '/{required}' missing from advertised list"
             );
         }
+    }
+
+    // ── Bayes slash commands ────────────────────────────────────────────────────────
+
+    #[test]
+    fn test_parse_bayes_show() {
+        assert_eq!(
+            parse_slash_command("/bayes show"),
+            Some(SlashCommand::BayesShow)
+        );
+        assert_eq!(parse_slash_command("/bayes"), Some(SlashCommand::BayesShow));
+        assert_eq!(parse_slash_command("/BAYES"), Some(SlashCommand::BayesShow));
+    }
+
+    #[test]
+    fn test_parse_bayes_reset() {
+        assert_eq!(
+            parse_slash_command("/bayes reset"),
+            Some(SlashCommand::BayesReset)
+        );
+    }
+
+    #[test]
+    fn test_parse_bayes_explain() {
+        assert_eq!(
+            parse_slash_command("/bayes explain"),
+            Some(SlashCommand::BayesExplain)
+        );
+    }
+
+    #[test]
+    fn test_parse_bayes_unknown_subcommand_returns_none() {
+        // Unknown /bayes sub-commands should fall through to the AI.
+        assert_eq!(parse_slash_command("/bayes foobar"), None);
+    }
+
+    #[test]
+    fn test_bayes_show_is_builtin() {
+        let result = handle_builtin(&SlashCommand::BayesShow);
+        assert!(matches!(result, Some(BuiltinResult::ShowBayes)));
+    }
+
+    #[test]
+    fn test_bayes_reset_is_builtin() {
+        let result = handle_builtin(&SlashCommand::BayesReset);
+        assert!(matches!(result, Some(BuiltinResult::ResetBayes)));
+    }
+
+    #[test]
+    fn test_bayes_explain_is_builtin() {
+        let result = handle_builtin(&SlashCommand::BayesExplain);
+        assert!(matches!(result, Some(BuiltinResult::ExplainBayes)));
+    }
+
+    #[test]
+    fn test_bayes_commands_no_ai_prompt() {
+        // All bayes variants must be handled without an AI round-trip.
+        assert!(command_to_prompt(&SlashCommand::BayesShow).is_none());
+        assert!(command_to_prompt(&SlashCommand::BayesReset).is_none());
+        assert!(command_to_prompt(&SlashCommand::BayesExplain).is_none());
     }
 
     // --- format helpers ---
@@ -736,5 +1003,203 @@ mod tests {
         assert!(ctx.contains("sess_123"));
         assert!(ctx.contains("grok-3"));
         assert!(ctx.contains("10"));
+    }
+
+    // --- Goal slash commands (Task 106) ---
+
+    #[test]
+    fn test_parse_goal_with_text() {
+        let cmd = parse_slash_command("/goal refactor auth");
+        assert_eq!(
+            cmd,
+            Some(SlashCommand::Goal {
+                text: "refactor auth".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_goal_clear() {
+        let cmd = parse_slash_command("/goal clear");
+        assert_eq!(cmd, Some(SlashCommand::GoalClear));
+    }
+
+    #[test]
+    fn test_parse_goal_clear_case_insensitive() {
+        assert_eq!(
+            parse_slash_command("/goal CLEAR"),
+            Some(SlashCommand::GoalClear)
+        );
+        assert_eq!(
+            parse_slash_command("/goal Clear"),
+            Some(SlashCommand::GoalClear)
+        );
+    }
+
+    #[test]
+    fn test_parse_goal_empty() {
+        // Empty /goal (no argument) parses to Goal { text: "" }
+        let cmd = parse_slash_command("/goal");
+        assert_eq!(
+            cmd,
+            Some(SlashCommand::Goal {
+                text: String::new()
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_goal_empty_routes_to_show_goal() {
+        // handle_builtin turns an empty text into ShowGoal
+        let cmd = SlashCommand::Goal {
+            text: String::new(),
+        };
+        let result = handle_builtin(&cmd);
+        assert!(matches!(result, Some(BuiltinResult::ShowGoal)));
+    }
+
+    #[test]
+    fn test_goal_is_builtin() {
+        let cmd = SlashCommand::Goal {
+            text: "improve test coverage".to_string(),
+        };
+        let result = handle_builtin(&cmd);
+        assert!(matches!(result, Some(BuiltinResult::SetGoal(_))));
+        // Must not produce an AI prompt
+        assert!(command_to_prompt(&cmd).is_none());
+    }
+
+    #[test]
+    fn test_goal_clear_is_builtin() {
+        let result = handle_builtin(&SlashCommand::GoalClear);
+        assert!(matches!(result, Some(BuiltinResult::ClearGoal)));
+        // Must not produce an AI prompt
+        assert!(command_to_prompt(&SlashCommand::GoalClear).is_none());
+    }
+
+    #[test]
+    fn test_goal_set_result_contains_text() {
+        let goal = "refactor the auth module for safety".to_string();
+        let cmd = SlashCommand::Goal { text: goal.clone() };
+        match handle_builtin(&cmd) {
+            Some(BuiltinResult::SetGoal(text)) => assert_eq!(text, goal),
+            other => panic!("expected SetGoal, got {:?}", other),
+        }
+    }
+
+    // ── Task 110: /think slash command tests ────────────────────────────────────────
+
+    #[test]
+    fn test_parse_think_no_arg_shows_current_mode() {
+        let result = parse_slash_command("/think");
+        assert!(matches!(result, Some(SlashCommand::Think { mode: None })));
+    }
+
+    #[test]
+    fn test_parse_think_off() {
+        let result = parse_slash_command("/think off");
+        assert!(matches!(
+            result,
+            Some(SlashCommand::Think {
+                mode: Some(crate::config::ThinkingMode::Off)
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_low() {
+        let result = parse_slash_command("/think low");
+        assert!(matches!(
+            result,
+            Some(SlashCommand::Think {
+                mode: Some(crate::config::ThinkingMode::Low)
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_high() {
+        let result = parse_slash_command("/think high");
+        assert!(matches!(
+            result,
+            Some(SlashCommand::Think {
+                mode: Some(crate::config::ThinkingMode::High)
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_case_insensitive() {
+        assert!(matches!(
+            parse_slash_command("/think HIGH"),
+            Some(SlashCommand::Think {
+                mode: Some(crate::config::ThinkingMode::High)
+            })
+        ));
+    }
+
+    #[test]
+    fn test_parse_think_unknown_arg_returns_none() {
+        // Unknown argument — fall through to AI
+        assert!(parse_slash_command("/think ultra").is_none());
+    }
+
+    #[test]
+    fn test_think_is_builtin() {
+        let cmd = SlashCommand::Think {
+            mode: Some(crate::config::ThinkingMode::High),
+        };
+        let result = handle_builtin(&cmd);
+        assert!(matches!(
+            result,
+            Some(BuiltinResult::SetThinkingMode(Some(_)))
+        ));
+        // Must not produce an AI prompt
+        assert!(command_to_prompt(&cmd).is_none());
+    }
+
+    #[test]
+    fn test_thinking_mode_serialises_correctly() {
+        use crate::config::ThinkingMode;
+        assert_eq!(ThinkingMode::Off.as_api_str(), None);
+        assert_eq!(ThinkingMode::Low.as_api_str(), Some("low"));
+        assert_eq!(ThinkingMode::High.as_api_str(), Some("high"));
+    }
+
+    #[test]
+    fn test_thinking_mode_from_str_ci() {
+        use crate::config::ThinkingMode;
+        assert_eq!(ThinkingMode::from_str_ci("off"), Some(ThinkingMode::Off));
+        assert_eq!(ThinkingMode::from_str_ci("none"), Some(ThinkingMode::Off));
+        assert_eq!(ThinkingMode::from_str_ci("LOW"), Some(ThinkingMode::Low));
+        assert_eq!(ThinkingMode::from_str_ci("High"), Some(ThinkingMode::High));
+        assert_eq!(ThinkingMode::from_str_ci("ultra"), None);
+    }
+
+    // --- AvailableCommandInput wire-format verification ---
+
+    #[test]
+    fn test_available_command_input_serializes_to_hint_object() {
+        use crate::acp::protocol::{AvailableCommandInput, UnstructuredCommandInput};
+        let input = AvailableCommandInput::Unstructured(UnstructuredCommandInput::new("my hint"));
+        let json = serde_json::to_string(&input).expect("serialization failed");
+        // Must produce {"hint":"my hint"} — NOT {"Unstructured":{"hint":"my hint"}}
+        assert_eq!(
+            json, r#"{"hint":"my hint"}"#,
+            "AvailableCommandInput wire format changed — check serde tag"
+        );
+    }
+
+    #[test]
+    fn test_available_command_round_trips_with_input() {
+        use crate::acp::protocol::{
+            AvailableCommand, AvailableCommandInput, UnstructuredCommandInput,
+        };
+        let cmd = AvailableCommand::new("web", "Search the web").input(
+            AvailableCommandInput::Unstructured(UnstructuredCommandInput::new("query")),
+        );
+        let json = serde_json::to_value(&cmd).expect("serialization failed");
+        assert_eq!(json["name"], "web");
+        assert_eq!(json["input"]["hint"], "query");
     }
 }

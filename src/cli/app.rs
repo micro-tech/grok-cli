@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{error, info};
 
-use crate::config::{Config, ConfigSource};
+use crate::config::{Config, ConfigSource, ThinkingMode};
 use crate::display::banner::{BannerConfig, format_welcome_banner};
 use crate::display::interactive::{InteractiveConfig, PromptStyle, start_interactive_mode};
 use crate::utils::auth::{require_api_key, resolve_api_key};
@@ -56,6 +56,11 @@ pub enum Commands {
         /// Maximum tokens in response
         #[arg(long, default_value = "4096")]
         max_tokens: u32,
+
+        /// Reasoning / thinking mode for grok-4.3 (off, low, high).
+        /// \"high\" gives the most thorough answers at higher cost.
+        #[arg(long, value_name = "MODE")]
+        thinking: Option<String>,
     },
 
     /// Code-related operations
@@ -132,6 +137,12 @@ pub enum Commands {
         action: crate::cli::commands::skills::SkillsCommand,
     },
 
+    /// Manage tool introspection
+    Tools {
+        #[command(subcommand)]
+        action: crate::ToolsAction,
+    },
+
     /// Interactive setup wizard — enter your xAI API key and save it.
     ///
     /// This is the Terminal Auth entry point declared in the ACP `initialize`
@@ -140,6 +151,16 @@ pub enum Commands {
     /// configured an API key, presenting this interactive wizard inside their
     /// built-in terminal.
     Setup,
+
+    /// Export the Grok-CLI routing pipeline as a DOT/Graphviz graph.
+    ///
+    /// Prints DOT to stdout by default. Pipe to Graphviz to render:
+    ///   grok visualize | dot -Tsvg -o pipeline.svg
+    Visualize {
+        /// Save DOT output to a file instead of printing to stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
 }
 
 /// Main application entry point
@@ -196,8 +217,15 @@ pub async fn run() -> Result<()> {
             system,
             temperature,
             max_tokens,
+            thinking,
         }) => {
             let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn);
+            // Parse the --thinking flag; unrecognised values are silently treated
+            // as Off so the CLI never hard-fails on a typo.
+            let thinking_mode = thinking
+                .as_deref()
+                .and_then(ThinkingMode::from_str_ci)
+                .unwrap_or(ThinkingMode::Off);
             crate::cli::commands::chat::handle_chat(crate::cli::commands::chat::ChatOptions {
                 message: message.clone(),
                 interactive: *interactive,
@@ -210,6 +238,7 @@ pub async fn run() -> Result<()> {
                 max_retries: config.max_retries,
                 rate_limit_config: config.rate_limits,
                 bayesian: config.bayesian.clone(),
+                thinking_mode,
             })
             .await?;
         }
@@ -261,6 +290,7 @@ pub async fn run() -> Result<()> {
                 max_retries: config.max_retries,
                 rate_limit_config: config.rate_limits,
                 bayesian: config.bayesian.clone(),
+                thinking_mode: ThinkingMode::Off,
             })
             .await?;
         }
@@ -323,8 +353,30 @@ pub async fn run() -> Result<()> {
         Some(Commands::Skills { action }) => {
             crate::cli::commands::skills::handle_skills_command(action.clone()).await?;
         }
+        Some(Commands::Tools { action }) => {
+            crate::cli::commands::tools::handle_tools_command(action.clone()).await?;
+        }
         Some(Commands::Setup) => {
             crate::cli::commands::setup::handle_setup().await?;
+        }
+        Some(Commands::Visualize { output }) => {
+            // Load live Bayesian priors and ACP settings from config.
+            let dot = crate::visualizer::generate_pipeline_dot(Some(&config));
+            match output {
+                Some(path) => {
+                    std::fs::write(path, &dot).map_err(|e| {
+                        anyhow::anyhow!("Failed to write DOT file to {}: {}", path.display(), e)
+                    })?;
+                    println!("✅ Pipeline graph saved to: {}", path.display());
+                    println!(
+                        "   Render with: dot -Tsvg {} -o pipeline.svg",
+                        path.display()
+                    );
+                }
+                None => {
+                    print!("{}", dot);
+                }
+            }
         }
         None => {
             // Default to interactive mode

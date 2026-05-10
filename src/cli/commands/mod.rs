@@ -16,5 +16,7 @@ pub mod history;
 pub mod settings;
 pub mod setup;
 pub mod skills;
+pub mod tools;
+pub mod bayes;
 
 // Re-export all command handlers

@@ -19,23 +19,27 @@ path = "src/bin/github_mcp.rs"
 
 
 [dependencies]
-grok_api = { path = "../grok_crate/grok_api", version = "0.1.3" }
+grok_api = { path = "../grok_crate/grok_api", version = "0.1.71" }
 # HTTP client with timeout support for network drops
-reqwest = { version = "0.13.2", features = [
+#grok_api = "0.1.7"
+
+reqwest = { version = "0.13.3", features = [
     "json",
     "native-tls-vendored",
     "http2",
 ], default-features = false }
 # Async runtime
-tokio = { version = "1.50.0", features = ["full"] }
+tokio = { version = "1.52.1", features = ["full"] }
 # JSON handling
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # CLI parsing
-clap = { version = "4.6.0", features = ["derive", "env"] }
+clap = { version = "4.6.1", features = ["derive", "env"] }
 # Error handling
 anyhow = "1.0"
 thiserror = "2.0"
+agent-client-protocol = "0.11"
+tokio-util = { version = "0.7", features = ["compat"] }
 # Environment variable loading
 dotenvy = "0.15"
 # Configuration
@@ -55,19 +59,19 @@ indicatif = "0.18"
 # File I/O and paths
 dirs = "6.0"
 # UUID generation
-uuid = { version = "1.22.0", features = ["v4"] }
+uuid = { version = "1.23.1", features = ["v4"] }
 # Base64 encoding
 base64 = "0.22"
 # Terminal utilities (using terminal_size instead)
 # Random number generation for retry backoff
-rand = "0.10.0"
+rand = "0.10.1"
 async-trait = "0.1"
 # Date and time handling for sessions
 chrono = { version = "0.4", features = ["serde"] }
 # Terminal size detection
 terminal_size = "0.4"
 # TOML configuration parsing
-toml = "1.0.1"
+toml = "1.1.0"
 
 # Terminal detection
 is-terminal = "0.4"
@@ -79,10 +83,10 @@ regex = "1"
 urlencoding = "2"
 clap-markdown = "0.1"
 serde_yaml = "0.9.34"
-whoami = "2.1.1"
+whoami = "2.1.2"
 
 [target.'cfg(windows)'.dependencies]
-winreg = "0.55"
+winreg = "0.56.0"
 
 [dev-dependencies]
 tempfile = "3.27.0"

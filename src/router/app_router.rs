@@ -109,7 +109,7 @@ impl AppRouter {
         }));
 
         let mwfr = self
-            .chat_completion_with_history(&messages, temperature, max_tokens, model, None)
+            .chat_completion_with_history(&messages, temperature, max_tokens, model, None, None)
             .await?;
 
         let text = mwfr
@@ -140,6 +140,7 @@ impl AppRouter {
         max_tokens: u32,
         model: &str,
         tools: Option<Vec<Value>>,
+        reasoning_effort: Option<&str>,
     ) -> Result<MessageWithFinishReason> {
         // Pass messages as raw JSON so that fields like `tool_call_id` are
         // preserved through the full pipeline.  Typed deserialization was
@@ -150,6 +151,10 @@ impl AppRouter {
 
         if let Some(raw_tools) = tools {
             req = req.with_json_tools(raw_tools);
+        }
+
+        if let Some(effort) = reasoning_effort {
+            req = req.with_reasoning_effort(effort);
         }
 
         let resp = self

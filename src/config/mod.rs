@@ -14,6 +14,50 @@ use tracing::{debug, info, warn};
 
 use crate::mcp::config::McpConfig;
 
+/// Reasoning / thinking mode for models that support extended chain-of-thought.
+///
+/// Sent as the `reasoning_effort` field in the API request.
+/// - `Off`  — no reasoning trace (`reasoning_effort` omitted from request).
+/// - `Low`  — light reasoning; faster and cheaper.
+/// - `High` — deep reasoning; highest quality, slower, higher cost.
+///
+/// Only grok-4.3, grok-3-mini, and similar reasoning-capable models honour
+/// this field.  Sending it to other models will result in an API error.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum ThinkingMode {
+    /// No reasoning trace — standard response (default).
+    #[default]
+    Off,
+    /// Light reasoning effort: faster, lower token cost.
+    Low,
+    /// High reasoning effort: most thorough, slower, higher token cost.
+    High,
+}
+
+impl ThinkingMode {
+    /// Convert to the `reasoning_effort` string expected by the xAI API.
+    /// Returns `None` when `Off` so callers can skip the field entirely.
+    pub fn as_api_str(&self) -> Option<&'static str> {
+        match self {
+            ThinkingMode::Off => None,
+            ThinkingMode::Low => Some("low"),
+            ThinkingMode::High => Some("high"),
+        }
+    }
+
+    /// Parse from a human-readable string (case-insensitive).
+    /// Accepts `"off"`, `"low"`, `"high"`.
+    pub fn from_str_ci(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "off" | "none" => Some(ThinkingMode::Off),
+            "low" => Some(ThinkingMode::Low),
+            "high" => Some(ThinkingMode::High),
+            _ => None,
+        }
+    }
+}
+
 /// Main configuration structure for grok-cli
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
@@ -177,6 +221,66 @@ pub struct AcpConfig {
     /// Default: 40
     #[serde(default = "default_max_history_messages")]
     pub max_history_messages: usize,
+
+    /// Soft token budget for the outgoing request (prompt + history) when
+    /// using grok-3 or older models.
+    /// Messages are trimmed from the oldest end until the estimated token
+    /// count fits within this limit.  Leave ~36 k headroom for the model
+    /// response and tool definitions.
+    /// Grok-3 / grok-beta context window = 256 k tokens.
+    /// Default: 220_000  (for grok-3 / grok-2 — see grok4_max_context_tokens for grok-4.x)
+    #[serde(default = "default_max_context_tokens")]
+    pub max_context_tokens: usize,
+
+    /// Soft token budget for grok-4.x models (grok-4.3 and later).
+    /// grok-4.3 exposes a 1,048,576-token context window.
+    /// This budget leaves ~50 k headroom for model response + tool definitions.
+    /// Default: 950_000
+    #[serde(default = "default_grok4_max_context_tokens")]
+    pub grok4_max_context_tokens: usize,
+
+    /// Maximum number of characters kept per tool-result message before
+    /// it is truncated.  Large file reads are the most common cause of
+    /// context-window overflow; truncating them here keeps the history
+    /// manageable without losing the conversation structure.
+    /// 0 = no per-message truncation.
+    /// Default: 30_000  (~7 500 tokens)
+    #[serde(default = "default_max_tool_result_chars")]
+    pub max_tool_result_chars: usize,
+
+    /// Enable automatic context summarization when the active context approaches
+    /// the token limit.  When triggered, the oldest messages are summarized by
+    /// the AI and archived to disk; a compact notice replaces them in the active
+    /// window so the model knows the history exists and can recall it.
+    /// Set to `false` to revert to the old drop-only behaviour.
+    /// Default: true
+    #[serde(default = "default_auto_compress")]
+    pub auto_compress: bool,
+
+    /// Fraction of `max_context_tokens` at which auto-compression fires (0.0–1.0).
+    /// When estimated prompt tokens exceed `max_context_tokens * compression_threshold`,
+    /// the oldest chunk is summarized and archived.
+    /// Default: 0.75  (fires at 75 % of the token budget)
+    #[serde(default = "default_compression_threshold")]
+    pub compression_threshold: f32,
+
+    /// Fraction of current non-system messages to compress per compression event.
+    /// E.g. 0.40 compresses the oldest 40 % of messages each time.
+    /// Minimum of 4 messages is always enforced.
+    /// Default: 0.40
+    #[serde(default = "default_compression_chunk_ratio")]
+    pub compression_chunk_ratio: f32,
+
+    /// Default reasoning / thinking mode for new sessions.
+    ///
+    /// - `off`  — no chain-of-thought reasoning (standard response).
+    /// - `low`  — light reasoning effort.
+    /// - `high` — deep reasoning effort (slower, more tokens).
+    ///
+    /// Only grok-4.3 and grok-3-mini support this field.
+    /// Default: off
+    #[serde(default)]
+    pub thinking_mode: ThinkingMode,
 }
 
 /// Network configuration optimized for satellite connections
@@ -405,7 +509,7 @@ fn default_theme() -> String {
 }
 
 fn default_model() -> String {
-    "grok-4-1-fast-reasoning".to_string()
+    "grok-4.3".to_string()
 }
 
 fn default_temperature() -> f32 {
@@ -413,7 +517,10 @@ fn default_temperature() -> f32 {
 }
 
 fn default_max_tokens() -> u32 {
-    256000
+    // Output token budget (not context window size).
+    // grok-4.3 supports up to 32 768 output tokens; 16 384 is a safe default
+    // that avoids accidental large responses while still allowing detailed answers.
+    16_384
 }
 
 fn default_timeout_secs() -> u64 {
@@ -554,6 +661,12 @@ pub struct ShellConfig {
     pub show_color: bool,
     #[serde(default)]
     pub inactivity_timeout: u32,
+    /// Hard timeout (seconds) applied to every `run_shell_command` call.
+    /// 300 s is the default — enough for `cargo build` and `git` operations
+    /// on slow connections.  Set to 0 to use the built-in default.
+    /// Env override: `GROK_SHELL_TIMEOUT`
+    #[serde(default = "default_shell_command_timeout")]
+    pub command_timeout_secs: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -909,6 +1022,32 @@ fn default_max_history_messages() -> usize {
     40
 }
 
+fn default_max_context_tokens() -> usize {
+    // grok-3 / grok-2 budget (256 k window, ~36 k headroom)
+    220_000
+}
+
+fn default_grok4_max_context_tokens() -> usize {
+    // grok-4.3 budget: 1,048,576-token window, ~50 k headroom for response + tools
+    950_000
+}
+
+fn default_auto_compress() -> bool {
+    true
+}
+
+fn default_compression_threshold() -> f32 {
+    0.75
+}
+
+fn default_compression_chunk_ratio() -> f32 {
+    0.40
+}
+
+fn default_max_tool_result_chars() -> usize {
+    30_000
+}
+
 fn default_permission_timeout_secs() -> u64 {
     300
 }
@@ -954,6 +1093,13 @@ impl Default for AcpConfig {
             require_permission: true,
             permission_timeout_secs: default_permission_timeout_secs(),
             max_history_messages: default_max_history_messages(),
+            max_context_tokens: default_max_context_tokens(),
+            grok4_max_context_tokens: default_grok4_max_context_tokens(),
+            max_tool_result_chars: default_max_tool_result_chars(),
+            auto_compress: default_auto_compress(),
+            compression_threshold: default_compression_threshold(),
+            compression_chunk_ratio: default_compression_chunk_ratio(),
+            thinking_mode: ThinkingMode::Off,
         }
     }
 }
@@ -1088,6 +1234,10 @@ impl Default for ToolsConfig {
     }
 }
 
+fn default_shell_command_timeout() -> u64 {
+    300
+}
+
 impl Default for ShellConfig {
     fn default() -> Self {
         Self {
@@ -1095,6 +1245,7 @@ impl Default for ShellConfig {
             pager: String::new(),
             show_color: false,
             inactivity_timeout: 0,
+            command_timeout_secs: default_shell_command_timeout(),
         }
     }
 }
@@ -2726,7 +2877,7 @@ mod tests {
     #[tokio::test]
     async fn test_config_default() {
         let config = Config::default();
-        assert_eq!(config.default_model, "grok-4-1-fast-reasoning");
+        assert_eq!(config.default_model, "grok-4.3");
         assert_eq!(config.default_temperature, 0.7);
         assert!(config.validate().is_ok());
     }
@@ -2751,10 +2902,7 @@ mod tests {
         let mut config = Config::default();
 
         // Test getting values
-        assert_eq!(
-            config.get_value("default_model").unwrap(),
-            "grok-4-1-fast-reasoning"
-        );
+        assert_eq!(config.get_value("default_model").unwrap(), "grok-4.3");
         assert_eq!(config.get_value("ui.colors").unwrap(), "true");
 
         // Test setting values

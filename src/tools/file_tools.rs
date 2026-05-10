@@ -9,9 +9,9 @@ use crate::security::audit::{AuditLogger, create_access_log};
 use anyhow::{Result, anyhow};
 use glob::glob;
 use regex::Regex;
-use tokio::fs;
 use std::fs::File;
 use std::io::{BufRead, BufReader};
+use tokio::fs;
 
 use std::path::Path;
 use tracing::info;
@@ -147,7 +147,9 @@ pub async fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> 
         return Err(anyhow!("File not found: {}", resolved_path.display()));
     }
 
-    fs::read_to_string(&resolved_path).await.map_err(|e| anyhow!("Failed to read file: {}", e))
+    fs::read_to_string(&resolved_path)
+        .await
+        .map_err(|e| anyhow!("Failed to read file: {}", e))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -225,7 +227,9 @@ pub async fn write_file(path: &str, content: &str, security: &SecurityPolicy) ->
     };
 
     if let Some(parent) = absolute_path.parent() {
-        fs::create_dir_all(parent).await.map_err(|e| anyhow!("Failed to create directory: {}", e))?;
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|e| anyhow!("Failed to create directory: {}", e))?;
     }
 
     let access_type = security.validate_path_access(path)?;
@@ -246,7 +250,9 @@ pub async fn write_file(path: &str, content: &str, security: &SecurityPolicy) ->
         }
     };
 
-    fs::write(&resolved_path, content).await.map_err(|e| anyhow!("Failed to write file: {}", e))?;
+    fs::write(&resolved_path, content)
+        .await
+        .map_err(|e| anyhow!("Failed to write file: {}", e))?;
     info!(
         "Wrote {} bytes to {}",
         content.len(),
@@ -282,10 +288,33 @@ pub async fn replace(
         return Err(anyhow!("File not found: {}", resolved_path.display()));
     }
 
-    let content =
-        fs::read_to_string(&resolved_path).await.map_err(|e| anyhow!("Failed to read file: {}", e))?;
+    let content = fs::read_to_string(&resolved_path)
+        .await
+        .map_err(|e| anyhow!("Failed to read file: {}", e))?;
 
-    let occurrences = content.matches(old_string).count();
+    // ── Line-ending normalisation (Windows CRLF fix) ──────────────────────
+    // On Windows, files are often saved with CRLF (\r\n) while the AI
+    // always emits plain LF (\n) in its search strings.  We normalise both
+    // sides to LF for matching so the replacement doesn't silently fail.
+    // If the original file used CRLF we convert the result back before
+    // writing so the file keeps its original style.
+    let file_uses_crlf = content.contains("\r\n");
+
+    let (normalized_content, normalized_old, normalized_new) = if file_uses_crlf {
+        (
+            content.replace("\r\n", "\n"),
+            old_string.replace("\r\n", "\n"),
+            new_string.replace("\r\n", "\n"),
+        )
+    } else {
+        (
+            content.clone(),
+            old_string.to_string(),
+            new_string.to_string(),
+        )
+    };
+
+    let occurrences = normalized_content.matches(normalized_old.as_str()).count();
     if occurrences == 0 {
         return Err(anyhow!(
             "Failed to replace: '{}' not found in file. Use read_file to verify content.",
@@ -303,8 +332,19 @@ pub async fn replace(
         ));
     }
 
-    let new_content = content.replace(old_string, new_string);
-    fs::write(&resolved_path, new_content).await.map_err(|e| anyhow!("Failed to write file: {}", e))?;
+    let mut new_content =
+        normalized_content.replace(normalized_old.as_str(), normalized_new.as_str());
+
+    // Restore CRLF if the file originally used it.
+    if file_uses_crlf {
+        new_content = new_content.replace('\n', "\r\n");
+        // Guard against double-converting any stray \r\n that survived.
+        new_content = new_content.replace("\r\r\n", "\r\n");
+    }
+
+    fs::write(&resolved_path, new_content)
+        .await
+        .map_err(|e| anyhow!("Failed to write file: {}", e))?;
 
     Ok(format!(
         "Successfully replaced {} occurrence(s) in {}",
@@ -470,36 +510,41 @@ mod tests {
         SecurityPolicy::with_working_directory(dir.path().to_path_buf())
     }
 
-    #[test]
-    fn write_then_read_file() {
+    #[tokio::test]
+    async fn write_then_read_file() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("hello.txt");
         let path_str = path.to_str().unwrap();
 
-        write_file(path_str, "Hello, world!", &security).unwrap();
-        let content = read_file(path_str, &security).unwrap();
+        write_file(path_str, "Hello, world!", &security)
+            .await
+            .unwrap();
+        let content = read_file(path_str, &security).await.unwrap();
         assert_eq!(content, "Hello, world!");
     }
 
-    #[test]
-    fn read_file_missing_returns_err() {
+    #[tokio::test]
+    async fn read_file_missing_returns_err() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
-        let result = read_file("non_existent_file.txt", &security);
+        let result = read_file("non_existent_file.txt", &security).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn read_multiple_files_partial_errors() {
+    #[tokio::test]
+    async fn read_multiple_files_partial_errors() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("a.txt");
         let path_str = path.to_str().unwrap().to_string();
-        write_file(path_str.as_str(), "content", &security).unwrap();
+        write_file(path_str.as_str(), "content", &security)
+            .await
+            .unwrap();
 
-        let result =
-            read_multiple_files(vec![path_str, "missing.txt".to_string()], &security).unwrap();
+        let result = read_multiple_files(vec![path_str, "missing.txt".to_string()], &security)
+            .await
+            .unwrap();
         assert!(result.contains("content"));
         assert!(result.contains("Error"));
     }
@@ -526,52 +571,94 @@ mod tests {
         assert!(result.contains("a.rs"), "expected a.rs in: {}", result);
     }
 
-    #[test]
-    fn replace_text_in_file() {
+    #[tokio::test]
+    async fn replace_text_in_file() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("r.txt");
         let path_str = path.to_str().unwrap();
 
-        write_file(path_str, "foo bar foo", &security).unwrap();
-        replace(path_str, "foo", "baz", None, &security).unwrap();
-        let content = read_file(path_str, &security).unwrap();
+        write_file(path_str, "foo bar foo", &security)
+            .await
+            .unwrap();
+        replace(path_str, "foo", "baz", None, &security)
+            .await
+            .unwrap();
+        let content = read_file(path_str, &security).await.unwrap();
         assert_eq!(content, "baz bar baz");
     }
 
-    #[test]
-    fn replace_not_found_returns_err() {
+    /// Windows CRLF files must match even when the AI sends LF-only search
+    /// strings.  The written file must preserve CRLF line endings.
+    #[tokio::test]
+    async fn replace_handles_crlf_files() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        let path = dir.path().join("crlf.txt");
+        let path_str = path.to_str().unwrap();
+
+        // Write a file with CRLF line endings directly (simulating a Windows file).
+        tokio::fs::write(&path, "line one\r\nline two\r\nline three".as_bytes())
+            .await
+            .unwrap();
+
+        // Search string uses LF only — this was previously failing.
+        replace(path_str, "line one\nline two", "replaced", None, &security)
+            .await
+            .unwrap();
+
+        let written = tokio::fs::read_to_string(&path).await.unwrap();
+        // Result must still use CRLF and contain the replacement.
+        assert!(
+            written.contains("replaced\r\n"),
+            "CRLF must be preserved after replace; got: {:?}",
+            written
+        );
+        assert!(
+            written.contains("line three"),
+            "unmodified line must remain"
+        );
+    }
+
+    #[tokio::test]
+    async fn replace_not_found_returns_err() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("r2.txt");
         let path_str = path.to_str().unwrap();
 
-        write_file(path_str, "hello world", &security).unwrap();
-        let result = replace(path_str, "notfound", "x", None, &security);
+        write_file(path_str, "hello world", &security)
+            .await
+            .unwrap();
+        let result = replace(path_str, "notfound", "x", None, &security).await;
         assert!(result.is_err());
     }
 
-    #[test]
-    fn search_file_content_finds_match() {
+    #[tokio::test]
+    async fn search_file_content_finds_match() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("code.rs");
         let path_str = path.to_str().unwrap();
-        write_file(path_str, "fn main() {}\nfn helper() {}", &security).unwrap();
+        write_file(path_str, "fn main() {}\nfn helper() {}", &security)
+            .await
+            .unwrap();
 
         let result = search_file_content(path_str, "fn ", &security).unwrap();
         assert!(result.contains("fn main") || result.contains("fn helper"));
     }
 
-    #[test]
-    fn list_code_definitions_finds_fns() {
+    #[tokio::test]
+    async fn list_code_definitions_finds_fns() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("src.rs");
         let path_str = path.to_str().unwrap();
-        write_file(path_str, "pub fn foo() {}\nstruct Bar {}", &security).unwrap();
+        write_file(path_str, "pub fn foo() {}\nstruct Bar {}", &security)
+            .await
+            .unwrap();
 
-        let result = list_code_definitions(path_str, &security).unwrap();
+        let result = list_code_definitions(path_str, &security).await.unwrap();
         assert!(result.contains("fn foo") || result.contains("struct Bar"));
     }
 

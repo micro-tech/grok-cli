@@ -1,5 +1,8 @@
 # Troubleshooting Guide
 
+> **Full detailed version** — This is the complete troubleshooting reference.
+> For a quick overview, see the [root README](../README.md).
+
 This guide helps resolve common issues with grok-cli installation and configuration.
 
 ## Table of Contents

@@ -44,14 +44,18 @@ pub mod display;
 pub mod engine;
 pub mod grok_client_ext;
 pub mod hooks;
+pub mod knowledge;
 pub mod mcp;
 pub mod memory;
 pub mod router;
 pub mod rpl;
 pub mod security;
+pub mod session;
 pub mod skills;
+pub mod task_graph;
 pub mod tools;
 pub mod utils;
+pub mod visualizer;
 
 // Re-export grok_api types for use throughout the crate
 pub use grok_api::{
@@ -268,7 +272,31 @@ pub enum AuditAction {
     },
 }
 
-// Re-export commonly used types and functions
+#[derive(Subcommand, Clone, Debug)]
+pub enum ToolsAction {
+    /// List all available tools with their names and descriptions
+    List,
+    /// Show full details of a specific tool's schema
+    Describe {
+        /// Name of the tool to describe
+        name: String,
+    },
+    /// Show usage examples for a specific tool
+    Examples {
+        /// Name of the tool to show examples for
+        name: String,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum BayesAction {
+    /// Show current Bayesian belief state
+    Show,
+    /// Reset Bayesian beliefs to defaults
+    Reset,
+    /// Explain the current belief reasoning
+    Explain,
+}
 pub use config::{Config, ConfigSource, RateLimitConfig};
 #[allow(deprecated)]
 pub use display::{

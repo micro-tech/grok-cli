@@ -11,9 +11,11 @@
 #   GROK_API_KEY=xai-your-api-key-here
 # Or set the environment variable GROK_API_KEY or X_API_KEY
 api_key = "xai-your-api-key-here"
-default_model = "grok-2-latest"
+default_model = "grok-4.3"
 default_temperature = 0.7
-default_max_tokens = 256000
+# Output token budget (not the context window size).
+# grok-4.3 supports up to 32 768 output tokens; 16 384 is a safe default.
+default_max_tokens = 16384
 
 # Request timeout in seconds.
 # LLM responses can be slow, especially with large max_tokens or many tool
@@ -60,6 +62,53 @@ permission_timeout_secs = 300
 # Increase for longer multi-turn conversations; decrease to save tokens.
 # Default: 40
 max_history_messages = 40
+
+# Soft token budget for the full outgoing request (history + system prompt +
+# tool definitions) — used for grok-3 and older models.
+# The Grok-3 / grok-beta context window is 256 000 tokens; this default
+# leaves ~36 k headroom for the model response and tool schemas.
+# Default: 220000
+max_context_tokens = 220000
+
+# Soft token budget for grok-4.x models (grok-4.3 and later).
+# grok-4.3 exposes a 1 048 576-token context window.  This budget leaves
+# ~50 k headroom for model response + tool definitions.
+# When the active model starts with "grok-4" this value takes effect
+# instead of max_context_tokens.
+# Default: 950000
+grok4_max_context_tokens = 950000
+
+# Maximum characters per tool-result message.  Large file reads are the most
+# common source of context-window overflow; this truncates them early while
+# preserving the conversation structure.
+# Set to 0 to disable per-message truncation.
+# Default: 30000  (~7 500 tokens)
+max_tool_result_chars = 30000
+
+# Enable automatic context summarization when approaching the token limit.
+# When triggered the oldest messages are summarized by the AI and archived to
+# disk; a compact notice replaces them so the model knows history is available.
+# Set to false to revert to the old drop-only behaviour.
+# Default: true
+auto_compress = true
+
+# Fraction of max_context_tokens at which compression fires (0.0-1.0).
+# Default: 0.75  (fires at 75% of the token budget)
+compression_threshold = 0.75
+
+# Fraction of current non-system messages compressed per event (0.0-1.0).
+# Minimum of 4 messages is always enforced.
+# Default: 0.40
+compression_chunk_ratio = 0.40
+
+# Reasoning / thinking mode for grok-4.3 and grok-3-mini.
+# - off  : standard response, no chain-of-thought (default and fastest)
+# - low  : light reasoning; slightly slower, more thorough
+# - high : deep reasoning; most thorough, slowest, highest token cost
+# Sending this to models that do not support it returns an API error.
+# Change per-session with the /think slash command or the --thinking CLI flag.
+# Default: off
+thinking_mode = "off"
 
 # ── Network (Starlink-optimised) ─────────────────────────────────────────────
 [network]
@@ -151,6 +200,13 @@ enable_interactive_shell = false
 show_color = true
 inactivity_timeout = 300
 
+# Hard timeout for every `run_shell_command` tool call (seconds).
+# 30 s was the old hardcoded value — far too short for `cargo build` or
+# `git` on slow / Starlink connections.  300 s (5 min) is the new default.
+# Increase further if your build times regularly exceed this.
+# Set to 0 to use the built-in default (300 s).
+command_timeout_secs = 300
+
 # Security Configuration
 [security]
 disable_yolo_mode = false
@@ -165,15 +221,16 @@ enabled = true
 allowed = []
 blocked = []
 
+[bayesian]
 # ── Bayesian Intent Router ────────────────────────────────────────────────────
 # The Bayesian router intercepts user input before the LLM call and classifies
 # intent (edit / shell / search / question) using a probability distribution.
 # It can ask for clarification, inject contextual system hints, and learn from
 # your tool usage over time.  The learned profile is saved to
 # ~/.grok/bayes_profile.json and persists across sessions.
-[bayesian]
-# Master on/off switch.  When false the router is fully bypassed.
-enabled = false
+#
+# Master on/off switch. When false the router is fully bypassed.
+enabled = true
 
 # Show the real-time ASCII belief-graph after each message.
 show_belief_graph = false
@@ -184,31 +241,27 @@ show_belief_graph = false
 # Higher → more permissive / fires less readily
 
 # Router asks for clarification when P(need_clarification) exceeds this.
-# Default: 0.4  — lower to get clarification questions more often.
-clarification_threshold = 0.4
+clarification_threshold = 0.75
 
 # System uncertainty notes injected when P(need_clarification|low_confidence)
-# exceeds this.  Default: 0.6
-uncertainty_threshold = 0.6
+# exceeds this.
+uncertainty_threshold = 0.85
 
 # "Request is vague" note injected when P(is_vague) exceeds this.
-# Default: 0.6
-vagueness_threshold = 0.6
+vagueness_threshold = 0.80
 
 # ── Learning parameters ───────────────────────────────────────────────────────
 
 # Strength of keyword → intent likelihood spikes.
-# Higher = more decisive routing on a keyword match.  Default: 5.0
-intent_likelihood_weight = 5.0
+# Higher = more decisive routing on a keyword match.
+intent_likelihood_weight = 1.6
 
-# Fractional boost applied to a prior each time the corresponding tool is
-# used successfully.  0.1 = 10 % boost per call.  Default: 0.1
-profile_learning_rate = 0.1
+# Fractional boost per successful tool call (0.1 = 10%).
+profile_learning_rate = 0.05
 
 # ── Default priors ────────────────────────────────────────────────────────────
 # Starting belief weights used when no saved profile exists on disk.
-# Once the engine learns from your tool usage these are overridden by the
-# persisted profile.  Values need not sum to 1 — they are normalised on load.
+# Values need not sum to 1 — they are normalised on load.
 [bayesian.priors]
 intent_edit         = 0.2
 intent_shell        = 0.2

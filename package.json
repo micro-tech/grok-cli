@@ -27,11 +27,9 @@
   },
   "files": [
     "bin/",
-    "install.js",
     "README.md"
   ],
   "scripts": {
-    "postinstall": "node install.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "engines": {

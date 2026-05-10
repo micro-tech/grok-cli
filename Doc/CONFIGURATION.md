@@ -1,6 +1,90 @@
 # Grok CLI Configuration Guide
 
+> **Full detailed version** — This is the complete configuration reference.
+> For a quick overview, see the [root README](../README.md).
+
 This document explains how to configure the Grok CLI using `.env` files.
+
+## Model Context Budgets
+
+Different Grok models expose different context windows.  Grok-CLI automatically selects the correct token budget based on the active model name:
+
+| Model prefix | Context window | Default soft budget (`config.toml`) |
+|---|---|---|
+| `grok-4.*` | 1,048,576 tokens (~1 M) | `grok4_max_context_tokens = 950000` |
+| `grok-3.*` | 262,144 tokens (256 k) | `max_context_tokens = 220000` |
+| `grok-2.*` | 131,072 tokens (128 k) | `max_context_tokens = 220000` |
+
+The "soft budget" trims the oldest conversation messages before each API call so the request never exceeds the model's hard limit.  It leaves headroom for the model response and tool definitions.
+
+To override either budget, edit `~/.grok/config.toml` (or your project's `.grok/config.toml`) under the `[acp]` section:
+
+```toml
+[acp]
+# Budget for grok-3 and older models
+max_context_tokens = 220000
+
+# Budget for grok-4.x models (auto-selected when model starts with "grok-4")
+grok4_max_context_tokens = 950000
+```
+
+### Output token budget (`default_max_tokens`)
+
+This is separate from the *context* window.  It caps the number of tokens the model may generate in a single response:
+
+```toml
+# Top-level (not under [acp])
+default_max_tokens = 16384  # grok-4.3 default; max supported is 32768
+```
+
+## Thinking Modes (grok-4.3 / grok-3-mini)
+
+grok-4.3 supports extended chain-of-thought reasoning via the `reasoning_effort` API parameter.  Grok-CLI exposes this as a first-class feature:
+
+| Mode | API value | Effect |
+|---|---|---|
+| `off` (default) | omitted | Standard response, no reasoning trace |
+| `low` | `"low"` | Light reasoning — faster, slightly more thorough |
+| `high` | `"high"` | Deep reasoning — most thorough, slower, higher token cost |
+
+### Configure the default mode globally
+
+```toml
+[acp]
+thinking_mode = "off"   # off | low | high
+```
+
+### Change per-session at runtime
+
+Use the `/think` slash command in any ACP session (e.g. Zed):
+
+```
+/think high      # enable deep reasoning
+/think low       # enable light reasoning
+/think off       # disable reasoning
+/think           # show the current mode
+```
+
+### Set via CLI flag
+
+```bash
+grok chat --thinking high "Explain Rust lifetimes in detail"
+grok chat --thinking low  "Write a hello-world in Python"
+```
+
+### What happens with thinking content
+
+When the model produces a reasoning trace it is displayed as a collapsible `<details>` block before the main answer:
+
+```
+<details><summary>🧠 Thinking…</summary>
+  (chain-of-thought reasoning)
+</details>
+
+(main answer here)
+```
+
+> **Note:** Only send `reasoning_effort` to models that support it.  Sending it to unsupported models (grok-3, grok-2, etc.) returns an API error.  Grok-CLI never sends the field when `thinking_mode = "off"`.
 
 ## Overview
 
@@ -504,4 +588,4 @@ grok query "What is the meaning of life?"
 - View help: `grok --help`
 - Check version: `grok --version`
 
-For more information, see the [README](README.md) or [API documentation](docs/API.md).
+For more information, see the [root README](../README.md).

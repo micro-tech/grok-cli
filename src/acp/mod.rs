@@ -12,10 +12,11 @@ use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
-use crate::config::Config;
+use crate::config::{Config, ThinkingMode};
 use crate::content_to_string;
 use crate::hooks::HookManager;
 use crate::router::AppRouter;
+use serde::{Deserialize, Serialize};
 
 pub mod protocol;
 pub mod security;
@@ -111,6 +112,11 @@ struct SessionData {
 
     /// Bayesian inference engine for this session
     bayes_engine: crate::bayes::BayesianEngine,
+
+    /// Active session goal set via `/goal <text>`.
+    /// Injected into every refined prompt as a system note so the model
+    /// always interprets messages through the lens of this goal.
+    current_goal: Option<String>,
 }
 
 impl SessionData {
@@ -160,12 +166,20 @@ impl SessionData {
             );
         }
 
+        // 4. Active Goal injection
+        if let Some(ref goal) = self.current_goal {
+            refined_message = format!(
+                "{}\n\n[Active Goal: {}  — interpret this message in the context of achieving this goal.]",
+                refined_message, goal
+            );
+        }
+
         refined_message
     }
 }
 
 /// Session-specific configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionConfig {
     /// Model to use for this session
     pub model: String,
@@ -178,6 +192,22 @@ pub struct SessionConfig {
 
     /// System prompt for this session
     pub system_prompt: Option<String>,
+
+    /// Reasoning / thinking mode for this session.
+    /// Passed as `reasoning_effort` to the API for models that support it.
+    pub thinking_mode: ThinkingMode,
+}
+
+/// Snapshot of a session that can be written to disk and reloaded.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PersistedSession {
+    pub(crate) session_id: String,
+    pub(crate) cwd: String,
+    pub(crate) messages: Vec<serde_json::Value>,
+    pub(crate) config: SessionConfig,
+    pub(crate) current_goal: Option<String>,
+    pub(crate) always_allow: Vec<String>,
+    pub(crate) saved_at_unix: u64,
 }
 
 /// Agent capabilities for ACP
@@ -212,9 +242,11 @@ pub struct ToolDefinition {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            model: "grok-code-fast-1".to_string(),
+            model: "grok-4.3".to_string(),
             temperature: 0.5, // Lower temperature for more deterministic coding output
-            max_tokens: 4096,
+            // grok-4.3 supports higher output token limits; 16 384 balances
+            // detailed responses with reasonable response times.
+            max_tokens: 16_384,
             system_prompt: Some(
                 "You are an expert software engineer and coding assistant. \
                 Your primary goal is to write high-quality, efficient, and maintainable code. \
@@ -229,6 +261,7 @@ impl Default for SessionConfig {
                 6. Suggest tests to verify your code when appropriate."
                     .to_string(),
             ),
+            thinking_mode: ThinkingMode::Off,
         }
     }
 }
@@ -302,18 +335,16 @@ impl GrokAcpAgent {
     fn create_capabilities() -> GrokAgentCapabilities {
         GrokAgentCapabilities {
             models: vec![
-                "grok-4-1-fast-reasoning".to_string(),
-                "grok-4-1-fast-non-reasoning".to_string(),
-                "grok-code-fast-1".to_string(),
-                "grok-4-fast-reasoning".to_string(),
-                "grok-4-fast-non-reasoning".to_string(),
-                "grok-4-0709".to_string(),
+                "grok-4.3".to_string(), // Default — 1 M token context
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
                 "grok-2-vision-1212".to_string(),
                 "grok-2".to_string(), // Fallback
             ],
-            max_context_length: 131072,
+            // grok-4.3 exposes a 1,048,576-token context window.
+            // This is reported here so ACP clients (e.g. Zed) can make
+            // informed decisions about context insertion.
+            max_context_length: 1_048_576,
             features: vec![
                 "chat_completion".to_string(),
                 "code_generation".to_string(),
@@ -321,6 +352,8 @@ impl GrokAcpAgent {
                 "code_explanation".to_string(),
                 "streaming".to_string(),
                 "function_calling".to_string(),
+                "1m_context".to_string(),
+                "vision".to_string(),
             ],
             // Build the tool list live from the registry so this list
             // automatically reflects any newly added tools without requiring
@@ -353,7 +386,7 @@ impl GrokAcpAgent {
             session_config.model = model.clone();
         }
 
-        let session_data = SessionData {
+        let mut session_data = SessionData {
             cwd,
             messages: Vec::new(),
             config: session_config,
@@ -362,7 +395,63 @@ impl GrokAcpAgent {
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
+            current_goal: None,
         };
+
+        // --- Task 102: Knowledge Pack Loader ---
+        // Load project-local knowledge files (knowledge/*.md, knowledge/*.json) and
+        // inject them as a system message so the model has project-specific context.
+        if let Ok(knowledge) = crate::knowledge::loader::KnowledgeLoader::load() {
+            let entries = knowledge.get_all();
+            if !entries.is_empty() {
+                let combined: String = entries
+                    .iter()
+                    .map(|e| format!("## {}\n{}", e.source, e.content))
+                    .collect::<Vec<_>>()
+                    .join("\n\n---\n\n");
+                session_data.messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": format!("## Project Knowledge\n\nThe following project-specific knowledge has been loaded from the `knowledge/` directory:\n\n{}", combined),
+                }));
+                tracing::info!(
+                    "Injected {} knowledge pack(s) into session {}",
+                    entries.len(),
+                    session_id.0
+                );
+            }
+        }
+
+        // --- Task 103: Session DNA ---
+        // Load session_dna.json (tone, verbosity, coding_style, etc.) and append
+        // its fields to the system prompt so the model adopts the user's preferred
+        // persona and style throughout the session.
+        let dna = crate::session::dna::SessionDna::load();
+        if let Some(sys_msg) = session_data
+            .messages
+            .iter_mut()
+            .find(|m| m["role"] == "system")
+        {
+            if let Some(content) = sys_msg["content"].as_str() {
+                let mut prompt = content.to_string();
+                dna.inject_into_prompt(&mut prompt);
+                sys_msg["content"] = serde_json::Value::String(prompt);
+            }
+        } else {
+            // No system message yet -- create one from DNA alone
+            let mut prompt = String::new();
+            dna.inject_into_prompt(&mut prompt);
+            if !prompt.trim().is_empty() {
+                session_data.messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": prompt.trim().to_string(),
+                }));
+            }
+        }
+        tracing::debug!(
+            "Session DNA injected: tone={}, verbosity={}",
+            dna.tone,
+            dna.verbosity
+        );
 
         let mut sessions = self.sessions.write().await;
         sessions.insert(session_id.0.clone(), session_data);
@@ -479,7 +568,15 @@ impl GrokAcpAgent {
 
         info!("📚 Session history: {} messages", session.messages.len());
 
-        // Trim history to prevent unbounded context growth.
+        // ── 1. Per-message truncation ────────────────────────────────────────
+        // Cap individual tool-result messages so a single large file read
+        // cannot consume the whole context window.
+        let max_tool_chars = self.config.acp.max_tool_result_chars;
+        if max_tool_chars > 0 {
+            truncate_tool_results(&mut session.messages, max_tool_chars);
+        }
+
+        // ── 2. Count-based trim ──────────────────────────────────────────────
         // Keep the most recent max_history_messages entries so the model always
         // has fresh context without exceeding the API context window.
         // We trim here (after adding the user turn) so we never split a
@@ -492,6 +589,169 @@ impl GrokAcpAgent {
                 "Trimmed {} old messages from session history (keeping last {})",
                 trim_count, max_history
             );
+        }
+
+        // ── 3. Token-budget trim ─────────────────────────────────────────────
+        // Even within the message-count limit, rich tool outputs can bloat
+        // the context beyond the model's token window.  Estimate tokens
+        // (4 chars ≈ 1 token) and drop oldest messages until we fit.
+        // Use a model-aware budget: grok-4.x gets the 1 M-token budget;
+        // grok-3 and older use the legacy 220 k budget.
+        let max_ctx_tokens = model_context_budget(
+            &session.config.model,
+            self.config.acp.max_context_tokens,
+            self.config.acp.grok4_max_context_tokens,
+        );
+        let estimated = estimate_tokens(&session.messages);
+        if estimated > max_ctx_tokens {
+            let before = session.messages.len();
+            trim_to_token_budget(&mut session.messages, max_ctx_tokens);
+            warn!(
+                "⚠️  Context trimmed by token budget: ~{} estimated tokens > {} limit. \
+                 Dropped {} old messages (kept {}).",
+                estimated,
+                max_ctx_tokens,
+                before - session.messages.len(),
+                session.messages.len()
+            );
+        }
+
+        // ── 4. Smart compression (summarise-and-archive instead of drop) ──────
+        // When the context exceeds the compression threshold we call the AI to
+        // summarise the oldest chunk of messages, archive the raw messages to
+        // disk, and replace them with a compact notice.  If the API call fails
+        // (Starlink drop) we restore the drained messages and fall through.
+        if self.config.acp.auto_compress {
+            // Use the same model-aware budget for the compression threshold.
+            let active_ctx_budget = model_context_budget(
+                &session.config.model,
+                self.config.acp.max_context_tokens,
+                self.config.acp.grok4_max_context_tokens,
+            );
+            let threshold =
+                (active_ctx_budget as f64 * self.config.acp.compression_threshold as f64) as usize;
+            let estimated = estimate_tokens(&session.messages);
+
+            if estimated > threshold {
+                // Collect indices of non-system messages (preserve system at index 0).
+                let non_system_indices: Vec<usize> = session
+                    .messages
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+                    .map(|(i, _)| i)
+                    .collect();
+
+                let compress_count = ((non_system_indices.len() as f64
+                    * self.config.acp.compression_chunk_ratio as f64)
+                    as usize)
+                    .max(4)
+                    .min(non_system_indices.len());
+
+                if compress_count > 0 {
+                    // Drain the oldest `compress_count` non-system messages.
+                    // They start at the first non-system index; because messages
+                    // are ordered and non_system_indices[0] is the lowest index,
+                    // we can drain a contiguous slice.
+                    let start = non_system_indices[0];
+                    let end = non_system_indices
+                        .get(compress_count - 1)
+                        .copied()
+                        .unwrap_or(start);
+                    let to_compress: Vec<Value> = session.messages.drain(start..=end).collect();
+
+                    let tokens_saved = estimate_tokens(&to_compress);
+                    let model = session.config.model.clone();
+
+                    match self.get_router() {
+                        Ok(router) => {
+                            match crate::memory::context_compressor::compress(
+                                &to_compress,
+                                router,
+                                &model,
+                            )
+                            .await
+                            {
+                                Ok((summary, key_facts)) => {
+                                    use crate::memory::context_archive::{
+                                        ContextArchive, ContextChunk,
+                                    };
+                                    match ContextArchive::for_session(&session_id.0) {
+                                        Ok(mut archive) => {
+                                            let chunk_id = archive.next_chunk_id();
+                                            let chunk = ContextChunk {
+                                                chunk_id,
+                                                session_id: session_id.0.clone(),
+                                                created_at: chrono::Utc::now(),
+                                                message_count: to_compress.len(),
+                                                estimated_tokens_saved: tokens_saved,
+                                                summary,
+                                                key_facts,
+                                                raw_messages: to_compress,
+                                            };
+                                            if let Err(e) = archive.save_chunk(&chunk) {
+                                                warn!(
+                                                    "⚠️  Failed to save context archive chunk: {}",
+                                                    e
+                                                );
+                                            }
+                                            let insert_at = if session
+                                                .messages
+                                                .first()
+                                                .and_then(|m| m.get("role"))
+                                                .and_then(|r| r.as_str())
+                                                == Some("system")
+                                            {
+                                                1
+                                            } else {
+                                                0
+                                            };
+                                            let notice = build_archive_notice(&chunk);
+                                            session.messages.insert(insert_at, notice);
+                                            warn!(
+                                                "📦 Archived {} messages → chunk #{} \
+                                                 (~{} tokens saved). \
+                                                 Active context: {} messages.",
+                                                chunk.message_count,
+                                                chunk_id,
+                                                tokens_saved,
+                                                session.messages.len()
+                                            );
+                                        }
+                                        Err(e) => {
+                                            warn!(
+                                                "⚠️  Could not open context archive, \
+                                                 messages dropped: {}",
+                                                e
+                                            );
+                                        }
+                                    }
+                                }
+                                Err(e) => {
+                                    // Compression failed — restore drained messages so
+                                    // we don't silently lose history.
+                                    warn!(
+                                        "⚠️  Context compression failed (network drop?): {}. \
+                                         Restoring {} messages.",
+                                        e,
+                                        to_compress.len()
+                                    );
+                                    for (offset, msg) in to_compress.into_iter().enumerate() {
+                                        session.messages.insert(start + offset, msg);
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            warn!("⚠️  No router available for compression: {}", e);
+                            // Restore messages
+                            for (offset, msg) in to_compress.into_iter().enumerate() {
+                                session.messages.insert(start + offset, msg);
+                            }
+                        }
+                    }
+                }
+            }
         }
 
         // Extract options
@@ -569,11 +829,46 @@ impl GrokAcpAgent {
                             max_tokens,
                             &session.config.model,
                             Some(tool_defs.clone()),
+                            session.config.thinking_mode.as_api_str(),
                         )
                         .await
                     {
                         Ok(resp) => break resp,
                         Err(e) => {
+                            // ── Detect "prompt too long" before anything else ─────────
+                            // This is not a network error; retrying will not help.
+                            // Give the user clear guidance instead.
+                            {
+                                let raw = e.to_string();
+                                let lower = raw.to_lowercase();
+                                if lower.contains("maximum prompt length")
+                                    || lower.contains("prompt length")
+                                    || (lower.contains("invalid argument")
+                                        && lower.contains("token"))
+                                {
+                                    let current_est = estimate_tokens(&session.messages);
+                                    error!("❌ Context-window overflow: {}", raw);
+                                    return Err(anyhow!(
+                                        "Context window overflow — the request was too large \
+                                         for the model.\n\
+                                         Estimated tokens in history: ~{}\n\
+                                         \n\
+                                         💡 Quick fixes:\n\
+                                         • Type `/clear` to reset the conversation history.\n\
+                                         • Lower `max_history_messages` in .grok/config.toml \
+                                           (currently {}).\n\
+                                         • Lower `max_context_tokens` in .grok/config.toml \
+                                           (currently {}).\n\
+                                         • Lower `max_tool_result_chars` in .grok/config.toml \
+                                           (currently {}) to truncate large file reads earlier.",
+                                        current_est,
+                                        self.config.acp.max_history_messages,
+                                        self.config.acp.max_context_tokens,
+                                        self.config.acp.max_tool_result_chars,
+                                    ));
+                                }
+                            }
+
                             let is_retriable = crate::utils::network::detect_network_drop(&e) || {
                                 let msg = e.to_string().to_lowercase();
                                 msg.contains("timeout")
@@ -653,8 +948,16 @@ impl GrokAcpAgent {
 
             let response_msg = response_with_finish.message;
             let finish_reason = response_with_finish.finish_reason.as_deref();
+            let thinking_content = response_with_finish.thinking_content;
 
             info!("📋 Finish reason: {:?}", finish_reason);
+
+            // If the model produced a reasoning/thinking trace, log it and
+            // prepend it as a collapsible block before the main response.
+            if let Some(ref tc) = thinking_content {
+                let think_tokens = tc.len() / 4;
+                debug!("🧠 Thinking trace received: ~{} tokens", think_tokens);
+            }
 
             // Add assistant response to history
             session.messages.push(serde_json::to_value(&response_msg)?);
@@ -680,7 +983,16 @@ impl GrokAcpAgent {
                     loop_count,
                     response_text.len()
                 );
-                return Ok(response_text);
+                // Prepend thinking block if present
+                let final_response = if let Some(tc) = thinking_content {
+                    format!(
+                        "<details><summary>\u{1f9e0} Thinking\u{2026}</summary>\n\n{}\n\n</details>\n\n{}",
+                        tc, response_text
+                    )
+                } else {
+                    response_text
+                };
+                return Ok(final_response);
             }
 
             // We have tool calls to process
@@ -812,7 +1124,9 @@ impl GrokAcpAgent {
                     }
                     "run_shell_command" => {
                         let command = args["command"].as_str().ok_or(anyhow!("Missing command"))?;
-                        tools::run_shell_command(command, &policy).await
+                        // Honour project config; fall back to built-in 300 s default.
+                        let shell_timeout = self.config.tools.shell.command_timeout_secs;
+                        tools::run_shell_command(command, &policy, shell_timeout).await
                     }
                     "replace" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
@@ -824,7 +1138,8 @@ impl GrokAcpAgent {
                             .ok_or(anyhow!("Missing new_string"))?;
                         let expected_replacements =
                             args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(path, old_string, new_string, expected_replacements, &policy).await
+                        tools::replace(path, old_string, new_string, expected_replacements, &policy)
+                            .await
                     }
                     "save_memory" => {
                         let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
@@ -857,15 +1172,37 @@ impl GrokAcpAgent {
                     }
                     "task_create" => {
                         let title = args["title"].as_str().ok_or(anyhow!("Missing title"))?;
-                        let description = args["description"].as_str().ok_or(anyhow!("Missing description"))?;
-                        let priority = args["priority"].as_str().ok_or(anyhow!("Missing priority"))?;
-                        let dependencies_value = args["dependencies"].as_array().ok_or(anyhow!("Missing dependencies"))?;
-                        let dependencies: Result<Vec<f64>> = dependencies_value.iter().map(|v| v.as_f64().ok_or(anyhow!("Invalid dependency"))).collect();
+                        let description = args["description"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing description"))?;
+                        let priority = args["priority"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing priority"))?;
+                        let dependencies_value = args["dependencies"]
+                            .as_array()
+                            .ok_or(anyhow!("Missing dependencies"))?;
+                        let dependencies: Result<Vec<f64>> = dependencies_value
+                            .iter()
+                            .map(|v| v.as_f64().ok_or(anyhow!("Invalid dependency")))
+                            .collect();
                         let details = args["details"].as_str().ok_or(anyhow!("Missing details"))?;
-                        let test_strategy = args["testStrategy"].as_str().ok_or(anyhow!("Missing testStrategy"))?;
-                        let subtasks_value = args["subtasks"].as_array().ok_or(anyhow!("Missing subtasks"))?;
+                        let test_strategy = args["testStrategy"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing testStrategy"))?;
+                        let subtasks_value = args["subtasks"]
+                            .as_array()
+                            .ok_or(anyhow!("Missing subtasks"))?;
                         let subtasks: Vec<Value> = subtasks_value.clone();
-                        tools::task_create(title, description, priority, dependencies?, details, test_strategy, subtasks, &policy)
+                        tools::task_create(
+                            title,
+                            description,
+                            priority,
+                            dependencies?,
+                            details,
+                            test_strategy,
+                            subtasks,
+                            &policy,
+                        )
                     }
                     "task_update" => {
                         let id = args["id"].as_f64().ok_or(anyhow!("Missing id"))?;
@@ -1086,6 +1423,7 @@ impl GrokAcpAgent {
                 session.config.max_tokens,
                 &session.config.model,
                 None,
+                None, // no thinking mode for code operations
             )
             .await?;
 
@@ -1132,6 +1470,142 @@ impl GrokAcpAgent {
 
     pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
         &self.capabilities
+    }
+
+    // ── Bayesian engine commands (───────────────────────────────────────────────
+
+    /// Return an ASCII bar-chart of the current Bayesian belief state for a session.
+    ///
+    /// Used by the `/bayes show` slash command.
+    pub async fn get_bayes_visualize(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found — no Bayesian state to display.".to_string()),
+            Some(session) => {
+                let vis = session.bayes_engine.visualize();
+                let best = session
+                    .bayes_engine
+                    .best_intent()
+                    .unwrap_or_else(|| "(none)".to_string());
+                Ok(format!(
+                    "## 🧠 Bayesian Belief State\n\n\
+                     **Best intent:** `{best}`\n\n\
+                     ```\n{vis}\n```",
+                ))
+            }
+        }
+    }
+
+    /// Reset the Bayesian engine for a session back to compiled-in defaults.
+    ///
+    /// Used by the `/bayes reset` slash command.
+    pub async fn reset_bayes(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found — nothing to reset.".to_string()),
+            Some(session) => {
+                session.bayes_engine = crate::bayes::BayesianEngine::new_with_default_priors();
+                info!("Bayesian engine reset for session: {}", session_id.0);
+                Ok(
+                    "✅ Bayesian priors reset to defaults. The engine will re-learn from \
+                    the next few messages."
+                        .to_string(),
+                )
+            }
+        }
+    }
+
+    /// Return a plain-English explanation of the current Bayesian state for a session.
+    ///
+    /// Used by the `/bayes explain` slash command.
+    pub async fn get_bayes_explain(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found — no Bayesian state to explain.".to_string()),
+            Some(session) => {
+                let e = &session.bayes_engine;
+                let best = e.best_intent().unwrap_or_else(|| "(none)".to_string());
+                let intent_label = match best.as_str() {
+                    "intent_edit" => "editing files / writing code",
+                    "intent_shell" => "running shell commands",
+                    "intent_search" => "searching the web or codebase",
+                    "intent_question" => "answering a question",
+                    _ => "an unrecognised intent",
+                };
+                let clarify = if e.needs_clarification() {
+                    "🟡 **Clarification gate is OPEN** — the engine thinks a clarifying \
+                     question may be needed before proceeding."
+                } else {
+                    "🟢 **Clarification gate is closed** — the intent is clear enough to act."
+                };
+                let uncertain = if e.is_high_uncertainty() {
+                    "⚠️  **High uncertainty** — system uncertainty notes will be injected \
+                     into prompts to encourage the AI to ask before making changes."
+                } else {
+                    "✅ **Uncertainty is low** — the AI can proceed with reasonable confidence."
+                };
+                let vague = if e.is_vague() {
+                    "🟡 **Vagueness flag is SET** — the last message appeared vague; the AI \
+                     will be prompted to propose alternative interpretations."
+                } else {
+                    "🟢 **No vagueness detected** — the request was specific enough."
+                };
+                Ok(format!(
+                    "## 🧠 Bayesian State Explanation\n\n\
+                     **Most likely intent:** `{best}` ({intent_label})\n\n\
+                     {clarify}\n\n\
+                     {uncertain}\n\n\
+                     {vague}\n\n\
+                     Use `/bayes show` to see the raw probability bar-chart, \
+                     or `/bayes reset` to wipe the learned priors."
+                ))
+            }
+        }
+    }
+
+    /// Set the active goal for a session (used by the `/goal <text>` slash command).
+    pub async fn set_session_goal(&self, session_id: &SessionId, goal: String) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found -- goal not set.".to_string()),
+            Some(session) => {
+                session.current_goal = Some(goal.clone());
+                info!("Goal set for session {}: {}", session_id.0, goal);
+                Ok(format!(
+                    "**Goal set:** {}\n\nAll subsequent messages will be interpreted through \
+                     the lens of this goal. Type `/goal clear` to remove it.",
+                    goal
+                ))
+            }
+        }
+    }
+
+    /// Clear the active goal for a session (used by the `/goal clear` slash command).
+    pub async fn clear_session_goal(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                session.current_goal = None;
+                info!("Goal cleared for session {}", session_id.0);
+                Ok(
+                    "Goal cleared. Messages will be interpreted without a persistent goal."
+                        .to_string(),
+                )
+            }
+        }
+    }
+
+    /// Return the current goal for a session (used by `/goal show`).
+    pub async fn get_session_goal(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => Ok(match &session.current_goal {
+                Some(goal) => format!("**Current goal:** {}", goal),
+                None => "No active goal set. Use `/goal <description>` to set one.".to_string(),
+            }),
+        }
     }
 
     /// Clear the conversation history for a session (used by the `/clear` slash command).
@@ -1226,6 +1700,37 @@ impl GrokAcpAgent {
         Ok(())
     }
 
+    /// Set the thinking / reasoning mode for a session.
+    ///
+    /// The mode is stored in `SessionConfig::thinking_mode` and passed as
+    /// `reasoning_effort` in every subsequent API call.
+    pub async fn set_thinking_mode(
+        &self,
+        session_id: &SessionId,
+        mode: ThinkingMode,
+    ) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            let old = &session.config.thinking_mode;
+            info!(
+                "Thinking mode: {:?} → {:?} for session: {}",
+                old, mode, session_id.0
+            );
+            session.config.thinking_mode = mode;
+            Ok(())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
+    }
+
+    /// Get the current thinking mode for a session.
+    pub async fn get_thinking_mode(&self, session_id: &SessionId) -> Option<ThinkingMode> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .map(|s| s.config.thinking_mode.clone())
+    }
+
     /// Clean up expired sessions
     pub async fn cleanup_sessions(&self, max_age: std::time::Duration) -> Result<usize> {
         let mut sessions = self.sessions.write().await;
@@ -1246,6 +1751,145 @@ impl GrokAcpAgent {
         }
 
         Ok(cleaned)
+    }
+
+    /// Returns the path to the sessions persistence directory: ~/.grok/sessions/
+    fn sessions_dir() -> Option<std::path::PathBuf> {
+        dirs::home_dir().map(|h| h.join(".grok").join("sessions"))
+    }
+
+    /// Persist session state to ~/.grok/sessions/<id>.json
+    /// Called automatically after each successful prompt response.
+    /// Retries up to 3 times on I/O errors (Starlink-safe).
+    pub async fn save_session_to_disk(&self, session_id: &SessionId) -> Result<()> {
+        let state = {
+            let sessions = self.sessions.read().await;
+            let Some(session) = sessions.get(&session_id.0) else {
+                return Ok(());
+            };
+            PersistedSession {
+                session_id: session_id.0.clone(),
+                cwd: session.cwd.clone(),
+                messages: session.messages.clone(),
+                config: session.config.clone(),
+                current_goal: session.current_goal.clone(),
+                always_allow: session.always_allow.iter().cloned().collect(),
+                saved_at_unix: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            }
+        };
+
+        let Some(dir) = Self::sessions_dir() else {
+            return Ok(());
+        };
+
+        for attempt in 1u32..=3 {
+            match tokio::fs::create_dir_all(&dir).await {
+                Ok(()) => break,
+                Err(e) if attempt < 3 => {
+                    warn!(
+                        "save_session: create_dir failed (attempt {}): {}",
+                        attempt, e
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                        .await;
+                }
+                Err(e) => return Err(anyhow!("save_session: cannot create sessions dir: {}", e)),
+            }
+        }
+
+        let path = dir.join(format!("{}.json", session_id.0));
+        let json = serde_json::to_string_pretty(&state)?;
+
+        for attempt in 1u32..=3 {
+            match tokio::fs::write(&path, &json).await {
+                Ok(()) => {
+                    info!(
+                        "Session '{}' persisted to {:?} ({} messages)",
+                        session_id.0,
+                        path,
+                        state.messages.len()
+                    );
+                    return Ok(());
+                }
+                Err(e) if attempt < 3 => {
+                    warn!("save_session: write failed (attempt {}): {}", attempt, e);
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                        .await;
+                }
+                Err(e) => return Err(anyhow!("save_session: write failed: {}", e)),
+            }
+        }
+        Ok(())
+    }
+
+    /// Load a persisted session from ~/.grok/sessions/<id>.json.
+    /// Returns None if no saved state exists or if the file cannot be parsed.
+    pub async fn load_session_from_disk(&self, session_id: &str) -> Option<PersistedSession> {
+        let dir = Self::sessions_dir()?;
+        let path = dir.join(format!("{}.json", session_id));
+
+        for attempt in 1u32..=3 {
+            match tokio::fs::read_to_string(&path).await {
+                Ok(content) => {
+                    return serde_json::from_str::<PersistedSession>(&content)
+                        .map_err(|e| warn!("load_session: parse error for '{}': {}", session_id, e))
+                        .ok();
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+                Err(e) if attempt < 3 => {
+                    warn!("load_session: read failed (attempt {}): {}", attempt, e);
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                        .await;
+                }
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+
+    /// Restore a session from a `PersistedSession` snapshot loaded from disk.
+    pub async fn restore_session_from_disk(&self, state: PersistedSession) -> Result<()> {
+        let sid = SessionId::new(state.session_id.clone());
+        // Initialize a fresh session with the saved config
+        self.initialize_session(sid.clone(), state.cwd.clone(), Some(state.config))
+            .await?;
+        // Overwrite the parts that initialize_session can't set
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&state.session_id) {
+            session.messages = state.messages;
+            session.current_goal = state.current_goal;
+            session.always_allow = state.always_allow.into_iter().collect();
+        }
+        info!("Session '{}' restored from disk", sid.0);
+        Ok(())
+    }
+
+    /// Clone an existing session into a new session ID (session/fork support).
+    pub async fn fork_session(&self, source_id: &SessionId, new_id: SessionId) -> Result<()> {
+        let forked = {
+            let sessions = self.sessions.read().await;
+            let source = sessions
+                .get(&source_id.0)
+                .ok_or_else(|| anyhow!("fork_session: source '{}' not found", source_id.0))?;
+            SessionData {
+                cwd: source.cwd.clone(),
+                messages: source.messages.clone(),
+                config: source.config.clone(),
+                created_at: std::time::Instant::now(),
+                last_activity: std::time::Instant::now(),
+                always_allow: source.always_allow.clone(),
+                client_commands: source.client_commands.clone(),
+                bayes_engine: crate::bayes::BayesianEngine::new_with_default_priors(),
+                current_goal: source.current_goal.clone(),
+            }
+        };
+        let mut sessions = self.sessions.write().await;
+        sessions.insert(new_id.0.clone(), forked);
+        info!("Session '{}' forked → '{}'", source_id.0, new_id.0);
+        Ok(())
     }
 
     /// Return a list of currently active session IDs.
@@ -1288,6 +1932,131 @@ impl GrokAcpAgent {
     }
 }
 
+// ───────────────────────────────────────────────────────────────────────────────
+// Token-management helpers
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Rough token estimate: 4 characters ≈ 1 token (standard heuristic for
+/// mixed prose/code/JSON).  We serialise each message value so that all
+/// fields (role, content, tool_calls …) are counted, not just the visible
+/// text.
+#[inline]
+fn estimate_tokens(messages: &[Value]) -> usize {
+    messages
+        .iter()
+        .map(|m| m.to_string().len().saturating_add(3) / 4) // +3 for per-message overhead
+        .sum()
+}
+
+/// Select the appropriate context-token budget based on the active model.
+///
+/// - grok-4.x models (grok-4.3 and later) have a 1 M token context window;
+///   use `grok4_budget` for those.
+/// - All other models (grok-3, grok-2, …) use `legacy_budget`.
+#[inline]
+fn model_context_budget(model: &str, legacy_budget: usize, grok4_budget: usize) -> usize {
+    if model.starts_with("grok-4") {
+        grok4_budget
+    } else {
+        legacy_budget
+    }
+}
+
+/// Remove the oldest messages (from index 0 upward) until the estimated
+/// token count is ≤ `budget`.  Always keeps at least the last message so
+/// the user turn is never lost.
+fn trim_to_token_budget(messages: &mut Vec<Value>, budget: usize) {
+    while messages.len() > 1 && estimate_tokens(messages) > budget {
+        messages.remove(0);
+    }
+}
+
+/// Truncate the `content` field of tool-result messages (role = "tool")
+/// that exceed `max_chars` characters.  A truncation notice is appended so
+/// the model knows the output was cut.
+fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
+    for msg in messages.iter_mut() {
+        // Only touch tool-result messages
+        if msg.get("role").and_then(|r| r.as_str()) != Some("tool") {
+            continue;
+        }
+        if let Some(content) = msg.get_mut("content") {
+            match content {
+                Value::String(s) if s.len() > max_chars => {
+                    let truncated = &s[..max_chars];
+                    *s = format!(
+                        "{}\n\n[... output truncated to {} chars to fit context window ...]",
+                        truncated, max_chars
+                    );
+                }
+                // Array-of-content-blocks form used by some providers
+                Value::Array(blocks) => {
+                    for block in blocks.iter_mut() {
+                        if let Some(text) = block.get_mut("text")
+                            && let Some(s) = text.as_str()
+                            && s.len() > max_chars
+                        {
+                            let truncated = &s[..max_chars];
+                            *text = Value::String(format!(
+                                "{}\n\n[... output truncated to {} chars to fit \
+                                 context window ...]",
+                                truncated, max_chars
+                            ));
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Build the compact system-role archive notice injected into the active
+/// context after a chunk is compressed and saved.
+///
+/// The notice is intentionally short (≤ 400 chars) to minimise its own
+/// token footprint while giving the model enough information to decide
+/// whether it needs to recall the archived content.
+fn build_archive_notice(chunk: &crate::memory::context_archive::ContextChunk) -> Value {
+    let ts = chunk.created_at.format("%Y-%m-%d %H:%M UTC").to_string();
+
+    let facts = if chunk.key_facts.is_empty() {
+        String::new()
+    } else {
+        let bullets: String = chunk
+            .key_facts
+            .iter()
+            .take(5)
+            .map(|f| format!("\n\u{2022} {f}"))
+            .collect();
+        format!("\nKey facts:{}", bullets)
+    };
+
+    // Keep summary under ~200 chars for the notice
+    let preview: String = chunk.summary.chars().take(200).collect();
+    let preview = if chunk.summary.len() > 200 {
+        format!("{}\u{2026}", preview)
+    } else {
+        preview
+    };
+
+    let content = format!(
+        "[\u{1F4E6} Context Archive #{id} | {ts} | {count} messages]\n\
+         Summary: {preview}{facts}\n\
+         Type `/recall {id}` or say \"recall archive {id}\" to restore this context.",
+        id = chunk.chunk_id,
+        ts = ts,
+        count = chunk.message_count,
+        preview = preview,
+        facts = facts,
+    );
+
+    json!({
+        "role": "system",
+        "content": content,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1295,9 +2064,10 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-        assert_eq!(config.model, "grok-code-fast-1");
+        assert_eq!(config.model, "grok-4.3");
         assert_eq!(config.temperature, 0.5);
-        assert_eq!(config.max_tokens, 4096);
+        // grok-4.3 supports higher output token limits; default raised to 16_384
+        assert_eq!(config.max_tokens, 16_384);
         assert!(config.system_prompt.is_some());
     }
 
@@ -1307,7 +2077,13 @@ mod tests {
         assert!(!capabilities.models.is_empty());
         assert!(!capabilities.features.is_empty());
         assert!(!capabilities.tools.is_empty());
-        assert!(capabilities.max_context_length > 0);
+        // grok-4.3 exposes a 1 M token context window
+        assert_eq!(capabilities.max_context_length, 1_048_576);
+        // grok-4.3 must be the first / default model
+        assert_eq!(capabilities.models[0], "grok-4.3");
+        // 1m_context and vision feature flags
+        assert!(capabilities.features.contains(&"1m_context".to_string()));
+        assert!(capabilities.features.contains(&"vision".to_string()));
     }
 
     #[tokio::test]
@@ -1339,6 +2115,7 @@ mod tests {
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new(),
+            current_goal: None,
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);
@@ -1537,5 +2314,61 @@ mod tests {
             assert!(result.is_err(), "Should timeout and return error");
             assert!(result.unwrap_err().to_string().contains("Timed out"));
         }
+    }
+
+    #[test]
+    fn build_archive_notice_has_correct_role_and_chunk_id() {
+        use crate::memory::context_archive::ContextChunk;
+        use chrono::Utc;
+
+        let chunk = ContextChunk {
+            chunk_id: 3,
+            session_id: "test-sess".to_string(),
+            created_at: Utc::now(),
+            message_count: 12,
+            estimated_tokens_saved: 4500,
+            summary: "We discussed Rust async patterns.".to_string(),
+            key_facts: vec![
+                "tokio is used".to_string(),
+                "async/await preferred".to_string(),
+            ],
+            raw_messages: vec![],
+        };
+
+        let notice = build_archive_notice(&chunk);
+        assert_eq!(notice["role"], "system");
+        let content = notice["content"].as_str().unwrap();
+        assert!(content.contains("#3"), "should contain chunk id");
+        assert!(content.contains("/recall 3"), "should contain recall hint");
+        assert!(
+            content.contains("12 messages"),
+            "should contain message count"
+        );
+    }
+
+    // ── Task 109: model_context_budget ─────────────────────────────────────────
+
+    #[test]
+    fn test_model_context_budget_grok4_uses_grok4_budget() {
+        assert_eq!(model_context_budget("grok-4.3", 220_000, 950_000), 950_000);
+        assert_eq!(
+            model_context_budget("grok-4-latest", 220_000, 950_000),
+            950_000
+        );
+        assert_eq!(model_context_budget("grok-4", 220_000, 950_000), 950_000);
+    }
+
+    #[test]
+    fn test_model_context_budget_legacy_models_use_legacy_budget() {
+        assert_eq!(model_context_budget("grok-3", 220_000, 950_000), 220_000);
+        assert_eq!(
+            model_context_budget("grok-3-mini", 220_000, 950_000),
+            220_000
+        );
+        assert_eq!(
+            model_context_budget("grok-2-latest", 220_000, 950_000),
+            220_000
+        );
+        assert_eq!(model_context_budget("grok-beta", 220_000, 950_000), 220_000);
     }
 }

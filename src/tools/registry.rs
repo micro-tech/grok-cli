@@ -12,7 +12,8 @@ use serde_json::{Value, json};
 
 use crate::tools::{
     ToolContext, agent_tools, discovery_tools, file_tools, lsp_tools, mcp_tools, memory_tools,
-    notebook_tools, plan_tools, shell_tools, skill_tools, system_tools, task_tools, web_tools,
+    notebook_tools, plan_tools, shell_tools, skill_tools, system_tools, task_graph_tools,
+    task_tools, web_tools,
 };
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -103,7 +104,10 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
             let command = args["command"]
                 .as_str()
                 .ok_or_else(|| anyhow!("Missing: command"))?;
-            shell_tools::run_shell_command(command, policy).await
+            // Pass 0 → uses the built-in 300 s default.
+            // The ACP path (acp/mod.rs) reads the value from
+            // config.tools.shell.command_timeout_secs instead.
+            shell_tools::run_shell_command(command, policy, 0).await
         }
 
         // ── Web ──────────────────────────────────────────────────────────────
@@ -140,6 +144,12 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
         }
 
         // ── Task management ──────────────────────────────────────────────
+        "execute_task_graph" => {
+            let graph_json = args["graph"]
+                .as_str()
+                .ok_or_else(|| anyhow!("Missing: graph"))?;
+            task_graph_tools::execute_task_graph(graph_json, ctx).await
+        }
         "task_create" => {
             let title = args["title"]
                 .as_str()
@@ -306,6 +316,51 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
             discovery_tools::remote_trigger(endpoint, payload, method).await
         }
 
+        // ── Context recall ────────────────────────────────────────────────────
+        "recall_context" => {
+            let chunk_id = args["chunk_id"].as_u64().ok_or_else(|| {
+                anyhow!("Missing or invalid: chunk_id (must be a positive integer)")
+            })? as u32;
+
+            match crate::memory::context_archive::ContextArchive::for_session("unknown") {
+                Err(e) => Err(anyhow!("Could not open context archive: {}", e)),
+                Ok(archive) => match archive.load_chunk(chunk_id)? {
+                    None => Ok(format!(
+                        "Archive chunk #{} not found. Use /archives to see available chunks.",
+                        chunk_id
+                    )),
+                    Some(chunk) => {
+                        let facts = if chunk.key_facts.is_empty() {
+                            String::new()
+                        } else {
+                            format!(
+                                "\n\nKey facts:\n{}",
+                                chunk
+                                    .key_facts
+                                    .iter()
+                                    .map(|f| format!("\u{2022} {f}"))
+                                    .collect::<Vec<_>>()
+                                    .join("\n")
+                            )
+                        };
+                        Ok(format!(
+                            "[Recalled Archive #{id}]\n\
+                             Covered {count} messages archived on {ts}.\n\
+                             Summary: {summary}{facts}\n\n\
+                             Note: The full raw messages have been injected into your \
+                             context by the system. You can now reference the details \
+                             from that earlier conversation.",
+                            id = chunk.chunk_id,
+                            count = chunk.message_count,
+                            ts = chunk.created_at.format("%Y-%m-%d %H:%M UTC"),
+                            summary = chunk.summary,
+                            facts = facts,
+                        ))
+                    }
+                },
+            }
+        }
+
         unknown => Err(anyhow!("Unknown tool: '{}'", unknown)),
     }
 }
@@ -314,7 +369,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
 // get_tool_definitions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Return JSON tool definitions for all 31 registered tools.
+/// Return JSON tool definitions for all 34 registered tools.
 pub fn get_tool_definitions() -> Vec<Value> {
     vec![
         // ── File tools ──────────────────────────────────────────────────────
@@ -339,6 +394,7 @@ pub fn get_tool_definitions() -> Vec<Value> {
         // ── Task management ────────────────────────────────────────────
         json!({"type":"function","function":{"name":"task_create","description":"Create a new task in .zed/task_list.json following Task Builder rules. Auto-assigns the next available integer ID and sets status to 'pending'. All Task Builder fields are supported: title, description, priority, dependencies (integer or decimal subtask IDs like 5.2), details (implementation instructions), testStrategy (verification approach), and subtasks (auto-assigned decimal IDs {parent}.1, {parent}.2, …).","parameters":{"type":"object","properties":{"title":{"type":"string","description":"Brief, descriptive task title (required)"},"description":{"type":"string","description":"Concise description of what the task involves"},"priority":{"type":"string","enum":["high","medium","low"],"description":"Importance level — high: blocks progress; medium: important; low: deferrable. Default: medium"},"dependencies":{"type":"array","items":{"type":"number"},"description":"IDs of tasks (or subtasks, e.g. 5.2) that must be done before this one"},"details":{"type":"string","description":"In-depth implementation instructions for the task"},"testStrategy":{"type":"string","description":"Verification approach to confirm the task is complete"},"subtasks":{"type":"array","description":"Optional initial subtasks; IDs are auto-assigned as {parent_id}.1, {parent_id}.2, etc. Each subtask starts as 'pending'.","items":{"type":"object","properties":{"title":{"type":"string","description":"Subtask title (required)"},"dependencies":{"type":"array","items":{"type":"number"},"description":"Subtask-level dependency IDs"}},"required":["title"]}}},"required":["title"]}}}),
         json!({"type":"function","function":{"name":"task_update","description":"Update a task's status, title, priority, or details in .zed/task_list.json","parameters":{"type":"object","properties":{"id":{"type":"number","description":"Task ID (supports decimals for subtasks, e.g. 85.2)"},"status":{"type":"string","enum":["pending","in_progress","done","deferred"]},"title":{"type":"string"},"priority":{"type":"string","enum":["high","medium","low"]},"details":{"type":"string"}},"required":["id"]}}}),
+        json!({"type":"function","function":{"name":"execute_task_graph","description":"Execute a DAG-based multi-step task graph with dependency resolution","parameters":{"type":"object","properties":{"graph":{"type":"string","description":"JSON string representing the task graph"}},"required":["graph"]}}}),
         // ── Plan mode ────────────────────────────────────────────────────────
         json!({"type":"function","function":{"name":"enter_plan_mode","description":"Activate plan mode — the agent outlines a full plan before making any changes","parameters":{"type":"object","properties":{}}}}),
         json!({"type":"function","function":{"name":"exit_plan_mode","description":"Deactivate plan mode and begin executing the current plan","parameters":{"type":"object","properties":{}}}}),
@@ -363,6 +419,8 @@ pub fn get_tool_definitions() -> Vec<Value> {
         json!({"type":"function","function":{"name":"tool_search","description":"Search the tool registry for tools matching a keyword. Use for deferred tool discovery.","parameters":{"type":"object","properties":{"query":{"type":"string","description":"Case-insensitive keyword to search in tool names and descriptions"}},"required":["query"]}}}),
         json!({"type":"function","function":{"name":"cron_create","description":"Register a scheduled trigger in ~/.grok/crons.json. An external scheduler must read this file to run the tasks.","parameters":{"type":"object","properties":{"name":{"type":"string","description":"Unique trigger name"},"schedule":{"type":"string","description":"5-field cron expression, e.g. '0 9 * * 1-5'"},"task":{"type":"string","description":"Task description or grok command to run"}},"required":["name","schedule","task"]}}}),
         json!({"type":"function","function":{"name":"remote_trigger","description":"Fire an HTTP trigger to a remote endpoint (POST/GET/PUT with JSON payload and 30 s timeout)","parameters":{"type":"object","properties":{"endpoint":{"type":"string","description":"URL to trigger"},"payload":{"type":"object","description":"JSON payload (ignored for GET)"},"method":{"type":"string","enum":["POST","GET","PUT"],"description":"HTTP method (default POST)"}},"required":["endpoint"]}}}),
+        // ── Context recall ────────────────────────────────────────────────────
+        json!({"type":"function","function":{"name":"recall_context","description":"Restore a previously archived conversation chunk back into the active context. Use this when you need information from earlier in the conversation that has been archived to save context space. The chunk summary and key facts are returned as the tool result; the full raw messages are injected back as context.","parameters":{"type":"object","properties":{"chunk_id":{"type":"integer","description":"The archive chunk number to recall (see /archives for the list)"}},"required":["chunk_id"]}}}),
     ]
 }
 
@@ -401,7 +459,7 @@ mod tests {
 
     #[test]
     fn get_tool_definitions_has_31_tools() {
-        assert_eq!(get_tool_definitions().len(), 32);
+        assert_eq!(get_tool_definitions().len(), 34);
     }
 
     #[test]

@@ -24,6 +24,9 @@ pub struct RouterResponse {
     pub model: String,
     /// Optional token-usage statistics.
     pub usage: Option<UsageStats>,
+    /// Chain-of-thought reasoning content from the model, if `reasoning_effort`
+    /// was set and the model produced a reasoning trace.
+    pub thinking_content: Option<String>,
 }
 
 impl RouterResponse {
@@ -36,6 +39,7 @@ impl RouterResponse {
             tool_calls: Vec::new(),
             model: model.into(),
             usage: None,
+            thinking_content: None,
         }
     }
 
@@ -66,6 +70,7 @@ impl RouterResponse {
                 } else {
                     None
                 },
+                reasoning_content: None,
             },
             // When the model wants to call tools the API returns finish_reason
             // "tool_calls".  Hardcoding "stop" here caused handle_chat_completion
@@ -75,6 +80,7 @@ impl RouterResponse {
             } else {
                 Some("stop".to_string())
             },
+            thinking_content: self.thinking_content,
         }
     }
 }

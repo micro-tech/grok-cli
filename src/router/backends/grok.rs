@@ -182,12 +182,13 @@ impl Backend for GrokBackend {
                     max_tokens,
                     &req.model,
                     tools.clone(),
+                    req.reasoning_effort.as_deref(),
                 )
                 .await;
 
             match result {
                 Ok(mwfr) => {
-                    // ── Unpack the response ───────────────────────────────
+                    // ── Unpack the response ──────────────────────────
                     // Serialise the full message first, before we partially
                     // move `tool_calls` out of it.
                     let raw =
@@ -199,6 +200,7 @@ impl Backend for GrokBackend {
                     };
 
                     let tool_calls = mwfr.message.tool_calls.unwrap_or_default();
+                    let thinking_content = mwfr.thinking_content;
 
                     return Ok(RouterResponse {
                         text,
@@ -206,6 +208,7 @@ impl Backend for GrokBackend {
                         raw,
                         model: req.model.clone(),
                         usage: None,
+                        thinking_content,
                     });
                 }
 

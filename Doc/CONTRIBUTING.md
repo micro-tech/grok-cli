@@ -1,5 +1,8 @@
 # Contributing to Grok CLI
 
+> **Full detailed version** — This is the complete contribution guide.
+> For a quick overview, see the [root README](../README.md).
+
 ## Welcome!
 
 Thank you for your interest in contributing to Grok CLI, a powerful command-line interface for interacting with Grok AI. We value contributions from the community and are excited to collaborate with you to improve this project.
