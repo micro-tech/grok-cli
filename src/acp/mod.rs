@@ -550,230 +550,257 @@ impl GrokAcpAgent {
         info!("🚀 Starting chat completion for session: {}", session_id.0);
         info!("📝 User message: {} chars", message.len());
 
-        let mut sessions = self.sessions.write().await;
-        let session = sessions
-            .get_mut(&session_id.0)
-            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+        // ── Phase 1: Session setup (brief write lock) ─────────────────────────────
+        // All trimming, compression, and option extraction happen here.  After this
+        // block the write lock is released so slash commands and context queries are
+        // not blocked during the potentially-long API call loop.
+        //
+        // TODO: make compression lock-free (currently makes an async API call
+        //       while holding the write lock — known limitation).
+        let (
+            mut messages,
+            temperature,
+            max_tokens,
+            model,
+            thinking_mode,
+            mut local_bayes,
+            local_always_allow,
+        ) = {
+            let mut sessions = self.sessions.write().await;
+            let session = sessions
+                .get_mut(&session_id.0)
+                .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
 
-        // Update last activity
-        session.last_activity = std::time::Instant::now();
+            // Update last activity
+            session.last_activity = std::time::Instant::now();
 
-        let refined_message = session.refine_prompt(message);
+            let refined_message = session.refine_prompt(message);
 
-        // Add user message to history
-        session.messages.push(json!({
-            "role": "user",
-            "content": refined_message
-        }));
+            // Add user message to history
+            session.messages.push(json!({
+                "role": "user",
+                "content": refined_message
+            }));
 
-        info!("📚 Session history: {} messages", session.messages.len());
+            info!("📚 Session history: {} messages", session.messages.len());
 
-        // ── 1. Per-message truncation ────────────────────────────────────────
-        // Cap individual tool-result messages so a single large file read
-        // cannot consume the whole context window.
-        let max_tool_chars = self.config.acp.max_tool_result_chars;
-        if max_tool_chars > 0 {
-            truncate_tool_results(&mut session.messages, max_tool_chars);
-        }
+            // ── 1. Per-message truncation ────────────────────────────────────────
+            // Cap individual tool-result messages so a single large file read
+            // cannot consume the whole context window.
+            let max_tool_chars = self.config.acp.max_tool_result_chars;
+            if max_tool_chars > 0 {
+                truncate_tool_results(&mut session.messages, max_tool_chars);
+            }
 
-        // ── 2. Count-based trim ──────────────────────────────────────────────
-        // Keep the most recent max_history_messages entries so the model always
-        // has fresh context without exceeding the API context window.
-        // We trim here (after adding the user turn) so we never split a
-        // tool-call sequence that was already committed to history.
-        let max_history = self.config.acp.max_history_messages;
-        if session.messages.len() > max_history {
-            let trim_count = session.messages.len() - max_history;
-            session.messages.drain(0..trim_count);
-            debug!(
-                "Trimmed {} old messages from session history (keeping last {})",
-                trim_count, max_history
-            );
-        }
+            // ── 2. Count-based trim ──────────────────────────────────────────────
+            // Keep the most recent max_history_messages entries so the model always
+            // has fresh context without exceeding the API context window.
+            // We trim here (after adding the user turn) so we never split a
+            // tool-call sequence that was already committed to history.
+            let max_history = self.config.acp.max_history_messages;
+            if session.messages.len() > max_history {
+                let trim_count = session.messages.len() - max_history;
+                session.messages.drain(0..trim_count);
+                debug!(
+                    "Trimmed {} old messages from session history (keeping last {})",
+                    trim_count, max_history
+                );
+            }
 
-        // ── 3. Token-budget trim ─────────────────────────────────────────────
-        // Even within the message-count limit, rich tool outputs can bloat
-        // the context beyond the model's token window.  Estimate tokens
-        // (4 chars ≈ 1 token) and drop oldest messages until we fit.
-        // Use a model-aware budget: grok-4.x gets the 1 M-token budget;
-        // grok-3 and older use the legacy 220 k budget.
-        let max_ctx_tokens = model_context_budget(
-            &session.config.model,
-            self.config.acp.max_context_tokens,
-            self.config.acp.grok4_max_context_tokens,
-        );
-        let estimated = estimate_tokens(&session.messages);
-        if estimated > max_ctx_tokens {
-            let before = session.messages.len();
-            trim_to_token_budget(&mut session.messages, max_ctx_tokens);
-            warn!(
-                "⚠️  Context trimmed by token budget: ~{} estimated tokens > {} limit. \
-                 Dropped {} old messages (kept {}).",
-                estimated,
-                max_ctx_tokens,
-                before - session.messages.len(),
-                session.messages.len()
-            );
-        }
-
-        // ── 4. Smart compression (summarise-and-archive instead of drop) ──────
-        // When the context exceeds the compression threshold we call the AI to
-        // summarise the oldest chunk of messages, archive the raw messages to
-        // disk, and replace them with a compact notice.  If the API call fails
-        // (Starlink drop) we restore the drained messages and fall through.
-        if self.config.acp.auto_compress {
-            // Use the same model-aware budget for the compression threshold.
-            let active_ctx_budget = model_context_budget(
+            // ── 3. Token-budget trim ─────────────────────────────────────────────
+            // Even within the message-count limit, rich tool outputs can bloat
+            // the context beyond the model's token window.  Estimate tokens
+            // (4 chars ≈ 1 token) and drop oldest messages until we fit.
+            // Use a model-aware budget: grok-4.x gets the 1 M-token budget;
+            // grok-3 and older use the legacy 220 k budget.
+            let max_ctx_tokens = model_context_budget(
                 &session.config.model,
                 self.config.acp.max_context_tokens,
                 self.config.acp.grok4_max_context_tokens,
             );
-            let threshold =
-                (active_ctx_budget as f64 * self.config.acp.compression_threshold as f64) as usize;
             let estimated = estimate_tokens(&session.messages);
+            if estimated > max_ctx_tokens {
+                let before = session.messages.len();
+                trim_to_token_budget(&mut session.messages, max_ctx_tokens);
+                warn!(
+                    "⚠️  Context trimmed by token budget: ~{} estimated tokens > {} limit. \
+                     Dropped {} old messages (kept {}).",
+                    estimated,
+                    max_ctx_tokens,
+                    before - session.messages.len(),
+                    session.messages.len()
+                );
+            }
 
-            if estimated > threshold {
-                // Collect indices of non-system messages (preserve system at index 0).
-                let non_system_indices: Vec<usize> = session
-                    .messages
-                    .iter()
-                    .enumerate()
-                    .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
-                    .map(|(i, _)| i)
-                    .collect();
+            // ── 4. Smart compression (summarise-and-archive instead of drop) ──────
+            // When the context exceeds the compression threshold we call the AI to
+            // summarise the oldest chunk of messages, archive the raw messages to
+            // disk, and replace them with a compact notice.  If the API call fails
+            // (Starlink drop) we restore the drained messages and fall through.
+            if self.config.acp.auto_compress {
+                // Use the same model-aware budget for the compression threshold.
+                let active_ctx_budget = model_context_budget(
+                    &session.config.model,
+                    self.config.acp.max_context_tokens,
+                    self.config.acp.grok4_max_context_tokens,
+                );
+                let threshold = (active_ctx_budget as f64
+                    * self.config.acp.compression_threshold as f64)
+                    as usize;
+                let estimated = estimate_tokens(&session.messages);
 
-                let compress_count = ((non_system_indices.len() as f64
-                    * self.config.acp.compression_chunk_ratio as f64)
-                    as usize)
-                    .max(4)
-                    .min(non_system_indices.len());
+                if estimated > threshold {
+                    // Collect indices of non-system messages (preserve system at index 0).
+                    let non_system_indices: Vec<usize> = session
+                        .messages
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+                        .map(|(i, _)| i)
+                        .collect();
 
-                if compress_count > 0 {
-                    // Drain the oldest `compress_count` non-system messages.
-                    // They start at the first non-system index; because messages
-                    // are ordered and non_system_indices[0] is the lowest index,
-                    // we can drain a contiguous slice.
-                    let start = non_system_indices[0];
-                    let end = non_system_indices
-                        .get(compress_count - 1)
-                        .copied()
-                        .unwrap_or(start);
-                    let to_compress: Vec<Value> = session.messages.drain(start..=end).collect();
+                    let compress_count = ((non_system_indices.len() as f64
+                        * self.config.acp.compression_chunk_ratio as f64)
+                        as usize)
+                        .max(4)
+                        .min(non_system_indices.len());
 
-                    let tokens_saved = estimate_tokens(&to_compress);
-                    let model = session.config.model.clone();
+                    if compress_count > 0 {
+                        // Drain the oldest `compress_count` non-system messages.
+                        // They start at the first non-system index; because messages
+                        // are ordered and non_system_indices[0] is the lowest index,
+                        // we can drain a contiguous slice.
+                        let start = non_system_indices[0];
+                        let end = non_system_indices
+                            .get(compress_count - 1)
+                            .copied()
+                            .unwrap_or(start);
+                        let to_compress: Vec<Value> = session.messages.drain(start..=end).collect();
 
-                    match self.get_router() {
-                        Ok(router) => {
-                            match crate::memory::context_compressor::compress(
-                                &to_compress,
-                                router,
-                                &model,
-                            )
-                            .await
-                            {
-                                Ok((summary, key_facts)) => {
-                                    use crate::memory::context_archive::{
-                                        ContextArchive, ContextChunk,
-                                    };
-                                    match ContextArchive::for_session(&session_id.0) {
-                                        Ok(mut archive) => {
-                                            let chunk_id = archive.next_chunk_id();
-                                            let chunk = ContextChunk {
-                                                chunk_id,
-                                                session_id: session_id.0.clone(),
-                                                created_at: chrono::Utc::now(),
-                                                message_count: to_compress.len(),
-                                                estimated_tokens_saved: tokens_saved,
-                                                summary,
-                                                key_facts,
-                                                raw_messages: to_compress,
-                                            };
-                                            if let Err(e) = archive.save_chunk(&chunk) {
+                        let tokens_saved = estimate_tokens(&to_compress);
+                        let model = session.config.model.clone();
+
+                        match self.get_router() {
+                            Ok(router) => {
+                                match crate::memory::context_compressor::compress(
+                                    &to_compress,
+                                    router,
+                                    &model,
+                                )
+                                .await
+                                {
+                                    Ok((summary, key_facts)) => {
+                                        use crate::memory::context_archive::{
+                                            ContextArchive, ContextChunk,
+                                        };
+                                        match ContextArchive::for_session(&session_id.0) {
+                                            Ok(mut archive) => {
+                                                let chunk_id = archive.next_chunk_id();
+                                                let chunk = ContextChunk {
+                                                    chunk_id,
+                                                    session_id: session_id.0.clone(),
+                                                    created_at: chrono::Utc::now(),
+                                                    message_count: to_compress.len(),
+                                                    estimated_tokens_saved: tokens_saved,
+                                                    summary,
+                                                    key_facts,
+                                                    raw_messages: to_compress,
+                                                };
+                                                if let Err(e) = archive.save_chunk(&chunk) {
+                                                    warn!(
+                                                        "⚠️  Failed to save context archive chunk: {}",
+                                                        e
+                                                    );
+                                                }
+                                                let insert_at = if session
+                                                    .messages
+                                                    .first()
+                                                    .and_then(|m| m.get("role"))
+                                                    .and_then(|r| r.as_str())
+                                                    == Some("system")
+                                                {
+                                                    1
+                                                } else {
+                                                    0
+                                                };
+                                                let notice = build_archive_notice(&chunk);
+                                                session.messages.insert(insert_at, notice);
                                                 warn!(
-                                                    "⚠️  Failed to save context archive chunk: {}",
+                                                    "📦 Archived {} messages → chunk #{} \
+                                                     (~{} tokens saved). \
+                                                     Active context: {} messages.",
+                                                    chunk.message_count,
+                                                    chunk_id,
+                                                    tokens_saved,
+                                                    session.messages.len()
+                                                );
+                                            }
+                                            Err(e) => {
+                                                warn!(
+                                                    "⚠️  Could not open context archive, \
+                                                     messages dropped: {}",
                                                     e
                                                 );
                                             }
-                                            let insert_at = if session
-                                                .messages
-                                                .first()
-                                                .and_then(|m| m.get("role"))
-                                                .and_then(|r| r.as_str())
-                                                == Some("system")
-                                            {
-                                                1
-                                            } else {
-                                                0
-                                            };
-                                            let notice = build_archive_notice(&chunk);
-                                            session.messages.insert(insert_at, notice);
-                                            warn!(
-                                                "📦 Archived {} messages → chunk #{} \
-                                                 (~{} tokens saved). \
-                                                 Active context: {} messages.",
-                                                chunk.message_count,
-                                                chunk_id,
-                                                tokens_saved,
-                                                session.messages.len()
-                                            );
-                                        }
-                                        Err(e) => {
-                                            warn!(
-                                                "⚠️  Could not open context archive, \
-                                                 messages dropped: {}",
-                                                e
-                                            );
                                         }
                                     }
-                                }
-                                Err(e) => {
-                                    // Compression failed — restore drained messages so
-                                    // we don't silently lose history.
-                                    warn!(
-                                        "⚠️  Context compression failed (network drop?): {}. \
-                                         Restoring {} messages.",
-                                        e,
-                                        to_compress.len()
-                                    );
-                                    for (offset, msg) in to_compress.into_iter().enumerate() {
-                                        session.messages.insert(start + offset, msg);
+                                    Err(e) => {
+                                        // Compression failed — restore drained messages so
+                                        // we don't silently lose history.
+                                        warn!(
+                                            "⚠️  Context compression failed (network drop?): {}. \
+                                             Restoring {} messages.",
+                                            e,
+                                            to_compress.len()
+                                        );
+                                        for (offset, msg) in to_compress.into_iter().enumerate() {
+                                            session.messages.insert(start + offset, msg);
+                                        }
                                     }
                                 }
                             }
-                        }
-                        Err(e) => {
-                            warn!("⚠️  No router available for compression: {}", e);
-                            // Restore messages
-                            for (offset, msg) in to_compress.into_iter().enumerate() {
-                                session.messages.insert(start + offset, msg);
+                            Err(e) => {
+                                warn!("⚠️  No router available for compression: {}", e);
+                                // Restore messages
+                                for (offset, msg) in to_compress.into_iter().enumerate() {
+                                    session.messages.insert(start + offset, msg);
+                                }
                             }
                         }
                     }
                 }
             }
-        }
 
-        // Extract options
-        let temperature = options
-            .as_ref()
-            .and_then(|o| o.get("temperature"))
-            .and_then(|t| t.as_f64())
-            .map(|t| t as f32)
-            .unwrap_or(session.config.temperature);
+            // Extract options
+            let temperature = options
+                .as_ref()
+                .and_then(|o| o.get("temperature"))
+                .and_then(|t| t.as_f64())
+                .map(|t| t as f32)
+                .unwrap_or(session.config.temperature);
 
-        let max_tokens = options
-            .as_ref()
-            .and_then(|o| o.get("max_tokens"))
-            .and_then(|t| t.as_u64())
-            .map(|t| t as u32)
-            .unwrap_or(session.config.max_tokens);
+            let max_tokens = options
+                .as_ref()
+                .and_then(|o| o.get("max_tokens"))
+                .and_then(|t| t.as_u64())
+                .map(|t| t as u32)
+                .unwrap_or(session.config.max_tokens);
 
+            // Clone everything needed for the lock-free loop.
+            let msgs = session.messages.clone();
+            let mdl = session.config.model.clone();
+            let thk = session.config.thinking_mode.clone();
+            let bayes = session.bayes_engine.clone();
+            let aall = session.always_allow.clone();
+            (msgs, temperature, max_tokens, mdl, thk, bayes, aall)
+        }; // ← write lock released here
+
+        // ── Phase 2: Tool loop (NO write lock during API calls) ────────────────────
         let tool_defs = tools::get_available_tool_definitions();
         info!("🔧 Available tools: {}", tool_defs.len());
-
         let mut loop_count = 0;
         let max_loops = self.config.acp.max_tool_loop_iterations;
+        let mut newly_always_allowed: Vec<String> = Vec::new();
 
         loop {
             if loop_count >= max_loops {
@@ -793,6 +820,45 @@ impl GrokAcpAgent {
             let loop_start = std::time::Instant::now();
             info!("🔄 Tool loop iteration {}/{}", loop_count, max_loops);
 
+            // ── Re-trim before every API call ────────────────────────────────────
+            // The initial trim (steps 1-4 above) happens once before the loop, but
+            // each iteration appends an assistant message plus one or more tool-result
+            // messages.  Without re-trimming here, a session with many large file reads
+            // can grow to 10× the context limit and hit a 400 from the API.
+            {
+                // 1. Truncate oversized tool-result messages first (cheapest).
+                let max_tc = self.config.acp.max_tool_result_chars;
+                if max_tc > 0 {
+                    truncate_tool_results(&mut messages, max_tc);
+                }
+                // 2. Count-based guard: never exceed max_history_messages.
+                let max_hist = self.config.acp.max_history_messages;
+                if messages.len() > max_hist {
+                    let drop = messages.len() - max_hist;
+                    messages.drain(0..drop);
+                }
+                // 3. Token-budget guard: drop oldest messages until we fit.
+                let iter_limit = model_context_budget(
+                    &model,
+                    self.config.acp.max_context_tokens,
+                    self.config.acp.grok4_max_context_tokens,
+                );
+                let iter_est = estimate_tokens(&messages);
+                if iter_est > iter_limit {
+                    let before = messages.len();
+                    trim_to_token_budget(&mut messages, iter_limit);
+                    warn!(
+                        "⚠️  Mid-loop context trim (iter {}): ~{} est. tokens > {} limit. \
+                         Dropped {} old messages (kept {}).",
+                        loop_count,
+                        iter_est,
+                        iter_limit,
+                        before - messages.len(),
+                        messages.len()
+                    );
+                }
+            }
+
             // Make request to Grok — with per-call retry/backoff for Starlink drops.
             // Starlink handovers can take 20-60 s; we need enough retries + delays
             // to outlast a satellite dropout before giving up on this iteration.
@@ -810,7 +876,7 @@ impl GrokAcpAgent {
             info!(
                 "📡 Calling Grok API (model: {}, temp: {}, max_tokens: {}, \
                  real_timeout: {}s)…",
-                session.config.model, temperature, max_tokens, self.config.timeout_secs,
+                model, temperature, max_tokens, self.config.timeout_secs,
             );
             // NOTE: if you see "Request timeout after 30 seconds" the "30" is a
             // hardcoded value in the grok_api crate error formatter — the actual
@@ -824,12 +890,12 @@ impl GrokAcpAgent {
                     match self
                         .get_router()?
                         .chat_completion_with_history(
-                            &session.messages,
+                            &messages,
                             temperature,
                             max_tokens,
-                            &session.config.model,
+                            &model,
                             Some(tool_defs.clone()),
-                            session.config.thinking_mode.as_api_str(),
+                            thinking_mode.as_api_str(),
                         )
                         .await
                     {
@@ -846,7 +912,7 @@ impl GrokAcpAgent {
                                     || (lower.contains("invalid argument")
                                         && lower.contains("token"))
                                 {
-                                    let current_est = estimate_tokens(&session.messages);
+                                    let current_est = estimate_tokens(&messages);
                                     error!("❌ Context-window overflow: {}", raw);
                                     return Err(anyhow!(
                                         "Context window overflow — the request was too large \
@@ -960,7 +1026,7 @@ impl GrokAcpAgent {
             }
 
             // Add assistant response to history
-            session.messages.push(serde_json::to_value(&response_msg)?);
+            messages.push(serde_json::to_value(&response_msg)?);
 
             // Check if we have tool calls to process FIRST.
             // finish_reason is checked AFTER the tool loop so that Grok's
@@ -992,11 +1058,35 @@ impl GrokAcpAgent {
                 } else {
                     response_text
                 };
+                // ── Phase 3: Final sync (brief write lock) ─────────────────────────────
+                {
+                    let mut sessions = self.sessions.write().await;
+                    if let Some(s) = sessions.get_mut(&session_id.0) {
+                        s.messages = messages;
+                        s.bayes_engine = local_bayes;
+                        for name in &newly_always_allowed {
+                            s.always_allow.insert(name.clone());
+                        }
+                        s.last_activity = std::time::Instant::now();
+                    }
+                }
                 return Ok(final_response);
             }
 
             // We have tool calls to process
             let Some(tool_calls) = response_msg.tool_calls.as_ref() else {
+                // ── Phase 3: Final sync (brief write lock) ─────────────────────────────
+                {
+                    let mut sessions = self.sessions.write().await;
+                    if let Some(s) = sessions.get_mut(&session_id.0) {
+                        s.messages = messages;
+                        s.bayes_engine = local_bayes;
+                        for name in &newly_always_allowed {
+                            s.always_allow.insert(name.clone());
+                        }
+                        s.last_activity = std::time::Instant::now();
+                    }
+                }
                 return Ok(response_text);
             };
             info!("🛠️  Processing {} tool calls", tool_calls.len());
@@ -1039,7 +1129,7 @@ impl GrokAcpAgent {
                 {
                     let hooks = self.hook_manager.read().await;
                     if !hooks.execute_before_tool(function_name, &args)? {
-                        session.messages.push(json!({
+                        messages.push(json!({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "content": "Tool execution blocked by hook."
@@ -1050,7 +1140,8 @@ impl GrokAcpAgent {
 
                 // --- PERMISSION GATE ---
                 if self.config.acp.require_permission
-                    && !session.always_allow.contains(function_name.as_str())
+                    && !local_always_allow.contains(function_name.as_str())
+                    && !newly_always_allowed.contains(function_name)
                     && let Some(bridge) = &permission_bridge
                 {
                     let req_id = uuid::Uuid::new_v4().to_string();
@@ -1070,7 +1161,7 @@ impl GrokAcpAgent {
                         {
                             Ok(Ok(outcome)) => {
                                 if outcome.is_cancelled() {
-                                    session.messages.push(json!({
+                                    messages.push(json!({
                                         "role": "tool",
                                         "tool_call_id": tool_call.id,
                                         "content": "User rejected the tool execution."
@@ -1079,7 +1170,7 @@ impl GrokAcpAgent {
                                 }
                                 // Any `selected` outcome is approval; record if always-allow.
                                 if outcome.is_always_allow() {
-                                    session.always_allow.insert(function_name.clone());
+                                    newly_always_allowed.push(function_name.clone());
                                 }
                             }
                             Ok(Err(_)) => {
@@ -1230,13 +1321,13 @@ impl GrokAcpAgent {
                         warn!("⚠️ Tool failed in {:?}: {}", tool_duration, e);
 
                         // 4. Update Bayesian Engine for Tool Failure
-                        session.bayes_engine.update_from_tool_failure();
+                        local_bayes.update_from_tool_failure();
 
                         let mut error_content =
                             format!("Error executing tool {}: {}", function_name, e);
 
                         // If confidence drops significantly due to failure, add a recovery system prompt
-                        if session.bayes_engine.is_low_confidence() {
+                        if local_bayes.is_low_confidence() {
                             error_content = format!(
                                 "{}\n\n[System Note: This tool failed and Bayesian confidence is low. Please rewrite your approach, verify your assumptions, or ask the user for clarification instead of repeating the same action.]",
                                 error_content
@@ -1270,7 +1361,7 @@ impl GrokAcpAgent {
                 }
 
                 // Add tool result to history
-                session.messages.push(json!({
+                messages.push(json!({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": content
@@ -1280,6 +1371,16 @@ impl GrokAcpAgent {
             let loop_duration = loop_start.elapsed();
             info!("🔄 Loop iteration completed in {:?}", loop_duration);
 
+            // Brief write-lock sync: persist the updated message history so
+            // save_session_to_disk and /context queries see fresh data between iterations.
+            {
+                let mut sessions = self.sessions.write().await;
+                if let Some(s) = sessions.get_mut(&session_id.0) {
+                    s.messages = messages.clone();
+                    s.last_activity = std::time::Instant::now();
+                }
+            }
+
             // Post-tool-loop guard: if the model signalled "stop" alongside
             // tool calls, return now instead of spinning up a redundant extra
             // API iteration (the tools have already completed).
@@ -1288,6 +1389,18 @@ impl GrokAcpAgent {
                     "✅ Model flagged stop after tool execution — returning ({} loops)",
                     loop_count
                 );
+                // ── Phase 3: Final sync (brief write lock) ──────────────────────────
+                {
+                    let mut sessions = self.sessions.write().await;
+                    if let Some(s) = sessions.get_mut(&session_id.0) {
+                        s.messages = messages.clone();
+                        s.bayes_engine = local_bayes.clone();
+                        for name in &newly_always_allowed {
+                            s.always_allow.insert(name.clone());
+                        }
+                        s.last_activity = std::time::Instant::now();
+                    }
+                }
                 return Ok(String::new());
             }
             // Continue loop to get next response from model with tool results

@@ -26,7 +26,7 @@ impl KnowledgeLoader {
         let dir = Path::new("knowledge");
 
         if !dir.exists() {
-            tracing::warn!("Knowledge directory does not exist");
+            tracing::debug!("Knowledge directory does not exist");
             return Ok(Self { entries });
         }
 

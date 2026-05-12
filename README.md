@@ -6,7 +6,7 @@
 
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
-> **Latest (v0.1.2.0)**: Session DNA, session persistence + fork, hierarchical config, skill auto-activation, ACP improvements, external access, chat logging, and context compression.
+> **Latest (v0.2.0)**: Session DNA, session persistence + fork, hierarchical config, skill auto-activation, ACP improvements, external access, chat logging, and context compression.
 
 ## ✨ Features
 

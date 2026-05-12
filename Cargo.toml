@@ -1,6 +1,6 @@
 [package]
 name = "grok-cli"
-version = "0.2.0"
+version = "0.2.1-pre"
 edition = "2024"
 authors = ["john mcconnell john.microtech@gmail.com"]
 description = "A CLI tool for interacting with Grok AI via X API"
@@ -60,6 +60,16 @@ indicatif = "0.18"
 dirs = "6.0"
 # UUID generation
 uuid = { version = "1.23.1", features = ["v4"] }
+# TGS-RAG dependencies (gated behind "tgs-rag" feature)
+tree-sitter = { version = "0.26.8", optional = true }
+tree-sitter-rust = { version = "0.24.2", optional = true }
+syn = { version = "2.0", features = [
+    "full",
+    "parsing",
+    "visit",
+], optional = true }
+quote = { version = "1.0", optional = true }
+proc-macro2 = { version = "1.0", optional = true }
 # Base64 encoding
 base64 = "0.22"
 # Terminal utilities (using terminal_size instead)
@@ -71,7 +81,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Terminal size detection
 terminal_size = "0.4"
 # TOML configuration parsing
-toml = "1.1.0"
+toml = "1.1.2+spec-1.1.0"
 
 # Terminal detection
 is-terminal = "0.4"
@@ -102,3 +112,7 @@ strip = true
 
 [profile.dev]
 debug = true
+
+[features]
+default = []
+tgs-rag = ["tree-sitter", "tree-sitter-rust", "syn", "quote", "proc-macro2"]

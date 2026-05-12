@@ -52,7 +52,7 @@ impl ThinkingMode {
         match s.to_ascii_lowercase().as_str() {
             "off" | "none" => Some(ThinkingMode::Off),
             "low" => Some(ThinkingMode::Low),
-            "high" => Some(ThinkingMode::High),
+            "high" | "on" => Some(ThinkingMode::High),
             _ => None,
         }
     }

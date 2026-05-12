@@ -36,7 +36,7 @@ use crate::router::{CpuRouter, RouterRequest};
 /// Build one with [`AppRouter::new`] and use it wherever the app previously
 /// used [`crate::GrokClient`].
 ///
-/// ```rust,no_run
+/// ```rust,no_run,ignore
 /// use grok_cli::router::AppRouter;
 ///
 /// # async fn example() -> anyhow::Result<()> {

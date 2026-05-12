@@ -4,7 +4,6 @@
 
 use serde::{Deserialize, Serialize};
 use std::fs;
-use std::path::Path;
 
 /// Session DNA configuration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -29,16 +28,18 @@ impl Default for SessionDna {
 }
 
 impl SessionDna {
-    /// Load from session_dna.json.
+    /// Load from `~/.grok/session_dna.json`.
     pub fn load() -> Self {
-        let path = Path::new("session_dna.json");
-        if path.exists()
-            && let Ok(content) = fs::read_to_string(path)
-            && let Ok(dna) = serde_json::from_str(&content)
-        {
-            return dna;
+        if let Some(home) = dirs::home_dir() {
+            let path = home.join(".grok").join("session_dna.json");
+            if path.exists()
+                && let Ok(content) = fs::read_to_string(&path)
+                && let Ok(dna) = serde_json::from_str(&content)
+            {
+                return dna;
+            }
         }
-        tracing::warn!("Failed to load session_dna.json, using defaults");
+        tracing::warn!("Failed to load ~/.grok/session_dna.json, using defaults");
         Self::default()
     }
 

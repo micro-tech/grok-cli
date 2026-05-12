@@ -680,7 +680,9 @@ pub struct ToolCallUpdate {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "type")]
 pub enum ToolCallContent {
-    #[serde(rename = "text")]
+    /// Serialised as `"content"` to match agent-client-protocol-schema ≥ 0.12.
+    /// (Older schema versions used `"text"`, which Zed 0.12+ no longer accepts.)
+    #[serde(rename = "content")]
     Text(TextContent),
 }
 

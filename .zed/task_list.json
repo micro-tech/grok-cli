@@ -3180,5 +3180,137 @@
         },
       ],
     },
+    {
+      "id": 112,
+      "title": "TGS-RAG Epic — Text-Graph Synergy Retrieval Engine (Semantic Entity Graph)",
+      "description": "Design and implement a Text-Graph Synergy RAG engine for grok-cli using a hybrid tree-sitter + syn parser to build a semantic-entity project graph (structs, enums, traits, impls, functions, modules), coupled with embeddings and hybrid retrieval (BM25 + vectors) to drive graph-aware, retrieval-aware context compression and LLM prompting.",
+      "status": "in_progress",
+      "dependencies": [111],
+      "priority": "high",
+      "details": "## Background\nCurrent grok-cli context handling includes context discovery and AI-powered summarization/archiving, but it is linear and text-only. The next step is a Text-Graph Synergy RAG (TGS-RAG) engine that couples a semantic project graph with embeddings and hybrid retrieval. The goal is to retrieve minimal, highly relevant context for each request by traversing a semantic entity graph (structs, enums, traits, impls, functions, modules) and combining it with vector search and BM25.\n\nThis epic uses a hybrid parsing approach: tree-sitter for fast, incremental file/function boundaries and syn for deep semantic extraction. The resulting graph will power graph-expanded retrieval, reranking, and Context Compression 2.0.\n\n## Scope\n- Build a semantic-entity project graph for Rust (and later, language-agnostic hooks).\n- Integrate embeddings + BM25 hybrid retrieval.\n- Implement graph-expanded retrieval and reranking.\n- Implement Context Compression 2.0 (retrieval-aware pruning + summarization).\n- Integrate with ACP sessions, Session DNA, and existing context-discovery pipeline.\n- Add configuration, docs, and tests.\n\n## Out of Scope\n- Non-Rust language-specific parsers (future tasks).\n- Full MCP-based external knowledge sources (future tasks).",
+      "testStrategy": "1. `cargo build --release` and `cargo clippy -- -D warnings` pass after each subtask.\n2. Unit tests for graph construction: given a small Rust fixture project, the graph contains expected nodes (structs, enums, traits, impls, functions) and edges (module imports, call edges, impl relationships).\n3. Unit tests for retrieval: given a query about a specific function or struct, TGS-RAG returns the correct primary node plus relevant neighbors.\n4. Integration test: run grok-cli in a Rust project, ask for a refactor of a function that touches multiple modules; verify only relevant files/functions are loaded into context and the patch is consistent with the graph.\n5. Regression test: context compression still triggers correctly when context is full, but now uses graph-aware pruning.\n6. Logging/telemetry: debug logs show which graph nodes and chunks were selected for a given request.\n7. Performance: indexing a medium-sized Rust project (< 1k files) completes within a reasonable time (e.g., < 5 seconds on a typical dev machine).",
+      "subtasks": [
+        {
+          "id": 112.1,
+          "title": "Design TGS-RAG architecture and data model (semantic entity graph + retrieval pipeline)",
+          "status": "done",
+          "details": "Created Doc/TGS_RAG_ARCHITECTURE.md and initial src/rag/ module with GraphNode, GraphEdge, ProjectGraph, and supporting types."
+        },
+        {
+          "id": 112.2,
+          "title": "Add tree-sitter-rust + syn dependencies and feature flags",
+          "status": "done",
+          "details": "Added optional dependencies behind 'tgs-rag' feature in Cargo.toml."
+        },
+        {
+          "id": 112.3,
+          "title": "Implement tree-sitter-based file and function boundary scanner",
+          "status": "done",
+          "details": "Created src/rag/parser/tree_sitter_scanner.rs with TreeSitterScanner."
+        },
+        {
+          "id": 112.4,
+          "title": "Implement syn-based semantic entity extractor (structs, enums, traits, impls, functions)",
+          "status": "done",
+          "details": "Created src/rag/parser/syn_extractor.rs with SynExtractor."
+        },
+        {
+          "id": 112.5,
+          "title": "Define GraphNode and GraphEdge types for semantic entity graph",
+          "status": "in_progress",
+          "dependencies": [112.1, 112.3, 112.4],
+        },
+        {
+          "id": 112.6,
+          "title": "Build project graph builder: scan workspace, parse files, populate semantic entity graph",
+          "status": "in_progress",
+          "dependencies": [112.3, 112.4, 112.5],
+        },
+        {
+          "id": 112.7,
+          "title": "Add graph persistence and incremental update mechanism",
+          "status": "in_progress",
+          "dependencies": [112.6],
+        },
+        {
+          "id": 112.8,
+          "title": "Integrate embeddings index (vectors) for graph nodes + BM25 text index",
+          "status": "in_progress",
+          "dependencies": [112.6],
+        },
+        {
+          "id": 112.9,
+          "title": "Implement hybrid retrieval: BM25 + embeddings over graph nodes",
+          "status": "in_progress",
+          "dependencies": [112.8],
+        },
+        {
+          "id": 112.1,
+          "title": "Implement graph-expanded retrieval (neighbors, parents, children, related entities)",
+          "status": "in_progress",
+          "dependencies": [112.6, 112.9],
+        },
+        {
+          "id": 112.11,
+          "title": "Implement reranking layer for retrieved nodes and chunks",
+          "status": "in_progress",
+          "dependencies": [112.9, 112.1],
+        },
+        {
+          "id": 112.12,
+          "title": "Implement Context Compression 2.0: retrieval-aware pruning + summarization",
+          "status": "in_progress",
+          "dependencies": [112.1, 112.11],
+        },
+        {
+          "id": 112.13,
+          "title": "Wire TGS-RAG into ACP session context assembly pipeline",
+          "status": "in_progress",
+          "dependencies": [112.7, 112.12],
+        },
+        {
+          "id": 112.14,
+          "title": "Integrate Session DNA and project context discovery with TGS-RAG",
+          "status": "in_progress",
+          "dependencies": [112.13],
+        },
+        {
+          "id": 112.15,
+          "title": "Add configuration options for TGS-RAG (enable/disable, budgets, thresholds)",
+          "status": "in_progress",
+          "dependencies": [112.12, 112.13],
+        },
+        {
+          "id": 112.16,
+          "title": "Add logging and debug tooling for TGS-RAG decisions (selected nodes, edges, chunks)",
+          "status": "in_progress",
+          "dependencies": [112.1, 112.11, 112.12],
+        },
+        {
+          "id": 112.17,
+          "title": "Add unit tests for graph builder and retrieval components",
+          "status": "in_progress",
+          "dependencies": [112.6, 112.9, 112.1],
+        },
+        {
+          "id": 112.18,
+          "title": "Add integration tests for TGS-RAG in real Rust projects",
+          "status": "in_progress",
+          "dependencies": [112.13, 112.14],
+        },
+        {
+          "id": 112.19,
+          "title": "Update config.example.toml, CONFIGURATION.md, and README.md with TGS-RAG details",
+          "status": "in_progress",
+          "dependencies": [112.15],
+        },
+        {
+          "id": 112.2,
+          "title": "Add CHANGELOG entry for TGS-RAG and Context Compression 2.0",
+          "status": "in_progress",
+          "dependencies": [112.12, 112.19],
+        },
+      ],
+    },
   ],
 }
