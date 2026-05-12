@@ -6,7 +6,7 @@
 
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
-> **Latest (v0.2.0)**: Session DNA, session persistence + fork, hierarchical config, skill auto-activation, ACP improvements, external access, chat logging, and context compression.
+> **Latest (v0.2.1)**: ACP connection-layer rewrite (Agent::builder + ByteStreams), session persistence & fork, per-iteration context trimming, slash-command lock fixes, `text`→`content` schema fix for Zed, ThinkingMode "on" alias, TGS-RAG engine (Text-Graph Synergy Retrieval), and quieter knowledge loader.
 
 ## ✨ Features
 
@@ -22,6 +22,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 - **Context Compression** — AI-powered summarization + archiving when context fills up
 - **Zed Editor Integration** — Full Agent Client Protocol (ACP) support with session resume/fork
 - **Thinking Modes** — `/think off|low|high` for controllable reasoning effort
+- **TGS-RAG Engine** — Text-Graph Synergy Retrieval: hybrid BM25 + embeddings + graph-aware code context (tree-sitter + syn)
 - **Code Intelligence** — Explain, review, generate, and refactor across any language
 - **Starlink Optimizations** — Smart retries and timeout handling for satellite connections
 
