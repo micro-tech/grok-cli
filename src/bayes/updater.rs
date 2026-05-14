@@ -3,10 +3,16 @@ use std::collections::HashMap;
 pub fn bayes_update(priors: &mut HashMap<String, f32>, likelihoods: &HashMap<String, f32>) {
     // unnormalized posterior
     for (hypothesis, prior) in priors.iter_mut() {
-        // If a likelihood isn't explicitly provided, assume it's low (decay).
-        // This ensures the hypotheses that DO match the text will dominate.
-        let likelihood = likelihoods.get(hypothesis).copied().unwrap_or(0.1);
+        // If a likelihood isn't explicitly provided, assume a gentle decay.
+        // Using 0.75 instead of a harsh 0.1 prevents the distribution from
+        // collapsing to only 2-3 intents after many updates.
+        let likelihood = likelihoods.get(hypothesis).copied().unwrap_or(0.75);
         *prior *= likelihood;
+
+        // Small floor to ensure no intent is ever completely crushed to zero
+        if *prior < 0.001 {
+            *prior = 0.001;
+        }
     }
 
     // normalize

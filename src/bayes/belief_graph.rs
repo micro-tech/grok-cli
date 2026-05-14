@@ -74,7 +74,7 @@ impl BeliefGraph {
         let max_key_len = sorted_nodes.iter().map(|n| n.key.len()).max().unwrap_or(0);
 
         for node in sorted_nodes {
-            if node.probability < 0.01 {
+            if node.probability < 0.001 {
                 continue;
             } // Hide very low probabilities
 
