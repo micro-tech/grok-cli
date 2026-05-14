@@ -81,7 +81,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Terminal size detection
 terminal_size = "0.4"
 # TOML configuration parsing
-toml = "1.1.2+spec-1.1.0"
+toml = "1.1.2"
 
 # Terminal detection
 is-terminal = "0.4"
