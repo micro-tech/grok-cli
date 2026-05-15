@@ -378,6 +378,9 @@ impl GrokAcpAgent {
         session_id: SessionId,
         cwd: String,
         config: Option<SessionConfig>,
+        event_sender: Option<
+            tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
+        >,
     ) -> Result<()> {
         let mut session_config = config.unwrap_or_default();
 
@@ -455,6 +458,18 @@ impl GrokAcpAgent {
 
         let mut sessions = self.sessions.write().await;
         sessions.insert(session_id.0.clone(), session_data);
+
+        // ── Advertise slash commands to the client ─────────────────────────────
+        // This is the critical fix: ACP clients (Zed, etc.) only show /commands
+        // if the agent sends an `available_commands_update` notification.
+        if let Some(sender) = event_sender {
+            let commands = crate::acp::slash_commands::get_available_commands();
+            let update = crate::acp::protocol::SessionUpdate::AvailableCommandsUpdate(
+                crate::acp::protocol::AvailableCommandsUpdate::new(commands.clone()),
+            );
+            let _ = sender.send(update);
+            info!("Sent {} slash commands to ACP client", commands.len());
+        }
 
         info!("Initialized new ACP session: {}", session_id.0);
         Ok(())
@@ -1967,7 +1982,7 @@ impl GrokAcpAgent {
     pub async fn restore_session_from_disk(&self, state: PersistedSession) -> Result<()> {
         let sid = SessionId::new(state.session_id.clone());
         // Initialize a fresh session with the saved config
-        self.initialize_session(sid.clone(), state.cwd.clone(), Some(state.config))
+        self.initialize_session(sid.clone(), state.cwd.clone(), Some(state.config), None)
             .await?;
         // Overwrite the parts that initialize_session can't set
         let mut sessions = self.sessions.write().await;
@@ -2300,7 +2315,7 @@ mod tests {
         let agent = GrokAcpAgent::new(config, None).await.unwrap();
         let session_id = SessionId::new("test-session-perm");
         agent
-            .initialize_session(session_id.clone(), ".".to_string(), None)
+            .initialize_session(session_id.clone(), ".".to_string(), None, None)
             .await
             .unwrap();
 

@@ -1198,7 +1198,12 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
 
     // Initialize session in GrokAcpAgent
     agent
-        .initialize_session(session_id, initial_cwd, Some(SessionConfig::default()))
+        .initialize_session(
+            session_id,
+            initial_cwd,
+            Some(SessionConfig::default()),
+            None,
+        )
         .await?;
 
     // Start chat logging for this session
@@ -1393,7 +1398,7 @@ where
             .to_string_lossy()
             .to_string();
         if let Err(e) = agent
-            .initialize_session(new_sid, fallback_cwd, Some(SessionConfig::default()))
+            .initialize_session(new_sid, fallback_cwd, Some(SessionConfig::default()), None)
             .await
         {
             warn!(
