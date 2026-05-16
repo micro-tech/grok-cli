@@ -176,6 +176,13 @@ async fn start_acp_stdio(
     }
 
     info!("grok-cli ACP agent shutting down");
+
+    // We must call std::process::exit(0) here.
+    // When Zed closes the ACP connection (user closes Zed, closes the agent panel,
+    // or kills the thread), it closes our stdin/stdout. The run_acp_session future
+    // resolves, but without an explicit exit the tokio runtime + background tasks
+    // can keep the process alive in memory (visible in Task Manager / `ps`).
+    // This is the standard pattern used by other ACP agents (Gemini CLI, Claude Code, etc.).
     std::process::exit(0);
 }
 
