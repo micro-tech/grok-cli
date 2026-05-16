@@ -121,6 +121,11 @@ impl BayesianEngine {
         for (k, v) in &priors {
             graph.set(k, *v);
         }
+        // Normalise at construction so that `probability()` always returns
+        // a proper probability (sums to 1.0) even before the first update.
+        // The raw `priors` HashMap is intentionally left un-normalised here;
+        // `bayes_update` + `sync_graph` will normalise both on every update.
+        graph.normalize();
         Self {
             priors,
             graph,

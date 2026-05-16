@@ -24,8 +24,14 @@ pub fn likelihood_from_text(text: &str, weight: f32) -> HashMap<String, f32> {
     }
 
     // ambiguity / risk
+    //
+    // "careful" / "don't delete" are strong risk signals, so we give
+    // `need_clarification` a likelihood of 15.0.  The break-even point
+    // against the 0.4 clarification threshold (given a prior of 0.1 and
+    // a competing `low_confidence` spike of 5.0) requires L > 11.67, so
+    // 15.0 provides a ~6 percentage-point safety margin (P ≈ 0.462).
     if t.contains("careful") || t.contains("don't delete") {
-        map.insert("need_clarification".into(), 10.0);
+        map.insert("need_clarification".into(), 15.0);
         map.insert("low_confidence".into(), 5.0);
     }
 
@@ -82,7 +88,9 @@ mod tests {
         assert_eq!(l.get("intent_shell"), Some(&w));
 
         let l = likelihood_from_text("be careful don't delete anything", w);
-        assert_eq!(l.get("need_clarification"), Some(&10.0));
+        // need_clarification likelihood is 15.0 (raised from 10.0 so it
+        // exceeds the 0.4 clarification threshold after normalisation).
+        assert_eq!(l.get("need_clarification"), Some(&15.0));
         assert_eq!(l.get("low_confidence"), Some(&5.0));
     }
 

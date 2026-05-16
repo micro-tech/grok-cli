@@ -158,7 +158,25 @@ async fn start_acp_stdio(
     }
 
     info!("Starting ACP session on stdio");
-    run_acp_session(stdin, stdout, agent).await
+    debug!("ACP stdio transport initialized — waiting for Zed to send initialize/session.new");
+    let result = run_acp_session(stdin, stdout, agent).await;
+
+    // ── IMPORTANT: Detect when Zed closes the connection ─────────────────────
+    // When Zed exits or closes the agent panel, it closes stdin/stdout.
+    // We must explicitly exit here, otherwise grok-cli stays alive in memory.
+    match result {
+        Ok(()) => {
+            info!("ACP stdio connection closed cleanly (Zed exited or closed agent)");
+            debug!("stdin EOF detected — Zed terminated the ACP session");
+        }
+        Err(e) => {
+            warn!("ACP stdio connection closed with error: {}", e);
+            debug!("Connection ended due to: {:?}", e);
+        }
+    }
+
+    info!("grok-cli ACP agent shutting down");
+    std::process::exit(0);
 }
 
 /// Handle individual ACP client connections
