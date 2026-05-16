@@ -152,6 +152,17 @@ pub enum Commands {
     /// built-in terminal.
     Setup,
 
+    /// Inspect or manage the Bayesian belief-state engine.
+    ///
+    /// Sub-commands mirror the `/bayes` ACP slash command:
+    ///   grok bayes show     — ASCII bar-chart of current belief state
+    ///   grok bayes reset    — reset priors back to compiled-in defaults
+    ///   grok bayes explain  — plain-English explanation of current state
+    Bayes {
+        #[command(subcommand)]
+        action: crate::BayesAction,
+    },
+
     /// Export the Grok-CLI routing pipeline as a DOT/Graphviz graph.
     ///
     /// Prints DOT to stdout by default. Pipe to Graphviz to render:
@@ -358,6 +369,17 @@ pub async fn run() -> Result<()> {
         }
         Some(Commands::Setup) => {
             crate::cli::commands::setup::handle_setup().await?;
+        }
+        Some(Commands::Bayes { action }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::bayes::handle_bayes_command(match action {
+                crate::BayesAction::Show => crate::cli::commands::bayes::BayesCommand::Show,
+                crate::BayesAction::Reset => crate::cli::commands::bayes::BayesCommand::Reset,
+                crate::BayesAction::Explain => crate::cli::commands::bayes::BayesCommand::Explain,
+            })
+            .await?;
         }
         Some(Commands::Visualize { output }) => {
             // Load live Bayesian priors and ACP settings from config.

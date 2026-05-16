@@ -436,19 +436,28 @@ fn send_available_commands_update_cx(
     cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
     session_id: &str,
 ) -> Result<()> {
-    use agent_client_protocol::schema::SessionNotification as CrateSessionNotif;
-    // Build the notification using our existing local types (which serialize to
-    // the correct ACP wire format) and then round-trip through JSON to get the
-    // crate's typed `SessionNotification`.
+    use agent_client_protocol::schema::{
+        SessionId as CrateSessionId, SessionNotification as CrateNotif,
+        SessionUpdate as CrateUpdate,
+    };
     let commands = slash_commands::get_available_commands();
-    let update = SessionUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(commands));
-    let local_notif = SessionNotification::new(SessionId::new(session_id), update);
-    let json = serde_json::to_value(&local_notif)
-        .map_err(|e| anyhow!("serialize commands update: {e}"))?;
-    let crate_notif: CrateSessionNotif =
-        serde_json::from_value(json).map_err(|e| anyhow!("deserialize commands update: {e}"))?;
-    cx.send_notification(crate_notif)
-        .map_err(|e| anyhow!("send commands update: {e}"))
+    info!(
+        "Advertising {} slash commands to ACP client (session {})",
+        commands.len(),
+        session_id
+    );
+    let update = CrateUpdate::AvailableCommandsUpdate(AvailableCommandsUpdate::new(commands));
+    let notif = CrateNotif::new(CrateSessionId::new(session_id.to_string()), update);
+    match cx.send_notification(notif) {
+        Ok(_) => {
+            info!("Successfully sent available_commands_update for session {}", session_id);
+            Ok(())
+        }
+        Err(e) => {
+            warn!("Failed to send available_commands_update: {}", e);
+            Err(anyhow!("send commands update: {e}"))
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -530,9 +539,10 @@ async fn handle_session_prompt_v2(
 
     // ── Slash-command dispatch ────────────────────────────────────────────────
     if let Some(cmd) = parse_slash_command(&message_text) {
-        info!("Slash command detected (v2): {:?}", cmd);
+        info!("Slash command detected (v2): {:?}  (raw: {:?})", cmd, message_text);
 
         if let Some(builtin) = handle_builtin(&cmd) {
+            info!("Handling built-in slash command: {:?}", cmd);
             // Re-use the same dispatch logic as the old handler but without a
             // raw writer — we call the helper that produces the response text.
             let text = handle_builtin_result(builtin, &agent, &session_id).await;
@@ -556,6 +566,7 @@ async fn handle_session_prompt_v2(
 
         // AI-assisted slash command
         if let Some(ai_prompt) = slash_commands::command_to_prompt(&cmd) {
+            info!("Routing slash command to AI: {:?} → prompt len={}", cmd, ai_prompt.len());
             let _ = chat_logger::log_user(&message_text);
             let text = run_ai_and_collect(&agent, &session_id, &ai_prompt, &cx)
                 .await
@@ -575,6 +586,7 @@ async fn handle_session_prompt_v2(
             agent.save_session_to_disk(&session_id).await.ok();
             return r;
         }
+        warn!("Slash command {:?} was parsed but had no handler (falling through to normal chat)", cmd);
     }
 
     // ── Normal AI chat ────────────────────────────────────────────────────────

@@ -220,9 +220,9 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         ),
         AvailableCommand::new(
             "bayes",
-            "Inspect or reset the Bayesian intent engine — shows belief state, resets priors, or explains current routing",
+            "Inspect or manage the Bayesian belief-state for this session (show / reset / explain)",
         )
-        .input(input("show | reset | explain")),
+        .input(input("show | reset | explain — omit to show the current state")),
         AvailableCommand::new(
             "archives",
             "List all archived context chunks for this session",
@@ -912,7 +912,7 @@ mod tests {
             "test",
             "fix",
             "clear",
-            "bayes", // was "bayes show", "bayes reset", "bayes explain"
+            "bayes",
             "archives",
             "recall",
             "goal",
