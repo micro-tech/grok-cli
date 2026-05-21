@@ -23,27 +23,49 @@ fn find_project_root() -> Option<PathBuf> {
     None
 }
 
+fn get_version(root_dir: &Path) -> String {
+    let cargo_toml = root_dir.join("Cargo.toml");
+    if let Ok(content) = fs::read_to_string(&cargo_toml) {
+        for line in content.lines() {
+            let trimmed = line.trim();
+            if trimmed.starts_with("version") && trimmed.contains('=') {
+                if let Some(v) = trimmed.split('=').nth(1) {
+                    let v = v.trim().trim_matches('"').trim_matches('\'');
+                    if !v.is_empty() {
+                        return v.to_string();
+                    }
+                }
+            }
+        }
+    }
+    "unknown".to_string()
+}
+
 fn main() {
     println!(
         "{}",
-        "Grok CLI Installer v0.1.8-pre for Windows 11"
+        "Grok CLI Installer v0.2.2-pre for Windows 11"
             .green()
             .bold()
     );
     println!("=============================================");
 
-    if !cfg!(windows) {
-        eprintln!("{}", "This installer is designed for Windows only.".red());
-        std::process::exit(1);
-    }
-
     #[cfg(windows)]
-    install_windows();
+    {
+        let root_dir = find_project_root().expect("Failed to find project root (Cargo.toml not found)");
+        let version = get_version(&root_dir);
+        println!(
+            "{}",
+            format!("Grok CLI Installer v{} for Windows 11", version)
+                .green()
+                .bold()
+        );
+        install_windows(root_dir);
+    }
 }
 
 #[cfg(windows)]
-fn install_windows() {
-    let root_dir = find_project_root().expect("Failed to find project root (Cargo.toml not found)");
+fn install_windows(root_dir: PathBuf) {
 
     // 0. Check for old Cargo installation
     check_and_remove_old_cargo_install();
@@ -130,7 +152,8 @@ fn install_windows() {
     setup_session_dna(&root_dir);
 
     println!("\n{}", "Installation Complete!".green().bold());
-    println!("Version: 0.2.1-pre");
+    let version = get_version(&root_dir);
+    println!("Version: {}", version);
     println!("\nNew features in this version:");
     println!("  • External file access with security controls");
     println!("  • Audit logging for compliance tracking");

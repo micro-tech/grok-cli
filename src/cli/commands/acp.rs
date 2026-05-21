@@ -332,10 +332,29 @@ where
                     let resp: AcpNewResp = serde_json::from_value(val)
                         .map_err(|e| anyhow!("session/new resp serialization: {e}"))?;
                     responder.respond(resp)?;
-                    // Send available_commands_update after the session/new response
+                    // Advertise slash commands to Zed's picker.
+                    // Retry with exponential back-off: the single-shot send
+                    // races with Zed processing the session/new response, and
+                    // a dropped notification silently empties the slash picker.
                     if !sid.is_empty() {
-                        send_available_commands_update_cx(&cx, &sid)
-                            .unwrap_or_else(|e| warn!("commands update send: {e}"));
+                        let mut sent = false;
+                        for delay_ms in [0u64, 80, 250] {
+                            if delay_ms > 0 {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms))
+                                    .await;
+                            }
+                            if send_available_commands_update_cx(&cx, &sid).is_ok() {
+                                sent = true;
+                                break;
+                            }
+                        }
+                        if !sent {
+                            warn!(
+                                "available_commands_update failed after 3 attempts \
+                                 for session {} — picker will refresh on first prompt",
+                                sid
+                            );
+                        }
                     }
                     Ok(())
                 }
@@ -403,10 +422,27 @@ where
                             .find_map(|j| serde_json::from_value(j).ok())
                             .ok_or_else(|| anyhow!("Cannot construct LoadSessionResponse"))?;
                     responder.respond(resp)?;
-                    // Re-advertise commands so the client's command palette is populated.
+                    // Re-advertise commands after load with the same retry
+                    // strategy used by session/new.
                     if !sid.is_empty() {
-                        send_available_commands_update_cx(&cx, &sid)
-                            .unwrap_or_else(|e| warn!("session/load commands update: {e}"));
+                        let mut sent = false;
+                        for delay_ms in [0u64, 80, 250] {
+                            if delay_ms > 0 {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms))
+                                    .await;
+                            }
+                            if send_available_commands_update_cx(&cx, &sid).is_ok() {
+                                sent = true;
+                                break;
+                            }
+                        }
+                        if !sent {
+                            warn!(
+                                "session/load: commands update failed after 3 attempts \
+                                 for session {} — picker will refresh on first prompt",
+                                sid
+                            );
+                        }
                     }
                     Ok(())
                 }
@@ -475,7 +511,10 @@ fn send_available_commands_update_cx(
     let notif = CrateNotif::new(CrateSessionId::new(session_id.to_string()), update);
     match cx.send_notification(notif) {
         Ok(_) => {
-            info!("Successfully sent available_commands_update for session {}", session_id);
+            info!(
+                "Successfully sent available_commands_update for session {}",
+                session_id
+            );
             Ok(())
         }
         Err(e) => {
@@ -532,6 +571,14 @@ async fn handle_session_prompt_v2(
 
     let session_id = SessionId::new(local_req.session_id.0.clone());
 
+    // ── Commands catch-up ─────────────────────────────────────────────────────
+    // Re-send available_commands_update on every prompt.  This guarantees the
+    // Zed slash-command picker is populated even when the session/new or
+    // session/load send failed (race condition / transient write error).
+    // The notification is tiny (~1 KB of JSON) so the overhead is negligible.
+    send_available_commands_update_cx(&cx, &session_id.0)
+        .unwrap_or_else(|e| warn!("commands catch-up on prompt failed: {e}"));
+
     // Extract text and trust any resource URIs
     let mut message_text = String::new();
     for block in local_req.prompt {
@@ -564,7 +611,10 @@ async fn handle_session_prompt_v2(
 
     // ── Slash-command dispatch ────────────────────────────────────────────────
     if let Some(cmd) = parse_slash_command(&message_text) {
-        info!("Slash command detected (v2): {:?}  (raw: {:?})", cmd, message_text);
+        info!(
+            "Slash command detected (v2): {:?}  (raw: {:?})",
+            cmd, message_text
+        );
 
         if let Some(builtin) = handle_builtin(&cmd) {
             info!("Handling built-in slash command: {:?}", cmd);
@@ -591,7 +641,11 @@ async fn handle_session_prompt_v2(
 
         // AI-assisted slash command
         if let Some(ai_prompt) = slash_commands::command_to_prompt(&cmd) {
-            info!("Routing slash command to AI: {:?} → prompt len={}", cmd, ai_prompt.len());
+            info!(
+                "Routing slash command to AI: {:?} → prompt len={}",
+                cmd,
+                ai_prompt.len()
+            );
             let _ = chat_logger::log_user(&message_text);
             let text = run_ai_and_collect(&agent, &session_id, &ai_prompt, &cx)
                 .await
@@ -611,7 +665,10 @@ async fn handle_session_prompt_v2(
             agent.save_session_to_disk(&session_id).await.ok();
             return r;
         }
-        warn!("Slash command {:?} was parsed but had no handler (falling through to normal chat)", cmd);
+        warn!(
+            "Slash command {:?} was parsed but had no handler (falling through to normal chat)",
+            cmd
+        );
     }
 
     // ── Normal AI chat ────────────────────────────────────────────────────────
