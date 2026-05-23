@@ -38,7 +38,7 @@ clap = { version = "4.6.1", features = ["derive", "env"] }
 # Error handling
 anyhow = "1.0"
 thiserror = "2.0"
-agent-client-protocol = "0.11"
+agent-client-protocol = "0.12.1"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Environment variable loading
 dotenvy = "0.15"
@@ -61,7 +61,7 @@ dirs = "6.0"
 # UUID generation
 uuid = { version = "1.23.1", features = ["v4"] }
 # TGS-RAG dependencies (gated behind "tgs-rag" feature)
-tree-sitter = { version = "0.26.8", optional = true }
+tree-sitter = { version = "0.26.9", optional = true }
 tree-sitter-rust = { version = "0.24.2", optional = true }
 syn = { version = "2.0", features = [
     "full",

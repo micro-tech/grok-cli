@@ -2111,7 +2111,11 @@ fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
         if let Some(content) = msg.get_mut("content") {
             match content {
                 Value::String(s) if s.len() > max_chars => {
-                    let truncated = &s[..max_chars];
+                    let mut end = max_chars;
+                    while !s.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    let truncated = &s[..end];
                     *s = format!(
                         "{}\n\n[... output truncated to {} chars to fit context window ...]",
                         truncated, max_chars
@@ -2120,16 +2124,21 @@ fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
                 // Array-of-content-blocks form used by some providers
                 Value::Array(blocks) => {
                     for block in blocks.iter_mut() {
-                        if let Some(text) = block.get_mut("text")
-                            && let Some(s) = text.as_str()
-                            && s.len() > max_chars
-                        {
-                            let truncated = &s[..max_chars];
-                            *text = Value::String(format!(
-                                "{}\n\n[... output truncated to {} chars to fit \
-                                 context window ...]",
-                                truncated, max_chars
-                            ));
+                        if let Some(text_val) = block.get_mut("text") {
+                            if let Some(s) = text_val.as_str() {
+                                if s.len() > max_chars {
+                                    let mut end = max_chars;
+                                    while !s.is_char_boundary(end) {
+                                        end -= 1;
+                                    }
+                                    let truncated = &s[..end];
+                                    *text_val = Value::String(format!(
+                                        "{}\n\n[... output truncated to {} chars to fit \
+                                         context window ...]",
+                                        truncated, max_chars
+                                    ));
+                                }
+                            }
                         }
                     }
                 }
@@ -2498,5 +2507,46 @@ mod tests {
             220_000
         );
         assert_eq!(model_context_budget("grok-beta", 220_000, 950_000), 220_000);
+    }
+
+    #[test]
+    fn test_truncate_tool_results_utf8_boundary() {
+        // '─' is 3 bytes: 0xE2, 0x94, 0x80
+        // Starts at 29998, ends at 30001.
+        let long_string = "A".repeat(29998) + "─" + &"B".repeat(10);
+        let mut messages = vec![json!({
+            "role": "tool",
+            "content": long_string
+        })];
+
+        // This should truncate at index 30000, but index 30000 is inside '─' (29998..30001)
+        // Our fix should back off to 29998.
+        truncate_tool_results(&mut messages, 30000);
+
+        let content = messages[0]["content"].as_str().unwrap();
+        assert!(content.starts_with(&"A".repeat(29998)));
+        assert!(!content.contains('─'));
+        assert!(content.contains("truncated"));
+    }
+
+    #[test]
+    fn test_truncate_tool_results_array_utf8_boundary() {
+        let long_string = "A".repeat(29998) + "─" + &"B".repeat(10);
+        let mut messages = vec![json!({
+            "role": "tool",
+            "content": [
+                {
+                    "type": "text",
+                    "text": long_string
+                }
+            ]
+        })];
+
+        truncate_tool_results(&mut messages, 30000);
+
+        let text = messages[0]["content"][0]["text"].as_str().unwrap();
+        assert!(text.starts_with(&"A".repeat(29998)));
+        assert!(!text.contains('─'));
+        assert!(text.contains("truncated"));
     }
 }
