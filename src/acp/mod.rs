@@ -69,8 +69,9 @@ pub struct GrokAcpAgent {
     /// Active sessions
     sessions: Arc<RwLock<HashMap<String, SessionData>>>,
 
-    /// Agent capabilities
-    capabilities: GrokAgentCapabilities,
+    /// Agent capabilities (computed lazily on first access to avoid
+    /// expensive tool schema construction during Zed ACP startup)
+    capabilities: std::sync::OnceLock<GrokAgentCapabilities>,
 
     /// Security manager
     pub security: SecurityManager,
@@ -296,8 +297,6 @@ impl GrokAcpAgent {
             None
         };
 
-        let capabilities = Self::create_capabilities();
-
         let security = SecurityManager::new();
         // Trust current directory by default, canonicalizing to resolve symlinks
         if let Ok(cwd) = std::env::current_dir() {
@@ -309,26 +308,17 @@ impl GrokAcpAgent {
             router,
             config,
             sessions: Arc::new(RwLock::new(HashMap::new())),
-            capabilities,
+            capabilities: std::sync::OnceLock::new(),
             security,
             hook_manager: Arc::new(RwLock::new(HookManager::new())),
             default_model,
         })
     }
 
-    /// Return a reference to the [`AppRouter`], or a descriptive error if no
-    /// API key was configured when the agent was created.
-    ///
-    /// Call this inside any method that needs to reach the xAI API instead of
-    /// accessing `self.router` directly.
-    fn get_router(&self) -> Result<&AppRouter> {
-        self.router.as_ref().ok_or_else(|| {
-            anyhow!(
-                "API key not configured. \
-                 Set the GROK_API_KEY environment variable and restart the agent, \
-                 or use 'grok config set api_key <key>'."
-            )
-        })
+    /// Return agent capabilities, computing them lazily on first access.
+    /// This avoids the expensive tool schema construction during Zed ACP startup.
+    pub fn capabilities(&self) -> &GrokAgentCapabilities {
+        self.capabilities.get_or_init(Self::create_capabilities)
     }
 
     /// Create agent capabilities
@@ -1597,7 +1587,7 @@ impl GrokAcpAgent {
     }
 
     pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
-        &self.capabilities
+        &self.capabilities()
     }
 
     // ── Bayesian engine commands (───────────────────────────────────────────────

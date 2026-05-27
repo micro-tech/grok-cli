@@ -3435,4 +3435,72 @@
         { "id": 1204, "title": "Integrate semantic compression", "status": "done" },
         { "id": 1205, "title": "Integrate tool schema optimizer", "status": "done" }
   ],
+},
+    {
+      "id": 121,
+      "title": "Lazy-load ACP capabilities and tool definitions",
+      "description": "Move create_capabilities() and get_available_tool_definitions() out of GrokAcpAgent::new() so Zed ACP stdio starts faster. Compute capabilities lazily on first initialize/session.new.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "high",
+      "details": "create_capabilities() currently rebuilds 30+ tool JSON schemas on every ACP launch. Defer this until the first real request from Zed.",
+      "testStrategy": "Measure time from 'grok acp stdio' to ready state before/after. Verify capabilities still appear correctly in initialize response.",
+      "subtasks": []
+    },
+    {
+      "id": 122,
+      "title": "Cache tool definitions globally with once_cell / LazyLock",
+      "description": "Wrap get_tool_definitions() and get_available_tool_definitions() results in a global lazy static so the expensive JSON construction only happens once per process.",
+      "status": "pending",
+      "dependencies": [121],
+      "priority": "high",
+      "details": "The big vec![json!(...)] in registry.rs is rebuilt on every agent creation. Cache it.",
+      "testStrategy": "Add a simple timing test or log line showing construction only happens once.",
+      "subtasks": []
+    },
+    {
+      "id": 123,
+      "title": "Make AppRouter creation fully lazy in ACP path",
+      "description": "Push AppRouter construction even later — only on first actual chat completion, not during agent creation.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "medium",
+      "details": "Currently done in new() when an API key exists. Defer to first handle_chat_completion call.",
+      "testStrategy": "Confirm no API key validation or network work happens until first prompt in Zed.",
+      "subtasks": []
+    },
+    {
+      "id": 124,
+      "title": "Add --zed / --fast startup flag for ACP stdio",
+      "description": "Add a fast-path flag that skips non-essential init (knowledge packs, SessionDNA, Bayesian engine, HookManager) until after the first prompt when launched from Zed.",
+      "status": "pending",
+      "dependencies": [121],
+      "priority": "medium",
+      "details": "Zed starts 90% of ACP sessions. A dedicated fast path can shave noticeable time.",
+      "testStrategy": "Benchmark with and without the flag. Ensure full features still activate on first real prompt.",
+      "subtasks": []
+    },
+    {
+      "id": 125,
+      "title": "Profile and trim unnecessary work in start_acp_stdio path",
+      "description": "Run a startup profiler (e.g. cargo flamegraph or simple timing) on the ACP stdio entry point and remove or defer anything not required before the first initialize message.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "medium",
+      "details": "Look at SecurityManager, current_dir canonicalization, tracing setup, and chat_logger initialization.",
+      "testStrategy": "Produce before/after timing numbers for 'grok acp stdio' and actual Zed connection.",
+      "subtasks": []
+    },
+    {
+      "id": 126,
+      "title": "Make SecurityManager and HookManager initialization lazy",
+      "description": "Defer creation of SecurityManager and HookManager until they are actually needed instead of doing it in every GrokAcpAgent::new().",
+      "status": "pending",
+      "dependencies": [121],
+      "priority": "low",
+      "details": "These are created unconditionally even though many ACP sessions may never need them.",
+      "testStrategy": "Verify no behavior change for normal Zed usage.",
+      "subtasks": []
+    }
+  ]
 }
