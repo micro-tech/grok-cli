@@ -13,6 +13,7 @@
 pub mod belief_state;
 pub mod context_budget;
 pub mod engine;
+pub mod error;
 pub mod prelude;
 pub mod prompt_applicator;
 pub mod prompt_builder;

@@ -3,6 +3,7 @@
 //! Reduces token usage from tool schemas by pruning unused tools,
 //! hashing schemas for cache keys, and applying light compression.
 
+use crate::context::error::{ContextError, ContextResult};
 use serde_json::Value;
 
 /// Compute a simple hash of a tool schema for caching / deduplication.
@@ -27,14 +28,18 @@ pub fn prune_unused_tools(tools: Vec<Value>, keep: &[&str]) -> Vec<Value> {
 }
 
 /// Lightweight schema compression (removes verbose descriptions if present).
-pub fn compress_schema(schema: &mut Value) {
+pub fn compress_schema(schema: &mut Value) -> ContextResult<()> {
     if let Some(desc) = schema.get_mut("description") {
         if let Some(s) = desc.as_str() {
             if s.len() > 120 {
+                if s.len() > 200_000 {
+                    return Err(ContextError::PromptTooLarge);
+                }
                 *desc = Value::String(format!("{}…", &s[..117]));
             }
         }
     }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -56,5 +61,20 @@ mod tests {
     fn test_schema_hash_stable() {
         let s = json!({"type": "object"});
         assert_eq!(schema_hash(&s), schema_hash(&s));
+    }
+
+    #[test]
+    fn test_compress_schema_long_description() {
+        let mut schema = json!({"description": "a".repeat(200)});
+        compress_schema(&mut schema).unwrap();
+        let desc = schema["description"].as_str().unwrap();
+        assert!(desc.ends_with('…'));
+        assert!(desc.len() < 130);
+    }
+
+    #[test]
+    fn test_compress_schema_too_large() {
+        let mut schema = json!({"description": "x".repeat(300_000)});
+        assert!(compress_schema(&mut schema).is_err());
     }
 }

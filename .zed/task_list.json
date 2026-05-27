@@ -3364,30 +3364,30 @@
       "id": 116,
       "title": "Implement Tool Schema Optimizer",
       "description": "Add schema hashing, pruning, and compression to reduce tool overhead in prompts.",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "dependencies": [113],
       "details": "Create src/optimizer/tool_optimizer.rs with schema hashing and pruning logic.",
       "testStrategy": "Verify that unused tools are not included and schema size is reduced by 70–90%.",
       "subtasks": [
-        { "id": 1161, "title": "Add schema hashing", "status": "pending" },
-        { "id": 1162, "title": "Add unused tool pruning", "status": "pending" },
-        { "id": 1163, "title": "Add schema compression", "status": "pending" }
+        { "id": 1161, "title": "Add schema hashing", "status": "done" },
+        { "id": 1162, "title": "Add unused tool pruning", "status": "done" },
+        { "id": 1163, "title": "Add schema compression", "status": "done" }
       ]
     },
     {
       "id": 117,
       "title": "Implement Semantic Compression Layer",
       "description": "Add embedding-based context summarization and semantic dedupe to reduce long-term context size.",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "dependencies": [113],
       "details": "Create src/optimizer/semantic_compression.rs with embedding store and summarization logic.",
       "testStrategy": "Verify that long conversations compress into semantic summaries while preserving meaning.",
       "subtasks": [
-        { "id": 1171, "title": "Add embedding store", "status": "pending" },
-        { "id": 1172, "title": "Implement semantic dedupe", "status": "pending" },
-        { "id": 1173, "title": "Add summarization engine", "status": "pending" }
+        { "id": 1171, "title": "Add embedding store", "status": "done" },
+        { "id": 1172, "title": "Implement semantic dedupe", "status": "done" },
+        { "id": 1173, "title": "Add summarization engine", "status": "done" }
       ]
     },
     {
@@ -3400,39 +3400,39 @@
       "details": "Extend token_cache.rs with token-level caching and token reuse logic.",
       "testStrategy": "Verify that repeated requests skip tokenization and reduce CPU usage.",
       "subtasks": [
-        { "id": 1181, "title": "Cache system prompt tokens", "status": "pending" },
-        { "id": 1182, "title": "Cache tool schema tokens", "status": "pending" },
-        { "id": 1183, "title": "Cache compressed context tokens", "status": "pending" }
+        { "id": 1181, "title": "Cache system prompt tokens", "status": "done" },
+        { "id": 1182, "title": "Cache tool schema tokens", "status": "done" },
+        { "id": 1183, "title": "Cache compressed context tokens", "status": "done" }
       ]
     },
     {
       "id": 119,
       "title": "Implement Real-Time Token Budget Enforcement",
       "description": "Add token estimation and aggressive compression fallback when prompt exceeds cost profile limits.",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "dependencies": [114, 117],
       "details": "Add token estimation and compression fallback to prompt builder.",
       "testStrategy": "Verify that prompts never exceed configured token budgets.",
       "subtasks": [
-        { "id": 1191, "title": "Add token estimator", "status": "pending" },
-        { "id": 1192, "title": "Add compression fallback", "status": "pending" }
+        { "id": 1191, "title": "Add token estimator", "status": "done" },
+        { "id": 1192, "title": "Add compression fallback", "status": "done" }
       ]
     },
     {
       "id": 120,
       "title": "Integrate Optimization Suite Into Grok-CLI Pipeline",
       "description": "Wire token cache, cost router, delta prompting, semantic compression, and schema optimizer into the main Grok-CLI request pipeline.",
-      "status": "pending",
+      "status": "done",
       "priority": "high",
       "dependencies": [113, 114, 115, 116, 117, 118, 119],
       "details": "Modify session.rs and prompt_builder.rs to use all optimization modules.",
       "testStrategy": "Run full end-to-end tests verifying reduced token usage, stable behavior, and correct tool routing.",
       "subtasks": [
-        { "id": 1201, "title": "Integrate token cache", "status": "pending" },
-        { "id": 1202, "title": "Integrate cost router", "status": "pending" },
-        { "id": 1203, "title": "Integrate delta prompting", "status": "pending" },
-        { "id": 1204, "title": "Integrate semantic compression", "status": "pending" },
-        { "id": 1205, "title": "Integrate tool schema optimizer", "status": "pending" }
+        { "id": 1201, "title": "Integrate token cache", "status": "done" },
+        { "id": 1202, "title": "Integrate cost router", "status": "done" },
+        { "id": 1203, "title": "Integrate delta prompting", "status": "done" },
+        { "id": 1204, "title": "Integrate semantic compression", "status": "done" },
+        { "id": 1205, "title": "Integrate tool schema optimizer", "status": "done" }
   ],
 }

@@ -3,6 +3,7 @@
 pub use super::belief_state::BeliefState;
 pub use super::context_budget::ContextBudget;
 pub use super::engine::ContextEngine;
+pub use super::error::{ContextError, ContextResult};
 pub use super::prompt_applicator::apply_delta;
 pub use super::prompt_builder::{build_prompt_with_delta, prompt_cache_key};
 pub use super::prompt_cache::PromptCache;
