@@ -10,7 +10,20 @@
 //! - Belief State: Bayesian reasoning probabilities and uncertainty
 //! - TokenCache: Stable hashing for prompt components (system prompt, tools, context)
 
+pub mod belief_state;
+pub mod context_budget;
+pub mod engine;
+pub mod prelude;
+pub mod prompt_applicator;
+pub mod prompt_builder;
+pub mod prompt_cache;
+pub mod prompt_delta;
+pub mod prompt_diff;
+pub mod session_manager;
+pub mod session_summarizer;
 pub mod token_cache;
+pub mod token_counter;
+pub mod tool_optimizer;
 
 use crate::context::token_cache::TokenCache;
 use serde::{Deserialize, Serialize};

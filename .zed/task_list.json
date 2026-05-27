@@ -3339,10 +3339,10 @@
       "details": "Create src/optimizer/cost_router.rs with CostProfile and routing logic for cheap, balanced, and high-precision modes.",
       "testStrategy": "Verify that different request types trigger different cost profiles and that token usage aligns with configured budgets.",
       "subtasks": [
-        { "id": 1141, "title": "Define CostProfile struct", "status": "pending" },
-        { "id": 1142, "title": "Implement request classification", "status": "pending" },
-        { "id": 1143, "title": "Add model selection logic", "status": "pending" },
-        { "id": 1144, "title": "Integrate router into session pipeline", "status": "pending" }
+        { "id": 1141, "title": "Define CostProfile struct", "status": "done" },
+        { "id": 1142, "title": "Implement request classification", "status": "done" },
+        { "id": 1143, "title": "Add model selection logic", "status": "done" },
+        { "id": 1144, "title": "Integrate router into session pipeline", "status": "done" }
       ]
     },
     {
