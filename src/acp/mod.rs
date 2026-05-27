@@ -321,6 +321,21 @@ impl GrokAcpAgent {
         self.capabilities.get_or_init(Self::create_capabilities)
     }
 
+    /// Return a clone of the underlying [`AppRouter`], or a descriptive
+    /// error if no API key was configured when the agent was created.
+    ///
+    /// Call this inside any method that needs to reach the xAI API instead of
+    /// accessing `self.router` directly.
+    fn get_router(&self) -> Result<AppRouter> {
+        self.router.clone().ok_or_else(|| {
+            anyhow!(
+                "API key not configured. \
+                 Set the GROK_API_KEY environment variable and restart the agent, \
+                 or use 'grok config set api_key <key>'."
+            )
+        })
+    }
+
     /// Create agent capabilities
     fn create_capabilities() -> GrokAgentCapabilities {
         GrokAgentCapabilities {
@@ -689,7 +704,7 @@ impl GrokAcpAgent {
                             Ok(router) => {
                                 match crate::memory::context_compressor::compress(
                                     &to_compress,
-                                    router,
+                                    &router,
                                     &model,
                                 )
                                 .await
@@ -2042,9 +2057,9 @@ impl GrokAcpAgent {
             "total_messages": total_messages,
             "uptime_seconds": uptime,
             "capabilities": {
-                "models": self.capabilities.models,
-                "features": self.capabilities.features,
-                "max_context_length": self.capabilities.max_context_length
+                "models": self.capabilities().models,
+                "features": self.capabilities().features,
+                "max_context_length": self.capabilities().max_context_length
             }
         }))
     }
