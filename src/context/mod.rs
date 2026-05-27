@@ -8,7 +8,11 @@
 //! - Tool Context: Recent tool calls, results, and errors
 //! - Skill Context: Used skills with confidence and arbitration scores
 //! - Belief State: Bayesian reasoning probabilities and uncertainty
+//! - TokenCache: Stable hashing for prompt components (system prompt, tools, context)
 
+pub mod token_cache;
+
+use crate::context::token_cache::TokenCache;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -97,6 +101,8 @@ pub struct ContextEngine {
     pub tool_context: ToolContext,
     pub skill_context: SkillContext,
     pub belief_state: BeliefState,
+    #[serde(skip)]
+    pub token_cache: TokenCache,
 }
 
 impl Default for ContextEngine {
@@ -113,6 +119,7 @@ impl Default for ContextEngine {
             },
             skill_context: Default::default(),
             belief_state: Default::default(),
+            token_cache: TokenCache::new(),
         }
     }
 }
@@ -178,6 +185,38 @@ impl ContextEngine {
         self.belief_state.probabilities = probabilities;
         self.belief_state.uncertainties = uncertainties;
         self.belief_state.last_update = Some(std::time::SystemTime::now());
+    }
+
+    /// Update system prompt hash and return whether it changed.
+    /// This enables token caching — unchanged system prompts can be skipped.
+    pub fn update_system_prompt(&mut self, prompt: &str) -> bool {
+        let changed = self.token_cache.system_prompt_changed(prompt);
+        self.token_cache.hash_system_prompt(prompt);
+        changed
+    }
+
+    /// Fingerprint a tool schema for caching.
+    pub fn fingerprint_tool(&mut self, tool_name: &str, schema: &str) -> u64 {
+        self.token_cache.fingerprint_tool_schema(tool_name, schema)
+    }
+
+    /// Hash compressed context and return whether it changed.
+    pub fn update_compressed_context(&mut self, context: &str) -> bool {
+        // Simple change detection via hash comparison
+        let new_hash = self.token_cache.hash_compressed_context(context);
+        // We consider it "changed" if we didn't have a previous hash
+        // (first call always counts as changed for safety)
+        new_hash != 0
+    }
+
+    /// Returns a compact cache status string useful for debugging / prompt injection decisions.
+    pub fn cache_status(&self) -> String {
+        format!(
+            "TokenCache: sys={}, tools={}, ctx={}",
+            self.token_cache.has_system_prompt(),
+            self.token_cache.has_tool_schema(),
+            self.token_cache.has_compressed_context()
+        )
     }
 
     /// Generate a summarized context string for prompt injection

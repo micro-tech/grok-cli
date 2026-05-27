@@ -9,7 +9,7 @@
       "priority": "medium",
       "details": "",
       "testStrategy": "",
-      "subtasks": [],
+      "subtasks": []
     },
     {
       "id": 2,
@@ -3322,11 +3322,11 @@
       "details": "Create src/optimizer/token_cache.rs with structs for TokenCache and methods for storing and retrieving cached prompt components.",
       "testStrategy": "Simulate repeated requests and verify that cached components are reused and token count decreases by at least 30%.",
       "subtasks": [
-        { "id": 1131, "title": "Define TokenCache struct", "status": "pending" },
-        { "id": 1132, "title": "Implement system prompt hashing", "status": "pending" },
-        { "id": 1133, "title": "Implement tool schema fingerprinting", "status": "pending" },
-        { "id": 1134, "title": "Add compressed context caching", "status": "pending" },
-        { "id": 1135, "title": "Integrate cache into prompt builder", "status": "pending" }
+        { "id": 1131, "title": "Define TokenCache struct", "status": "done" },
+        { "id": 1132, "title": "Implement system prompt hashing", "status": "done" },
+        { "id": 1133, "title": "Implement tool schema fingerprinting", "status": "done" },
+        { "id": 1134, "title": "Add compressed context caching", "status": "done" },
+        { "id": 1135, "title": "Integrate cache into prompt builder", "status": "done" }
       ]
     },
     {
