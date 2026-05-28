@@ -2,7 +2,36 @@
 
 This document shows the high-level data flow through the Grok CLI system.
 
-## Session Initialization Flow
+## ACP / Zed Startup Flow (Tasks 121–126)
+
+```
+grok acp stdio
+        │
+        ▼
+┌──────────────────────────────┐
+│  GrokAcpAgent::new()         │
+│  (extremely lightweight)     │
+└──────────────────────────────┘
+        │
+        ├─► OnceLock<AppRouter>          (empty)
+        ├─► OnceLock<SecurityManager>    (empty)
+        ├─► OnceLock<HookManager>        (empty)
+        └─► OnceLock<Capabilities>       (empty)
+        │
+        ▼
+   Wait for Zed initialize / session/new
+        │
+        ▼
+   First prompt or tool call
+        │
+        ▼
+   Lazy initialization on demand:
+        ├─► AppRouter::new()          (only if API key present)
+        ├─► SecurityManager::new() + trust CWD
+        └─► HookManager::new()
+```
+
+**Key optimization**: No expensive work happens until the first real request. The agent can respond to `initialize` declaring its auth requirements in < 50 ms.
 
 ```
 User starts session
@@ -84,4 +113,4 @@ Return immediately           │
 
 ---
 
-**Last Updated:** 2026-05-10
+**Last Updated:** 2026-05-10 (ACP lazy initialization – tasks 121-126)
