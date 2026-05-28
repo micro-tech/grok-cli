@@ -25,11 +25,16 @@ pub fn notebook_edit(
     cell_type: &str,
     security: &SecurityPolicy,
 ) -> Result<String> {
-    let resolved = security
-        .resolve_path(path)
-        .map_err(|e| anyhow!("Failed to resolve path '{}': {}", path, e))?;
+    let resolved = security.resolve_path(path).map_err(|e| {
+        tracing::warn!(error = %e, "notebook_tools::notebook_edit: failed to resolve path");
+        anyhow!("Failed to resolve path '{}': {}", path, e)
+    })?;
 
     if !security.is_path_trusted(&resolved) {
+        tracing::warn!(
+            path = %resolved.display(),
+            "notebook_tools::notebook_edit: access denied — path not in trusted directory"
+        );
         return Err(anyhow!(
             "Access denied: '{}' is not in a trusted directory",
             resolved.display()
@@ -38,16 +43,34 @@ pub fn notebook_edit(
 
     let cell_type_lower = cell_type.to_lowercase();
     if cell_type_lower != "code" && cell_type_lower != "markdown" {
+        tracing::warn!(
+            cell_type = cell_type,
+            "notebook_tools::notebook_edit: invalid cell_type"
+        );
         return Err(anyhow!(
             "Invalid cell_type '{}': must be 'code' or 'markdown'",
             cell_type
         ));
     }
 
+    // Guard: cell source must not be blank.
+    if source.trim().is_empty() {
+        tracing::warn!("notebook_tools::notebook_edit: cell source is empty");
+        return Err(anyhow::anyhow!(
+            "notebook_edit: cell source must not be empty"
+        ));
+    }
+
     // Load existing notebook or create a minimal scaffold
     let notebook_content = if resolved.exists() {
-        fs::read_to_string(&resolved)
-            .map_err(|e| anyhow!("Failed to read notebook '{}': {}", resolved.display(), e))?
+        fs::read_to_string(&resolved).map_err(|e| {
+            tracing::warn!(
+                error = %e,
+                path = %resolved.display(),
+                "notebook_tools::notebook_edit: failed to read notebook"
+            );
+            anyhow!("Failed to read notebook '{}': {}", resolved.display(), e)
+        })?
     } else {
         // Minimal Jupyter v4 scaffold
         serde_json::to_string_pretty(&json!({
@@ -68,12 +91,22 @@ pub fn notebook_edit(
         }))?
     };
 
-    let mut notebook: Value = serde_json::from_str(&notebook_content)
-        .map_err(|e| anyhow!("Invalid notebook JSON in '{}': {}", resolved.display(), e))?;
+    let mut notebook: Value = serde_json::from_str(&notebook_content).map_err(|e| {
+        tracing::warn!(
+            error = %e,
+            path = %resolved.display(),
+            "notebook_tools::notebook_edit: invalid notebook JSON"
+        );
+        anyhow!("Invalid notebook JSON in '{}': {}", resolved.display(), e)
+    })?;
 
-    let cells = notebook["cells"]
-        .as_array_mut()
-        .ok_or_else(|| anyhow!("Notebook '{}' has no 'cells' array", resolved.display()))?;
+    let cells = notebook["cells"].as_array_mut().ok_or_else(|| {
+        tracing::warn!(
+            path = %resolved.display(),
+            "notebook_tools::notebook_edit: notebook has no 'cells' array"
+        );
+        anyhow!("Notebook '{}' has no 'cells' array", resolved.display())
+    })?;
 
     // Convert source string to Jupyter source-lines format:
     // every line except the last ends with "\n".
@@ -122,13 +155,47 @@ pub fn notebook_edit(
         )
     };
 
-    // Write back
+    // Ensure the parent directory exists.
     if let Some(parent) = resolved.parent() {
-        fs::create_dir_all(parent)
-            .map_err(|e| anyhow!("Failed to create parent directory: {}", e))?;
+        fs::create_dir_all(parent).map_err(|e| {
+            tracing::warn!(
+                error = %e,
+                "notebook_tools::notebook_edit: failed to create parent directory"
+            );
+            anyhow!("Failed to create parent directory: {}", e)
+        })?;
     }
-    fs::write(&resolved, serde_json::to_string_pretty(&notebook)?)
-        .map_err(|e| anyhow!("Failed to write notebook: {}", e))?;
+
+    // Atomic write: serialise → tmp file → rename into place so that a
+    // Starlink drop mid-write cannot leave a half-written notebook on disk.
+    let json_str = serde_json::to_string_pretty(&notebook).map_err(|e| {
+        tracing::warn!(
+            error = %e,
+            "notebook_tools::notebook_edit: failed to serialise notebook"
+        );
+        anyhow!("Failed to serialise notebook: {}", e)
+    })?;
+
+    let tmp_path = resolved.with_extension("ipynb.tmp");
+
+    fs::write(&tmp_path, &json_str).map_err(|e| {
+        tracing::warn!(
+            error = %e,
+            tmp = %tmp_path.display(),
+            "notebook_tools::notebook_edit: failed to write tmp file"
+        );
+        anyhow::anyhow!("notebook_edit: failed to write tmp: {}", e)
+    })?;
+
+    fs::rename(&tmp_path, &resolved).map_err(|e| {
+        tracing::warn!(
+            error = %e,
+            tmp = %tmp_path.display(),
+            dest = %resolved.display(),
+            "notebook_tools::notebook_edit: failed to rename tmp to notebook"
+        );
+        anyhow::anyhow!("notebook_edit: failed to rename tmp → notebook: {}", e)
+    })?;
 
     Ok(action)
 }
@@ -202,5 +269,18 @@ mod tests {
         let path = dir.path().join("nb3.ipynb");
         let r = notebook_edit(path.to_str().unwrap(), 0, "x", "raw", &security);
         assert!(r.is_err());
+    }
+
+    #[test]
+    fn rejects_empty_source() {
+        let dir = TempDir::new().unwrap();
+        let security = make_security(&dir);
+        let path = dir.path().join("nb4.ipynb");
+        let r = notebook_edit(path.to_str().unwrap(), 0, "   ", "code", &security);
+        assert!(r.is_err(), "blank source must return Err");
+        assert!(
+            r.unwrap_err().to_string().contains("must not be empty"),
+            "error message must mention 'must not be empty'"
+        );
     }
 }

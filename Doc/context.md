@@ -443,7 +443,7 @@ By following these best practices, you can write high-quality Rust code that is 
 
 - Understand the skills system (activate with `/activate skill-name`)
 - Understand the hooks/extensions system
-- Respect the task list in `.zed/tasks.json`
+- Respect the task list in `.zed/tasks_list.json`
 - Follow dependency chains when working on tasks
 - Update CHANGELOG.md for completed work
 
@@ -576,7 +576,7 @@ By following these best practices, you can write high-quality Rust code that is 
 ### Configuration Hierarchy
 
 1. System config: `~/.config/grok-cli/config.toml` (or `%APPDATA%\grok-cli\config.toml`)
-2. Project config: `.grok/config.toml` (this file)
+2. Project config: `.grok/config.toml` 
 3. Environment variables: `.grok/.env`
 
 ## Git Workflow
@@ -667,7 +667,7 @@ cargo run --bin grok -- interactive
 ## Notes
 
 - This project is at version 0.1.8-pre with 75% completion (52/69 tasks done)
-- 17 tasks remaining in `.zed/tasks.json`
+- 17 tasks remaining in `.zed/tasks_list.json`
 - For task management methodology, activate the `task-list` skill
 - For project scaffolding, use the `project-setup-hook` extension
 - All network code includes Starlink-optimized retry logic

@@ -40,66 +40,123 @@ pub fn is_web_search_configured() -> bool {
 /// Falls back to title-only results if the snippet regex fails to match.
 ///
 /// # Starlink resilience
-/// The underlying HTTP client is built with a 30-second timeout so a
-/// satellite handover does not hang indefinitely.
+/// Retries up to 3 times on transient network errors (satellite handover,
+/// timeout, connection reset) with exponential back-off before surfacing an
+/// error to the caller.
 pub async fn web_search(query: &str) -> Result<String> {
-    duckduckgo_search(query).await
+    let query = query.trim();
+    if query.is_empty() {
+        return Err(anyhow::anyhow!("web_search: query must not be empty"));
+    }
+
+    const MAX_RETRIES: u32 = 3;
+    for attempt in 0..=MAX_RETRIES {
+        match duckduckgo_search(query).await {
+            Ok(result) => return Ok(result),
+            Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
+                let delay = crate::utils::network::calculate_retry_delay(attempt, false);
+                warn!(
+                    attempt = attempt + 1,
+                    max_attempts = MAX_RETRIES + 1,
+                    delay_ms = delay.as_millis(),
+                    error = %e,
+                    "web_search: network error — retrying after delay"
+                );
+                tokio::time::sleep(delay).await;
+            }
+            Err(e) => return Err(e),
+        }
+    }
+    unreachable!()
 }
 
 /// Fetch the raw text content of a URL.
 ///
-/// Truncates responses longer than 10 000 characters to avoid overloading
-/// the model context window.
+/// Truncates responses longer than 10 000 *characters* (not bytes) using a
+/// char-boundary-safe split so multibyte UTF-8 sequences never cause a panic.
+///
+/// # Starlink resilience
+/// Retries up to 3 times on transient network errors with exponential
+/// back-off before returning an error to the caller.
 ///
 /// # Errors
 /// Returns an error with a human-readable diagnosis if the request fails,
-/// including hints about network connectivity, invalid URLs, and firewall
-/// / proxy issues.
+/// including hints about network connectivity, invalid URLs, and
+/// firewall / proxy issues.
 pub async fn web_fetch(url: &str) -> Result<String> {
     let client = reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
         .build()
         .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
 
-    let response = client
-        .get(url)
-        .header("User-Agent", "grok-cli/0.1.0")
-        .send()
-        .await
-        .map_err(|e| {
-            anyhow!(
-                "Failed to fetch URL '{}': {}\n\
-                This could be due to:\n\
-                - Network connectivity issues (Starlink handover?)\n\
-                - Invalid URL\n\
-                - Server not responding\n\
-                - Firewall/proxy blocking the request",
-                url,
-                e
-            )
-        })?;
+    const MAX_RETRIES: u32 = 3;
+    for attempt in 0..=MAX_RETRIES {
+        let send_result = client
+            .get(url)
+            .header("User-Agent", "grok-cli/0.1.0")
+            .send()
+            .await
+            .map_err(|e| {
+                anyhow!(
+                    "Failed to fetch URL '{}': {}\n\
+                    This could be due to:\n\
+                    - Network connectivity issues (Starlink handover?)\n\
+                    - Invalid URL\n\
+                    - Server not responding\n\
+                    - Firewall/proxy blocking the request",
+                    url,
+                    e
+                )
+            });
 
-    if !response.status().is_success() {
-        return Err(anyhow!(
-            "Failed to fetch URL '{}': HTTP {}\n\
-            The server returned an error status code.",
-            url,
-            response.status()
-        ));
+        match send_result {
+            Ok(response) => {
+                if !response.status().is_success() {
+                    warn!(
+                        status = %response.status(),
+                        url = %url,
+                        "web_fetch: non-2xx response from server"
+                    );
+                    return Err(anyhow!(
+                        "Failed to fetch URL '{}': HTTP {}\n\
+                        The server returned an error status code.",
+                        url,
+                        response.status()
+                    ));
+                }
+
+                let text = response.text().await.map_err(|e| {
+                    warn!(error = %e, url = %url, "web_fetch: failed to read response body");
+                    anyhow!("Failed to read response body: {}", e)
+                })?;
+
+                // Safe char-boundary truncation — avoids panics on multibyte
+                // UTF-8 sequences that straddle the 10 000-byte mark.
+                let truncated = text
+                    .char_indices()
+                    .nth(10_000)
+                    .map(|(i, _)| &text[..i])
+                    .unwrap_or(&text);
+                return Ok(truncated.to_string());
+            }
+            Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
+                let delay = crate::utils::network::calculate_retry_delay(attempt, false);
+                warn!(
+                    attempt = attempt + 1,
+                    max_attempts = MAX_RETRIES + 1,
+                    delay_ms = delay.as_millis(),
+                    error = %e,
+                    "web_fetch: network error — retrying after delay"
+                );
+                tokio::time::sleep(delay).await;
+            }
+            Err(e) => {
+                warn!(error = %e, url = %url, "web_fetch: request failed — no more retries");
+                return Err(e);
+            }
+        }
     }
-
-    let text = response
-        .text()
-        .await
-        .map_err(|e| anyhow!("Failed to read response body: {}", e))?;
-
-    let truncated = if text.len() > 10_000 {
-        format!("{}... (truncated)", &text[..10_000])
-    } else {
-        text
-    };
-
-    Ok(truncated)
+    unreachable!()
 }
 
 // ── Private implementation ────────────────────────────────────────────────────
@@ -187,6 +244,14 @@ mod tests {
     #[test]
     fn web_search_is_always_configured() {
         assert!(is_web_search_configured());
+    }
+
+    #[test]
+    fn web_search_empty_query_returns_error() {
+        let rt = tokio::runtime::Runtime::new().unwrap();
+        let r = rt.block_on(web_search("   "));
+        assert!(r.is_err());
+        assert!(r.unwrap_err().to_string().contains("must not be empty"));
     }
 
     #[tokio::test]

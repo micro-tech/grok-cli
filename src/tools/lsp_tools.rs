@@ -37,15 +37,28 @@ pub async fn lsp_query(
     query_type: &str,
     security: &SecurityPolicy,
 ) -> Result<String> {
-    let resolved = security
-        .resolve_path(file)
-        .map_err(|e| anyhow!("Failed to resolve '{}': {}", file, e))?;
+    let resolved = security.resolve_path(file).map_err(|e| {
+        let err = anyhow!("Failed to resolve '{}': {}", file, e);
+        tracing::warn!(
+            tool  = "lsp_query",
+            error = %err,
+            "lsp_tools: failed to resolve path"
+        );
+        err
+    })?;
 
     if !security.is_path_trusted(&resolved) {
-        return Err(anyhow!(
+        let e = anyhow!(
             "Access denied: '{}' is not in a trusted directory",
             resolved.display()
-        ));
+        );
+        tracing::warn!(
+            tool  = "lsp_query",
+            path  = %resolved.display(),
+            error = %e,
+            "lsp_tools: access denied — path is not in a trusted directory"
+        );
+        return Err(e);
     }
 
     match query_type {
@@ -53,10 +66,19 @@ pub async fn lsp_query(
         "hover" => get_hover(&resolved, line, character),
         "definition" => find_definition(&resolved, line, character),
         "references" => find_references(&resolved, line, character),
-        other => Err(anyhow!(
-            "Unknown query_type '{}'. Valid options: diagnostics, hover, definition, references",
-            other
-        )),
+        other => {
+            let e = anyhow!(
+                "Unknown query_type '{}'. Valid options: diagnostics, hover, definition, references",
+                other
+            );
+            tracing::warn!(
+                tool       = "lsp_query",
+                query_type = other,
+                error      = %e,
+                "lsp_tools: unknown query type requested"
+            );
+            Err(e)
+        }
     }
 }
 
@@ -75,8 +97,32 @@ async fn get_diagnostics(path: &Path, security: &SecurityPolicy) -> Result<Strin
                 .output(),
         )
         .await
-        .map_err(|_| anyhow!("cargo check timed out after 60 s"))?
-        .map_err(|e| anyhow!("Failed to run cargo check: {}", e))?;
+        .map_err(|_| {
+            tracing::warn!(
+                timeout_secs = 60u64,
+                path         = %path.display(),
+                "lsp_tools: cargo check timed out — diagnostics may be incomplete"
+            );
+            anyhow!("cargo check timed out after 60 s")
+        })?
+        .map_err(|e| {
+            tracing::warn!(
+                tool  = "lsp_query",
+                error = %e,
+                "lsp_tools: failed to spawn cargo check"
+            );
+            anyhow!("Failed to run cargo check: {}", e)
+        })?;
+
+        // Warn when cargo check exits non-zero (compilation errors are expected,
+        // but an unexpected exit code may indicate a broken toolchain or project).
+        if !output.status.success() {
+            tracing::warn!(
+                tool      = "lsp_query",
+                exit_code = ?output.status.code(),
+                "lsp_tools: cargo check exited non-zero — some diagnostics may be incomplete"
+            );
+        }
 
         let stdout = String::from_utf8_lossy(&output.stdout);
         let file_stem = path
@@ -116,7 +162,7 @@ async fn get_diagnostics(path: &Path, security: &SecurityPolicy) -> Result<Strin
             ))
         }
     } else {
-        // Non-Rust project: just confirm the file exists
+        // Non-Rust project: just confirm the file exists.
         if path.exists() {
             Ok(format!(
                 "File '{}' exists. Full LSP diagnostics require a language server \
@@ -124,7 +170,14 @@ async fn get_diagnostics(path: &Path, security: &SecurityPolicy) -> Result<Strin
                 path.display()
             ))
         } else {
-            Err(anyhow!("File not found: '{}'", path.display()))
+            let e = anyhow!("File not found: '{}'", path.display());
+            tracing::warn!(
+                tool  = "lsp_query",
+                path  = %path.display(),
+                error = %e,
+                "lsp_tools: file not found during non-Rust diagnostics"
+            );
+            Err(e)
         }
     }
 }
@@ -133,20 +186,44 @@ async fn get_diagnostics(path: &Path, security: &SecurityPolicy) -> Result<Strin
 
 fn get_hover(path: &Path, line: u32, _character: u32) -> Result<String> {
     if !path.exists() {
-        return Err(anyhow!("File not found: '{}'", path.display()));
+        let e = anyhow!("File not found: '{}'", path.display());
+        tracing::warn!(
+            tool  = "lsp_query",
+            path  = %path.display(),
+            error = %e,
+            "lsp_tools: file not found for hover query"
+        );
+        return Err(e);
     }
 
-    let content = fs::read_to_string(path)
-        .map_err(|e| anyhow!("Failed to read '{}': {}", path.display(), e))?;
+    let content = fs::read_to_string(path).map_err(|e| {
+        let err = anyhow!("Failed to read '{}': {}", path.display(), e);
+        tracing::warn!(
+            tool  = "lsp_query",
+            path  = %path.display(),
+            error = %err,
+            "lsp_tools: failed to read file for hover query"
+        );
+        err
+    })?;
     let lines: Vec<&str> = content.lines().collect();
 
     let line_idx = line as usize;
     if line_idx >= lines.len() {
-        return Err(anyhow!(
+        let e = anyhow!(
             "Line {} is out of range (file has {} lines).",
             line + 1,
             lines.len()
-        ));
+        );
+        tracing::warn!(
+            tool      = "lsp_query",
+            path      = %path.display(),
+            requested = line + 1,
+            total     = lines.len(),
+            error     = %e,
+            "lsp_tools: requested line is out of range"
+        );
+        return Err(e);
     }
 
     // Return a ±3 line context window with an arrow marking the target line.
@@ -168,11 +245,26 @@ fn get_hover(path: &Path, line: u32, _character: u32) -> Result<String> {
 
 fn find_definition(path: &Path, line: u32, character: u32) -> Result<String> {
     if !path.exists() {
-        return Err(anyhow!("File not found: '{}'", path.display()));
+        let e = anyhow!("File not found: '{}'", path.display());
+        tracing::warn!(
+            tool  = "lsp_query",
+            path  = %path.display(),
+            error = %e,
+            "lsp_tools: file not found for definition query"
+        );
+        return Err(e);
     }
 
-    let content = fs::read_to_string(path)
-        .map_err(|e| anyhow!("Failed to read '{}': {}", path.display(), e))?;
+    let content = fs::read_to_string(path).map_err(|e| {
+        let err = anyhow!("Failed to read '{}': {}", path.display(), e);
+        tracing::warn!(
+            tool  = "lsp_query",
+            path  = %path.display(),
+            error = %err,
+            "lsp_tools: failed to read file for definition query"
+        );
+        err
+    })?;
     let lines: Vec<&str> = content.lines().collect();
 
     let symbol = extract_symbol(&lines, line, character)?;
@@ -225,11 +317,26 @@ fn find_definition(path: &Path, line: u32, character: u32) -> Result<String> {
 
 fn find_references(path: &Path, line: u32, character: u32) -> Result<String> {
     if !path.exists() {
-        return Err(anyhow!("File not found: '{}'", path.display()));
+        let e = anyhow!("File not found: '{}'", path.display());
+        tracing::warn!(
+            tool  = "lsp_query",
+            path  = %path.display(),
+            error = %e,
+            "lsp_tools: file not found for references query"
+        );
+        return Err(e);
     }
 
-    let content = fs::read_to_string(path)
-        .map_err(|e| anyhow!("Failed to read '{}': {}", path.display(), e))?;
+    let content = fs::read_to_string(path).map_err(|e| {
+        let err = anyhow!("Failed to read '{}': {}", path.display(), e);
+        tracing::warn!(
+            tool  = "lsp_query",
+            path  = %path.display(),
+            error = %err,
+            "lsp_tools: failed to read file for references query"
+        );
+        err
+    })?;
     let lines: Vec<&str> = content.lines().collect();
 
     let symbol = extract_symbol(&lines, line, character)?;
@@ -266,11 +373,19 @@ fn find_references(path: &Path, line: u32, character: u32) -> Result<String> {
 fn extract_symbol(lines: &[&str], line: u32, character: u32) -> Result<String> {
     let line_idx = line as usize;
     if line_idx >= lines.len() {
-        return Err(anyhow!(
+        let e = anyhow!(
             "Line {} is out of range ({} total lines).",
             line + 1,
             lines.len()
-        ));
+        );
+        tracing::warn!(
+            tool      = "lsp_query",
+            requested = line + 1,
+            total     = lines.len(),
+            error     = %e,
+            "lsp_tools: symbol extraction — line out of range"
+        );
+        return Err(e);
     }
     let target_line = lines[line_idx];
     let char_idx = (character as usize).min(target_line.len());

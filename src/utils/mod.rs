@@ -14,5 +14,6 @@ pub mod rate_limiter;
 pub mod session;
 pub mod shell_permissions;
 pub mod telemetry;
+pub mod tool_logger;
 
 // Re-export commonly used utilities

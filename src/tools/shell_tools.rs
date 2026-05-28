@@ -6,11 +6,29 @@ use tokio::process::Command;
 use tokio::time::{Duration, timeout};
 use tracing::warn;
 
+<<<<<<< HEAD
 /// Default hard execution timeout for every shell command.
 /// 300 s (5 min) is a safer default on Windows — `cargo build` and
 /// `git status` on slow or Starlink-connected machines routinely exceed 30 s.
 /// Override by passing an explicit value to [`run_shell_command`].
 const DEFAULT_SHELL_TIMEOUT_SECS: u64 = 300;
+=======
+/// Return the effective shell-command timeout in seconds.
+///
+/// Priority (highest → lowest):
+/// 1. `GROK_SHELL_TIMEOUT_SECS` environment variable — one-off override
+///    without touching config files.
+/// 2. `tools.shell.command_timeout_secs` in `config.toml` — loaded into
+///    the [`SecurityPolicy`] at startup by `GrokAcpAgent::new`.
+/// 3. 300 s compiled-in safety net (used only if neither of the above is set).
+fn effective_timeout(security: &SecurityPolicy) -> u64 {
+    std::env::var("GROK_SHELL_TIMEOUT_SECS")
+        .ok()
+        .and_then(|s| s.parse::<u64>().ok())
+        .filter(|&t| t > 0)
+        .unwrap_or_else(|| security.shell_timeout_secs())
+}
+>>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 
 /// Run a shell command with a hard execution timeout.
 ///
@@ -42,12 +60,17 @@ pub async fn run_shell_command(
     security.validate_shell_command(command)?;
 
     let cwd = security.working_directory().to_path_buf();
+<<<<<<< HEAD
     let effective_timeout = if timeout_secs == 0 {
         DEFAULT_SHELL_TIMEOUT_SECS
     } else {
         timeout_secs
     };
     let timeout_duration = Duration::from_secs(effective_timeout);
+=======
+    let timeout_secs = effective_timeout(security);
+    let timeout_duration = Duration::from_secs(timeout_secs);
+>>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 
     let spawn_result = if cfg!(target_os = "windows") {
         // Convert bash-style && to PowerShell-style ; for command chaining.
@@ -74,16 +97,31 @@ pub async fn run_shell_command(
     // Wrap execution in a hard timeout.
     let output = match timeout(timeout_duration, spawn_result).await {
         Ok(Ok(out)) => out,
-        Ok(Err(e)) => return Err(anyhow!("Failed to spawn command: {}", e)),
+        Ok(Err(e)) => {
+            tracing::warn!(
+                command = command,
+                error = %e,
+                "shell_tools: failed to spawn command"
+            );
+            return Err(anyhow!("Failed to spawn command: {}", e));
+        }
         Err(_) => {
             warn!(
                 command = %command,
+<<<<<<< HEAD
                 timeout_secs = effective_timeout,
+=======
+                timeout_secs = timeout_secs,
+>>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
                 "Shell command timed out"
             );
             return Err(anyhow!(
                 "Command timed out after {}s: {}",
+<<<<<<< HEAD
                 effective_timeout,
+=======
+                timeout_secs,
+>>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
                 command
             ));
         }
@@ -91,6 +129,14 @@ pub async fn run_shell_command(
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+
+    if !output.status.success() {
+        tracing::warn!(
+            exit_code = output.status.code().unwrap_or(-1),
+            command = command,
+            "shell_tools: command exited with non-zero status"
+        );
+    }
 
     if output.status.success() {
         Ok(format!("Stdout: {}\nStderr: {}", stdout, stderr))

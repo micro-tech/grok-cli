@@ -10,6 +10,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 
 ## ✨ Features
 
+<<<<<<< HEAD
 - **Interactive Terminal UI** — Gemini-style rich prompts, adaptive ASCII art, progress indicators, and color output
 - **Session Persistence** — Save, load, list, and fork conversations (`/save`, `/load`, `/list`)
 - **Session DNA** — Persistent personality & behavior config (`session_dna.json`) injected into system prompts ([Doc/SESSION_DNA.md](Doc/SESSION_DNA.md))
@@ -25,10 +26,94 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 - **TGS-RAG Engine** — Text-Graph Synergy Retrieval: hybrid BM25 + embeddings + graph-aware code context (tree-sitter + syn)
 - **Code Intelligence** — Explain, review, generate, and refactor across any language
 - **Starlink Optimizations** — Smart retries and timeout handling for satellite connections
+=======
+### 🧠 Reasoning Systems (v0.1.9-pre)
+- **Reasoning Protocol Layer (RPL)** — Structured observability for every AI decision: goal analysis, tool selection, uncertainty scoring, and suppression-safe trace logging. All traces are privacy-guarded by default. See `docs/rpl_architecture.md`.
+- **Reasoning Engine** — Active decision-making FSM that decomposes goals into multi-step plans, integrates Bayesian belief updates, queries long-term memory, and applies bounded self-correction when steps fail. See `docs/engine_architecture.md`.
+- **Privacy Controls** — `SuppressionLayer` and `RedactionConfig` ensure reasoning traces and engine state never leak sensitive data (API keys, secrets, passwords) to user output.
+- **227 new tests** — Full unit and integration test coverage for all reasoning components.
+
+### 🆕 New Features (v0.1.8-pre)
+- **🔒 External Directory Access** - Securely read files outside project boundaries with interactive approval prompts, comprehensive audit logging, and pattern-based security protections. Perfect for shared configs and cross-project references! [Quick Start Guide](Doc/EXTERNAL_ACCESS_QUICK_START.md)
+- **🤖 Skill Auto-Activation** - Skills now activate automatically based on keywords, regex patterns, and file types in your project. Add an `auto-activate` block to any `SKILL.md` to declare triggers. Toggle with `/auto-skills on|off`.
+- **🔧 ACP Workspace Access Fix** - The project root where Grok is opened is always trusted from the very first tool call. Handles `file://` URIs, Windows forward-slash paths, and Git-bash style paths correctly.
+- **Session Persistence** - Save and resume conversations with `/save`, `/load`, and `/list` commands
+- **Hierarchical Configuration** - Project-local settings override system defaults (`.grok/config.toml`)
+- **Enhanced Context Discovery** - Multi-editor support: `.zed/rules`, `.claude.md`, `.cursor/rules`, and more
+- **Context File Merging** - Automatically merges all available context files with source annotations
+- **Extension System** - Extend functionality with custom hooks and plugins
+- **Project-Aware AI** - Agent automatically understands your project conventions
+>>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 
 See [Doc/QUICK_REFERENCE.md](Doc/QUICK_REFERENCE.md) for the full command list and [Doc/FEATURES.md](Doc/FEATURES.md) (coming soon) for details.
 
+<<<<<<< HEAD
 ## 🚀 Quick Start
+=======
+### 💬 Advanced Chat Capabilities
+- **Interactive Sessions** - Persistent conversations with context tracking
+- **Automatic Tool Execution** - Grok can now create files and directories automatically!
+- **Chat Logging** - Automatic conversation logging with full history
+- **Session Search** - Search through all past conversations
+- **History Replay** - Review and analyze previous sessions
+- **System Prompts** - Customize AI behavior for specialized tasks
+- **Temperature Control** - Adjust creativity levels (0.0-2.0)
+- **Token Management** - Real-time context usage monitoring
+
+### 💻 Code Intelligence
+- **Code Explanation** - Understand complex codebases instantly
+- **Code Review** - Get detailed feedback with security focus
+- **Code Generation** - Create code from natural language descriptions
+- **Multi-language Support** - Works with any programming language
+
+### 🔧 Developer Tools
+- **External Access Controls** - Securely reference files outside project with approval and audit
+- **Health Diagnostics** - Comprehensive system and API monitoring
+- **Configuration Management** - Flexible TOML-based settings with validation
+- **Audit Logging** - Complete access tracking with CSV export and analytics
+- **Zed Editor Integration** - Agent Client Protocol (ACP) support
+- **Network Resilience** - Starlink-optimized with retry logic
+- **Reasoning Protocol Layer** — Structured trace logging with correlation IDs, log-level controls, suppression and redaction. See `Doc/REASONING_QUICK_START.md`
+- **Reasoning Engine** — Goal decomposition, Bayesian belief updates, multi-step planning, memory-aware execution, and self-correction loops
+
+## 🎨 Visual Demo
+
+```
+  ░██████╗░██████╗░░█████╗░██╗░░██╗
+  ██╔════╝░██╔══██╗██╔══██╗██║░██╔╝
+  ██║░░██╗░██████╔╝██║░░██║█████═╝░
+  ██║░░╚██╗██╔══██╗██║░░██║██╔═██╗░
+  ╚██████╔╝██║░░██║╚█████╔╝██║░╚██╗
+  ░╚═════╝░╚═╝░░╚═╝░╚════╝░╚═╝░░╚═╝
+
+┌─────────────────────────────────────────────────────┐
+│                 Welcome to Grok CLI                │
+├─────────────────────────────────────────────────────┤
+│ Tips for getting started:                          │
+│ 1. Ask questions, edit files, or run commands.     │
+│ 2. Be specific for the best results.               │
+│ 3. /help for more information.                     │
+│ 4. Try: "Create a new Rust project structure"      │
+└─────────────────────────────────────────────────────┘
+
+Grok (grok-4-1-fast-reasoning) [demo | 100% context left | 0 messages] >
+```
+
+## 🤖 Automatic File Operations
+
+**NEW!** Grok CLI now supports automatic file and directory creation during chat! Simply ask naturally and Grok will execute the operations for you.
+
+### Available Tools
+- **write_file** - Create or overwrite files with content
+- **read_file** - Read file contents
+- **replace** - Find and replace text in files
+- **list_directory** - List directory contents
+- **glob_search** - Find files matching patterns
+- **save_memory** - Save facts to long-term memory
+- **run_shell_command** - Execute shell commands (cargo, git, etc.)
+
+### Example Usage
+>>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 
 ```bash
 # Install / build

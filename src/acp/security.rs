@@ -9,6 +9,10 @@ pub struct SecurityPolicy {
     trusted_directories: Vec<PathBuf>,
     working_directory: PathBuf,
     external_access_config: ExternalAccessConfig,
+    /// Maximum seconds a shell command may run before being killed.
+    /// Set from `tools.shell.command_timeout_secs` in config.toml.
+    /// The `GROK_SHELL_TIMEOUT_SECS` env var overrides this at runtime.
+    shell_timeout_secs: u64,
 }
 
 impl Default for SecurityPolicy {
@@ -30,6 +34,7 @@ impl SecurityPolicy {
             trusted_directories: vec![canonical_cwd],
             working_directory,
             external_access_config: ExternalAccessConfig::default(),
+            shell_timeout_secs: 300,
         }
     }
 
@@ -49,6 +54,7 @@ impl SecurityPolicy {
             trusted_directories: vec![canonical],
             working_directory,
             external_access_config: ExternalAccessConfig::default(),
+            shell_timeout_secs: 300,
         }
     }
 
@@ -56,12 +62,61 @@ impl SecurityPolicy {
         let path = path.as_ref();
         // Canonicalize the path to resolve symlinks and make it absolute
         let canonical = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
-        self.trusted_directories.push(canonical);
+        // Deduplicate — the same directory can be registered many times
+        // (once in SecurityPolicy::new, once explicitly in GrokAcpAgent::new,
+        // and once per session in initialize_session). Pushing duplicates just
+        // pollutes the trusted-directory list shown in TOOL-ERROR log entries.
+        if !self.trusted_directories.contains(&canonical) {
+            self.trusted_directories.push(canonical);
+        }
     }
 
     /// Get the working directory
     pub fn working_directory(&self) -> &Path {
         &self.working_directory
+    }
+
+    /// Return the list of trusted directories for diagnostic logging.
+    ///
+    /// These are the directories that the security policy considers "internal"
+    /// (i.e. accessible without user approval).  Exposing them here lets the
+    /// tool logger include them in error entries so it is immediately clear why
+    /// an "Access denied" failure occurred.
+    pub fn trusted_directories(&self) -> &[PathBuf] {
+        &self.trusted_directories
+    }
+
+    /// Return the configured shell-command timeout in seconds.
+    ///
+    /// This is the value from `tools.shell.command_timeout_secs` in
+    /// `config.toml`.  The `GROK_SHELL_TIMEOUT_SECS` environment variable
+    /// takes precedence over this value when set.
+    pub fn shell_timeout_secs(&self) -> u64 {
+        self.shell_timeout_secs
+    }
+
+    /// Set the shell-command timeout (called once at startup from config).
+    pub fn set_shell_timeout_secs(&mut self, secs: u64) {
+        if secs > 0 {
+            self.shell_timeout_secs = secs;
+        }
+    }
+
+    /// Update the working directory and ensure it is in the trusted list.
+    ///
+    /// Call this when the Zed session workspace root is received via `session/new`
+    /// so that relative paths like `.zed/task_list.json` resolve correctly.
+    pub fn set_working_directory(&mut self, cwd: PathBuf) {
+        let canonical = cwd.canonicalize().unwrap_or_else(|_| cwd.clone());
+        tracing::debug!(
+            old_cwd = %self.working_directory.display(),
+            new_cwd = %canonical.display(),
+            "SecurityPolicy: updating working directory"
+        );
+        self.working_directory = canonical.clone();
+        if !self.trusted_directories.contains(&canonical) {
+            self.trusted_directories.push(canonical);
+        }
     }
 
     /// Check if external access logging is enabled
@@ -435,6 +490,28 @@ impl SecurityManager {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .add_trusted_directory(path);
+    }
+
+    /// Apply the shell-command timeout from `config.toml` to the policy.
+    ///
+    /// Call this once in `GrokAcpAgent::new()` after the config is loaded.
+    /// The `GROK_SHELL_TIMEOUT_SECS` env var still overrides this at runtime.
+    pub fn set_shell_timeout_secs(&self, secs: u64) {
+        self.policy
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_shell_timeout_secs(secs);
+    }
+
+    /// Update the policy's working directory to the Zed session workspace root.
+    ///
+    /// Without this call, relative paths like `.zed/task_list.json` resolve
+    /// against the process launch directory instead of the actual project root.
+    pub fn set_working_directory(&self, cwd: &Path) {
+        self.policy
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .set_working_directory(cwd.to_path_buf());
     }
 
     pub fn check_path_access<P: AsRef<Path>>(&self, path: P) -> Result<()> {

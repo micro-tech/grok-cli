@@ -164,11 +164,20 @@ impl ChatLogger {
         // End previous session if exists
         if let Some(prev_session) = current.take() {
             warn!(
-                "Starting new session {} while session {} was active. Ending previous session.",
+                "chat_logger: starting new session '{}' while '{}' was still active — \
+                 ending previous session",
                 session_id, prev_session.session_id
             );
-            drop(current); // Release lock before saving
-            self.save_session(&prev_session)?;
+            drop(current); // Release lock before I/O
+            if let Err(e) = self.save_session(&prev_session) {
+                // Best-effort: a save failure must not prevent the new session
+                // from starting.  Log the error and continue.
+                warn!(
+                    "chat_logger: failed to save previous session '{}': {} — \
+                     starting new session anyway",
+                    prev_session.session_id, e
+                );
+            }
             current = self
                 .current_session
                 .lock()
@@ -225,6 +234,16 @@ impl ChatLogger {
                 session.session_id, message.role
             );
             session.add_message(message);
+
+            // Flush to disk immediately after every message so the log file is
+            // visible even if the process is killed (e.g. Zed closes the ACP
+            // connection without sending a clean shutdown, or a Starlink drop
+            // interrupts the session).  save_session rewrites the whole file,
+            // which is fine for typical chat sizes.  Errors are best-effort —
+            // a failed flush does not fail the message log call.
+            if let Err(e) = self.save_session(session) {
+                warn!("chat_logger: failed to flush session to disk: {}", e);
+            }
         } else {
             warn!("Attempted to log message without an active session");
         }
@@ -453,8 +472,24 @@ impl ChatLogger {
 /// Global chat logger instance
 static GLOBAL_LOGGER: Mutex<Option<ChatLogger>> = Mutex::new(None);
 
-/// Initialize the global chat logger
+/// Initialize the global chat logger.
+///
+/// Idempotent: if a logger is already initialised (e.g. from a previous call
+/// or a reconnect), this is a no-op so that any in-progress session is not
+/// wiped out.  Call `reinit` if you genuinely need to replace the logger.
 pub fn init(config: ChatLoggerConfig) -> Result<()> {
+    let mut global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
+    if global.is_none() {
+        let logger = ChatLogger::new(config)?;
+        *global = Some(logger);
+    }
+    Ok(())
+}
+
+/// Force-replace the global chat logger regardless of whether one already
+/// exists.  Only call this when you intentionally want to reset all state
+/// (e.g. in tests).
+pub fn reinit(config: ChatLoggerConfig) -> Result<()> {
     let logger = ChatLogger::new(config)?;
     let mut global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
     *global = Some(logger);

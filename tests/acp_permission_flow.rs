@@ -2,11 +2,10 @@ use anyhow::Result;
 use grok_cli::acp::protocol::{OutcomeDetail, PermissionOutcome, SessionId};
 use grok_cli::acp::{GrokAcpAgent, PermissionBridge};
 use grok_cli::config::Config;
-use mockito::Server;
+
 use serde_json::{Value, json};
 use serial_test::serial;
 use std::sync::Arc;
-use tokio::sync::oneshot;
 
 /// Helper to create a standard mock response
 fn mock_resp(content: Option<&str>, tool_calls: Option<Value>, finish_reason: &str) -> String {
