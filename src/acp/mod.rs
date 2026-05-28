@@ -57,11 +57,10 @@ impl PermissionBridge {
 
 /// Grok AI agent implementation for ACP
 pub struct GrokAcpAgent {
-    /// Application-level AI router — `None` when no API key is configured at
-    /// startup.  The key is only required when making actual API calls; the
-    /// agent can still respond to `initialize` and declare its auth
-    /// requirements without one.
-    router: Option<AppRouter>,
+    /// Application-level AI router — created lazily on first actual
+    /// chat-completion request so that `grok acp stdio` starts instantly
+    /// even when an API key is present.
+    router: std::sync::OnceLock<AppRouter>,
 
     /// Agent configuration
     config: Config,
@@ -73,11 +72,11 @@ pub struct GrokAcpAgent {
     /// expensive tool schema construction during Zed ACP startup)
     capabilities: std::sync::OnceLock<GrokAgentCapabilities>,
 
-    /// Security manager
-    pub security: SecurityManager,
+    /// Security manager (created lazily on first use)
+    pub security: std::sync::OnceLock<SecurityManager>,
 
-    /// Hook manager
-    hook_manager: Arc<RwLock<HookManager>>,
+    /// Hook manager (created lazily on first use)
+    hook_manager: Arc<RwLock<std::sync::OnceLock<HookManager>>>,
 
     /// Default model override
     default_model: Option<String>,
@@ -278,25 +277,6 @@ impl GrokAcpAgent {
         // Build the AppRouter only when an API key is available.
         // Retries and Starlink-resilient back-off live inside GrokBackend;
         // config.max_retries is no longer passed explicitly.
-        let router = if let Some(ref api_key) = config.api_key {
-            match AppRouter::new(api_key, config.timeout_secs) {
-                Ok(r) => {
-                    info!("✓ AppRouter initialised (timeout={}s)", config.timeout_secs);
-                    Some(r)
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to create AppRouter (will retry on first API call): {}",
-                        e
-                    );
-                    None
-                }
-            }
-        } else {
-            info!("No API key configured at startup — set GROK_API_KEY to enable API calls");
-            None
-        };
-
         let security = SecurityManager::new();
         // Trust current directory by default, canonicalizing to resolve symlinks
         if let Ok(cwd) = std::env::current_dir() {
@@ -305,12 +285,12 @@ impl GrokAcpAgent {
         }
 
         Ok(Self {
-            router,
+            router: std::sync::OnceLock::new(),
             config,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             capabilities: std::sync::OnceLock::new(),
-            security,
-            hook_manager: Arc::new(RwLock::new(HookManager::new())),
+            security: std::sync::OnceLock::new(),
+            hook_manager: Arc::new(RwLock::new(std::sync::OnceLock::new())),
             default_model,
         })
     }
@@ -321,19 +301,28 @@ impl GrokAcpAgent {
         self.capabilities.get_or_init(Self::create_capabilities)
     }
 
-    /// Return a clone of the underlying [`AppRouter`], or a descriptive
-    /// error if no API key was configured when the agent was created.
-    ///
-    /// Call this inside any method that needs to reach the xAI API instead of
-    /// accessing `self.router` directly.
+    /// Return a clone of the underlying [`AppRouter`], lazily creating it
+    /// on first use if an API key is configured.  This keeps `new()` fast
+    /// for ACP stdio startup.
     fn get_router(&self) -> Result<AppRouter> {
-        self.router.clone().ok_or_else(|| {
-            anyhow!(
-                "API key not configured. \
-                 Set the GROK_API_KEY environment variable and restart the agent, \
-                 or use 'grok config set api_key <key>'."
-            )
-        })
+        if self.router.get().is_none() {
+            if let Some(ref api_key) = self.config.api_key {
+                if let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs) {
+                    let _ = self.router.set(r);
+                }
+            }
+        }
+
+        self.router
+            .get()
+            .cloned()
+            .ok_or_else(|| {
+                anyhow!(
+                    "API key not configured. \
+                     Set the GROK_API_KEY environment variable and restart the agent, \
+                     or use 'grok config set api_key <key>'."
+                )
+            })
     }
 
     /// Create agent capabilities

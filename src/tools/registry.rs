@@ -8,6 +8,7 @@
 //! JSON schemas passed to the LLM so it knows what tools exist.
 
 use anyhow::{Result, anyhow};
+use once_cell::sync::Lazy;
 use serde_json::{Value, json};
 
 use crate::tools::{
@@ -369,9 +370,9 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
 // get_tool_definitions
 // ─────────────────────────────────────────────────────────────────────────────
 
-/// Return JSON tool definitions for all 34 registered tools.
-pub fn get_tool_definitions() -> Vec<Value> {
-    vec![
+static TOOL_DEFINITIONS: Lazy<Vec<Value>> = Lazy::new(|| vec![
+        // ── File tools ──────────────────────────────────────────────────────
+        json!({"type":"function","function":{"name":"read_file","description":"Read the content of a file","parameters":{"type":"object","properties":{"path":{"type":"string","description":"Path to the file"}},"required":["path"]}}}),
         // ── File tools ──────────────────────────────────────────────────────
         json!({"type":"function","function":{"name":"read_file","description":"Read the content of a file","parameters":{"type":"object","properties":{"path":{"type":"string","description":"Path to the file"}},"required":["path"]}}}),
         json!({"type":"function","function":{"name":"read_multiple_files","description":"Read multiple files at once","parameters":{"type":"object","properties":{"paths":{"type":"array","items":{"type":"string"},"description":"File paths to read"}},"required":["paths"]}}}),

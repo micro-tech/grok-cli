@@ -9,7 +9,7 @@
       "priority": "medium",
       "details": "",
       "testStrategy": "",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 2,
@@ -3194,25 +3194,25 @@
           "id": 112.1,
           "title": "Design TGS-RAG architecture and data model (semantic entity graph + retrieval pipeline)",
           "status": "done",
-          "details": "Created Doc/TGS_RAG_ARCHITECTURE.md and initial src/rag/ module with GraphNode, GraphEdge, ProjectGraph, and supporting types."
+          "details": "Created Doc/TGS_RAG_ARCHITECTURE.md and initial src/rag/ module with GraphNode, GraphEdge, ProjectGraph, and supporting types.",
         },
         {
           "id": 112.2,
           "title": "Add tree-sitter-rust + syn dependencies and feature flags",
           "status": "done",
-          "details": "Added optional dependencies behind 'tgs-rag' feature in Cargo.toml."
+          "details": "Added optional dependencies behind 'tgs-rag' feature in Cargo.toml.",
         },
         {
           "id": 112.3,
           "title": "Implement tree-sitter-based file and function boundary scanner",
           "status": "done",
-          "details": "Created src/rag/parser/tree_sitter_scanner.rs with TreeSitterScanner."
+          "details": "Created src/rag/parser/tree_sitter_scanner.rs with TreeSitterScanner.",
         },
         {
           "id": 112.4,
           "title": "Implement syn-based semantic entity extractor (structs, enums, traits, impls, functions)",
           "status": "done",
-          "details": "Created src/rag/parser/syn_extractor.rs with SynExtractor."
+          "details": "Created src/rag/parser/syn_extractor.rs with SynExtractor.",
         },
         {
           "id": 112.5,
@@ -3323,11 +3323,27 @@
       "testStrategy": "Simulate repeated requests and verify that cached components are reused and token count decreases by at least 30%.",
       "subtasks": [
         { "id": 1131, "title": "Define TokenCache struct", "status": "done" },
-        { "id": 1132, "title": "Implement system prompt hashing", "status": "done" },
-        { "id": 1133, "title": "Implement tool schema fingerprinting", "status": "done" },
-        { "id": 1134, "title": "Add compressed context caching", "status": "done" },
-        { "id": 1135, "title": "Integrate cache into prompt builder", "status": "done" }
-      ]
+        {
+          "id": 1132,
+          "title": "Implement system prompt hashing",
+          "status": "done",
+        },
+        {
+          "id": 1133,
+          "title": "Implement tool schema fingerprinting",
+          "status": "done",
+        },
+        {
+          "id": 1134,
+          "title": "Add compressed context caching",
+          "status": "done",
+        },
+        {
+          "id": 1135,
+          "title": "Integrate cache into prompt builder",
+          "status": "done",
+        },
+      ],
     },
     {
       "id": 114,
@@ -3340,10 +3356,18 @@
       "testStrategy": "Verify that different request types trigger different cost profiles and that token usage aligns with configured budgets.",
       "subtasks": [
         { "id": 1141, "title": "Define CostProfile struct", "status": "done" },
-        { "id": 1142, "title": "Implement request classification", "status": "done" },
+        {
+          "id": 1142,
+          "title": "Implement request classification",
+          "status": "done",
+        },
         { "id": 1143, "title": "Add model selection logic", "status": "done" },
-        { "id": 1144, "title": "Integrate router into session pipeline", "status": "done" }
-      ]
+        {
+          "id": 1144,
+          "title": "Integrate router into session pipeline",
+          "status": "done",
+        },
+      ],
     },
     {
       "id": 115,
@@ -3356,9 +3380,17 @@
       "testStrategy": "Verify that repeated requests send only deltas and reduce token usage by 40–70%.",
       "subtasks": [
         { "id": 1151, "title": "Define PromptDelta enum", "status": "pending" },
-        { "id": 1152, "title": "Implement diff computation", "status": "pending" },
-        { "id": 1153, "title": "Integrate delta builder into prompt pipeline", "status": "pending" }
-      ]
+        {
+          "id": 1152,
+          "title": "Implement diff computation",
+          "status": "pending",
+        },
+        {
+          "id": 1153,
+          "title": "Integrate delta builder into prompt pipeline",
+          "status": "pending",
+        },
+      ],
     },
     {
       "id": 116,
@@ -3372,8 +3404,8 @@
       "subtasks": [
         { "id": 1161, "title": "Add schema hashing", "status": "done" },
         { "id": 1162, "title": "Add unused tool pruning", "status": "done" },
-        { "id": 1163, "title": "Add schema compression", "status": "done" }
-      ]
+        { "id": 1163, "title": "Add schema compression", "status": "done" },
+      ],
     },
     {
       "id": 117,
@@ -3387,8 +3419,8 @@
       "subtasks": [
         { "id": 1171, "title": "Add embedding store", "status": "done" },
         { "id": 1172, "title": "Implement semantic dedupe", "status": "done" },
-        { "id": 1173, "title": "Add summarization engine", "status": "done" }
-      ]
+        { "id": 1173, "title": "Add summarization engine", "status": "done" },
+      ],
     },
     {
       "id": 118,
@@ -3402,8 +3434,12 @@
       "subtasks": [
         { "id": 1181, "title": "Cache system prompt tokens", "status": "done" },
         { "id": 1182, "title": "Cache tool schema tokens", "status": "done" },
-        { "id": 1183, "title": "Cache compressed context tokens", "status": "done" }
-      ]
+        {
+          "id": 1183,
+          "title": "Cache compressed context tokens",
+          "status": "done",
+        },
+      ],
     },
     {
       "id": 119,
@@ -3416,8 +3452,8 @@
       "testStrategy": "Verify that prompts never exceed configured token budgets.",
       "subtasks": [
         { "id": 1191, "title": "Add token estimator", "status": "done" },
-        { "id": 1192, "title": "Add compression fallback", "status": "done" }
-      ]
+        { "id": 1192, "title": "Add compression fallback", "status": "done" },
+      ],
     },
     {
       "id": 120,
@@ -3432,31 +3468,39 @@
         { "id": 1201, "title": "Integrate token cache", "status": "done" },
         { "id": 1202, "title": "Integrate cost router", "status": "done" },
         { "id": 1203, "title": "Integrate delta prompting", "status": "done" },
-        { "id": 1204, "title": "Integrate semantic compression", "status": "done" },
-        { "id": 1205, "title": "Integrate tool schema optimizer", "status": "done" }
-  ],
-},
+        {
+          "id": 1204,
+          "title": "Integrate semantic compression",
+          "status": "done",
+        },
+        {
+          "id": 1205,
+          "title": "Integrate tool schema optimizer",
+          "status": "done",
+        },
+      ],
+    },
     {
       "id": 121,
       "title": "Lazy-load ACP capabilities and tool definitions",
       "description": "Move create_capabilities() and get_available_tool_definitions() out of GrokAcpAgent::new() so Zed ACP stdio starts faster. Compute capabilities lazily on first initialize/session.new.",
-      "status": "pending",
+      "status": "done",
       "dependencies": [],
       "priority": "high",
       "details": "create_capabilities() currently rebuilds 30+ tool JSON schemas on every ACP launch. Defer this until the first real request from Zed.",
       "testStrategy": "Measure time from 'grok acp stdio' to ready state before/after. Verify capabilities still appear correctly in initialize response.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 122,
       "title": "Cache tool definitions globally with once_cell / LazyLock",
       "description": "Wrap get_tool_definitions() and get_available_tool_definitions() results in a global lazy static so the expensive JSON construction only happens once per process.",
-      "status": "pending",
+      "status": "done",
       "dependencies": [121],
       "priority": "high",
       "details": "The big vec![json!(...)] in registry.rs is rebuilt on every agent creation. Cache it.",
       "testStrategy": "Add a simple timing test or log line showing construction only happens once.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 123,
@@ -3467,18 +3511,18 @@
       "priority": "medium",
       "details": "Currently done in new() when an API key exists. Defer to first handle_chat_completion call.",
       "testStrategy": "Confirm no API key validation or network work happens until first prompt in Zed.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 124,
       "title": "Add --zed / --fast startup flag for ACP stdio",
       "description": "Add a fast-path flag that skips non-essential init (knowledge packs, SessionDNA, Bayesian engine, HookManager) until after the first prompt when launched from Zed.",
-      "status": "pending",
+      "status": "done",
       "dependencies": [121],
       "priority": "medium",
       "details": "Zed starts 90% of ACP sessions. A dedicated fast path can shave noticeable time.",
       "testStrategy": "Benchmark with and without the flag. Ensure full features still activate on first real prompt.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 125,
@@ -3489,7 +3533,7 @@
       "priority": "medium",
       "details": "Look at SecurityManager, current_dir canonicalization, tracing setup, and chat_logger initialization.",
       "testStrategy": "Produce before/after timing numbers for 'grok acp stdio' and actual Zed connection.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 126,
@@ -3500,7 +3544,7 @@
       "priority": "low",
       "details": "These are created unconditionally even though many ACP sessions may never need them.",
       "testStrategy": "Verify no behavior change for normal Zed usage.",
-      "subtasks": []
-    }
-  ]
+      "subtasks": [],
+    },
+  ],
 }
