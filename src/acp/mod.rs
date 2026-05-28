@@ -72,11 +72,11 @@ pub struct GrokAcpAgent {
     /// expensive tool schema construction during Zed ACP startup)
     capabilities: std::sync::OnceLock<GrokAgentCapabilities>,
 
-    /// Security manager (created lazily on first use)
-    pub security: std::sync::OnceLock<SecurityManager>,
+    /// Security manager (lazy — created on first use)
+    security: std::sync::OnceLock<SecurityManager>,
 
-    /// Hook manager (created lazily on first use)
-    hook_manager: Arc<RwLock<std::sync::OnceLock<HookManager>>>,
+    /// Hook manager (lazy — created on first use)
+    hook_manager: std::sync::OnceLock<Arc<RwLock<HookManager>>>,
 
     /// Default model override
     default_model: Option<String>,
@@ -269,28 +269,16 @@ impl Default for SessionConfig {
 impl GrokAcpAgent {
     /// Create a new Grok ACP agent
     pub async fn new(config: Config, default_model: Option<String>) -> Result<Self> {
-        // Build the API client only when an API key is available.
-        // In ACP stdio mode the agent MUST be able to start up and respond to
-        // `initialize` (declaring its auth requirements) even before the user
-        // has supplied a key, so we defer the hard error to the first actual
-        // API call rather than failing here.
-        // Build the AppRouter only when an API key is available.
-        // Retries and Starlink-resilient back-off live inside GrokBackend;
-        // config.max_retries is no longer passed explicitly.
-        let security = SecurityManager::new();
-        // Trust current directory by default, canonicalizing to resolve symlinks
-        if let Ok(cwd) = std::env::current_dir() {
-            let canonical_cwd = cwd.canonicalize().unwrap_or(cwd);
-            security.add_trusted_directory(canonical_cwd);
-        }
-
+        // NOTE: SecurityManager and HookManager are now created lazily
+        // via get_security() / get_hook_manager() on first use.
+        // This keeps `grok acp stdio` startup extremely fast (task 126).
         Ok(Self {
             router: std::sync::OnceLock::new(),
             config,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             capabilities: std::sync::OnceLock::new(),
             security: std::sync::OnceLock::new(),
-            hook_manager: Arc::new(RwLock::new(std::sync::OnceLock::new())),
+            hook_manager: std::sync::OnceLock::new(),
             default_model,
         })
     }
@@ -323,6 +311,31 @@ impl GrokAcpAgent {
                      or use 'grok config set api_key <key>'."
                 )
             })
+    }
+
+    /// Return a reference to the SecurityManager, lazily initializing it
+    /// (and trusting the current directory) on first use.
+    pub fn get_security(&self) -> &SecurityManager {
+        self.security.get_or_init(|| {
+            let sm = SecurityManager::new();
+            if let Ok(cwd) = std::env::current_dir() {
+                let canonical_cwd = cwd.canonicalize().unwrap_or(cwd);
+                sm.add_trusted_directory(canonical_cwd);
+            }
+            sm
+        })
+    }
+
+    /// Return a reference to the HookManager, lazily initializing it on first use.
+    fn get_hook_manager(&self) -> &Arc<RwLock<HookManager>> {
+        self.hook_manager
+            .get_or_init(|| Arc::new(RwLock::new(HookManager::new())))
+    }
+
+    /// Public helper to add a trusted directory (used by workspace registration
+    /// code in the ACP command handler). Lazily initializes SecurityManager.
+    pub fn add_trusted_directory(&self, path: std::path::PathBuf) {
+        self.get_security().add_trusted_directory(path);
     }
 
     /// Create agent capabilities
@@ -1136,7 +1149,7 @@ impl GrokAcpAgent {
 
                 // Execute before_tool hooks
                 {
-                    let hooks = self.hook_manager.read().await;
+                    let hooks = self.get_hook_manager().read().await;
                     if !hooks.execute_before_tool(function_name, &args)? {
                         messages.push(json!({
                             "role": "tool",
@@ -1197,7 +1210,7 @@ impl GrokAcpAgent {
                 // --- END PERMISSION GATE ---
 
                 // Acquire the policy once so we don't clone it for every arm.
-                let policy = self.security.get_policy();
+                let policy = self.get_security().get_policy();
 
                 let result = match function_name.as_str() {
                     "read_file" => {
@@ -1365,7 +1378,7 @@ impl GrokAcpAgent {
 
                 // Execute after_tool hooks
                 {
-                    let hooks = self.hook_manager.read().await;
+                    let hooks = self.get_hook_manager().read().await;
                     hooks.execute_after_tool(function_name, &args, &content)?;
                 }
 

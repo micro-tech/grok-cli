@@ -1050,7 +1050,7 @@ fn register_workspace_root(agent: &GrokAcpAgent, raw_path: &str) {
         "Registering workspace root as trusted: {:?} (resolved from {:?})",
         workspace_root, resolved
     );
-    agent.security.add_trusted_directory(&workspace_root);
+    agent.add_trusted_directory(workspace_root);
 }
 
 /// Walk up from a file path to find the project workspace root by looking for
@@ -1131,7 +1131,7 @@ fn trust_workspace_from_uri(uri: &str, agent: &GrokAcpAgent) {
         "Auto-trusting workspace root from resource URI '{}' → {:?}",
         uri, workspace_root
     );
-    agent.security.add_trusted_directory(&workspace_root);
+    agent.add_trusted_directory(workspace_root);
 }
 
 /// Build the list of authentication methods that grok-cli supports.
@@ -1273,7 +1273,7 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
                      trusting CWD {:?}",
                     canonical_cwd
                 );
-                agent.security.add_trusted_directory(canonical_cwd);
+                agent.add_trusted_directory(canonical_cwd);
             }
             Err(e) => {
                 warn!("session/new: could not determine CWD: {}", e);
@@ -1384,7 +1384,7 @@ fn ensure_default_initialized(agent: &GrokAcpAgent, initialized: &mut bool) {
         Ok(cwd) => {
             let canonical = cwd.canonicalize().unwrap_or(cwd);
             info!("ensure_default_initialized: trusting CWD {:?}", canonical);
-            agent.security.add_trusted_directory(canonical);
+            agent.add_trusted_directory(canonical);
         }
         Err(e) => warn!("ensure_default_initialized: could not read CWD: {}", e),
     }
@@ -1470,7 +1470,7 @@ where
             Ok(cwd) => {
                 let canonical = cwd.canonicalize().unwrap_or(cwd);
                 info!("session/load: trusting CWD {:?}", canonical);
-                agent.security.add_trusted_directory(canonical);
+                agent.add_trusted_directory(canonical);
             }
             Err(e) => warn!("session/load: could not determine CWD: {}", e),
         }
