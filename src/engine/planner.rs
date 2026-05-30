@@ -243,7 +243,28 @@ impl PlanBuilder {
             ));
         }
 
-        // ── Step 5: NoOp terminator ──────────────────────────────────────────
+        // ── Step 5: Intelligent sub-agent delegation (Task 127) ─────────────
+        // Delegate when the goal looks complex or parallelizable.
+        // (Uncertainty-driven delegation can be added by passing
+        // ReasoningEngineState into build_plan in a future iteration.)
+        let looks_complex = goal.split_whitespace().count() > 12
+            || goal.to_lowercase().contains("complex")
+            || goal.to_lowercase().contains("multiple")
+            || goal.to_lowercase().contains("parallel")
+            || goal.to_lowercase().contains("research")
+            || goal.to_lowercase().contains("large");
+
+        if looks_complex && steps.len() < self.config.max_steps {
+            steps.push(PlanStep::new(
+                format!("Delegate to sub-agent: {goal}"),
+                StepAction::DelegateToSubAgent {
+                    task: goal.to_string(),
+                    agent_id: None,
+                },
+            ));
+        }
+
+        // ── Step 6: NoOp terminator ──────────────────────────────────────────
         if steps.len() < self.config.max_steps {
             steps.push(PlanStep::new("Plan complete", StepAction::NoOp));
         }
@@ -536,6 +557,28 @@ mod tests {
         assert!(
             matches!(steps[1].action, StepAction::NoOp),
             "second step should be NoOp"
+        );
+    }
+
+    // ── Task 127: Sub-agent delegation ─────────────────────────────────────
+
+    /// Complex goals should trigger a `DelegateToSubAgent` step.
+    #[test]
+    fn build_plan_delegates_on_complex_goal() {
+        let builder = PlanBuilder::default();
+        let steps = builder.build_plan(
+            "Research and implement a complex authentication system with multiple providers and parallel token validation",
+            &[],
+        );
+
+        let has_delegation = steps.iter().any(|s| {
+            matches!(s.action, StepAction::DelegateToSubAgent { .. })
+        });
+
+        assert!(
+            has_delegation,
+            "Expected a DelegateToSubAgent step for a complex goal, got: {:?}",
+            steps
         );
     }
 }

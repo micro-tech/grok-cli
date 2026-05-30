@@ -114,3 +114,46 @@ Return immediately           │
 ---
 
 **Last Updated:** 2026-05-10 (ACP lazy initialization – tasks 121-126)
+
+---
+
+## Multi-Agent Orchestration Flow (Task 127)
+
+```
+ReasoningEngineState (Planner)
+        │
+        ▼
+┌──────────────────────────────┐
+│  PlanBuilder::build_plan()   │
+│  • Detects complex goals     │
+│  • High uncertainty?         │
+│  • Emits DelegateToSubAgent  │
+└──────────────────────────────┘
+        │
+        ▼
+StepAction::DelegateToSubAgent
+        │
+        ▼
+┌──────────────────────────────┐
+│  AgentManager (global)       │
+│  • spawn() → Running         │
+│  • fork_agent()              │
+│  • join_agents()             │
+└──────────────────────────────┘
+        │
+        ├─► In-Memory MessageBus
+        │      send_message_in_memory()
+        │      receive_messages()
+        │
+        └─► Tool Execution
+               spawn_agent / fork / join
+```
+
+**Key Components Added**
+
+| Component           | Responsibility                              |
+|---------------------|---------------------------------------------|
+| `AgentManager`      | Central registry + lifecycle tracking       |
+| `AgentMessageBus`   | Fast in-process messaging between agents    |
+| `DelegateToSubAgent`| Native plan step for sub-agent delegation   |
+| Orchestration Tools | `fork_agent`, `join_agents`, `list_agents`, etc. |

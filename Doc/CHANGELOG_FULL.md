@@ -21,7 +21,22 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
-## [Unreleased] - 2026-05-10
+## [Unreleased]
+
+### Multi-Agent Orchestration (Task 127)
+
+- **AgentManager** — New central registry (`src/agent/manager.rs`) for tracking sub-agents with full lifecycle states (`Running`, `Completed`, `Failed`, `Cancelled`).
+- **Orchestration Tools** — New tools registered:
+  - `spawn_agent`, `fork_agent`, `join_agents`
+  - `list_agents`, `get_agent_status`, `cancel_agent`
+  - `send_message_in_memory` + `receive_messages` (fast in-memory bus)
+- **In-Memory Message Bus** — New `AgentMessageBus` (`src/agent/message_bus.rs`) for low-latency inter-agent communication.
+- **Engine Integration** — Added `StepAction::DelegateToSubAgent` to the reasoning engine. The `PlanBuilder` now intelligently emits delegation steps for complex or parallelizable goals.
+- **Global Shared Instance** — `AgentManager` is exposed via a lazy static so all tools and the engine share the same view of active sub-agents.
+
+This lays the foundation for true multi-agent workflows inside the reasoning engine.
+
+--- - 2026-05-10
 
 ### Added
 

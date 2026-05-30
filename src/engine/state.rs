@@ -122,6 +122,15 @@ pub enum StepAction {
         prompt: String,
     },
 
+    /// Delegate work to a sub-agent (Task 127 multi-agent support).
+    DelegateToSubAgent {
+        /// The task description to give the sub-agent.
+        task: String,
+        /// Optional pre-existing agent ID (if the agent was already spawned).
+        #[serde(default)]
+        agent_id: Option<String>,
+    },
+
     /// No-op placeholder; useful for testing and deferred steps.
     NoOp,
 }
