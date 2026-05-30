@@ -12,18 +12,11 @@ use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
-<<<<<<< HEAD
 use crate::config::{Config, ThinkingMode};
 use crate::content_to_string;
 use crate::hooks::HookManager;
 use crate::router::AppRouter;
 use serde::{Deserialize, Serialize};
-=======
-use crate::config::Config;
-use crate::content_to_string;
-use crate::hooks::HookManager;
-use crate::router::AppRouter;
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 
 pub mod protocol;
 pub mod security;
@@ -64,17 +57,10 @@ impl PermissionBridge {
 
 /// Grok AI agent implementation for ACP
 pub struct GrokAcpAgent {
-<<<<<<< HEAD
     /// Application-level AI router — created lazily on first actual
     /// chat-completion request so that `grok acp stdio` starts instantly
     /// even when an API key is present.
     router: std::sync::OnceLock<AppRouter>,
-=======
-    /// AppRouter — `None` when no API key is configured at startup.
-    /// The key is only required when making actual API calls; the agent can
-    /// still respond to `initialize` and declare its auth requirements.
-    router: Option<AppRouter>,
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 
     /// Agent configuration
     config: Config,
@@ -272,20 +258,7 @@ impl Default for SessionConfig {
                 3. Provide clear explanations for your design choices.\n\
                 4. When modifying existing code, respect the existing style and structure.\n\
                 5. Always consider edge cases and error handling.\n\
-                6. Suggest tests to verify your code when appropriate.\n\
-                \n\
-                Project task management rules (follow exactly):\n\
-                7. ALWAYS call the 'task_get' tool when the user asks about a specific \
-                task by number. Example: 'what is task 60' → call task_get(id=60). \
-                Never skip the tool call and never answer from memory.\n\
-                8. When task_get SUCCEEDS: reply in plain English using the title, \
-                status, priority, and description from the tool result. \
-                Do not invent or change any field values.\n\
-                9. When task_get FAILS (tool returns TOOL ERROR): reply ONLY with \
-                'I could not retrieve task N. Error: <exact error text>'. \
-                Do NOT return any JSON. Do NOT guess the task title or any other field. \
-                Do NOT make up a task object.\n\
-                10. To list ALL tasks use read_file with path '.zed/task_list.json'."
+                6. Suggest tests to verify your code when appropriate."
                     .to_string(),
             ),
             thinking_mode: ThinkingMode::Off,
@@ -296,53 +269,11 @@ impl Default for SessionConfig {
 impl GrokAcpAgent {
     /// Create a new Grok ACP agent
     pub async fn new(config: Config, default_model: Option<String>) -> Result<Self> {
-<<<<<<< HEAD
         // NOTE: SecurityManager and HookManager are now created lazily
         // via get_security() / get_hook_manager() on first use.
         // This keeps `grok acp stdio` startup extremely fast (task 126).
         Ok(Self {
             router: std::sync::OnceLock::new(),
-=======
-        // Build the API client only when an API key is available.
-        // In ACP stdio mode the agent MUST be able to start up and respond to
-        // `initialize` (declaring its auth requirements) even before the user
-        // has supplied a key, so we defer the hard error to the first actual
-        // API call rather than failing here.
-        let router = if let Some(ref api_key) = config.api_key {
-            match AppRouter::new(api_key, config.timeout_secs) {
-                Ok(router) => {
-                    info!("✓ AppRouter initialised");
-                    Some(router)
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to create Grok client (will retry on first API call): {}",
-                        e
-                    );
-                    None
-                }
-            }
-        } else {
-            info!("No API key configured at startup — set GROK_API_KEY to enable API calls");
-            None
-        };
-
-        let capabilities = Self::create_capabilities();
-
-        let security = SecurityManager::new();
-        // Trust current directory by default, canonicalizing to resolve symlinks
-        if let Ok(cwd) = std::env::current_dir() {
-            let canonical_cwd = cwd.canonicalize().unwrap_or(cwd);
-            security.add_trusted_directory(canonical_cwd);
-        }
-        // Apply the shell-command timeout from config so `tools.shell.command_timeout_secs`
-        // in config.toml is honoured. The GROK_SHELL_TIMEOUT_SECS env var still
-        // takes precedence (checked at call time in shell_tools::run_shell_command).
-        security.set_shell_timeout_secs(config.tools.shell.command_timeout_secs);
-
-        Ok(Self {
-            router,
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
             config,
             sessions: Arc::new(RwLock::new(HashMap::new())),
             capabilities: std::sync::OnceLock::new(),
@@ -352,7 +283,6 @@ impl GrokAcpAgent {
         })
     }
 
-<<<<<<< HEAD
     /// Return agent capabilities, computing them lazily on first access.
     /// This avoids the expensive tool schema construction during Zed ACP startup.
     pub fn capabilities(&self) -> &GrokAgentCapabilities {
@@ -371,16 +301,13 @@ impl GrokAcpAgent {
             }
         }
 
-        self.router
-            .get()
-            .cloned()
-            .ok_or_else(|| {
-                anyhow!(
-                    "API key not configured. \
+        self.router.get().cloned().ok_or_else(|| {
+            anyhow!(
+                "API key not configured. \
                      Set the GROK_API_KEY environment variable and restart the agent, \
                      or use 'grok config set api_key <key>'."
-                )
-            })
+            )
+        })
     }
 
     /// Return a reference to the SecurityManager, lazily initializing it
@@ -393,20 +320,6 @@ impl GrokAcpAgent {
                 sm.add_trusted_directory(canonical_cwd);
             }
             sm
-=======
-    /// Return a reference to the underlying [`AppRouter`], or a descriptive
-    /// error if no API key was configured when the agent was created.
-    ///
-    /// Call this inside any method that needs to reach the xAI API instead of
-    /// accessing `self.grok_client` directly.
-    fn get_router(&self) -> Result<AppRouter> {
-        self.router.clone().ok_or_else(|| {
-            anyhow!(
-                "API key not configured. \
-                 Set the GROK_API_KEY environment variable and restart the agent, \
-                 or use 'grok config set api_key <key>'."
-            )
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         })
     }
 
@@ -450,12 +363,16 @@ impl GrokAcpAgent {
             // automatically reflects any newly added tools without requiring
             // manual updates here.
             tools: crate::tools::registry::get_available_tool_definitions()
-                .iter()
-                .filter_map(|t| {
-                    let func = t.get("function")?;
+                .into_iter()
+                .filter_map(|v| {
+                    let func = v.get("function")?;
                     Some(ToolDefinition {
-                        name: func["name"].as_str()?.to_string(),
-                        description: func["description"].as_str()?.to_string(),
+                        name: func.get("name")?.as_str()?.to_string(),
+                        description: func
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         parameters: func.get("parameters").cloned().unwrap_or(json!({})),
                     })
                 })
@@ -473,20 +390,6 @@ impl GrokAcpAgent {
             tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
         >,
     ) -> Result<()> {
-        // ── Update security policy working directory ─────────────────────────────
-        // Zed passes the actual workspace root as `cwd` in `session/new`.  Without
-        // updating the security policy here, relative paths like
-        // `.zed/task_list.json` would resolve against the process launch directory
-        // rather than the workspace root, causing silent file-not-found errors that
-        // make the LLM hallucinate the file contents.
-        let cwd_path = std::path::PathBuf::from(&cwd);
-        self.security.set_working_directory(&cwd_path);
-        tracing::info!(
-            session = %session_id.0,
-            workspace = %cwd_path.display(),
-            "initialize_session: security policy workspace root updated"
-        );
-
         let mut session_config = config.unwrap_or_default();
 
         // Apply default model override if present and config matches default
@@ -494,29 +397,9 @@ impl GrokAcpAgent {
             session_config.model = model.clone();
         }
 
-<<<<<<< HEAD
         let mut session_data = SessionData {
-=======
-        // Capture values for logging before they are moved into SessionData.
-        let log_cwd = std::path::PathBuf::from(&cwd);
-        let log_model = session_config.model.clone();
-        let log_session_id = session_id.0.clone();
-
-        // Seed the message history with the system prompt so the LLM has
-        // context from the very first API call.  Without this the system
-        // prompt field in SessionConfig is stored but never forwarded to the
-        // model — leaving it with no instructions and causing hallucination.
-        let initial_messages: Vec<serde_json::Value> =
-            if let Some(ref sys) = session_config.system_prompt {
-                vec![serde_json::json!({ "role": "system", "content": sys })]
-            } else {
-                Vec::new()
-            };
-
-        let session_data = SessionData {
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
             cwd,
-            messages: initial_messages,
+            messages: Vec::new(),
             config: session_config,
             created_at: std::time::Instant::now(),
             last_activity: std::time::Instant::now(),
@@ -597,11 +480,6 @@ impl GrokAcpAgent {
         }
 
         info!("Initialized new ACP session: {}", session_id.0);
-
-        // Write a session-start banner to the dedicated tool log so each
-        // session is clearly delimited when tailing the log file.
-        crate::utils::tool_logger::log_session_start(&log_session_id, &log_cwd, &log_model);
-
         Ok(())
     }
 
@@ -729,7 +607,6 @@ impl GrokAcpAgent {
 
             info!("📚 Session history: {} messages", session.messages.len());
 
-<<<<<<< HEAD
             // ── 1. Per-message truncation ────────────────────────────────────────
             // Cap individual tool-result messages so a single large file read
             // cannot consume the whole context window.
@@ -763,35 +640,6 @@ impl GrokAcpAgent {
                 &session.config.model,
                 self.config.acp.max_context_tokens,
                 self.config.acp.grok4_max_context_tokens,
-=======
-        // Trim history to prevent unbounded context growth.
-        // Keep the most recent max_history_messages entries so the model always
-        // has fresh context without exceeding the API context window.
-        // We trim here (after adding the user turn) so we never split a
-        // tool-call sequence that was already committed to history.
-        let max_history = self.config.acp.max_history_messages;
-        if session.messages.len() > max_history {
-            // Never evict the system-prompt message (role="system" at index 0).
-            // Losing it removes all task-management instructions and causes
-            // the LLM to ignore tools and hallucinate answers.
-            let has_system = session
-                .messages
-                .first()
-                .and_then(|m| m.get("role"))
-                .and_then(|r| r.as_str())
-                == Some("system");
-            let trim_from = usize::from(has_system); // 1 if system present, else 0
-
-            let available = session.messages.len().saturating_sub(trim_from);
-            let need = session.messages.len() - max_history;
-            let actual = need.min(available.saturating_sub(1));
-            if actual > 0 {
-                session.messages.drain(trim_from..trim_from + actual);
-            }
-            debug!(
-                "Trimmed {} messages (system prompt preserved: {}; keeping ≤{})",
-                actual, has_system, max_history
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
             );
             let estimated = estimate_tokens(&session.messages);
             if estimated > max_ctx_tokens {
@@ -1056,69 +904,6 @@ impl GrokAcpAgent {
             // NOTE: if you see "Request timeout after 30 seconds" the "30" is a
             // hardcoded value in the grok_api crate error formatter — the actual
             // HTTP timeout driving the request is the real_timeout printed above.
-            // ── DATA-TRACE: snapshot what we are about to send to the LLM ───────
-            // Written to BOTH tracing (visible in Zed's log panel with
-            // RUST_LOG=grok_cli::acp=debug) AND to the persistent tool log file
-            // so every iteration is preserved on disk even on a Starlink drop.
-            {
-                let roles: Vec<&str> = session
-                    .messages
-                    .iter()
-                    .filter_map(|m| m.get("role")?.as_str())
-                    .collect();
-                let sizes: Vec<usize> = session
-                    .messages
-                    .iter()
-                    .map(|m| {
-                        m.get("content")
-                            .and_then(|c| c.as_str())
-                            .map(|s| s.len())
-                            .unwrap_or(0)
-                    })
-                    .collect();
-                let summary = roles
-                    .iter()
-                    .zip(sizes.iter())
-                    .enumerate()
-                    .map(|(i, (r, s))| format!("[{i}]{r}:{s}B"))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-
-                info!(
-                    "📨 DATA-TRACE iter={} total_msgs={} layout={}",
-                    loop_count,
-                    session.messages.len(),
-                    summary
-                );
-
-                crate::utils::tool_logger::log_note(&format!(
-                    "DATA-TRACE iter={} total_msgs={} layout={}",
-                    loop_count,
-                    session.messages.len(),
-                    summary
-                ));
-
-                // At DEBUG level log a 150-char preview of every message body.
-                for (i, msg) in session.messages.iter().enumerate() {
-                    let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("?");
-                    let body = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                    let preview = body[..body.len().min(150)]
-                        .replace('\n', "↵")
-                        .replace('\r', "");
-                    let has_tc = msg.get("tool_calls").is_some();
-                    let tcid = msg
-                        .get("tool_call_id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    tracing::debug!(
-                        "[msg {i}] role={role} bytes={bytes} has_tool_calls={has_tc} \
-                         tool_call_id='{tcid}' | {preview}",
-                        bytes = body.len(),
-                    );
-                }
-            }
-            // ────────────────────────────────────────────────────────────────────
-
             let api_call_start = std::time::Instant::now();
 
             let response_with_finish = {
@@ -1256,7 +1041,6 @@ impl GrokAcpAgent {
 
             info!("📋 Finish reason: {:?}", finish_reason);
 
-<<<<<<< HEAD
             // If the model produced a reasoning/thinking trace, log it and
             // prepend it as a collapsible block before the main response.
             if let Some(ref tc) = thinking_content {
@@ -1277,45 +1061,8 @@ impl GrokAcpAgent {
                 .unwrap_or(false);
 
             let elapsed = start_time.elapsed();
-=======
-            // ── DATA-TRACE: what did the LLM just return? ────────────────────
-            {
-                let tc_count = response_msg
-                    .tool_calls
-                    .as_ref()
-                    .map(|tc| tc.len())
-                    .unwrap_or(0);
-                let resp_text = content_to_string(response_msg.content.as_ref());
-                let preview = resp_text[..resp_text.len().min(200)]
-                    .replace('\n', "↵")
-                    .replace('\r', "");
-                info!(
-                    "🤖 DATA-TRACE LLM response: finish={:?} tool_calls={} \
-                     text_bytes={} preview='{}'",
-                    finish_reason,
-                    tc_count,
-                    resp_text.len(),
-                    preview
-                );
-                crate::utils::tool_logger::log_note(&format!(
-                    "DATA-TRACE LLM response: finish={:?} tool_calls={} text_bytes={} \
-                     preview='{}'",
-                    finish_reason,
-                    tc_count,
-                    resp_text.len(),
-                    preview
-                ));
-            }
-            // ────────────────────────────────────────────────────────────────
-
-            // Add assistant response to history
-            session.messages.push(serde_json::to_value(&response_msg)?);
-
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
             let response_text = content_to_string(response_msg.content.as_ref());
-            let elapsed = start_time.elapsed();
 
-<<<<<<< HEAD
             if !has_tool_calls {
                 // No tool calls — return whatever the model said (including "stop").
                 info!(
@@ -1362,37 +1109,11 @@ impl GrokAcpAgent {
                         }
                         s.last_activity = std::time::Instant::now();
                     }
-=======
-            // Extract tool calls. finish_reason is intentionally NOT checked here –
-            // Grok (and some other models) can return finish_reason "stop" in the
-            // same payload as tool_calls. We always run every tool call first and
-            // then honour finish_reason in the post-tool-loop check below.
-            let Some(tool_calls) = response_msg.tool_calls.as_ref().filter(|tc| !tc.is_empty())
-            else {
-                // No tool calls – the turn is complete; honour finish_reason.
-                if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
-                    info!(
-                        "✅ Model signaled completion (finish_reason: {:?}) in {:?} \
-                         ({} loops, {} chars)",
-                        finish_reason,
-                        elapsed,
-                        loop_count,
-                        response_text.len()
-                    );
-                } else {
-                    info!(
-                        "✨ Chat completion finished in {:?} ({} loops, {} chars)",
-                        elapsed,
-                        loop_count,
-                        response_text.len()
-                    );
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
                 }
                 return Ok(response_text);
             };
             info!("🛠️  Processing {} tool calls", tool_calls.len());
 
-            // ── BEGIN TOOL LOOP ──────────────────────────────────────────────
             for (tool_idx, tool_call) in tool_calls.iter().enumerate() {
                 let tool_start = std::time::Instant::now();
                 info!(
@@ -1489,138 +1210,25 @@ impl GrokAcpAgent {
                 }
                 // --- END PERMISSION GATE ---
 
-                // Acquire the policy once so we don't clone it for every arm.
+                // Route ALL tool calls through the unified registry + arbitration layer.
+                // This ensures every tool defined in get_tool_definitions() is reachable
+                // from the ACP path without maintaining a duplicate match block here.
                 let policy = self.get_security().get_policy();
+                let tool_ctx = tools::ToolContext::new(policy);
 
-                let result = match function_name.as_str() {
-                    "read_file" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::read_file(path, &policy).await
-                    }
-                    "write_file" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
-                        tools::write_file(path, content, &policy).await
-                    }
-                    "list_directory" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_directory(path, &policy)
-                    }
-                    "glob_search" => {
-                        let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                        tools::glob_search(pattern, &policy)
-                    }
-                    "search_file_content" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                        tools::search_file_content(path, pattern, &policy)
-                    }
-                    "run_shell_command" => {
-                        let command = args["command"].as_str().ok_or(anyhow!("Missing command"))?;
-                        // Honour project config; fall back to built-in 300 s default.
-                        let shell_timeout = self.config.tools.shell.command_timeout_secs;
-                        tools::run_shell_command(command, &policy, shell_timeout).await
-                    }
-                    "replace" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let old_string = args["old_string"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing old_string"))?;
-                        let new_string = args["new_string"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing new_string"))?;
-                        let expected_replacements =
-                            args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(path, old_string, new_string, expected_replacements, &policy)
-                            .await
-                    }
-                    "save_memory" => {
-                        let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
-                        tools::save_memory(fact)
-                    }
-                    "web_search" => {
-                        let query = args["query"].as_str().ok_or(anyhow!("Missing query"))?;
-                        tools::web_search(query).await
-                    }
-                    "web_fetch" => {
-                        let url = args["url"].as_str().ok_or(anyhow!("Missing url"))?;
-                        tools::web_fetch(url).await
-                    }
-                    "read_multiple_files" => {
-                        let paths_value =
-                            args["paths"].as_array().ok_or(anyhow!("Missing paths"))?;
-                        let paths: Result<Vec<String>> = paths_value
-                            .iter()
-                            .map(|v| {
-                                v.as_str()
-                                    .ok_or(anyhow!("Invalid path"))
-                                    .map(|s| s.to_string())
-                            })
-                            .collect();
-                        tools::read_multiple_files(paths?, &policy).await
-                    }
-                    "list_code_definitions" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_code_definitions(path, &policy).await
-                    }
-                    "task_create" => {
-                        let title = args["title"].as_str().ok_or(anyhow!("Missing title"))?;
-                        let description = args["description"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing description"))?;
-                        let priority = args["priority"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing priority"))?;
-                        let dependencies_value = args["dependencies"]
-                            .as_array()
-                            .ok_or(anyhow!("Missing dependencies"))?;
-                        let dependencies: Result<Vec<f64>> = dependencies_value
-                            .iter()
-                            .map(|v| v.as_f64().ok_or(anyhow!("Invalid dependency")))
-                            .collect();
-                        let details = args["details"].as_str().ok_or(anyhow!("Missing details"))?;
-                        let test_strategy = args["testStrategy"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing testStrategy"))?;
-                        let subtasks_value = args["subtasks"]
-                            .as_array()
-                            .ok_or(anyhow!("Missing subtasks"))?;
-                        let subtasks: Vec<Value> = subtasks_value.clone();
-                        tools::task_create(
-                            title,
-                            description,
-                            priority,
-                            dependencies?,
-                            details,
-                            test_strategy,
-                            subtasks,
-                            &policy,
-                        )
-                    }
-                    "task_update" => {
-                        let id = args["id"].as_f64().ok_or(anyhow!("Missing id"))?;
-                        let status = args["status"].as_str();
-                        let title = args["title"].as_str();
-                        let priority = args["priority"].as_str();
-                        let details = args["details"].as_str();
-                        tools::task_update(id, status, title, priority, details, &policy)
-                    }
-                    _ => {
-                        // Fall back to the full tool registry for any tool that is
-                        // not in the built-in ACP dispatch above.  This covers:
-                        //   task_create, task_update, enter_plan_mode, exit_plan_mode,
-                        //   enter_worktree, exit_worktree, notebook_edit, execute_skill,
-                        //   list_skills, spawn_agent, send_message, team_create,
-                        //   team_delete, mcp_call, lsp_query, tool_search, cron_create,
-                        //   remote_trigger, sleep, synthetic_output, …
-                        //
-                        // The registry is the single source of truth for all tool
-                        // implementations; keeping the ACP dispatch in sync manually
-                        // was what caused the "Unknown tool: task_update" errors.
-                        let ctx = tools::ToolContext::new(policy.clone());
-                        tools::execute_tool(function_name, &args, &ctx).await
-                    }
-                };
+                // run_shell_command honours the per-project shell timeout; pass it
+                // via the args so the registry shim can pick it up.
+                let shell_timeout = self.config.tools.shell.command_timeout_secs;
+                let mut augmented_args = args.clone();
+                if function_name == "run_shell_command"
+                    && augmented_args.get("timeout_secs").is_none()
+                    && shell_timeout > 0
+                {
+                    augmented_args["timeout_secs"] =
+                        serde_json::Value::Number(shell_timeout.into());
+                }
+
+                let result = tools::execute_tool(function_name, &augmented_args, &tool_ctx).await;
 
                 let (content, status) = match result {
                     Ok(s) => {
@@ -1630,15 +1238,6 @@ impl GrokAcpAgent {
                             tool_duration,
                             s.len()
                         );
-
-                        // ── Tool success: write a compact entry to the tool log ──
-                        crate::utils::tool_logger::log_tool_success(
-                            function_name,
-                            &args,
-                            s.len(),
-                            tool_duration.as_micros(),
-                        );
-
                         (s, crate::acp::protocol::ToolCallStatus::Completed)
                     }
                     Err(e) => {
@@ -1648,45 +1247,14 @@ impl GrokAcpAgent {
                         // 4. Update Bayesian Engine for Tool Failure
                         local_bayes.update_from_tool_failure();
 
-                        // Build a structured, actionable error message so the LLM knows
-                        // exactly what went wrong and what to try instead of retrying blindly.
-                        let error_str = e.to_string();
+                        let mut error_content =
+                            format!("Error executing tool {}: {}", function_name, e);
 
-<<<<<<< HEAD
                         // If confidence drops significantly due to failure, add a recovery system prompt
                         if local_bayes.is_low_confidence() {
                             error_content = format!(
                                 "{}\n\n[System Note: This tool failed and Bayesian confidence is low. Please rewrite your approach, verify your assumptions, or ask the user for clarification instead of repeating the same action.]",
                                 error_content
-=======
-                        // ── Tool failure: write a detailed diagnostic entry to the tool log ──
-                        // This records the working directory, trusted directories, and a
-                        // human-readable hint so you can immediately see WHY the tool failed
-                        // (e.g. "Access denied" because Grok was not launched from the project
-                        // root, or a path typo causing "os error 3").
-                        crate::utils::tool_logger::log_tool_error(
-                            function_name,
-                            &args,
-                            &error_str,
-                            tool_duration.as_micros(),
-                            policy.working_directory(),
-                            policy.trusted_directories(),
-                        );
-
-                        let mut error_content = crate::tools::tool_error::format_tool_error_for_llm(
-                            function_name,
-                            &args,
-                            &error_str,
-                        );
-
-                        // If Bayesian confidence is also low, append an additional note
-                        // encouraging the model to change strategy rather than looping.
-                        if session.bayes_engine.is_low_confidence() {
-                            error_content.push_str(
-                                "\n\n[System Note: Bayesian confidence is low after this failure. \
-                                Do NOT retry the same action. Re-evaluate your plan, verify your \
-                                assumptions, or ask the user for clarification.]",
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
                             );
                         }
 
@@ -1715,100 +1283,16 @@ impl GrokAcpAgent {
                     let hooks = self.get_hook_manager().read().await;
                     hooks.execute_after_tool(function_name, &args, &content)?;
                 }
-<<<<<<< HEAD
 
                 // Add tool result to history
                 messages.push(json!({
-=======
-                // Push tool result into LLM message history so the model can see it
-                session.messages.push(serde_json::json!({
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": content,
+                    "content": content
                 }));
-
-                // ── DATA-TRACE: confirm exactly what is being pushed as tool result ──
-                {
-                    let preview = content[..content.len().min(300)]
-                        .replace('\n', "↵")
-                        .replace('\r', "");
-                    info!(
-                        "📦 DATA-TRACE tool_result_push: tool='{}' tcid='{}' \
-                         bytes={} preview='{}'",
-                        function_name,
-                        tool_call.id,
-                        content.len(),
-                        preview
-                    );
-                    crate::utils::tool_logger::log_note(&format!(
-                        "DATA-TRACE tool_result_push: tool='{}' tcid='{}' bytes={} \
-                         preview='{}'",
-                        function_name,
-                        tool_call.id,
-                        content.len(),
-                        preview
-                    ));
-                }
-                // ────────────────────────────────────────────────────────────
-
-                // ── Anti-hallucination guard ─────────────────────────────────
-                // When a tool returns a TOOL ERROR the LLM tends to ignore it
-                // and fabricate an answer anyway.  Injecting an explicit system
-                // message immediately after the error — right before the LLM
-                // generates its reply — overrides that tendency.
-                if content.starts_with("TOOL ERROR") {
-                    session.messages.push(json!({
-                        "role": "system",
-                        "content": "⚠️ STOP — the tool call above returned an error. \
-                                   You MUST NOT fabricate, guess, or invent any information. \
-                                   Your only permitted response is to report the error to the \
-                                   user in plain language and suggest they try again or check \
-                                   the file manually. Do NOT return any JSON, task data, \
-                                   titles, statuses, or descriptions."
-                    }));
-                }
-                // 🔍 Verify the tool message was actually inserted (debug only).
-                {
-                    let last = session.messages.last().unwrap();
-                    let role = last.get("role").and_then(|v| v.as_str()).unwrap_or("?");
-                    let tcid = last
-                        .get("tool_call_id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("NONE");
-                    let bytes = last
-                        .get("content")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.len())
-                        .unwrap_or(0);
-                    debug!(
-                        "🧪 TOOL-PUSH-VERIFY → role='{}' tool_call_id='{}' bytes={} (should be >0)",
-                        role, tcid, bytes
-                    );
-                }
-                // ────────────────────────────────────────────────────────────
             }
-            // ── END TOOL LOOP ────────────────────────────────────────────────
-
-            // ── Post-tool-loop finish_reason check ───────────────────────────
-            // If the model signalled stop alongside its tool calls (common with
-            // Grok), do not spin up another API iteration. Tool results are
-            // already committed to session.messages for full context.
-            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
-                info!(
-                    "✅ Model signaled stop after {} tool call(s) \
-                     (finish_reason: {:?}) in {:?} ({} loops)",
-                    tool_calls.len(),
-                    finish_reason,
-                    start_time.elapsed(),
-                    loop_count,
-                );
-                return Ok(response_text);
-            }
-            // ─────────────────────────────────────────────────────────────────
 
             let loop_duration = loop_start.elapsed();
-<<<<<<< HEAD
             info!("🔄 Loop iteration completed in {:?}", loop_duration);
 
             // Brief write-lock sync: persist the updated message history so
@@ -1844,12 +1328,6 @@ impl GrokAcpAgent {
                 return Ok(String::new());
             }
             // Continue loop to get next response from model with tool results
-=======
-            info!(
-                "🔄 Loop iteration completed in {:?} – feeding tool results back to model",
-                loop_duration
-            );
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         }
     }
 
@@ -2632,11 +2110,7 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-<<<<<<< HEAD
         assert_eq!(config.model, "grok-4.3");
-=======
-        assert_eq!(config.model, "grok-code-fast-1");
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         assert_eq!(config.temperature, 0.5);
         // grok-4.3 supports higher output token limits; default raised to 16_384
         assert_eq!(config.max_tokens, 16_384);

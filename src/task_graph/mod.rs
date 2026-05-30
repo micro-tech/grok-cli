@@ -19,7 +19,8 @@ pub struct ToolCall {
 }
 
 /// Boxed async result type used by [`TaskGraph::execute`].
-type ExecuteFuture<'a> = Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error>>> + 'a>>;
+type ExecuteFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error>>> + Send + 'a>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskGraph {

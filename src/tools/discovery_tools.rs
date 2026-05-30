@@ -52,35 +52,25 @@ pub fn tool_search(query: &str) -> Result<String> {
     }
 
     let query_lower = query.to_lowercase();
-    let all_tools = crate::tools::registry::get_tool_definitions();
+    let all_tools = crate::tools::registry::get_full_tool_definitions();
 
     let matches: Vec<String> = all_tools
         .iter()
-        .filter(|t| {
-            let name = t
-                .get("function")
-                .and_then(|f| f.get("name"))
-                .and_then(|n| n.as_str())
-                .unwrap_or("");
-            let desc = t
-                .get("function")
-                .and_then(|f| f.get("description"))
+        .filter_map(|v| {
+            let func = v.get("function")?;
+            let name = func.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            let desc = func
+                .get("description")
                 .and_then(|d| d.as_str())
                 .unwrap_or("");
-            name.to_lowercase().contains(&query_lower) || desc.to_lowercase().contains(&query_lower)
-        })
-        .map(|t| {
-            let name = t
-                .get("function")
-                .and_then(|f| f.get("name"))
-                .and_then(|n| n.as_str())
-                .unwrap_or("?");
-            let desc = t
-                .get("function")
-                .and_then(|f| f.get("description"))
-                .and_then(|d| d.as_str())
-                .unwrap_or("");
-            format!("  {:<30} {}", name, desc)
+
+            if name.to_lowercase().contains(&query_lower)
+                || desc.to_lowercase().contains(&query_lower)
+            {
+                Some(format!("{}: {}", name, desc))
+            } else {
+                None
+            }
         })
         .collect();
 
@@ -336,21 +326,17 @@ pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Res
 
 /// Return a list of all available tools with their names and descriptions.
 pub fn list_tools() -> Result<String> {
-    let all_tools = crate::tools::registry::get_tool_definitions();
+    let all_tools = crate::tools::registry::get_full_tool_definitions();
     let list: Vec<String> = all_tools
         .iter()
-        .map(|t| {
-            let name = t
-                .get("function")
-                .and_then(|f| f.get("name"))
-                .and_then(|n| n.as_str())
-                .unwrap_or("?");
-            let desc = t
-                .get("function")
-                .and_then(|f| f.get("description"))
+        .filter_map(|v| {
+            let func = v.get("function")?;
+            let name = func.get("name").and_then(|n| n.as_str()).unwrap_or("?");
+            let desc = func
+                .get("description")
                 .and_then(|d| d.as_str())
                 .unwrap_or("");
-            format!("{}: {}", name, desc)
+            Some(format!("{}: {}", name, desc))
         })
         .collect();
     Ok(list.join("\n"))
@@ -360,15 +346,15 @@ pub fn list_tools() -> Result<String> {
 
 /// Return the full JSON schema for a specific tool.
 pub fn describe_tool(name: &str) -> Result<String> {
-    let all_tools = crate::tools::registry::get_tool_definitions();
-    for t in all_tools {
-        if let Some(n) = t
+    let all_tools = crate::tools::registry::get_full_tool_definitions();
+    for v in all_tools {
+        if let Some(n) = v
             .get("function")
             .and_then(|f| f.get("name"))
             .and_then(|n| n.as_str())
             && n == name
         {
-            return Ok(serde_json::to_string_pretty(&t).unwrap());
+            return Ok(serde_json::to_string_pretty(&v).unwrap());
         }
     }
     Err(anyhow!("Tool '{}' not found", name))

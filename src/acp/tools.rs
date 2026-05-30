@@ -187,11 +187,26 @@ mod tests {
 
     #[test]
     fn test_get_tool_definitions_updated() {
-        let tools = get_tool_definitions();
-        assert!(tools.iter().any(|t| t["function"]["name"] == "replace"));
-        assert!(tools.iter().any(|t| t["function"]["name"] == "save_memory"));
-        assert!(tools.iter().any(|t| t["function"]["name"] == "web_search"));
-        assert!(tools.iter().any(|t| t["function"]["name"] == "web_fetch"));
+        // get_available_tool_definitions() returns full JSON tool schemas.
+        let tools = get_available_tool_definitions();
+        let has = |name: &str| {
+            tools.iter().any(|t| {
+                t.get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str())
+                    == Some(name)
+            })
+        };
+        assert!(has("replace"), "replace missing from tool definitions");
+        assert!(
+            has("save_memory"),
+            "save_memory missing from tool definitions"
+        );
+        assert!(
+            has("web_search"),
+            "web_search missing from tool definitions"
+        );
+        assert!(has("web_fetch"), "web_fetch missing from tool definitions");
     }
 
     #[tokio::test]

@@ -37,8 +37,9 @@
 //! # Ok(())
 //! # }
 //! ```
-
+//!
 pub mod agent_tools;
+pub mod ai_tools;
 pub mod discovery_tools;
 pub mod file_tools;
 pub mod lsp_tools;
@@ -51,15 +52,18 @@ pub mod sandbox;
 pub mod shell_tools;
 pub mod skill_tools;
 pub mod system_tools;
-pub mod task_tools;
 pub mod task_graph_tools;
+pub mod task_tools;
+pub mod tool_arbitration;
 pub mod tool_context;
 pub mod tool_error;
 pub mod web_tools;
 
 // ── Core re-exports ───────────────────────────────────────────────────────────
 
-pub use registry::{execute_tool, get_available_tool_definitions, get_tool_definitions};
+pub use registry::{
+    execute_tool, get_available_tool_definitions, get_full_tool_definitions, get_tool_definitions,
+};
 pub use tool_context::ToolContext;
 pub use tool_error::ToolError;
 
@@ -85,12 +89,8 @@ pub use memory_tools::save_memory;
 
 // ── Task management ───────────────────────────────────────────────────────────
 
-<<<<<<< HEAD
-pub use task_tools::{task_create, task_update};
 pub use task_graph_tools::execute_task_graph;
-=======
-pub use task_tools::{task_create, task_get, task_update};
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
+pub use task_tools::{task_create, task_update};
 
 // ── Plan mode + worktrees ─────────────────────────────────────────────────────
 
