@@ -430,11 +430,7 @@ mod tests {
         let output = config.apply_all("secret=hunter2");
         assert!(
             !output.contains("hunter2"),
-<<<<<<< HEAD
             "secret rule must redact the value; got: {output:?}"
-=======
-            "secret rule must redact the secret value; got: {output:?}"
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         );
     }
 
@@ -442,23 +438,15 @@ mod tests {
     #[test]
     fn default_rules_redacts_password_assignment() {
         let config = RedactionConfig::default_rules();
-<<<<<<< HEAD
         let output = config.apply_all("password=s3cr3t");
         assert!(
             !output.contains("s3cr3t"),
             "password rule must redact the value; got: {output:?}"
-=======
-        let output = config.apply_all("password=correct-horse-battery-staple");
-        assert!(
-            !output.contains("correct-horse-battery-staple"),
-            "password rule must redact the password value; got: {output:?}"
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         );
     }
 
     // ── SuppressionLayer::guard ──────────────────────────────────────────────
 
-<<<<<<< HEAD
     /// In production mode, a suppressed trace must return `None`.
     #[test]
     fn guard_returns_none_for_suppressed_trace_in_production() {
@@ -472,27 +460,10 @@ mod tests {
     }
 
     /// In debug mode, a suppressed trace must be returned.
-=======
-    /// `guard` must return `None` for a suppressed trace in production mode.
-    #[test]
-    fn guard_returns_none_for_suppressed_trace_in_production_mode() {
-        let sup = SuppressionLayer::production();
-        let trace = ReasoningTrace::new(ReasoningPhase::Complete);
-
-        assert!(trace.suppressed, "trace must be suppressed by default");
-        assert!(
-            sup.guard(&trace).is_none(),
-            "production guard must return None for a suppressed trace"
-        );
-    }
-
-    /// `guard` must return `Some` for a suppressed trace in debug mode.
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     #[test]
     fn guard_returns_some_for_suppressed_trace_in_debug_mode() {
         let sup = SuppressionLayer::debug();
         let trace = ReasoningTrace::new(ReasoningPhase::Complete);
-<<<<<<< HEAD
         assert!(trace.suppressed);
         assert!(
             sup.guard(&trace).is_some(),
@@ -523,66 +494,12 @@ mod tests {
         assert_eq!(
             exposed.trace_id, original_id,
             "guard must return a reference to the original trace"
-=======
-
-        assert!(trace.suppressed, "trace must be suppressed by default");
-        assert!(
-            sup.guard(&trace).is_some(),
-            "debug guard must return Some for a suppressed trace"
-        );
-    }
-
-    /// `guard` must return `Some` for an un-suppressed trace in production.
-    #[test]
-    fn guard_returns_some_for_unsuppressed_trace_in_production_mode() {
-        let sup = SuppressionLayer::production();
-        let mut trace = ReasoningTrace::new(ReasoningPhase::Complete);
-        trace.suppressed = false;
-
-        assert!(
-            sup.guard(&trace).is_some(),
-            "production guard must return Some when trace.suppressed is false"
-        );
-    }
-
-    /// `guard` must return the exact same reference that was passed in.
-    #[test]
-    fn guard_returns_same_reference() {
-        let sup = SuppressionLayer::debug();
-        let mut trace =
-            ReasoningTrace::new(ReasoningPhase::Complete).with_goal("correlation check");
-        trace.suppressed = false;
-
-        let returned = sup.guard(&trace).expect("guard must return Some");
-        assert_eq!(
-            returned.trace_id, trace.trace_id,
-            "guard must return the same trace reference"
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         );
     }
 
     // ── SuppressionLayer::redact ─────────────────────────────────────────────
 
-<<<<<<< HEAD
     /// `redact` must not modify `trace_id`.
-=======
-    /// `redact` must replace an API key pattern found in `goal`.
-    #[test]
-    fn redact_replaces_api_key_pattern_in_goal() {
-        let sup = SuppressionLayer::production();
-        let trace = ReasoningTrace::new(ReasoningPhase::Complete).with_goal("token: sk-abc123");
-
-        let redacted = sup.redact(&trace);
-        let goal = redacted.goal.expect("goal must be present after redaction");
-
-        assert!(
-            !goal.contains("sk-abc123"),
-            "redact must remove the API key value from goal; got: {goal:?}"
-        );
-    }
-
-    /// `redact` must preserve `trace_id` unchanged (needed for correlation).
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     #[test]
     fn redact_preserves_trace_id() {
         let sup = SuppressionLayer::production();

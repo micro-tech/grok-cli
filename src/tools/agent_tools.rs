@@ -1,12 +1,24 @@
 //! Agent coordination tools — sub-agent spawning, inter-agent messaging,
 //! and team management.
 
+use crate::agent::manager::AgentManager;
 use anyhow::{Result, anyhow};
 use chrono::Utc;
 use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
+use std::sync::Arc;
 use tracing::warn;
+
+// ── Global shared AgentManager (Task 127) ─────────────────────────────────────
+
+static AGENT_MANAGER: once_cell::sync::Lazy<Arc<AgentManager>> =
+    once_cell::sync::Lazy::new(AgentManager::new);
+
+/// Returns the global shared AgentManager instance.
+pub fn get_agent_manager() -> Arc<AgentManager> {
+    AGENT_MANAGER.clone()
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -22,21 +34,18 @@ fn grok_data_dir() -> Result<PathBuf> {
 
 /// Spawn a focused sub-agent to complete a well-scoped task.
 ///
-/// Reads the API key from the `GROK_API_KEY` or `XAI_API_KEY` environment
-/// variable (set by the user's `.env` file or shell).  Calls the Grok API
-/// with a tight system prompt that instructs the sub-agent to return a
-/// concise, direct result.
-///
-/// Retries up to 3 times on transient network errors (satellite handover,
-/// timeout, connection reset) with exponential back-off before surfacing an
-/// error to the caller.
-///
-/// `max_tokens` is clamped to the range 256–4096.
+/// This version (Task 127) also registers the sub-agent with the global
+/// `AgentManager` so the system can track, list, and merge results from
+/// multiple concurrent sub-agents.
 pub async fn spawn_agent(task: &str, context: &str, max_tokens: u32) -> Result<String> {
     if task.trim().is_empty() {
         warn!("spawn_agent: task is empty");
         return Err(anyhow!("task cannot be empty"));
     }
+
+    // Register with AgentManager first
+    let manager = get_agent_manager();
+    let agent_id = manager.spawn(task, None, Some("grok-3-mini".to_string()), None).await;
 
     let api_key = std::env::var("GROK_API_KEY")
         .or_else(|_| std::env::var("XAI_API_KEY"))
@@ -71,7 +80,11 @@ pub async fn spawn_agent(task: &str, context: &str, max_tokens: u32) -> Result<S
             .await
             .map_err(|e| anyhow!("Sub-agent call failed: {}", e))
         {
-            Ok(result) => return Ok(result),
+            Ok(result) => {
+                // Mark as completed in the manager
+                manager.complete(&agent_id, result.clone()).await;
+                return Ok(result);
+            }
             Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
                 let delay = crate::utils::network::calculate_retry_delay(attempt, false);
                 warn!(
@@ -84,6 +97,7 @@ pub async fn spawn_agent(task: &str, context: &str, max_tokens: u32) -> Result<S
                 tokio::time::sleep(delay).await;
             }
             Err(e) => {
+                manager.fail(&agent_id, e.to_string()).await;
                 warn!(error = %e, "spawn_agent: sub-agent call failed — no more retries");
                 return Err(e);
             }
@@ -287,6 +301,123 @@ pub fn merge_agent_results(results: Vec<String>) -> Result<String> {
         top.len(),
         top.join("\n\n---\n\n")
     ))
+}
+
+// ── Task 127: New orchestration tools using AgentManager ─────────────────────
+
+/// List all currently tracked sub-agents (or only those belonging to a parent).
+pub async fn list_agents(parent_id: Option<&str>) -> Result<String> {
+    let manager = get_agent_manager();
+    let agents = manager.list(parent_id).await;
+
+    if agents.is_empty() {
+        return Ok("No sub-agents found.".to_string());
+    }
+
+    let mut output = String::from("## Active Sub-Agents\n\n");
+    for a in agents {
+        let status = match a.status {
+            crate::agent::manager::AgentStatus::Running => "🟡 Running",
+            crate::agent::manager::AgentStatus::Completed => "🟢 Completed",
+            crate::agent::manager::AgentStatus::Failed => "🔴 Failed",
+            crate::agent::manager::AgentStatus::Cancelled => "⚫ Cancelled",
+        };
+        output.push_str(&format!(
+            "- **{}** | {} | Task: {}\n",
+            a.id,
+            status,
+            a.task.chars().take(60).collect::<String>()
+        ));
+    }
+    Ok(output)
+}
+
+/// Get the current status and result (if available) of a specific sub-agent.
+pub async fn get_agent_status(agent_id: &str) -> Result<String> {
+    let manager = get_agent_manager();
+    match manager.get(agent_id).await {
+        Some(a) => {
+            let status = match a.status {
+                crate::agent::manager::AgentStatus::Running => "Running",
+                crate::agent::manager::AgentStatus::Completed => "Completed",
+                crate::agent::manager::AgentStatus::Failed => "Failed",
+                crate::agent::manager::AgentStatus::Cancelled => "Cancelled",
+            };
+            let result = a.result.unwrap_or_else(|| "(no result yet)".to_string());
+            Ok(format!(
+                "Agent {} | Status: {} | Task: {}\nResult:\n{}",
+                a.id, status, a.task, result
+            ))
+        }
+        None => Ok(format!("No agent found with ID '{}'", agent_id)),
+    }
+}
+
+/// Cancel a running sub-agent.
+pub async fn cancel_agent(agent_id: &str) -> Result<String> {
+    let manager = get_agent_manager();
+    manager.cancel(agent_id).await;
+    Ok(format!("Agent {} cancelled (if it was running).", agent_id))
+}
+
+// ── In-memory messaging (Task 127) ────────────────────────────────────────────
+
+/// Send a message using the fast in-memory bus (preferred over file-based).
+pub async fn send_message_in_memory(from: &str, to: &str, message: &str) -> Result<String> {
+    let bus = crate::agent::message_bus::MESSAGE_BUS.clone();
+    Ok(bus.send(from, to, message).await)
+}
+
+/// Receive pending messages for an agent from the in-memory bus.
+pub async fn receive_messages(target: &str) -> Result<String> {
+    let bus = crate::agent::message_bus::MESSAGE_BUS.clone();
+    let msgs = bus.receive(target).await;
+
+    if msgs.is_empty() {
+        return Ok("No pending messages.".to_string());
+    }
+
+    let formatted: Vec<String> = msgs
+        .iter()
+        .map(|m| format!("[{}] {} → {}: {}", m.timestamp, m.from, m.to, m.content))
+        .collect();
+
+    Ok(formatted.join("\n"))
+}
+
+// ── Advanced orchestration tools ─────────────────────────────────────────────
+
+/// Fork / spawn multiple sub-agents in parallel for different parts of a task.
+pub async fn fork_agent(tasks: Vec<String>) -> Result<String> {
+    let manager = get_agent_manager();
+    let mut ids = Vec::new();
+
+    for task in tasks {
+        let id = manager.spawn(&task, None, None, None).await;
+        ids.push(id);
+    }
+
+    Ok(format!("Forked {} sub-agents: {:?}", ids.len(), ids))
+}
+
+/// Join results from multiple sub-agents (waits conceptually by checking status).
+pub async fn join_agents(agent_ids: Vec<String>) -> Result<String> {
+    let manager = get_agent_manager();
+    let mut results = Vec::new();
+
+    for id in agent_ids {
+        if let Some(agent) = manager.get(&id).await {
+            if let Some(res) = agent.result {
+                results.push(res);
+            }
+        }
+    }
+
+    if results.is_empty() {
+        return Ok("No completed results found yet.".to_string());
+    }
+
+    merge_agent_results(results)
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

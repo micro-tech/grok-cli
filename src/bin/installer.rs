@@ -44,11 +44,7 @@ fn get_version(root_dir: &Path) -> String {
 fn main() {
     println!(
         "{}",
-<<<<<<< HEAD
         "Grok CLI Installer v0.2.2-pre for Windows 11"
-=======
-        "Grok CLI Installer v0.1.9-pre for Windows 11"
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
             .green()
             .bold()
     );
@@ -151,7 +147,6 @@ fn install_windows(root_dir: PathBuf) {
     println!("{}", "Setting up audit logging...".cyan());
     setup_audit_directory();
 
-<<<<<<< HEAD
     // 12. Setup Session DNA
     println!("{}", "Setting up Session DNA...".cyan());
     setup_session_dna(&root_dir);
@@ -159,14 +154,6 @@ fn install_windows(root_dir: PathBuf) {
     println!("\n{}", "Installation Complete!".green().bold());
     let version = get_version(&root_dir);
     println!("Version: {}", version);
-=======
-    // 12. Setup Memory / Sessions / Skills directories
-    println!("{}", "Setting up memory and skills directories...".cyan());
-    setup_memory_directories();
-
-    println!("\n{}", "Installation Complete!".green().bold());
-    println!("Version: 0.1.9-pre");
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     println!("\nNew features in this version:");
     println!("  • Reasoning Protocol Layer (RPL) — structured AI decision tracing");
     println!("  • Reasoning Engine — goal analysis, multi-step planning, self-correction");

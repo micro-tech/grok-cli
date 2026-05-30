@@ -216,12 +216,8 @@ impl Backend for GrokBackend {
                         raw,
                         model: req.model.clone(),
                         usage: None,
-<<<<<<< HEAD
-                        thinking_content,
-=======
-                        finish_reason,
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
-                    });
+                            thinking_content,
+                        });
                 }
 
                 Err(e) => {

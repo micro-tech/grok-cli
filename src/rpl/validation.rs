@@ -22,7 +22,7 @@ use std::collections::HashSet;
 
 use thiserror::Error;
 
-use crate::rpl::schema::{RPL_SCHEMA_VERSION, ReasoningTrace};
+use crate::rpl::schema::{ReasoningTrace, RPL_SCHEMA_VERSION};
 
 // ---------------------------------------------------------------------------
 // Error type
@@ -158,11 +158,7 @@ pub fn validate(trace: &ReasoningTrace) -> Result<(), Vec<ValidationError>> {
 /// NaN is treated as out-of-range (both comparisons fail for NaN).
 #[inline]
 fn is_unit_interval(v: f32) -> bool {
-<<<<<<< HEAD
     (0.0..=1.0).contains(&v)
-=======
-    v >= 0.0 && v <= 1.0
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 }
 
 // ---------------------------------------------------------------------------

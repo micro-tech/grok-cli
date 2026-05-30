@@ -618,20 +618,8 @@ mod tests {
     fn new_for_session_no_prompt_no_context_has_no_system_message() {
         let dir = tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
-<<<<<<< HEAD
         // Point global context dir at an empty temp dir so ~/.grok/memory.json
         // or context.md from the developer's machine doesn't bleed into the test.
-=======
-
-        // Point BOTH context dirs at empty temp dirs so nothing from the
-        // developer's real ~/.grok installation bleeds into this assertion.
-        //
-        // GROK_GLOBAL_CONTEXT_DIR  — isolates WorkingMemory (context.md / memory.md)
-        // GROK_LONG_TERM_MEMORY_DIR — isolates LongTermMemory (memory.json)
-        //   Without this second override, LongTermMemory::load_or_create() would
-        //   read ~/.grok/memory.json and inject any saved facts into the system
-        //   prompt, causing the is_none() assertion to fail on a developer's machine.
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         let empty_global = tempdir().unwrap();
         let empty_lt = tempdir().unwrap();
         unsafe {

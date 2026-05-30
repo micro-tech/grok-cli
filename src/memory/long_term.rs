@@ -347,20 +347,11 @@ pub fn load_prompt_section() -> String {
 // ── Private file-system helpers ───────────────────────────────────────────────
 
 fn grok_dir() -> Result<PathBuf> {
-<<<<<<< HEAD
     // Allow tests (and future CLI flag) to redirect the global context dir.
     if let Ok(dir) = std::env::var("GROK_GLOBAL_CONTEXT_DIR") {
         let path = PathBuf::from(dir);
         std::fs::create_dir_all(&path)?;
         return Ok(path);
-=======
-    // Allow tests (and advanced users) to redirect long-term memory to an
-    // arbitrary directory without touching the real ~/.grok store.
-    // Set GROK_LONG_TERM_MEMORY_DIR to an empty temp dir in tests to prevent
-    // facts saved from real usage bleeding into assertions.
-    if let Ok(path) = std::env::var("GROK_LONG_TERM_MEMORY_DIR") {
-        return Ok(PathBuf::from(path));
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     }
     dirs::home_dir()
         .map(|h| h.join(".grok"))

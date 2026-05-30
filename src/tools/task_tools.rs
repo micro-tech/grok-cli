@@ -20,37 +20,10 @@ fn load_task_file(security: &SecurityPolicy) -> Result<(std::path::PathBuf, Valu
         .join(".zed")
         .join("task_list.json");
 
-<<<<<<< HEAD
     if !task_file.exists() {
         tracing::info!(path = %task_file.display(), "task_list.json not found — starting empty");
         return Ok((task_file, json!({ "tasks": [] })));
     }
-=======
-    // Verify the file exists and give a clear diagnostic if not.
-    // An empty/missing task file is a CWD mismatch (Grok launched from the
-    // wrong directory), not a valid "no tasks yet" state when updating.
-    if !task_file.exists() {
-        tracing::warn!(
-            path = %task_file.display(),
-            cwd  = %security.working_directory().display(),
-            "task_tools::load_task_file: task_list.json not found — \
-             the working directory may not be the project root"
-        );
-    }
-
-    let data: Value = if task_file.exists() {
-        let content = fs::read_to_string(&task_file).map_err(|e| {
-            tracing::warn!(error = %e, "task_tools::load_task_file: failed to read task_list.json");
-            anyhow!("Failed to read task_list.json: {}", e)
-        })?;
-        serde_json::from_str(&content).map_err(|e| {
-            tracing::warn!(error = %e, "task_tools::load_task_file: invalid JSON in task_list.json");
-            anyhow!("Invalid task_list.json: {}", e)
-        })?
-    } else {
-        json!({ "tasks": [] })
-    };
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 
     let content = fs::read_to_string(&task_file)
         .map_err(|e| anyhow!("Failed to read task_list.json: {}", e))?;
@@ -96,7 +69,6 @@ fn save_task_file(path: &std::path::Path, data: &Value) -> Result<()> {
         })?;
     }
 
-<<<<<<< HEAD
     let json_str = serde_json::to_string_pretty(data)
         .map_err(|e| anyhow!("Failed to serialise tasks: {}", e))?;
 
@@ -121,24 +93,6 @@ fn save_task_file(path: &std::path::Path, data: &Value) -> Result<()> {
         .map_err(|e| anyhow!("Failed to finalise task file (rename .tmp): {}", e))?;
 
     tracing::info!(bytes = json_str.len(), "task_list.json saved");
-=======
-    let json_str = serde_json::to_string_pretty(data).map_err(|e| {
-        tracing::warn!(error = %e, "task_tools::save_task_file: failed to serialise tasks");
-        anyhow!("Failed to serialise tasks: {}", e)
-    })?;
-
-    // Atomic write: write to a temp file then rename.
-    let tmp_path = path.with_extension("json.tmp");
-    fs::write(&tmp_path, &json_str).map_err(|e| {
-        tracing::warn!(error = %e, "task_tools::save_task_file: failed to write tmp file");
-        anyhow::anyhow!("task_tools: failed to write tmp file: {}", e)
-    })?;
-    fs::rename(&tmp_path, path).map_err(|e| {
-        tracing::warn!(error = %e, "task_tools::save_task_file: failed to rename tmp → task_list.json");
-        anyhow::anyhow!("task_tools: failed to rename tmp → task_list.json: {}", e)
-    })?;
-
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     Ok(())
 }
 
@@ -274,7 +228,6 @@ pub fn task_update(
 ) -> Result<String> {
     // ── validate status ───────────────────────────────────────────────────────
     let valid_statuses = ["pending", "in_progress", "done", "deferred"];
-<<<<<<< HEAD
     if let Some(s) = status
         && !valid_statuses.contains(&s)
     {
@@ -282,19 +235,6 @@ pub fn task_update(
             "Invalid status '{}'. Use: pending, in_progress, done, deferred",
             s
         ));
-=======
-    if let Some(s) = status {
-        if !valid_statuses.contains(&s) {
-            tracing::warn!(
-                status = %s,
-                "task_tools::task_update: invalid status rejected"
-            );
-            return Err(anyhow!(
-                "Invalid status '{}'. Use: pending, in_progress, done, deferred",
-                s
-            ));
-        }
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     }
 
     // ── validate priority ─────────────────────────────────────────────────────
@@ -625,8 +565,7 @@ mod tests {
         assert!(r.is_err());
     }
 
-<<<<<<< HEAD
-    // ── Atomic write + .bak tests ───────────────────────────────
+    // ── Atomic write + .bak tests ──────────────────────────────
 
     #[test]
     fn save_leaves_no_tmp_file() {
@@ -678,56 +617,5 @@ mod tests {
             ".bak snapshot should have 1 task"
         );
         assert_eq!(data["tasks"][0]["title"].as_str(), Some("GoodTask"));
-=======
-    #[test]
-    fn update_rejects_invalid_priority() {
-        let dir = TempDir::new().unwrap();
-        let security = make_security(&dir);
-        fs::create_dir_all(dir.path().join(".zed")).unwrap();
-
-        task_create("A task", "", "high", vec![], &security).unwrap();
-        let r = task_update(1.0, None, None, Some("critical"), None, &security);
-        assert!(r.is_err());
-        let msg = r.unwrap_err().to_string();
-        assert!(
-            msg.contains("high, medium, low"),
-            "error should mention valid options, got: {}",
-            msg
-        );
-    }
-
-    #[test]
-    fn task_get_returns_correct_task() {
-        let dir = TempDir::new().unwrap();
-        let security = make_security(&dir);
-        fs::create_dir_all(dir.path().join(".zed")).unwrap();
-        task_create("Alpha", "first", "high", vec![], &security).unwrap();
-        task_create("Beta", "second", "low", vec![], &security).unwrap();
-        let json = task_get(1.0, &security).unwrap();
-        let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert_eq!(v["title"], "Alpha");
-        assert_eq!(v["id"], 1);
-    }
-
-    #[test]
-    fn task_get_missing_returns_err() {
-        let dir = TempDir::new().unwrap();
-        let security = make_security(&dir);
-        fs::create_dir_all(dir.path().join(".zed")).unwrap();
-        let r = task_get(999.0, &security);
-        assert!(r.is_err());
-        assert!(r.unwrap_err().to_string().contains("not found"));
-    }
-
-    #[test]
-    fn update_rejects_invalid_status() {
-        let dir = TempDir::new().unwrap();
-        let security = make_security(&dir);
-        fs::create_dir_all(dir.path().join(".zed")).unwrap();
-
-        task_create("A task", "", "high", vec![], &security).unwrap();
-        let r = task_update(1.0, Some("finished"), None, None, None, &security);
-        assert!(r.is_err());
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     }
 }

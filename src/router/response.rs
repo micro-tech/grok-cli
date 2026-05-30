@@ -24,16 +24,9 @@ pub struct RouterResponse {
     pub model: String,
     /// Optional token-usage statistics.
     pub usage: Option<UsageStats>,
-<<<<<<< HEAD
     /// Chain-of-thought reasoning content from the model, if `reasoning_effort`
     /// was set and the model produced a reasoning trace.
     pub thinking_content: Option<String>,
-=======
-    /// The finish reason returned by the API (e.g. "stop", "tool_calls", "length").
-    /// Propagated from the real API response so callers can make correct
-    /// loop-control decisions instead of guessing.
-    pub finish_reason: Option<String>,
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 }
 
 impl RouterResponse {
@@ -46,11 +39,7 @@ impl RouterResponse {
             tool_calls: Vec::new(),
             model: model.into(),
             usage: None,
-<<<<<<< HEAD
             thinking_content: None,
-=======
-            finish_reason: Some("stop".to_string()),
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         }
     }
 
@@ -87,7 +76,6 @@ impl RouterResponse {
                 },
                 reasoning_content: None,
             },
-<<<<<<< HEAD
             // When the model wants to call tools the API returns finish_reason
             // "tool_calls".  Hardcoding "stop" here caused handle_chat_completion
             // to exit the tool loop immediately with empty content.
@@ -97,11 +85,6 @@ impl RouterResponse {
                 Some("stop".to_string())
             },
             thinking_content: self.thinking_content,
-=======
-            // Use the real finish_reason from the API; fall back to "stop"
-            // only when the backend did not supply one.
-            finish_reason: self.finish_reason.or_else(|| Some("stop".to_string())),
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         }
     }
 }

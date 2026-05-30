@@ -270,6 +270,46 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                         .ok_or_else(|| anyhow!("Missing: name"))?;
                     agent_tools::team_delete(name)
                 }
+                "list_agents" => {
+                    let parent = args.get("parent_id").and_then(|v| v.as_str());
+                    agent_tools::list_agents(parent).await
+                }
+                "get_agent_status" => {
+                    let id = args["agent_id"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Missing: agent_id"))?;
+                    agent_tools::get_agent_status(id).await
+                }
+                "cancel_agent" => {
+                    let id = args["agent_id"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Missing: agent_id"))?;
+                    agent_tools::cancel_agent(id).await
+                }
+                "send_message_in_memory" => {
+                    let from = args["from"].as_str().unwrap_or("main");
+                    let to = args["to"].as_str().ok_or_else(|| anyhow!("Missing: to"))?;
+                    let message = args["message"].as_str().ok_or_else(|| anyhow!("Missing: message"))?;
+                    agent_tools::send_message_in_memory(from, to, message).await
+                }
+                "receive_messages" => {
+                    let target = args["target"].as_str().ok_or_else(|| anyhow!("Missing: target"))?;
+                    agent_tools::receive_messages(target).await
+                }
+                "fork_agent" => {
+                    let tasks: Vec<String> = args["tasks"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                        .unwrap_or_default();
+                    agent_tools::fork_agent(tasks).await
+                }
+                "join_agents" => {
+                    let ids: Vec<String> = args["agent_ids"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                        .unwrap_or_default();
+                    agent_tools::join_agents(ids).await
+                }
 
                 // ── MCP ─────────────────────────────────────────────────────
                 "mcp_call" => {
@@ -434,6 +474,13 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
         "send_message",
         "team_create",
         "team_delete",
+        "list_agents",
+        "get_agent_status",
+        "cancel_agent",
+        "send_message_in_memory",
+        "receive_messages",
+        "fork_agent",
+        "join_agents",
         "mcp_call",
         "lsp_query",
         "tool_search",
@@ -850,6 +897,105 @@ pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
                         "name": {"type": "string", "description": "Name of the team to delete."}
                     },
                     "required": ["name"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "list_agents",
+                "description": "List all tracked sub-agents (optionally filtered by parent).",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "parent_id": {"type": "string", "description": "Optional parent agent ID to filter by."}
+                    }
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "get_agent_status",
+                "description": "Get the status and result of a specific sub-agent.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "agent_id": {"type": "string", "description": "ID of the sub-agent."}
+                    },
+                    "required": ["agent_id"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "cancel_agent",
+                "description": "Cancel a running sub-agent.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "agent_id": {"type": "string", "description": "ID of the sub-agent to cancel."}
+                    },
+                    "required": ["agent_id"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "send_message_in_memory",
+                "description": "Send a message using the fast in-memory agent bus.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "from":    {"type": "string", "description": "Sender agent ID."},
+                        "to":      {"type": "string", "description": "Target agent ID or channel."},
+                        "message": {"type": "string", "description": "Message content."}
+                    },
+                    "required": ["to", "message"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "receive_messages",
+                "description": "Receive pending in-memory messages for an agent.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "target": {"type": "string", "description": "Agent ID or channel to receive for."}
+                    },
+                    "required": ["target"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "fork_agent",
+                "description": "Spawn multiple sub-agents in parallel for different subtasks.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "tasks": {"type": "array", "items": {"type": "string"}, "description": "List of tasks to fork."}
+                    },
+                    "required": ["tasks"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "join_agents",
+                "description": "Collect and merge results from multiple sub-agents.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "agent_ids": {"type": "array", "items": {"type": "string"}, "description": "List of agent IDs to join."}
+                    },
+                    "required": ["agent_ids"]
                 }
             }
         }),

@@ -218,12 +218,6 @@ pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Res
             err
         })?;
 
-<<<<<<< HEAD
-    let response = match method.to_uppercase().as_str() {
-        "GET" => client.get(endpoint).send().await,
-        "PUT" => client.put(endpoint).json(&payload).send().await,
-        _ => client.post(endpoint).json(&payload).send().await,
-=======
     // ── method validation ─────────────────────────────────────────────────────
     // Reject unknown methods immediately, before spending any network budget.
     let method_upper = method.to_ascii_uppercase();
@@ -242,7 +236,6 @@ pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Res
             );
             return Err(e);
         }
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     }
 
     // ── retry loop ────────────────────────────────────────────────────────────

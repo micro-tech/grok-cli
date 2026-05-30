@@ -17,8 +17,8 @@ use std::collections::HashMap;
 
 use crate::bayes::belief_graph::BeliefGraph;
 use crate::bayes::likelihoods::{
-    DEFAULT_INTENT_LIKELIHOOD_WEIGHT, likelihood_from_model_confidence, likelihood_from_text,
-    likelihood_from_tool_failure,
+    likelihood_from_model_confidence, likelihood_from_text, likelihood_from_tool_failure,
+    DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
 };
 use crate::bayes::priors::{default_priors, priors_from_config};
 use crate::bayes::updater::bayes_update;
@@ -76,20 +76,10 @@ impl BayesianEngine {
         )
     }
 
-<<<<<<< HEAD
     /// Create a new engine using the compiled-in default priors.
     ///
     /// Unlike [`new`], this constructor never reads from the on-disk saved profile,
     /// making it suitable for unit tests that require deterministic baseline behaviour.
-=======
-    /// Create a new engine using only the compiled-in default priors,
-    /// **without** loading the on-disk profile.
-    ///
-    /// This constructor is intended for unit tests that need a deterministic,
-    /// isolated starting distribution that cannot be polluted by a saved
-    /// `~/.grok/bayes_profile.json` from real usage on the developer's machine.
-    #[cfg(test)]
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     pub fn new_with_default_priors() -> Self {
         Self::from_priors(
             default_priors(),
@@ -101,28 +91,6 @@ impl BayesianEngine {
         )
     }
 
-<<<<<<< HEAD
-=======
-    /// Create an engine from a [`BayesianConfig`] but using only the config's
-    /// **compiled-in priors**, without loading the on-disk profile.
-    ///
-    /// This lets tests verify threshold / weight behaviour under controlled,
-    /// deterministic conditions — the on-disk `~/.grok/bayes_profile.json`
-    /// from real usage cannot dilute or skew the starting distribution.
-    #[cfg(test)]
-    pub fn new_from_config_no_profile(config: &crate::config::BayesianConfig) -> Self {
-        use crate::bayes::priors::priors_from_config;
-        Self::from_priors(
-            priors_from_config(&config.priors),
-            config.clarification_threshold,
-            config.uncertainty_threshold,
-            config.vagueness_threshold,
-            config.intent_likelihood_weight,
-            config.profile_learning_rate,
-        )
-    }
-
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     /// Create a new engine using values from `[bayesian]` config.
     ///
     /// The prior distribution is loaded from the saved profile on disk first;
@@ -306,11 +274,6 @@ mod tests {
 
     #[test]
     fn test_engine_initialization() {
-<<<<<<< HEAD
-=======
-        // Use the test constructor to avoid loading ~/.grok/bayes_profile.json,
-        // which may have intent_edit dominant from real usage on this machine.
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         let engine = BayesianEngine::new_with_default_priors();
         assert!(engine.probability("intent_question") > 0.0);
         assert_eq!(engine.best_intent(), Some("intent_question".to_string()));
@@ -318,11 +281,6 @@ mod tests {
 
     #[test]
     fn test_engine_update_from_text() {
-<<<<<<< HEAD
-=======
-        // Use the test constructor so the starting distribution is always the
-        // compiled-in defaults, not whatever the saved profile holds.
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         let mut engine = BayesianEngine::new_with_default_priors();
         assert_eq!(engine.best_intent(), Some("intent_question".to_string()));
         engine.update_from_text("can you edit the config file");
@@ -363,7 +321,6 @@ mod tests {
     #[test]
     fn test_needs_clarification_gate() {
         // With a very low threshold the clarification gate should fire easily.
-<<<<<<< HEAD
         // Use from_priors() directly so the test doesn't load the on-disk profile.
         let mut engine = BayesianEngine::from_priors(
             default_priors(),
@@ -373,17 +330,6 @@ mod tests {
             DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
             DEFAULT_PROFILE_LEARNING_RATE,
         );
-=======
-        let config = BayesianConfig {
-            clarification_threshold: 0.01, // fires with almost any need_clarification signal
-            ..BayesianConfig::default()
-        };
-        // Use the isolated constructor so the on-disk profile cannot dilute
-        // need_clarification below the 0.01 threshold being tested here.
-        // With default priors (need_clarification = 0.1) and a 10× likelihood
-        // spike from "don't delete", the posterior is ~0.33 — well above 0.01.
-        let mut engine = BayesianEngine::new_from_config_no_profile(&config);
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
         engine.update_from_text("be careful, don't delete");
         assert!(engine.needs_clarification());
     }

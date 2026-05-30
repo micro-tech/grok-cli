@@ -208,11 +208,7 @@ impl PlanBuilder {
         // ── Step 3: apply hints in descending priority order ─────────────────
         let mut sorted_hints = self.config.hints.clone();
         // Stable sort keeps equal-priority hints in their declaration order.
-<<<<<<< HEAD
         sorted_hints.sort_by_key(|h| std::cmp::Reverse(h.priority));
-=======
-        sorted_hints.sort_by(|a, b| b.priority.cmp(&a.priority));
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 
         let mut tool_steps_added = 0usize;
 
@@ -543,7 +539,3 @@ mod tests {
         );
     }
 }
-<<<<<<< HEAD
-=======
-
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a

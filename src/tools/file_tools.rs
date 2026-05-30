@@ -9,12 +9,8 @@ use crate::security::audit::{AuditLogger, create_access_log};
 use anyhow::{Result, anyhow};
 use glob::glob;
 use regex::Regex;
-<<<<<<< HEAD
-use std::fs::File;
-=======
 use serde_json;
-use std::fs::{self, File};
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
+use std::fs::File;
 use std::io::{BufRead, BufReader};
 use tokio::fs;
 
@@ -152,13 +148,9 @@ pub async fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> 
         return Err(anyhow!("File not found: {}", resolved_path.display()));
     }
 
-<<<<<<< HEAD
-    fs::read_to_string(&resolved_path)
+    let content = fs::read_to_string(&resolved_path)
         .await
-        .map_err(|e| anyhow!("Failed to read file: {}", e))
-=======
-    let content =
-        fs::read_to_string(&resolved_path).map_err(|e| anyhow!("Failed to read file: {}", e))?;
+        .map_err(|e| anyhow!("Failed to read file: {}", e))?;
 
     // ── JSON integrity check (two-stage: strict JSON → JSONC → error) ────────
     //
@@ -241,7 +233,6 @@ fn strip_jsonc_trailing_commas(s: &str) -> String {
     // newlines) by a closing `}` or `]`.
     let re = Regex::new(r",(\s*[}\]])").expect("static regex is valid");
     re.replace_all(s, "$1").into_owned()
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 }
 
 // ─────────────────────────────────────────────────────────────────────────────

@@ -29,11 +29,7 @@ reqwest = { version = "0.13.3", features = [
     "http2",
 ], default-features = false }
 # Async runtime
-<<<<<<< HEAD
 tokio = { version = "1.52.3", features = ["full"] }
-=======
-tokio = { version = "1.52.1", features = ["full"] }
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 # JSON handling
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -100,11 +96,7 @@ serde_yaml = "0.9.34"
 whoami = "2.1.2"
 
 [target.'cfg(windows)'.dependencies]
-<<<<<<< HEAD
 winreg = "0.56.0"
-=======
-winreg = "0.56"
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 
 [dev-dependencies]
 tempfile = "3.27.0"

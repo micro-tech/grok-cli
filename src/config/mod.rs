@@ -14,7 +14,6 @@ use tracing::{debug, info, warn};
 
 use crate::mcp::config::McpConfig;
 
-<<<<<<< HEAD
 /// Reasoning / thinking mode for models that support extended chain-of-thought.
 ///
 /// Sent as the `reasoning_effort` field in the API request.
@@ -56,28 +55,6 @@ impl ThinkingMode {
             "high" | "on" => Some(ThinkingMode::High),
             _ => None,
         }
-=======
-/// Operational mode controlling how Grok responds and uses tools.
-///
-/// The active mode influences the system prompt, tool selection, and verbosity
-/// of responses.  It can be set per-session or as a global default in
-/// `config.toml`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-pub enum OperationalMode {
-    /// Research mode — expands answers with citations and depth.
-    Research,
-    /// Coder mode — concise, tool-focused responses (default).
-    Coder,
-    /// Shell mode — terse, command-oriented output.
-    Shell,
-    /// Creative mode — open-ended and exploratory.
-    Creative,
-}
-
-impl Default for OperationalMode {
-    fn default() -> Self {
-        OperationalMode::Coder
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
     }
 }
 
@@ -684,28 +661,12 @@ pub struct ShellConfig {
     pub show_color: bool,
     #[serde(default)]
     pub inactivity_timeout: u32,
-<<<<<<< HEAD
     /// Hard timeout (seconds) applied to every `run_shell_command` call.
     /// 300 s is the default — enough for `cargo build` and `git` operations
     /// on slow connections.  Set to 0 to use the built-in default.
     /// Env override: `GROK_SHELL_TIMEOUT`
     #[serde(default = "default_shell_command_timeout")]
     pub command_timeout_secs: u64,
-=======
-    /// Maximum number of seconds a shell command may run before it is killed.
-    ///
-    /// Increase this for long-running build or install commands.
-    /// The `GROK_SHELL_TIMEOUT_SECS` environment variable overrides this value
-    /// at runtime (useful for one-off overrides without editing the file).
-    ///
-    /// Default: 300 s (5 minutes).
-    #[serde(default = "default_shell_command_timeout")]
-    pub command_timeout_secs: u64,
-}
-
-fn default_shell_command_timeout() -> u64 {
-    300
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

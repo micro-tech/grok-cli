@@ -4358,10 +4358,46 @@
       "details": "These are created unconditionally even though many ACP sessions may never need them.",
       "id": 126,
       "priority": "low",
-      "status": "done",
+      "status": "in_progress",
       "subtasks": [],
       "testStrategy": "Verify no behavior change for normal Zed usage.",
       "title": "Make SecurityManager and HookManager initialization lazy"
-    }
+    },
+    {
+      "dependencies": [26],
+      "description": "Advance sub-agent and multi-agent capabilities: integrate spawn_agent into the ReasoningEngine + TaskGraph, add AgentManager for lifecycle tracking, improve inter-agent messaging, and expose agent orchestration primitives.",
+      "details": "Build on existing agent_tools.rs (spawn_agent, send_message, team_*) to create first-class multi-agent support. Wire sub-agent delegation into the engine planner, add persistent agent registry, and improve communication beyond file-based JSONL.",
+      "id": 127,
+      "priority": "high",
+      "status": "pending",
+      "subtasks": [
+        {
+          "dependencies": [],
+          "id": 127.1,
+          "status": "pending",
+          "title": "Create AgentManager for tracking active sub-agents and their state"
+        },
+        {
+          "dependencies": [127.1],
+          "id": 127.2,
+          "status": "pending",
+          "title": "Wire spawn_agent into ReasoningEngine planner as a PlanStep type"
+        },
+        {
+          "dependencies": [127.2],
+          "id": 127.3,
+          "status": "pending",
+          "title": "Improve inter-agent communication (message bus over file-based JSONL)"
+        },
+        {
+          "dependencies": [],
+          "id": 127.4,
+          "status": "pending",
+          "title": "Add agent orchestration tools (fork, join, delegate_plan_step)"
+        }
+      ],
+      "testStrategy": "Integration tests for spawning + merging results. Verify delegation appears in RPL traces.",
+      "title": "Advance Multi-Agent / Sub-Agent Orchestration"
+    },
   ]
 }

@@ -27,7 +27,7 @@
 use tracing::{debug, warn};
 
 use crate::rpl::{
-    logging::{ReasoningLogLevel, log_trace},
+    logging::{log_trace, ReasoningLogLevel},
     schema::{ReasoningPhase, ReasoningTrace, ToolEvaluation},
     validation::validate,
 };
@@ -87,11 +87,7 @@ impl Default for RplConfig {
 /// produces an independent [`ReasoningTrace`] owned by the caller.
 ///
 /// [`on_pre_evaluate`]: RplLayer::on_pre_evaluate
-<<<<<<< HEAD
 #[derive(Debug, Clone)]
-=======
-#[derive(Debug)]
->>>>>>> db2d87496180036f3bda9bedaa4199b5dcfcd07a
 pub struct RplLayer {
     config: RplConfig,
 }
