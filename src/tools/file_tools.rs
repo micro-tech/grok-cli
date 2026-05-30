@@ -753,15 +753,15 @@ mod tests {
     // ── Additional diagnostic tests ───────────────────────────────────────────
 
     /// Reading a valid JSON file must return the raw content unchanged.
-    #[test]
-    fn read_json_file_valid_json_returns_content() {
+    #[tokio::test]
+    async fn read_json_file_valid_json_returns_content() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("data.json");
         let json_str = r#"{"tasks":[{"id":1,"title":"Test task","status":"pending"}]}"#;
         std::fs::write(&path, json_str).unwrap();
 
-        let result = read_file(path.to_str().unwrap(), &security).unwrap();
+        let result = read_file(path.to_str().unwrap(), &security).await.unwrap();
         assert_eq!(result, json_str, "valid JSON must be returned verbatim");
 
         // Double-check it really is parseable.
@@ -773,15 +773,15 @@ mod tests {
     /// Reading a malformed JSON file must return Ok with a READ_FILE_WARNING
     /// prefix — NOT an Err — so the LLM can see the raw content and the
     /// parse error rather than fabricating an answer.
-    #[test]
-    fn read_json_file_malformed_json_returns_warning() {
+    #[tokio::test]
+    async fn read_json_file_malformed_json_returns_warning() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("broken.json");
         // Truly broken — not just trailing commas — so JSONC fallback won't save it.
         std::fs::write(&path, r#"{"key": "value", BROKEN"#).unwrap();
 
-        let result = read_file(path.to_str().unwrap(), &security).unwrap();
+        let result = read_file(path.to_str().unwrap(), &security).await.unwrap();
         assert!(
             result.starts_with("READ_FILE_WARNING:"),
             "malformed JSON must produce a READ_FILE_WARNING prefix, got: {result}"
@@ -799,8 +799,8 @@ mod tests {
     /// A JSONC file (trailing commas only — common in Zed / VS Code configs)
     /// must be returned verbatim WITHOUT a READ_FILE_WARNING.  The two-stage
     /// validator should detect the JSONC pattern and pass through cleanly.
-    #[test]
-    fn read_json_file_jsonc_trailing_commas_no_warning() {
+    #[tokio::test]
+    async fn read_json_file_jsonc_trailing_commas_no_warning() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("config.json");
@@ -808,7 +808,7 @@ mod tests {
         let jsonc = "{\"tasks\": [{\"id\": 1, \"status\": \"pending\",}],}";
         std::fs::write(&path, jsonc).unwrap();
 
-        let result = read_file(path.to_str().unwrap(), &security).unwrap();
+        let result = read_file(path.to_str().unwrap(), &security).await.unwrap();
         assert!(
             !result.starts_with("READ_FILE_WARNING:"),
             "JSONC with trailing commas must NOT trigger a warning, got: {result}"
@@ -817,21 +817,21 @@ mod tests {
     }
 
     /// An empty file must be returned as an empty string — never an error.
-    #[test]
-    fn read_file_empty_file_returns_empty_string() {
+    #[tokio::test]
+    async fn read_file_empty_file_returns_empty_string() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("empty.txt");
         std::fs::write(&path, "").unwrap();
 
-        let result = read_file(path.to_str().unwrap(), &security).unwrap();
+        let result = read_file(path.to_str().unwrap(), &security).await.unwrap();
         assert_eq!(result, "", "empty file must return empty string");
     }
 
     /// Attempting to read a file outside the trusted directory must return
     /// an Err whose message mentions access denial — never silently succeed.
-    #[test]
-    fn read_file_denied_for_untrusted_path() {
+    #[tokio::test]
+    async fn read_file_denied_for_untrusted_path() {
         let trusted_dir = TempDir::new().unwrap();
         let other_dir = TempDir::new().unwrap();
 
@@ -841,7 +841,7 @@ mod tests {
         let secret = other_dir.path().join("secret.txt");
         std::fs::write(&secret, "top secret").unwrap();
 
-        let result = read_file(secret.to_str().unwrap(), &security);
+        let result = read_file(secret.to_str().unwrap(), &security).await;
         assert!(result.is_err(), "untrusted path must return Err");
 
         let msg = result.unwrap_err().to_string().to_lowercase();

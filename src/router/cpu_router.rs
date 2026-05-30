@@ -406,7 +406,7 @@ mod tests {
         let ctx = crate::tools::ToolContext::default_for_cwd();
 
         let (resp, trace) = router
-            .route_with_tools_traced(req, &ctx, 10)
+            .route_with_tools_traced(req, &ctx, 10, None)
             .await
             .expect("should succeed");
 
@@ -428,7 +428,7 @@ mod tests {
         let ctx = crate::tools::ToolContext::default_for_cwd();
 
         let (resp, trace) = router
-            .route_with_tools_traced(req, &ctx, 10)
+            .route_with_tools_traced(req, &ctx, 10, None)
             .await
             .expect("should succeed");
 

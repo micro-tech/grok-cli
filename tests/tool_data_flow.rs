@@ -621,8 +621,8 @@ fn task_create_then_task_get_round_trip() {
     let sec = make_security(&dir);
     fs::create_dir_all(dir.path().join(".zed")).unwrap();
 
-    task_create("Round-trip task", "desc", "high", vec![], &sec).unwrap();
-    task_create("Second task", "desc", "low", vec![], &sec).unwrap();
+    task_create("Round-trip task", "desc", "high", vec![], "", "", vec![], &sec).unwrap();
+    task_create("Second task", "desc", "low", vec![], "", "", vec![], &sec).unwrap();
 
     // task_get should find the first task by its auto-assigned id=1
     let json_str = task_get(1.0, &sec).unwrap();
