@@ -341,7 +341,8 @@ impl GrokAcpAgent {
             tools: crate::tools::registry::get_available_tool_definitions()
                 .iter()
                 .filter_map(|t| {
-                    let func = t.get("function")?;
+                    let v: serde_json::Value = serde_json::from_str(t)?;
+                    let func = v.get("function").ok_or("missing function field")?;
                     Some(ToolDefinition {
                         name: func["name"].as_str()?.to_string(),
                         description: func["description"].as_str()?.to_string(),

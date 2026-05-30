@@ -16,22 +16,24 @@ pub async fn handle_tools_command(command: crate::ToolsAction) -> Result<()> {
             );
             println!();
 
-            for tool in crate::tools::registry::get_tool_definitions() {
-                if let Some(name) = tool
-                    .get("function")
-                    .and_then(|f| f.get("name"))
-                    .and_then(|n| n.as_str())
-                    && let Some(desc) = tool
+            for tool_json in crate::tools::registry::get_tool_definitions() {
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(tool_json) {
+                    if let Some(name) = v
                         .get("function")
-                        .and_then(|f| f.get("description"))
-                        .and_then(|d| d.as_str())
-                {
-                    println!(
-                        "  {} {}  [{}]",
-                        "•".bright_white(),
-                        name.bright_yellow().bold(),
-                        desc.dimmed()
-                    );
+                        .and_then(|f| f.get("name"))
+                        .and_then(|n| n.as_str())
+                        && let Some(desc) = v
+                            .get("function")
+                            .and_then(|f| f.get("description"))
+                            .and_then(|d| d.as_str())
+                    {
+                        println!(
+                            "  {} {}  [{}]",
+                            "•".bright_white(),
+                            name.bright_yellow().bold(),
+                            desc.dimmed()
+                        );
+                    }
                 }
             }
 

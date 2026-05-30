@@ -546,10 +546,13 @@ pub fn format_tools_text() -> String {
     // Collect rows with their section label so we can sort by section
     let mut rows: Vec<(&'static str, String, String)> = tool_defs
         .iter()
-        .filter_map(|t| {
-            let func = t.get("function")?;
-            let name = func["name"].as_str()?;
-            let desc = func["description"].as_str().unwrap_or("");
+        .filter_map(|v| {
+            let func = v.get("function")?;
+            let name = func.get("name")?.as_str()?;
+            let desc = func
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
             Some((section_label(name), name.to_string(), desc.to_string()))
         })
         .collect();

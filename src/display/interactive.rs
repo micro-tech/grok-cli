@@ -1262,7 +1262,7 @@ async fn send_to_grok(
             session.temperature,
             session.max_tokens,
             &session.model,
-            Some(tools),
+            Some(tools.iter().map(|t| serde_json::json!(t)).collect()),
             None, // reasoning_effort: not exposed in interactive mode yet
         )
         .await

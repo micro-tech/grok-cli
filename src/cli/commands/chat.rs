@@ -107,7 +107,7 @@ async fn handle_single_chat(
             temperature,
             max_tokens,
             model,
-            Some(tools),
+            Some(tools.iter().map(|t| serde_json::json!(t)).collect()),
             thinking_mode.as_api_str(),
         )
         .await;
@@ -320,10 +320,11 @@ async fn handle_interactive_chat(
                 let spinner = create_spinner("Grok is thinking...");
 
                 // Get response with timeout and retries (including tool definitions)
-                let active_tools = if enable_bayesian_router {
-                    router.get_contextual_tools(tools.clone())
+                let active_tools: Vec<serde_json::Value> = if enable_bayesian_router {
+                    router
+                        .get_contextual_tools(tools.iter().map(|t| serde_json::json!(t)).collect())
                 } else {
-                    tools.clone()
+                    tools.iter().map(|t| serde_json::json!(t)).collect()
                 };
 
                 let response_with_finish = client
@@ -480,17 +481,24 @@ fn handle_interactive_command(
                             println!("✅ Switched to model `{}` (CLI session).", name);
                         }
                         slash_commands::BuiltinResult::ShowContext => {
-                            println!("📋 Context: {} messages in history.", conversation_history.len());
+                            println!(
+                                "📋 Context: {} messages in history.",
+                                conversation_history.len()
+                            );
                         }
                         slash_commands::BuiltinResult::ShowBayes => {
                             // In CLI we just show a note; full viz lives in the Bayesian router
-                            println!("🧠 Bayesian state: use the router visualizer or `/bayes show` in ACP.");
+                            println!(
+                                "🧠 Bayesian state: use the router visualizer or `/bayes show` in ACP."
+                            );
                         }
                         slash_commands::BuiltinResult::ResetBayes => {
                             println!("🔄 Bayesian priors reset (CLI session).");
                         }
                         slash_commands::BuiltinResult::ExplainBayes => {
-                            println!("🧠 Bayesian explanation: see router logs or use ACP `/bayes explain`.");
+                            println!(
+                                "🧠 Bayesian explanation: see router logs or use ACP `/bayes explain`."
+                            );
                         }
                         slash_commands::BuiltinResult::SetGoal(text) => {
                             println!("🎯 Goal set: {}", text);

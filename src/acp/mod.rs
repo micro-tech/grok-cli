@@ -301,16 +301,13 @@ impl GrokAcpAgent {
             }
         }
 
-        self.router
-            .get()
-            .cloned()
-            .ok_or_else(|| {
-                anyhow!(
-                    "API key not configured. \
+        self.router.get().cloned().ok_or_else(|| {
+            anyhow!(
+                "API key not configured. \
                      Set the GROK_API_KEY environment variable and restart the agent, \
                      or use 'grok config set api_key <key>'."
-                )
-            })
+            )
+        })
     }
 
     /// Return a reference to the SecurityManager, lazily initializing it
@@ -366,12 +363,16 @@ impl GrokAcpAgent {
             // automatically reflects any newly added tools without requiring
             // manual updates here.
             tools: crate::tools::registry::get_available_tool_definitions()
-                .iter()
-                .filter_map(|t| {
-                    let func = t.get("function")?;
+                .into_iter()
+                .filter_map(|v| {
+                    let func = v.get("function")?;
                     Some(ToolDefinition {
-                        name: func["name"].as_str()?.to_string(),
-                        description: func["description"].as_str()?.to_string(),
+                        name: func.get("name")?.as_str()?.to_string(),
+                        description: func
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         parameters: func.get("parameters").cloned().unwrap_or(json!({})),
                     })
                 })
@@ -1209,124 +1210,25 @@ impl GrokAcpAgent {
                 }
                 // --- END PERMISSION GATE ---
 
-                // Acquire the policy once so we don't clone it for every arm.
+                // Route ALL tool calls through the unified registry + arbitration layer.
+                // This ensures every tool defined in get_tool_definitions() is reachable
+                // from the ACP path without maintaining a duplicate match block here.
                 let policy = self.get_security().get_policy();
+                let tool_ctx = tools::ToolContext::new(policy);
 
-                let result = match function_name.as_str() {
-                    "read_file" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::read_file(path, &policy).await
-                    }
-                    "write_file" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
-                        tools::write_file(path, content, &policy).await
-                    }
-                    "list_directory" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_directory(path, &policy)
-                    }
-                    "glob_search" => {
-                        let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                        tools::glob_search(pattern, &policy)
-                    }
-                    "search_file_content" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                        tools::search_file_content(path, pattern, &policy)
-                    }
-                    "run_shell_command" => {
-                        let command = args["command"].as_str().ok_or(anyhow!("Missing command"))?;
-                        // Honour project config; fall back to built-in 300 s default.
-                        let shell_timeout = self.config.tools.shell.command_timeout_secs;
-                        tools::run_shell_command(command, &policy, shell_timeout).await
-                    }
-                    "replace" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let old_string = args["old_string"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing old_string"))?;
-                        let new_string = args["new_string"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing new_string"))?;
-                        let expected_replacements =
-                            args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(path, old_string, new_string, expected_replacements, &policy)
-                            .await
-                    }
-                    "save_memory" => {
-                        let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
-                        tools::save_memory(fact)
-                    }
-                    "web_search" => {
-                        let query = args["query"].as_str().ok_or(anyhow!("Missing query"))?;
-                        tools::web_search(query).await
-                    }
-                    "web_fetch" => {
-                        let url = args["url"].as_str().ok_or(anyhow!("Missing url"))?;
-                        tools::web_fetch(url).await
-                    }
-                    "read_multiple_files" => {
-                        let paths_value =
-                            args["paths"].as_array().ok_or(anyhow!("Missing paths"))?;
-                        let paths: Result<Vec<String>> = paths_value
-                            .iter()
-                            .map(|v| {
-                                v.as_str()
-                                    .ok_or(anyhow!("Invalid path"))
-                                    .map(|s| s.to_string())
-                            })
-                            .collect();
-                        tools::read_multiple_files(paths?, &policy).await
-                    }
-                    "list_code_definitions" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_code_definitions(path, &policy).await
-                    }
-                    "task_create" => {
-                        let title = args["title"].as_str().ok_or(anyhow!("Missing title"))?;
-                        let description = args["description"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing description"))?;
-                        let priority = args["priority"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing priority"))?;
-                        let dependencies_value = args["dependencies"]
-                            .as_array()
-                            .ok_or(anyhow!("Missing dependencies"))?;
-                        let dependencies: Result<Vec<f64>> = dependencies_value
-                            .iter()
-                            .map(|v| v.as_f64().ok_or(anyhow!("Invalid dependency")))
-                            .collect();
-                        let details = args["details"].as_str().ok_or(anyhow!("Missing details"))?;
-                        let test_strategy = args["testStrategy"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing testStrategy"))?;
-                        let subtasks_value = args["subtasks"]
-                            .as_array()
-                            .ok_or(anyhow!("Missing subtasks"))?;
-                        let subtasks: Vec<Value> = subtasks_value.clone();
-                        tools::task_create(
-                            title,
-                            description,
-                            priority,
-                            dependencies?,
-                            details,
-                            test_strategy,
-                            subtasks,
-                            &policy,
-                        )
-                    }
-                    "task_update" => {
-                        let id = args["id"].as_f64().ok_or(anyhow!("Missing id"))?;
-                        let status = args["status"].as_str();
-                        let title = args["title"].as_str();
-                        let priority = args["priority"].as_str();
-                        let details = args["details"].as_str();
-                        tools::task_update(id, status, title, priority, details, &policy)
-                    }
-                    _ => Err(anyhow!("Unknown tool: {}", function_name)),
-                };
+                // run_shell_command honours the per-project shell timeout; pass it
+                // via the args so the registry shim can pick it up.
+                let shell_timeout = self.config.tools.shell.command_timeout_secs;
+                let mut augmented_args = args.clone();
+                if function_name == "run_shell_command"
+                    && augmented_args.get("timeout_secs").is_none()
+                    && shell_timeout > 0
+                {
+                    augmented_args["timeout_secs"] =
+                        serde_json::Value::Number(shell_timeout.into());
+                }
+
+                let result = tools::execute_tool(function_name, &augmented_args, &tool_ctx).await;
 
                 let (content, status) = match result {
                     Ok(s) => {
