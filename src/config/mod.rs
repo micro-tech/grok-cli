@@ -838,6 +838,18 @@ pub struct BayesianConfig {
     #[serde(default = "default_profile_learning_rate")]
     pub profile_learning_rate: f32,
 
+    /// Decay factor applied to current beliefs during the stabilization step.
+    /// Higher values (closer to 1.0) = slower decay toward priors.
+    /// Default: `0.95` (5% pull toward prior each update).
+    #[serde(default = "default_belief_decay_rate")]
+    pub belief_decay_rate: f32,
+
+    /// Strength of the pull toward the long-term prior during decay.
+    /// `0.05` means beliefs are gently regressed 5% toward their base priors.
+    /// Default: `0.05`.
+    #[serde(default = "default_prior_pull_rate")]
+    pub prior_pull_rate: f32,
+
     /// Starting prior weights used when no saved profile exists on disk.
     #[serde(default)]
     pub priors: BayesianPriorsConfig,
@@ -858,6 +870,12 @@ fn default_intent_likelihood_weight() -> f32 {
 fn default_profile_learning_rate() -> f32 {
     0.1
 }
+fn default_belief_decay_rate() -> f32 {
+    0.95
+}
+fn default_prior_pull_rate() -> f32 {
+    0.05
+}
 
 impl Default for BayesianConfig {
     fn default() -> Self {
@@ -869,6 +887,8 @@ impl Default for BayesianConfig {
             vagueness_threshold: default_vagueness_threshold(),
             intent_likelihood_weight: default_intent_likelihood_weight(),
             profile_learning_rate: default_profile_learning_rate(),
+            belief_decay_rate: default_belief_decay_rate(),
+            prior_pull_rate: default_prior_pull_rate(),
             priors: BayesianPriorsConfig::default(),
         }
     }

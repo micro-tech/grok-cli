@@ -29,6 +29,8 @@ const DEFAULT_UNCERTAINTY_THRESHOLD: f32 = 0.6;
 const DEFAULT_VAGUENESS_THRESHOLD: f32 = 0.6;
 
 const DEFAULT_PROFILE_LEARNING_RATE: f32 = 0.1;
+const DEFAULT_BELIEF_DECAY_RATE: f32 = 0.95;
+const DEFAULT_PRIOR_PULL_RATE: f32 = 0.05;
 
 /// The core Bayesian inference engine.
 #[derive(Debug, Clone)]
@@ -54,6 +56,12 @@ pub struct BayesianEngine {
     /// Fractional boost applied to a prior when the corresponding tool is used
     /// successfully.  `0.1` = 10 % boost per call.
     profile_learning_rate: f32,
+
+    /// Decay factor for belief stabilization (0.0 – 1.0).
+    belief_decay_rate: f32,
+
+    /// Pull strength toward long-term priors during decay.
+    prior_pull_rate: f32,
 }
 
 impl BayesianEngine {
@@ -73,13 +81,11 @@ impl BayesianEngine {
             DEFAULT_VAGUENESS_THRESHOLD,
             DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
             DEFAULT_PROFILE_LEARNING_RATE,
+            DEFAULT_BELIEF_DECAY_RATE,
+            DEFAULT_PRIOR_PULL_RATE,
         )
     }
 
-    /// Create a new engine using the compiled-in default priors.
-    ///
-    /// Unlike [`new`], this constructor never reads from the on-disk saved profile,
-    /// making it suitable for unit tests that require deterministic baseline behaviour.
     pub fn new_with_default_priors() -> Self {
         Self::from_priors(
             default_priors(),
@@ -88,14 +94,11 @@ impl BayesianEngine {
             DEFAULT_VAGUENESS_THRESHOLD,
             DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
             DEFAULT_PROFILE_LEARNING_RATE,
+            DEFAULT_BELIEF_DECAY_RATE,
+            DEFAULT_PRIOR_PULL_RATE,
         )
     }
 
-    /// Create a new engine using values from `[bayesian]` config.
-    ///
-    /// The prior distribution is loaded from the saved profile on disk first;
-    /// the config priors are only used as the fallback when no saved profile
-    /// exists yet.  This preserves learned behaviour across config changes.
     pub fn new_with_config(config: &crate::config::BayesianConfig) -> Self {
         let priors = crate::bayes::profile::load_profile()
             .unwrap_or_else(|| priors_from_config(&config.priors));
@@ -106,6 +109,8 @@ impl BayesianEngine {
             config.vagueness_threshold,
             config.intent_likelihood_weight,
             config.profile_learning_rate,
+            config.belief_decay_rate,
+            config.prior_pull_rate,
         )
     }
 
@@ -116,15 +121,13 @@ impl BayesianEngine {
         vagueness_threshold: f32,
         intent_likelihood_weight: f32,
         profile_learning_rate: f32,
+        belief_decay_rate: f32,
+        prior_pull_rate: f32,
     ) -> Self {
         let mut graph = BeliefGraph::new();
         for (k, v) in &priors {
             graph.set(k, *v);
         }
-        // Normalise at construction so that `probability()` always returns
-        // a proper probability (sums to 1.0) even before the first update.
-        // The raw `priors` HashMap is intentionally left un-normalised here;
-        // `bayes_update` + `sync_graph` will normalise both on every update.
         graph.normalize();
         Self {
             priors,
@@ -134,6 +137,8 @@ impl BayesianEngine {
             vagueness_threshold,
             intent_likelihood_weight,
             profile_learning_rate,
+            belief_decay_rate,
+            prior_pull_rate,
         }
     }
 
@@ -185,21 +190,36 @@ impl BayesianEngine {
     /// likelihood weight.
     pub fn update_from_text(&mut self, text: &str) {
         let likelihoods = likelihood_from_text(text, self.intent_likelihood_weight);
-        bayes_update(&mut self.priors, &likelihoods);
+        bayes_update(
+            &mut self.priors,
+            &likelihoods,
+            self.belief_decay_rate,
+            self.prior_pull_rate,
+        );
         self.sync_graph();
     }
 
     /// Update beliefs from a model-confidence score in `[0.0, 1.0]`.
     pub fn update_from_model_confidence(&mut self, score: f32) {
         let likelihoods = likelihood_from_model_confidence(score);
-        bayes_update(&mut self.priors, &likelihoods);
+        bayes_update(
+            &mut self.priors,
+            &likelihoods,
+            self.belief_decay_rate,
+            self.prior_pull_rate,
+        );
         self.sync_graph();
     }
 
     /// Update beliefs after a tool call failure.
     pub fn update_from_tool_failure(&mut self) {
         let likelihoods = likelihood_from_tool_failure();
-        bayes_update(&mut self.priors, &likelihoods);
+        bayes_update(
+            &mut self.priors,
+            &likelihoods,
+            self.belief_decay_rate,
+            self.prior_pull_rate,
+        );
         self.sync_graph();
     }
 
@@ -324,11 +344,13 @@ mod tests {
         // Use from_priors() directly so the test doesn't load the on-disk profile.
         let mut engine = BayesianEngine::from_priors(
             default_priors(),
-            0.01, // very low threshold — fires easily
+            0.01,
             DEFAULT_UNCERTAINTY_THRESHOLD,
             DEFAULT_VAGUENESS_THRESHOLD,
             DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
             DEFAULT_PROFILE_LEARNING_RATE,
+            DEFAULT_BELIEF_DECAY_RATE,
+            DEFAULT_PRIOR_PULL_RATE,
         );
         engine.update_from_text("be careful, don't delete");
         assert!(engine.needs_clarification());
@@ -362,7 +384,9 @@ mod tests {
             DEFAULT_UNCERTAINTY_THRESHOLD,
             DEFAULT_VAGUENESS_THRESHOLD,
             DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
-            0.5, // 50 % boost — noticeable in test
+            0.5, // 50 % boost
+            DEFAULT_BELIEF_DECAY_RATE,
+            DEFAULT_PRIOR_PULL_RATE,
         );
         let before = engine.probability("intent_edit");
         engine.update_profile("write_file");
