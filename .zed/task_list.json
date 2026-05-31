@@ -865,7 +865,7 @@
       "details": "Users currently have no visibility into how close they are to the context limit. Emit a structured usage update (current_tokens, max_tokens, message_count) after each model response so Zed can display a progress bar or status line.",
       "id": 130,
       "priority": "medium",
-      "status": "pending",
+      "status": "done",
       "subtasks": [
         {
           "dependencies": [],
