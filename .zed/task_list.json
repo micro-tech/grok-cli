@@ -298,7 +298,7 @@
         {
           "dependencies": [111.3],
           "id": 111.6,
-          "status": "deferred",
+          "status": "in_progress",
           "title": "Phase C-2 — Elicitation: replace PermissionBridge with official elicitation RPC",
         },
         {
@@ -310,7 +310,7 @@
         {
           "dependencies": [111.3],
           "id": 111.8,
-          "status": "deferred",
+          "status": "in_progress",
           "title": "Phase C-4 — MCP-over-ACP: expose LLM tools as MCP server endpoint",
         },
       ],
@@ -810,13 +810,13 @@
         {
           "dependencies": [128.2],
           "id": 128.3,
-          "status": "deferred",
+          "status": "done",
           "title": "Wire emission points in spawn_agent, fork_agent, join_agents tools (blocked on Task 26)",
         },
         {
           "dependencies": [128.3],
           "id": 128.4,
-          "status": "deferred",
+          "status": "done",
           "title": "Update handle_chat_completion to forward events via event_sender (blocked on Task 26)",
         },
       ],

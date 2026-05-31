@@ -47,6 +47,14 @@ pub async fn spawn_agent(task: &str, context: &str, max_tokens: u32) -> Result<S
     let manager = get_agent_manager();
     let agent_id = manager.spawn(task, None, Some("grok-3-mini".to_string()), None).await;
 
+    // Task 128.3 — emit activity
+    crate::agent::activity::emit_agent_activity(
+        &agent_id,
+        None,
+        crate::acp::protocol::AgentActivityStatus::Spawned,
+        format!("Spawned for task: {}", task),
+    );
+
     let api_key = std::env::var("GROK_API_KEY")
         .or_else(|_| std::env::var("XAI_API_KEY"))
         .map_err(|_| {
@@ -357,6 +365,15 @@ pub async fn get_agent_status(agent_id: &str) -> Result<String> {
 pub async fn cancel_agent(agent_id: &str) -> Result<String> {
     let manager = get_agent_manager();
     manager.cancel(agent_id).await;
+
+    // Task 128.3
+    crate::agent::activity::emit_agent_activity(
+        agent_id,
+        None,
+        crate::acp::protocol::AgentActivityStatus::Cancelled,
+        "Agent cancelled".to_string(),
+    );
+
     Ok(format!("Agent {} cancelled (if it was running).", agent_id))
 }
 
@@ -394,7 +411,15 @@ pub async fn fork_agent(tasks: Vec<String>) -> Result<String> {
 
     for task in tasks {
         let id = manager.spawn(&task, None, None, None).await;
-        ids.push(id);
+        ids.push(id.clone());
+
+        // Task 128.3
+        crate::agent::activity::emit_agent_activity(
+            &id,
+            None,
+            crate::acp::protocol::AgentActivityStatus::Forked,
+            format!("Forked task: {}", task),
+        );
     }
 
     Ok(format!("Forked {} sub-agents: {:?}", ids.len(), ids))
@@ -411,6 +436,14 @@ pub async fn join_agents(agent_ids: Vec<String>) -> Result<String> {
                 results.push(res);
             }
         }
+
+        // Task 128.3 — treat join as a lifecycle event
+        crate::agent::activity::emit_agent_activity(
+            &id,
+            None,
+            crate::acp::protocol::AgentActivityStatus::Joined,
+            "Joined results".to_string(),
+        );
     }
 
     if results.is_empty() {

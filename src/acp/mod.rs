@@ -471,6 +471,9 @@ impl GrokAcpAgent {
         // This is the critical fix: ACP clients (Zed, etc.) only show /commands
         // if the agent sends an `available_commands_update` notification.
         if let Some(sender) = event_sender {
+            // Task 128 — register activity sender so spawn/fork/join emit updates
+            crate::agent::activity::set_activity_sender(sender.clone());
+
             let commands = crate::acp::slash_commands::get_available_commands();
             let update = crate::acp::protocol::SessionUpdate::AvailableCommandsUpdate(
                 crate::acp::protocol::AvailableCommandsUpdate::new(commands.clone()),
