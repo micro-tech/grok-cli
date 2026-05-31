@@ -1042,10 +1042,18 @@ impl GrokAcpAgent {
             info!("📋 Finish reason: {:?}", finish_reason);
 
             // If the model produced a reasoning/thinking trace, log it and
-            // prepend it as a collapsible block before the main response.
+            // emit a thinking update to the ACP client (Task 129).
             if let Some(ref tc) = thinking_content {
                 let think_tokens = tc.len() / 4;
                 debug!("🧠 Thinking trace received: ~{} tokens", think_tokens);
+
+                if let Some(sender) = &event_sender {
+                    let update = crate::acp::protocol::ThinkingUpdate {
+                        content: tc.clone(),
+                        is_final: false,
+                    };
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
+                }
             }
 
             // Add assistant response to history
@@ -1074,6 +1082,15 @@ impl GrokAcpAgent {
                 );
                 // Prepend thinking block if present
                 let final_response = if let Some(tc) = thinking_content {
+                    // Emit final thinking update
+                    if let Some(sender) = &event_sender {
+                        let update = crate::acp::protocol::ThinkingUpdate {
+                            content: tc.clone(),
+                            is_final: true,
+                        };
+                        let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
+                    }
+
                     format!(
                         "<details><summary>\u{1f9e0} Thinking\u{2026}</summary>\n\n{}\n\n</details>\n\n{}",
                         tc, response_text
@@ -1081,6 +1098,23 @@ impl GrokAcpAgent {
                 } else {
                     response_text
                 };
+                // Emit context usage update (Task 130) — compute BEFORE moving messages
+                let context_usage = if self.config.acp.show_context_usage {
+                    event_sender.as_ref().map(|_sender| {
+                        crate::acp::protocol::ContextUsageUpdate::new(
+                            estimate_tokens(&messages),
+                            model_context_budget(
+                                &model,
+                                self.config.acp.max_context_tokens,
+                                self.config.acp.grok4_max_context_tokens,
+                            ),
+                            messages.len(),
+                        )
+                    })
+                } else {
+                    None
+                };
+
                 // ── Phase 3: Final sync (brief write lock) ─────────────────────────────
                 {
                     let mut sessions = self.sessions.write().await;
@@ -1093,11 +1127,33 @@ impl GrokAcpAgent {
                         s.last_activity = std::time::Instant::now();
                     }
                 }
+
+                if let (Some(sender), Some(usage)) = (&event_sender, context_usage) {
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                }
+
                 return Ok(final_response);
             }
 
             // We have tool calls to process
             let Some(tool_calls) = response_msg.tool_calls.as_ref() else {
+                // Emit context usage before moving messages
+                let context_usage = if self.config.acp.show_context_usage {
+                    event_sender.as_ref().map(|_sender| {
+                        crate::acp::protocol::ContextUsageUpdate::new(
+                            estimate_tokens(&messages),
+                            model_context_budget(
+                                &model,
+                                self.config.acp.max_context_tokens,
+                                self.config.acp.grok4_max_context_tokens,
+                            ),
+                            messages.len(),
+                        )
+                    })
+                } else {
+                    None
+                };
+
                 // ── Phase 3: Final sync (brief write lock) ─────────────────────────────
                 {
                     let mut sessions = self.sessions.write().await;
@@ -1110,6 +1166,11 @@ impl GrokAcpAgent {
                         s.last_activity = std::time::Instant::now();
                     }
                 }
+
+                if let (Some(sender), Some(usage)) = (&event_sender, context_usage) {
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                }
+
                 return Ok(response_text);
             };
             info!("🛠️  Processing {} tool calls", tool_calls.len());
@@ -1305,6 +1366,22 @@ impl GrokAcpAgent {
                 }
             }
 
+            // Emit context usage after each iteration (Task 130)
+            if self.config.acp.show_context_usage
+                && let Some(sender) = &event_sender
+            {
+                let usage = crate::acp::protocol::ContextUsageUpdate::new(
+                    estimate_tokens(&messages),
+                    model_context_budget(
+                        &model,
+                        self.config.acp.max_context_tokens,
+                        self.config.acp.grok4_max_context_tokens,
+                    ),
+                    messages.len(),
+                );
+                let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+            }
+
             // Post-tool-loop guard: if the model signalled "stop" alongside
             // tool calls, return now instead of spinning up a redundant extra
             // API iteration (the tools have already completed).
@@ -1313,6 +1390,21 @@ impl GrokAcpAgent {
                     "✅ Model flagged stop after tool execution — returning ({} loops)",
                     loop_count
                 );
+                // Emit context usage
+                if self.config.acp.show_context_usage
+                    && let Some(sender) = &event_sender
+                {
+                    let usage = crate::acp::protocol::ContextUsageUpdate::new(
+                        estimate_tokens(&messages),
+                        model_context_budget(
+                            &model,
+                            self.config.acp.max_context_tokens,
+                            self.config.acp.grok4_max_context_tokens,
+                        ),
+                        messages.len(),
+                    );
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                }
                 // ── Phase 3: Final sync (brief write lock) ──────────────────────────
                 {
                     let mut sessions = self.sessions.write().await;
@@ -1507,6 +1599,26 @@ impl GrokAcpAgent {
 
     pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
         &self.capabilities()
+    }
+
+    /// Emit a sub-agent activity notification to the ACP client (Task 128).
+    pub fn emit_agent_activity(
+        &self,
+        event_sender: Option<&tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>>,
+        agent_id: impl Into<String>,
+        parent_id: Option<String>,
+        status: crate::acp::protocol::AgentActivityStatus,
+        description: impl Into<String>,
+    ) {
+        if let Some(sender) = event_sender {
+            let update = crate::acp::protocol::AgentActivityUpdate {
+                agent_id: agent_id.into(),
+                parent_id,
+                status,
+                description: description.into(),
+            };
+            let _ = sender.send(crate::acp::protocol::SessionUpdate::AgentActivity(update));
+        }
     }
 
     // ── Bayesian engine commands (───────────────────────────────────────────────

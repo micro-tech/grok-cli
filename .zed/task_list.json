@@ -4399,5 +4399,113 @@
       "testStrategy": "Integration tests for spawning + merging results. Verify delegation appears in RPL traces.",
       "title": "Advance Multi-Agent / Sub-Agent Orchestration"
     },
+    {
+      "dependencies": [26],
+      "description": "Send real-time notifications to Zed (and other ACP clients) when sub-agents are spawned, forked, joined, or cancelled so the editor can display agent activity.",
+      "details": "When the reasoning engine uses spawn_agent / fork_agent / join_agents, emit structured session/update events containing agent_id, parent_id, status, and a short description. This gives users visibility into parallel work happening inside the agent.",
+      "id": 128,
+      "priority": "high",
+      "status": "pending",
+      "subtasks": [
+        {
+          "dependencies": [],
+          "id": 128.1,
+          "status": "done",
+          "title": "Define AgentActivityUpdate struct in protocol.rs"
+        },
+        {
+          "dependencies": [128.1],
+          "id": 128.2,
+          "status": "done",
+          "title": "Add helper to emit sub-agent lifecycle events from GrokAcpAgent"
+        },
+        {
+          "dependencies": [128.2],
+          "id": 128.3,
+          "status": "deferred",
+          "title": "Wire emission points in spawn_agent, fork_agent, join_agents tools (blocked on Task 26)"
+        },
+        {
+          "dependencies": [128.3],
+          "id": 128.4,
+          "status": "deferred",
+          "title": "Update handle_chat_completion to forward events via event_sender (blocked on Task 26)"
+        }
+      ],
+      "testStrategy": "Manual test in Zed: spawn a sub-agent and verify a visible status update appears in the ACP panel.",
+      "title": "ACP Sub-Agent Activity Notifications"
+    },
+    {
+      "dependencies": [],
+      "description": "Stream partial thinking / reasoning traces to Zed in real time so users can watch the model think.",
+      "details": "Currently thinking_content is only shown after the turn completes. We should emit live thinking blocks via session/update so Zed can render an expanding 'Thinking…' section while the model is still generating.",
+      "id": 129,
+      "priority": "high",
+      "status": "pending",
+      "subtasks": [
+        {
+          "dependencies": [],
+          "id": 129.1,
+          "status": "done",
+          "title": "Extend protocol.rs with ThinkingUpdate / PartialThinking types"
+        },
+        {
+          "dependencies": [129.1],
+          "id": 129.2,
+          "status": "done",
+          "title": "Modify response handling to emit partial thinking chunks when available"
+        },
+        {
+          "dependencies": [129.2],
+          "id": 129.3,
+          "status": "done",
+          "title": "Hook partial thinking emission into the main chat loop in acp/mod.rs"
+        },
+        {
+          "dependencies": [129.3],
+          "id": 129.4,
+          "status": "pending",
+          "title": "Add config flag (acp.stream_thinking) to enable/disable live thinking"
+        }
+      ],
+      "testStrategy": "In Zed, start a complex task and watch a live collapsible 'Thinking' block appear and grow.",
+      "title": "Real-time Thinking Trace Streaming via ACP"
+    },
+    {
+      "dependencies": [],
+      "description": "After every turn, report context usage (tokens, message count, % of budget) back to the ACP client so Zed can show a context meter.",
+      "details": "Users currently have no visibility into how close they are to the context limit. Emit a structured usage update (current_tokens, max_tokens, message_count) after each model response so Zed can display a progress bar or status line.",
+      "id": 130,
+      "priority": "medium",
+      "status": "pending",
+      "subtasks": [
+        {
+          "dependencies": [],
+          "id": 130.1,
+          "status": "done",
+          "title": "Define ContextUsageUpdate struct in protocol.rs"
+        },
+        {
+          "dependencies": [130.1],
+          "id": 130.2,
+          "status": "done",
+          "title": "Calculate usage stats after every API response in handle_chat_completion"
+        },
+        {
+          "dependencies": [130.2],
+          "id": 130.3,
+          "status": "done",
+          "title": "Emit ContextUsageUpdate via event_sender at the end of each turn"
+        },
+        {
+          "dependencies": [130.3],
+          "id": 130.4,
+          "status": "done",
+          "title": "Add acp.show_context_usage toggle in config"
+        }
+      ],
+      "testStrategy": "Verify Zed displays a context usage indicator that updates after each turn.",
+      "title": "ACP Context / Token Usage Feedback"
+    }
   ]
 }

@@ -636,6 +636,19 @@ pub enum SessionUpdate {
     /// Update on the status or results of a tool call.
     #[serde(rename = "tool_call_update")]
     ToolCallUpdate(ToolCallUpdate),
+
+    // ── New ACP feedback extensions (Tasks 128-130) ─────────────────────────
+    /// Real-time sub-agent lifecycle events (spawn, fork, join, cancel).
+    #[serde(rename = "agent_activity")]
+    AgentActivity(AgentActivityUpdate),
+
+    /// Streaming partial thinking / reasoning trace.
+    #[serde(rename = "thinking_update")]
+    ThinkingUpdate(ThinkingUpdate),
+
+    /// Context / token usage report after each turn.
+    #[serde(rename = "context_usage_update")]
+    ContextUsageUpdate(ContextUsageUpdate),
 }
 
 // `ToolKind` and `ToolCallStatus` are now re-exported from agent_client_protocol::schema
@@ -714,6 +727,65 @@ pub struct ContentChunk {
 impl ContentChunk {
     pub fn new(content: ContentBlock) -> Self {
         Self { content }
+    }
+}
+
+// ── ACP Feedback Extensions (Tasks 128-130) ──────────────────────────────────
+
+/// Sub-agent activity notification (Task 128).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentActivityUpdate {
+    pub agent_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub parent_id: Option<String>,
+    pub status: AgentActivityStatus,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AgentActivityStatus {
+    Spawned,
+    Forked,
+    Joined,
+    Cancelled,
+    Failed,
+}
+
+/// Partial thinking trace (Task 129).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThinkingUpdate {
+    pub content: String,
+    #[serde(default)]
+    pub is_final: bool,
+}
+
+/// Context / token usage report (Task 130).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ContextUsageUpdate {
+    pub current_tokens: usize,
+    pub max_tokens: usize,
+    pub message_count: usize,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub percent_used: Option<f32>,
+}
+
+impl ContextUsageUpdate {
+    pub fn new(current: usize, max: usize, messages: usize) -> Self {
+        let pct = if max > 0 {
+            Some((current as f32 / max as f32) * 100.0)
+        } else {
+            None
+        };
+        Self {
+            current_tokens: current,
+            max_tokens: max,
+            message_count: messages,
+            percent_used: pct,
+        }
     }
 }
 

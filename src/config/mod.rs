@@ -281,6 +281,12 @@ pub struct AcpConfig {
     /// Default: off
     #[serde(default)]
     pub thinking_mode: ThinkingMode,
+
+    /// Whether to emit `context_usage_update` notifications to ACP clients
+    /// (Zed, etc.) after each turn.  Useful for showing a context meter in the editor.
+    /// Default: true
+    #[serde(default = "default_true")]
+    pub show_context_usage: bool,
 }
 
 /// Network configuration optimized for satellite connections
@@ -1120,6 +1126,7 @@ impl Default for AcpConfig {
             compression_threshold: default_compression_threshold(),
             compression_chunk_ratio: default_compression_chunk_ratio(),
             thinking_mode: ThinkingMode::Off,
+            show_context_usage: true,
         }
     }
 }
