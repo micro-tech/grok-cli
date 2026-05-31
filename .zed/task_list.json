@@ -1,3469 +1,7 @@
 {
   "tasks": [
     {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 1,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "",
-      "title": "Legacy Task 1"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 2,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "",
-      "title": "Legacy Task 2"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 3,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "",
-      "title": "Legacy Task 3"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 4,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "",
-      "title": "Legacy Task 4"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 5,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "",
-      "title": "Legacy Task 5"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 6,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "",
-      "title": "Legacy Task 6"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 7,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "",
-      "title": "Legacy Task 7"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 8,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "",
-      "title": "Legacy Task 8"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 9,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "",
-      "title": "Legacy Task 9"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 10,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "",
-      "title": "Legacy Task 10"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 11,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 11.1,
-          "status": "done",
-          "title": "Add tools.enable_hooks to get_all_settings() in settings.rs"
-        },
-        {
-          "dependencies": [
-            11.1
-          ],
-          "id": 11.2,
-          "status": "done",
-          "title": "Add experimental.extensions.* to get_all_settings() in settings.rs"
-        },
-        {
-          "dependencies": [],
-          "id": 11.3,
-          "status": "done",
-          "title": "Add tools.enable_hooks to get_value() and set_value() in config/mod.rs"
-        },
-        {
-          "dependencies": [
-            11.1
-          ],
-          "id": 11.4,
-          "status": "done",
-          "title": "Add experimental.extensions.* to get_value() and set_value() in config/mod.rs"
-        },
-        {
-          "dependencies": [
-            11.1,
-            11.2,
-            11.3,
-            11.4
-          ],
-          "id": 11.5,
-          "status": "done",
-          "title": "Verify /hooks command reflects updated settings"
-        }
-      ],
-      "testStrategy": "",
-      "title": "Add Hooks Settings to /settings and Wire /hooks Command"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 12,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 12.1,
-          "status": "done",
-          "title": "Add PermissionKind enum and PermissionOption struct"
-        },
-        {
-          "dependencies": [
-            12.1
-          ],
-          "id": 12.2,
-          "status": "done",
-          "title": "Add default_permission_options() helper function"
-        },
-        {
-          "dependencies": [
-            12.1
-          ],
-          "id": 12.3,
-          "status": "done",
-          "title": "Add RequestPermissionParams and PermissionOutcome structs"
-        },
-        {
-          "dependencies": [],
-          "id": 12.4,
-          "status": "done",
-          "title": "Extend MethodNames and AGENT_METHOD_NAMES with session_request_permission"
-        },
-        {
-          "dependencies": [
-            12.3
-          ],
-          "id": 12.5,
-          "status": "done",
-          "title": "Update SessionCapabilities to advertise supportsPermissionRequests = true"
-        },
-        {
-          "dependencies": [
-            12.3
-          ],
-          "id": 12.6,
-          "status": "done",
-          "title": "Write round-trip serialization unit test for RequestPermissionParams"
-        }
-      ],
-      "testStrategy": "",
-      "title": "Add ACP Permission Protocol Types to protocol.rs"
-    },
-    {
-      "dependencies": [
-        12
-      ],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 13,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 13.1,
-          "status": "done",
-          "title": "Add always_allow: HashSet<String> field to SessionData"
-        },
-        {
-          "dependencies": [
-            13.1
-          ],
-          "id": 13.2,
-          "status": "done",
-          "title": "Initialise always_allow in all SessionData construction sites"
-        },
-        {
-          "dependencies": [
-            13.1
-          ],
-          "id": 13.3,
-          "status": "done",
-          "title": "Add is_always_allowed() and set_always_allowed() helper methods to GrokAcpAgent"
-        },
-        {
-          "dependencies": [
-            13.3
-          ],
-          "id": 13.4,
-          "status": "done",
-          "title": "Write unit test for the always-allow round-trip"
-        }
-      ],
-      "testStrategy": "",
-      "title": "Extend SessionData with Per-Session Permission Store"
-    },
-    {
-      "dependencies": [
-        12,
-        13
-      ],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 14,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [
-            12.3
-          ],
-          "id": 14.1,
-          "status": "done",
-          "title": "Define PermissionBridge struct and PermissionBridge::new() factory"
-        },
-        {
-          "dependencies": [],
-          "id": 14.2,
-          "status": "done",
-          "title": "Add require_permission and permission_timeout_secs to AcpConfig struct"
-        },
-        {
-          "dependencies": [
-            14.1
-          ],
-          "id": 14.3,
-          "status": "done",
-          "title": "Update handle_chat_completion signature to accept Option<Arc<PermissionBridge>>"
-        },
-        {
-          "dependencies": [
-            14.3,
-            13.3
-          ],
-          "id": 14.4,
-          "status": "done",
-          "title": "Implement pre-tool permission check with always-allow fast path"
-        },
-        {
-          "dependencies": [
-            14.4
-          ],
-          "id": 14.5,
-          "status": "done",
-          "title": "Implement proceed_always / proceed_once / cancel outcome handling"
-        },
-        {
-          "dependencies": [
-            14.4,
-            14.2
-          ],
-          "id": 14.6,
-          "status": "done",
-          "title": "Add configurable timeout guard on permission response await"
-        },
-        {
-          "dependencies": [
-            14.5,
-            14.6
-          ],
-          "id": 14.7,
-          "status": "done",
-          "title": "Write unit tests for all four outcome paths (always, once, cancel, timeout)"
-        }
-      ],
-      "testStrategy": "",
-      "title": "Implement Permission Gate Inside handle_chat_completion"
-    },
-    {
-      "dependencies": [
-        14
-      ],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 15,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [
-            14.1
-          ],
-          "id": 15.1,
-          "status": "done",
-          "title": "Create PermissionBridge and perm_req_rx in handle_session_prompt"
-        },
-        {
-          "dependencies": [
-            15.1
-          ],
-          "id": 15.2,
-          "status": "done",
-          "title": "Add perm_req_rx arm to the select! loop and write permission request to client"
-        },
-        {
-          "dependencies": [
-            15.2
-          ],
-          "id": 15.3,
-          "status": "done",
-          "title": "Handle inbound session/permission_outcome JSON-RPC response in handle_json_rpc"
-        },
-        {
-          "dependencies": [
-            15.2,
-            15.3
-          ],
-          "id": 15.4,
-          "status": "done",
-          "title": "Wire pending_permissions map between select! loop and JSON-RPC handler"
-        },
-        {
-          "dependencies": [
-            15.2
-          ],
-          "id": 15.5,
-          "status": "done",
-          "title": "Add IO-error -> cancel fallback for dropped network / Starlink handover"
-        },
-        {
-          "dependencies": [
-            15.1,
-            15.2,
-            15.3,
-            15.4,
-            15.5
-          ],
-          "id": 15.6,
-          "status": "done",
-          "title": "Manual end-to-end test with Zed as ACP client"
-        }
-      ],
-      "testStrategy": "",
-      "title": "Wire Bidirectional Permission Channel in handle_session_prompt"
-    },
-    {
-      "dependencies": [
-        14,
-        15
-      ],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 16,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [
-            14.7,
-            15.4
-          ],
-          "id": 16.1,
-          "status": "done",
-          "title": "Write integration test: permission_proceed_once"
-        },
-        {
-          "dependencies": [
-            14.7,
-            15.4
-          ],
-          "id": 16.2,
-          "status": "done",
-          "title": "Write integration test: permission_cancel"
-        },
-        {
-          "dependencies": [
-            14.7,
-            15.4
-          ],
-          "id": 16.3,
-          "status": "done",
-          "title": "Write integration test: permission_always_allow_persists"
-        },
-        {
-          "dependencies": [
-            14.6
-          ],
-          "id": 16.4,
-          "status": "done",
-          "title": "Write integration test: permission_timeout"
-        },
-        {
-          "dependencies": [
-            14.2
-          ],
-          "id": 16.5,
-          "status": "done",
-          "title": "Write integration test: permission_gate_disabled (require_permission = false)"
-        },
-        {
-          "dependencies": [
-            14.2
-          ],
-          "id": 16.6,
-          "status": "done",
-          "title": "Update config.example.toml with new acp permission flags"
-        },
-        {
-          "dependencies": [
-            15.6
-          ],
-          "id": 16.7,
-          "status": "done",
-          "title": "Update CHANGELOG.md with Unreleased section for permission UI feature"
-        },
-        {
-          "dependencies": [
-            15.6
-          ],
-          "id": 16.8,
-          "status": "done",
-          "title": "Create Doc/ACP_PERMISSION_FLOW.md with ASCII sequence diagram and JSON examples"
-        }
-      ],
-      "testStrategy": "",
-      "title": "Add Integration Tests and Update Documentation / CHANGELOG"
-    },
-    {
-      "dependencies": [
-        12,
-        13,
-        14,
-        15
-      ],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 17,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 17.1,
-          "status": "done",
-          "title": "Change acp.require_permission default to false in config/mod.rs"
-        },
-        {
-          "dependencies": [],
-          "id": 17.2,
-          "status": "done",
-          "title": "Fix Windows file:/// URI parsing in resolve_workspace_path"
-        },
-        {
-          "dependencies": [
-            17.1
-          ],
-          "id": 17.3,
-          "status": "done",
-          "title": "Auto-approve on JSON-RPC error in handle_json_rpc and handle_session_prompt"
-        },
-        {
-          "dependencies": [],
-          "id": 17.4,
-          "status": "done",
-          "title": "Add PermissionOutcome::proceed_once() constructor"
-        },
-        {
-          "dependencies": [
-            17.1,
-            17.2,
-            17.3,
-            17.4
-          ],
-          "id": 17.5,
-          "status": "done",
-          "title": "Update .grok/config.toml and CHANGELOG.md"
-        }
-      ],
-      "testStrategy": "",
-      "title": "Fix ACP File-Reading Broken in Zed (Permission Gate + Windows URI Bug)"
-    },
-    {
-      "dependencies": [],
-      "description": "Legacy task retained for historical reference.",
-      "details": "",
-      "id": 18,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 18.1,
-          "status": "done",
-          "title": "User-Intent Learning (Persistence)"
-        },
-        {
-          "dependencies": [
-            18.1
-          ],
-          "id": 18.2,
-          "status": "done",
-          "title": "Adaptive Prompting and Skill Arbitration"
-        },
-        {
-          "dependencies": [
-            18.2
-          ],
-          "id": 18.3,
-          "status": "done",
-          "title": "Belief-Driven Planning"
-        }
-      ],
-      "testStrategy": "",
-      "title": "Implement Bayesian Agentic Features"
-    },
-    {
-      "dependencies": [
-        18
-      ],
-      "description": "Upgrade the context engine by introducing structured Context Layers: Session Context, Working Memory, Tool Context, Skill Context, and Belief State.",
-      "details": "Context Layers to implement:\n1. Session Context: What the user is doing right now (task, intent, last commands).\n2. Working Memory: Short-term facts the agent inferred or extracted.\n3. Tool Context: Results, errors, and metadata from recent tool calls.\n4. Skill Context: Which skills were used, their confidence, and arbitration scores.\n5. Belief State: Bayesian reasoning output (probabilities, uncertainty).\n\nThen feed a summarized, structured version of these into the model each turn.",
-      "id": 19,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 19.1,
-          "status": "done",
-          "title": "Define structs/models for the 5 Context Layers"
-        },
-        {
-          "dependencies": [
-            19.1
-          ],
-          "id": 19.2,
-          "status": "done",
-          "title": "Implement working memory and short-term fact extraction"
-        },
-        {
-          "dependencies": [
-            19.2
-          ],
-          "id": 19.3,
-          "status": "done",
-          "title": "Implement context summarization logic to prevent token bloat"
-        },
-        {
-          "dependencies": [
-            19.3
-          ],
-          "id": 19.4,
-          "status": "done",
-          "title": "Integrate summarized Context Layers into the final LLM prompt"
-        }
-      ],
-      "testStrategy": "1. Unit tests for each context layer's state management.\n2. Integration tests ensuring summarized context is properly injected into the prompt.\n3. Verify token usage remains efficient with the new summarization.",
-      "title": "Implement Context Engine 2.0"
-    },
-    {
-      "dependencies": [
-        18,
-        19
-      ],
-      "description": "Leverage the Bayesian layer to help with prompt shaping, adapting the prompt based on uncertainty, vagueness, repetition, and tool failures.",
-      "details": "Implement prompt shaping behaviors driven by the Bayesian engine:\n- If uncertainty is high -> ask a clarification.\n- If the user is vague -> propose interpretations.\n- If the user repeats themselves -> infer intent drift.\n- If a tool failed -> rewrite the prompt to avoid the failure mode.",
-      "id": 20,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 20.1,
-          "status": "done",
-          "title": "Implement high-uncertainty detection and clarification prompting"
-        },
-        {
-          "dependencies": [],
-          "id": 20.2,
-          "status": "done",
-          "title": "Add vagueness detection and interpretation proposals"
-        },
-        {
-          "dependencies": [],
-          "id": 20.3,
-          "status": "done",
-          "title": "Implement repetition detection to infer intent drift"
-        },
-        {
-          "dependencies": [],
-          "id": 20.4,
-          "status": "done",
-          "title": "Add dynamic prompt rewriting for tool failure recovery"
-        }
-      ],
-      "testStrategy": "1. Unit tests mocking high uncertainty to verify clarification prompts are generated.\n2. Unit tests for intent drift detection on repeated inputs.\n3. Integration tests verifying tool failure triggers prompt rewriting.",
-      "title": "Context-Aware Prompt Refinement"
-    },
-    {
-      "dependencies": [
-        19,
-        20
-      ],
-      "description": "Add switchable operational modes (Coder, Research, Shell, Creative) that influence prompt shaping, verbosity, tool usage, and reasoning depth.",
-      "details": "Modes:\n1. Coder Mode: concise, structured, tool-heavy.\n2. Research Mode: long-form reasoning, citations.\n3. Shell Mode: terse, command-first.\n4. Creative Mode: open-ended, generative.\n\nAdd /mode or /profile command to switch.",
-      "id": 21,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 21.1,
-          "status": "done",
-          "title": "Define mode configuration structs"
-        },
-        {
-          "dependencies": [
-            21.1
-          ],
-          "id": 21.2,
-          "status": "done",
-          "title": "Implement mode switching logic"
-        },
-        {
-          "dependencies": [
-            21.2
-          ],
-          "id": 21.3,
-          "status": "done",
-          "title": "Integrate modes into prompt generation"
-        }
-      ],
-      "testStrategy": "1. Verify each mode changes prompt structure.\n2. Confirm mode switching persists across turns.\n3. Ensure context summarization respects mode settings.",
-      "title": "Implement Operational Mode System"
-    },
-    {
-      "dependencies": [
-        18,
-        19
-      ],
-      "description": "Add a simulation mode that predicts tool calls, outcomes, and potential errors without executing anything.",
-      "details": "Features:\n1. Predict tool calls and expected outputs.\n2. Detect contradictions or unsafe operations.\n3. Provide warnings before executing destructive commands.\n4. Add /simulate command to run dry-run mode.",
-      "id": 22,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 22.1,
-          "status": "done",
-          "title": "Implement tool-call prediction engine"
-        },
-        {
-          "dependencies": [
-            22.1
-          ],
-          "id": 22.2,
-          "status": "done",
-          "title": "Add contradiction and safety detection"
-        },
-        {
-          "dependencies": [
-            22.2
-          ],
-          "id": 22.3,
-          "status": "done",
-          "title": "Add /simulate command and output formatting"
-        }
-      ],
-      "testStrategy": "1. Unit tests for simulated tool call predictions.\n2. Integration tests verifying contradiction detection.\n3. Ensure simulation mode never triggers real tool execution.",
-      "title": "Implement Simulation Mode (Dry-Run Engine)"
-    },
-    {
-      "dependencies": [
-        18,
-        19
-      ],
-      "description": "Add auto-discovery of skills from a local skills/ directory with manifest-based metadata.",
-      "details": "Features:\n1. skills/ folder with auto-discovery.\n2. skill.json manifest for metadata.\n3. Dynamic loading/unloading.\n4. Arbitration scores integrated into Skill Context.\n5. /skills command to list loaded skills.",
-      "id": 23,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 23.1,
-          "status": "done",
-          "title": "Define skill manifest schema"
-        },
-        {
-          "dependencies": [
-            23.1
-          ],
-          "id": 23.2,
-          "status": "done",
-          "title": "Implement skill auto-discovery"
-        },
-        {
-          "dependencies": [
-            23.2
-          ],
-          "id": 23.3,
-          "status": "done",
-          "title": "Integrate arbitration scores into Skill Context"
-        },
-        {
-          "dependencies": [
-            23.3
-          ],
-          "id": 23.4,
-          "status": "done",
-          "title": "Add /skills command"
-        }
-      ],
-      "testStrategy": "1. Unit tests for skill discovery.\n2. Integration tests verifying arbitration ranking.\n3. Ensure invalid manifests fail gracefully.",
-      "title": "Implement Skill Registry and Plugin System"
-    },
-    {
-      "dependencies": [
-        18,
-        19
-      ],
-      "description": "Expose the Bayesian belief state as an ASCII graph showing probabilities, uncertainty, and tool/skill confidence.",
-      "details": "Features:\n1. ASCII graph output.\n2. Probability bars.\n3. Uncertainty indicators.\n4. Tool/skill confidence mapping.\n5. /beliefs command to display.",
-      "id": 24,
-      "priority": "low",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 24.1,
-          "status": "done",
-          "title": "Implement belief graph data model"
-        },
-        {
-          "dependencies": [
-            24.1
-          ],
-          "id": 24.2,
-          "status": "done",
-          "title": "Add ASCII graph renderer"
-        },
-        {
-          "dependencies": [
-            24.2
-          ],
-          "id": 24.3,
-          "status": "done",
-          "title": "Add /beliefs command"
-        }
-      ],
-      "testStrategy": "1. Unit tests for graph formatting.\n2. Integration tests verifying belief state extraction.\n3. Ensure graph output remains readable in terminals.",
-      "title": "Implement Belief Graph Visualizer"
-    },
-    {
-      "dependencies": [
-        19
-      ],
-      "description": "Add semantic clustering, importance scoring, and recency weighting to compress conversation history.",
-      "details": "Features:\n1. Semantic clustering of past messages.\n2. Importance scoring based on task relevance.\n3. Recency weighting.\n4. Tool-result prioritization.\n5. Produce compact summaries for LLM context.",
-      "id": 25,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 25.1,
-          "status": "done",
-          "title": "Implement semantic clustering"
-        },
-        {
-          "dependencies": [
-            25.1
-          ],
-          "id": 25.2,
-          "status": "done",
-          "title": "Add importance scoring"
-        },
-        {
-          "dependencies": [
-            25.2
-          ],
-          "id": 25.3,
-          "status": "done",
-          "title": "Implement recency weighting"
-        },
-        {
-          "dependencies": [
-            25.3
-          ],
-          "id": 25.4,
-          "status": "done",
-          "title": "Integrate compressed history into prompt builder"
-        }
-      ],
-      "testStrategy": "1. Unit tests for clustering and scoring.\n2. Integration tests verifying summary correctness.\n3. Ensure token usage decreases significantly.",
-      "title": "Implement Context-Aware History Compression"
-    },
-    {
-      "dependencies": [
-        19,
-        23
-      ],
-      "description": "Add support for spawning, coordinating, and merging results from multiple Grok-CLI agents.",
-      "details": "Features:\n1. Spawn sub-agents for parallel tasks.\n2. Merge results using arbitration.\n3. Add /agents command to manage running agents.\n4. Add agent lifecycle management.",
-      "id": 26,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 26.1,
-          "status": "pending",
-          "title": "Implement agent spawning API"
-        },
-        {
-          "dependencies": [
-            26.1
-          ],
-          "id": 26.2,
-          "status": "pending",
-          "title": "Add result merging logic"
-        },
-        {
-          "dependencies": [
-            26.2
-          ],
-          "id": 26.3,
-          "status": "pending",
-          "title": "Add /agents command"
-        }
-      ],
-      "testStrategy": "1. Unit tests for agent spawning.\n2. Integration tests for merging results.\n3. Stress tests for parallel workloads.",
-      "title": "Implement Multi-Agent Orchestration Layer"
-    },
-    {
-      "dependencies": [
-        23
-      ],
-      "description": "Add support for discovering skills from remote registries and syncing them locally.",
-      "details": "Features:\n1. Remote registry discovery.\n2. Skill metadata syncing.\n3. Versioning and compatibility checks.\n4. Local caching.\n5. /registry command to browse remote skills.",
-      "id": 27,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 27.1,
-          "status": "pending",
-          "title": "Implement remote registry client"
-        },
-        {
-          "dependencies": [
-            27.1
-          ],
-          "id": 27.2,
-          "status": "pending",
-          "title": "Add versioning and compatibility logic"
-        },
-        {
-          "dependencies": [
-            27.2
-          ],
-          "id": 27.3,
-          "status": "pending",
-          "title": "Add /registry command"
-        }
-      ],
-      "testStrategy": "1. Unit tests for registry sync.\n2. Integration tests for version resolution.\n3. Ensure offline caching works.",
-      "title": "Implement Global Skill Registry (Networked)"
-    },
-    {
-      "dependencies": [
-        21
-      ],
-      "description": "Add predefined behavior profiles that adjust reasoning depth, verbosity, and tool usage.",
-      "details": "Profiles:\n1. Fast Mode.\n2. Deep Mode.\n3. Safe Mode.\n4. Creative Mode.\n\nProfiles override operational mode defaults.",
-      "id": 28,
-      "priority": "low",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 28.1,
-          "status": "pending",
-          "title": "Define profile configuration structs"
-        },
-        {
-          "dependencies": [
-            28.1
-          ],
-          "id": 28.2,
-          "status": "pending",
-          "title": "Implement profile switching logic"
-        },
-        {
-          "dependencies": [
-            28.2
-          ],
-          "id": 28.3,
-          "status": "pending",
-          "title": "Integrate profiles into prompt builder"
-        }
-      ],
-      "testStrategy": "1. Unit tests for profile switching.\n2. Integration tests verifying profile overrides.\n3. Ensure profiles persist across turns.",
-      "title": "Implement Agent Profiles (Behavior Presets)"
-    },
-    {
-      "dependencies": [
-        19
-      ],
-      "description": "Upgrade memory system with long-term storage, embeddings, and relevance scoring.",
-      "details": "Features:\n1. Long-term memory store.\n2. Embedding-based retrieval.\n2. Relevance scoring.\n3. Memory pruning.\n4. /memory command to inspect stored items.",
-      "id": 29,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 29.1,
-          "status": "pending",
-          "title": "Implement long-term memory store"
-        },
-        {
-          "dependencies": [
-            29.1
-          ],
-          "id": 29.2,
-          "status": "pending",
-          "title": "Add embedding-based retrieval"
-        },
-        {
-          "dependencies": [
-            29.2
-          ],
-          "id": 29.3,
-          "status": "pending",
-          "title": "Add memory pruning logic"
-        }
-      ],
-      "testStrategy": "1. Unit tests for memory writes.\n2. Integration tests for retrieval accuracy.\n3. Stress tests for large memory stores.",
-      "title": "Implement Memory Persistence 2.0"
-    },
-    {
-      "dependencies": [
-        20
-      ],
-      "description": "Add automatic detection and recovery strategies for tool failures.",
-      "details": "Features:\n1. Detect repeated tool failures.\n2. Suggest alternative tools.\n3. Rewrite prompts to avoid failure modes.\n4. Add /tools debug command.",
-      "id": 30,
-      "priority": "high",
-      "status": "in_progress",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 30.1,
-          "status": "pending",
-          "title": "Implement failure detection logic"
-        },
-        {
-          "dependencies": [
-            30.1
-          ],
-          "id": 30.2,
-          "status": "pending",
-          "title": "Add fallback and retry strategies"
-        },
-        {
-          "dependencies": [
-            30.2
-          ],
-          "id": 30.3,
-          "status": "pending",
-          "title": "Add /tools debug command"
-        }
-      ],
-      "testStrategy": "1. Unit tests for failure detection.\n2. Integration tests for recovery strategies.\n3. Ensure fallback logic triggers correctly.",
-      "title": "Implement Tool Failure Recovery Engine"
-    },
-    {
-      "dependencies": [
-        14,
-        15
-      ],
-      "description": "Enhance permission system with granular scopes, time-based approvals, and audit logs.",
-      "details": "Features:\n1. Time-limited permissions.\n2. Scope-based permissions.\n3. Audit logs.\n4. /permissions command.",
-      "id": 31,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 31.1,
-          "status": "pending",
-          "title": "Implement scope-based permissions"
-        },
-        {
-          "dependencies": [
-            31.1
-          ],
-          "id": 31.2,
-          "status": "pending",
-          "title": "Add time-based permission expiry"
-        },
-        {
-          "dependencies": [
-            31.2
-          ],
-          "id": 31.3,
-          "status": "pending",
-          "title": "Add audit logging"
-        }
-      ],
-      "testStrategy": "1. Unit tests for scope enforcement.\n2. Integration tests for time-based expiry.\n3. Verify audit logs record all events.",
-      "title": "Implement Safety & Permission Upgrades"
-    },
-    {
-      "dependencies": [],
-      "description": "Improve CLI experience with better formatting, colors, and interactive prompts.",
-      "details": "Features:\n1. Color-coded output.\n2. Better error messages.\n3. Interactive confirmations.\n4. Improved help menus.",
-      "id": 32,
-      "priority": "low",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 32.1,
-          "status": "pending",
-          "title": "Add color-coded output"
-        },
-        {
-          "dependencies": [
-            32.1
-          ],
-          "id": 32.2,
-          "status": "pending",
-          "title": "Improve error message formatting"
-        },
-        {
-          "dependencies": [
-            32.2
-          ],
-          "id": 32.3,
-          "status": "pending",
-          "title": "Enhance help menus"
-        }
-      ],
-      "testStrategy": "1. Snapshot tests for formatting.\n2. Manual tests for interactive prompts.\n3. Verify help menus list all commands.",
-      "title": "Implement CLI UX Improvements"
-    },
-    {
-      "dependencies": [
-        23
-      ],
-      "description": "Add isolated execution environment for untrusted plugins.",
-      "details": "Features:\n1. Sandboxed plugin execution.\n2. Resource limits.\n3. Permission boundaries.\n4. Plugin error isolation.",
-      "id": 33,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 33.1,
-          "status": "pending",
-          "title": "Implement sandbox runtime"
-        },
-        {
-          "dependencies": [
-            33.1
-          ],
-          "id": 33.2,
-          "status": "pending",
-          "title": "Add resource limit enforcement"
-        },
-        {
-          "dependencies": [
-            33.2
-          ],
-          "id": 33.3,
-          "status": "pending",
-          "title": "Add plugin error isolation"
-        }
-      ],
-      "testStrategy": "1. Unit tests for sandbox enforcement.\n2. Stress tests for resource limits.\n3. Ensure plugin crashes do not affect core agent.",
-      "title": "Implement Plugin Sandbox Environment"
-    },
-    {
-      "dependencies": [
-        21
-      ],
-      "description": "Add personality traits that influence tone, style, and interaction patterns.",
-      "details": "Features:\n1. Personality presets.\n2. Tone modifiers.\n3. Style templates.\n4. /personality command.",
-      "id": 34,
-      "priority": "low",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 34.1,
-          "status": "pending",
-          "title": "Define personality traits"
-        },
-        {
-          "dependencies": [
-            34.1
-          ],
-          "id": 34.2,
-          "status": "pending",
-          "title": "Implement personality switching"
-        },
-        {
-          "dependencies": [
-            34.2
-          ],
-          "id": 34.3,
-          "status": "pending",
-          "title": "Integrate personality into prompt builder"
-        }
-      ],
-      "testStrategy": "1. Unit tests for personality switching.\n2. Integration tests verifying tone changes.\n3. Ensure personality persists across turns.",
-      "title": "Implement Agent Personality Engine"
-    },
-    {
-      "dependencies": [],
-      "description": "Add local analytics for debugging agent performance, latency, and tool usage.",
-      "details": "Features:\n1. Local-only analytics.\n2. Tool usage stats.\n3. Latency tracking.\n4. /stats command.",
-      "id": 35,
-      "priority": "low",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 35.1,
-          "status": "pending",
-          "title": "Implement metrics collector"
-        },
-        {
-          "dependencies": [
-            35.1
-          ],
-          "id": 35.2,
-          "status": "pending",
-          "title": "Add tool usage statistics"
-        },
-        {
-          "dependencies": [
-            35.1
-          ],
-          "id": 35.3,
-          "status": "pending",
-          "title": "Implement latency tracking"
-        },
-        {
-          "dependencies": [
-            35.2,
-            35.3
-          ],
-          "id": 35.4,
-          "status": "pending",
-          "title": "Add /stats command"
-        }
-      ],
-      "testStrategy": "1. Unit tests for metrics collection.\n2. Integration tests for stats display.\n3. Ensure no data leaves the local machine.",
-      "title": "Implement Agent Analytics & Telemetry (Local Only)"
-    },
-    {
-      "dependencies": [
-        20
-      ],
-      "description": "Add adaptive prompt shaping based on Bayesian uncertainty, vagueness, repetition, and tool failures.",
-      "details": "Features:\n1. Detect uncertainty and ask clarifications.\n2. Detect vagueness and request specifics.\n3. Detect repetition and avoid redundancy.\n4. Detect tool failures and adjust prompts accordingly.\n5. Integrate with Bayesian engine.",
-      "id": 36,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 36.1,
-          "status": "pending",
-          "title": "Implement uncertainty detection"
-        },
-        {
-          "dependencies": [],
-          "id": 36.2,
-          "status": "pending",
-          "title": "Implement vagueness detection"
-        },
-        {
-          "dependencies": [],
-          "id": 36.3,
-          "status": "pending",
-          "title": "Implement repetition detection"
-        },
-        {
-          "dependencies": [
-            36.1,
-            36.2,
-            36.3
-          ],
-          "id": 36.4,
-          "status": "pending",
-          "title": "Integrate with Bayesian engine"
-        }
-      ],
-      "testStrategy": "1. Unit tests for detection algorithms.\n2. Integration tests for prompt adjustments.\n3. User feedback validation.",
-      "title": "Implement Adaptive Prompt Refinement"
-    },
-    {
-      "dependencies": [
-        36
-      ],
-      "description": "Add user-facing UX for adaptive prompt refinement with feedback and suggestions.",
-      "details": "Features:\n1. Feedback prompts for clarifications.\n2. Suggestions for prompt improvements.\n3. User acceptance and rejection flows.\n4. Logging of user feedback.",
-      "id": 37,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 37.1,
-          "status": "pending",
-          "title": "Design feedback prompt UI"
-        },
-        {
-          "dependencies": [
-            37.1
-          ],
-          "id": 37.2,
-          "status": "pending",
-          "title": "Implement feedback handling"
-        },
-        {
-          "dependencies": [
-            37.2
-          ],
-          "id": 37.3,
-          "status": "pending",
-          "title": "Add logging and analytics"
-        }
-      ],
-      "testStrategy": "1. Usability testing.\n2. Integration tests for feedback flows.\n3. Analytics on user acceptance.",
-      "title": "Implement Adaptive Prompt Refinement UX"
-    },
-    {
-      "dependencies": [
-        23,
-        36
-      ],
-      "description": "Enhance skill arbitration with Bayesian reasoning and dynamic weighting.",
-      "details": "Features:\n1. Bayesian weighting of skills.\n2. Dynamic skill priority adjustment.\n3. Integration with prompt builder.\n4. /arbitrate command.",
-      "id": 38,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 38.1,
-          "status": "pending",
-          "title": "Implement Bayesian weighting"
-        },
-        {
-          "dependencies": [
-            38.1
-          ],
-          "id": 38.2,
-          "status": "pending",
-          "title": "Add dynamic priority adjustment"
-        },
-        {
-          "dependencies": [
-            38.2
-          ],
-          "id": 38.3,
-          "status": "pending",
-          "title": "Integrate with prompt builder"
-        }
-      ],
-      "testStrategy": "1. Unit tests for arbitration logic.\n2. Integration tests for priority adjustments.\n3. Performance benchmarking.",
-      "title": "Implement Skill Arbitration Improvements"
-    },
-    {
-      "dependencies": [
-        35
-      ],
-      "description": "Add a local dashboard to visualize agent analytics and telemetry.",
-      "details": "Features:\n1. Real-time metrics display.\n2. Historical data charts.\n3. Alerting on anomalies.\n4. Dashboard UI with filtering.",
-      "id": 39,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 39.1,
-          "status": "pending",
-          "title": "Design dashboard UI"
-        },
-        {
-          "dependencies": [
-            39.1
-          ],
-          "id": 39.2,
-          "status": "pending",
-          "title": "Implement real-time data feed"
-        },
-        {
-          "dependencies": [
-            39.2
-          ],
-          "id": 39.3,
-          "status": "pending",
-          "title": "Add alerting system"
-        }
-      ],
-      "testStrategy": "1. UI tests for dashboard components.\n2. Integration tests for data accuracy.\n3. User acceptance testing.",
-      "title": "Implement Agent Telemetry Dashboard"
-    },
-    {
-      "dependencies": [
-        35
-      ],
-      "description": "Add health checks and self-diagnostics for agent components.",
-      "details": "Features:\n1. Periodic health checks.\n2. Self-diagnostic reports.\n3. Alerting on failures.\n4. /health command.",
-      "id": 40,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 40.1,
-          "status": "pending",
-          "title": "Implement health check routines"
-        },
-        {
-          "dependencies": [
-            40.1
-          ],
-          "id": 40.2,
-          "status": "pending",
-          "title": "Add self-diagnostic reports"
-        },
-        {
-          "dependencies": [
-            40.2
-          ],
-          "id": 40.3,
-          "status": "pending",
-          "title": "Add alerting system"
-        }
-      ],
-      "testStrategy": "1. Unit tests for health check routines.\n2. Integration tests for alerting.\n3. Stress tests for diagnostics.",
-      "title": "Implement Agent Health Monitoring"
-    },
-    {
-      "dependencies": [
-        35
-      ],
-      "description": "Add reporting features for agent usage statistics and trends.",
-      "details": "Features:\n1. Usage stats aggregation.\n2. Trend analysis.\n3. Exportable reports.\n4. /usage command.",
-      "id": 41,
-      "priority": "low",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 41.1,
-          "status": "pending",
-          "title": "Implement stats aggregation"
-        },
-        {
-          "dependencies": [
-            41.1
-          ],
-          "id": 41.2,
-          "status": "pending",
-          "title": "Add trend analysis"
-        },
-        {
-          "dependencies": [
-            41.2
-          ],
-          "id": 41.3,
-          "status": "pending",
-          "title": "Implement report export"
-        }
-      ],
-      "testStrategy": "1. Unit tests for stats aggregation.\n2. Integration tests for report generation.\n3. User acceptance testing.",
-      "title": "Implement Agent Usage Reporting"
-    },
-    {
-      "dependencies": [
-        30
-      ],
-      "description": "Add detailed error logging and diagnostics for agent failures.",
-      "details": "Features:\n1. Detailed error logs.\n2. Correlation with tool failures.\n3. Log rotation and archiving.\n4. /errors command.",
-      "id": 42,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 42.1,
-          "status": "pending",
-          "title": "Implement error logging system"
-        },
-        {
-          "dependencies": [
-            42.1
-          ],
-          "id": 42.2,
-          "status": "pending",
-          "title": "Add correlation with tool failures"
-        },
-        {
-          "dependencies": [
-            42.2
-          ],
-          "id": 42.3,
-          "status": "pending",
-          "title": "Implement log rotation"
-        }
-      ],
-      "testStrategy": "1. Unit tests for logging routines.\n2. Integration tests for error correlation.\n3. Stress tests for log management.",
-      "title": "Implement Agent Error Logging"
-    },
-    {
-      "dependencies": [
-        19
-      ],
-      "description": "Add configuration versioning, rollback, and validation.",
-      "details": "Features:\n1. Versioned config files.\n2. Rollback support.\n3. Validation on load.\n4. /config command.",
-      "id": 43,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 43.1,
-          "status": "pending",
-          "title": "Implement config versioning"
-        },
-        {
-          "dependencies": [
-            43.1
-          ],
-          "id": 43.2,
-          "status": "pending",
-          "title": "Add rollback support"
-        },
-        {
-          "dependencies": [
-            43.2
-          ],
-          "id": 43.3,
-          "status": "pending",
-          "title": "Add validation logic"
-        }
-      ],
-      "testStrategy": "1. Unit tests for versioning.\n2. Integration tests for rollback.\n3. User acceptance testing.",
-      "title": "Implement Agent Configuration Management"
-    },
-    {
-      "dependencies": [
-        19
-      ],
-      "description": "Add CI/CD pipelines for automated agent releases.",
-      "details": "Features:\n1. Build pipelines.\n2. Automated testing.\n3. Release tagging and publishing.\n4. Rollback on failure.",
-      "id": 44,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 44.1,
-          "status": "pending",
-          "title": "Implement build pipelines"
-        },
-        {
-          "dependencies": [
-            44.1
-          ],
-          "id": 44.2,
-          "status": "pending",
-          "title": "Add automated testing"
-        },
-        {
-          "dependencies": [
-            44.2
-          ],
-          "id": 44.3,
-          "status": "pending",
-          "title": "Add release tagging and publishing"
-        }
-      ],
-      "testStrategy": "1. Pipeline tests.\n2. Integration tests for release flow.\n3. Monitoring and alerts.",
-      "title": "Implement Agent Release Automation"
-    },
-    {
-      "dependencies": [
-        20,
-        25
-      ],
-      "description": "Create an engine that dynamically adjusts prompts based on user feedback, context changes, and tool performance.",
-      "details": "Features:\n1. Monitor user feedback signals.\n2. Adjust prompt templates dynamically.\n3. Integrate with Bayesian uncertainty metrics.\n4. Provide fallback prompts on failure.",
-      "id": 45,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 45.1,
-          "status": "pending",
-          "title": "Implement feedback signal monitoring"
-        },
-        {
-          "dependencies": [
-            45.1
-          ],
-          "id": 45.2,
-          "status": "pending",
-          "title": "Develop dynamic prompt templates"
-        },
-        {
-          "dependencies": [
-            45.2
-          ],
-          "id": 45.3,
-          "status": "pending",
-          "title": "Integrate Bayesian metrics"
-        }
-      ],
-      "testStrategy": "1. Unit tests for feedback detection.\n2. Integration tests for prompt adjustments.\n3. Validate fallback prompt usage.",
-      "title": "Implement Adaptive Prompt Refinement Engine"
-    },
-    {
-      "dependencies": [
-        23,
-        30
-      ],
-      "description": "Enhance tool arbitration logic to consider context, recent tool performance, and user preferences.",
-      "details": "Features:\n1. Context-aware arbitration scoring.\n2. Performance history tracking.\n3. User preference weighting.\n4. Arbitration override commands.",
-      "id": 46,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 46.1,
-          "status": "pending",
-          "title": "Add context-aware scoring"
-        },
-        {
-          "dependencies": [
-            46.1
-          ],
-          "id": 46.2,
-          "status": "pending",
-          "title": "Implement performance tracking"
-        },
-        {
-          "dependencies": [
-            46.2
-          ],
-          "id": 46.3,
-          "status": "pending",
-          "title": "Add user preference weighting"
-        }
-      ],
-      "testStrategy": "1. Unit tests for arbitration scoring.\n2. Integration tests for override commands.\n3. Validate preference persistence.",
-      "title": "Implement Contextual Tool Arbitration"
-    },
-    {
-      "dependencies": [
-        21,
-        23
-      ],
-      "description": "Add support for voice, image, and other input modalities alongside text.",
-      "details": "Features:\n1. Voice input processing.\n2. Image recognition integration.\n3. Multi-modal context fusion.\n4. /inputmode command.",
-      "id": 47,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 47.1,
-          "status": "pending",
-          "title": "Implement voice input processing"
-        },
-        {
-          "dependencies": [
-            47.1
-          ],
-          "id": 47.2,
-          "status": "pending",
-          "title": "Integrate image recognition"
-        },
-        {
-          "dependencies": [
-            47.2
-          ],
-          "id": 47.3,
-          "status": "pending",
-          "title": "Develop multi-modal fusion logic"
-        }
-      ],
-      "testStrategy": "1. Unit tests for each input modality.\n2. Integration tests for context fusion.\n3. User acceptance testing.",
-      "title": "Implement Multi-Modal Input Support"
-    },
-    {
-      "dependencies": [
-        26
-      ],
-      "description": "Add support for multiple users collaborating with the agent in real-time.",
-      "details": "Features:\n1. Shared session management.\n2. Conflict resolution strategies.\n3. User role assignments.\n4. Real-time update broadcasting.",
-      "id": 48,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 48.1,
-          "status": "pending",
-          "title": "Implement shared session management"
-        },
-        {
-          "dependencies": [
-            48.1
-          ],
-          "id": 48.2,
-          "status": "pending",
-          "title": "Add conflict resolution"
-        },
-        {
-          "dependencies": [
-            48.2
-          ],
-          "id": 48.3,
-          "status": "pending",
-          "title": "Implement user role assignments"
-        }
-      ],
-      "testStrategy": "1. Unit tests for session management.\n2. Integration tests for conflict resolution.\n3. Load testing for real-time updates.",
-      "title": "Implement Real-Time Collaboration Features"
-    },
-    {
-      "dependencies": [
-        31
-      ],
-      "description": "Add detailed audit trails for all agent actions and tool invocations.",
-      "details": "Features:\n1. Detailed logs with timestamps.\n2. User action correlation.\n3. Tamper-evident storage.\n4. Audit query interface.",
-      "id": 49,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 49.1,
-          "status": "pending",
-          "title": "Implement detailed logging"
-        },
-        {
-          "dependencies": [
-            49.1
-          ],
-          "id": 49.2,
-          "status": "pending",
-          "title": "Add tamper-evident storage"
-        },
-        {
-          "dependencies": [
-            49.2
-          ],
-          "id": 49.3,
-          "status": "pending",
-          "title": "Develop audit query interface"
-        }
-      ],
-      "testStrategy": "1. Unit tests for log integrity.\n2. Integration tests for query interface.\n3. Security penetration testing.",
-      "title": "Implement Advanced Security Auditing"
-    },
-    {
-      "dependencies": [
-        33
-      ],
-      "description": "Add system to dynamically allocate CPU, memory, and bandwidth based on workload.",
-      "details": "Features:\n1. Monitor resource usage.\n2. Adjust allocations in real-time.\n3. Prioritize critical tasks.\n4. Resource usage reporting.",
-      "id": 50,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 50.1,
-          "status": "pending",
-          "title": "Implement resource monitoring"
-        },
-        {
-          "dependencies": [
-            50.1
-          ],
-          "id": 50.2,
-          "status": "pending",
-          "title": "Add dynamic allocation logic"
-        },
-        {
-          "dependencies": [
-            50.2
-          ],
-          "id": 50.3,
-          "status": "pending",
-          "title": "Develop resource reporting"
-        }
-      ],
-      "testStrategy": "1. Unit tests for monitoring.\n2. Integration tests for allocation logic.\n3. Stress tests under load.",
-      "title": "Implement Dynamic Resource Allocation"
-    },
-    {
-      "dependencies": [
-        49
-      ],
-      "description": "Upgrade logging with structured logs, log levels, and remote log shipping.",
-      "details": "Features:\n1. Structured JSON logs.\n2. Configurable log levels.\n3. Remote log shipping support.\n4. Log rotation and archiving.",
-      "id": 51,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 51.1,
-          "status": "pending",
-          "title": "Implement structured logging"
-        },
-        {
-          "dependencies": [
-            51.1
-          ],
-          "id": 51.2,
-          "status": "pending",
-          "title": "Add log level configuration"
-        },
-        {
-          "dependencies": [
-            51.2
-          ],
-          "id": 51.3,
-          "status": "pending",
-          "title": "Implement remote log shipping"
-        }
-      ],
-      "testStrategy": "1. Unit tests for log formatting.\n2. Integration tests for shipping.\n3. Verify archival correctness.",
-      "title": "Implement Enhanced Logging Framework"
-    },
-    {
-      "dependencies": [
-        35
-      ],
-      "description": "Analyze user interactions to improve agent responsiveness and personalization.",
-      "details": "Features:\n1. Track user command patterns.\n2. Identify frequent requests.\n3. Adapt agent responses.\n4. Privacy-preserving data handling.",
-      "id": 52,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 52.1,
-          "status": "pending",
-          "title": "Implement command pattern tracking"
-        },
-        {
-          "dependencies": [
-            52.1
-          ],
-          "id": 52.2,
-          "status": "pending",
-          "title": "Develop adaptation algorithms"
-        },
-        {
-          "dependencies": [
-            52.2
-          ],
-          "id": 52.3,
-          "status": "pending",
-          "title": "Ensure privacy compliance"
-        }
-      ],
-      "testStrategy": "1. Unit tests for pattern detection.\n2. Integration tests for adaptation logic.\n3. Privacy compliance testing.",
-      "title": "Implement User Behavior Analytics"
-    },
-    {
-      "dependencies": [
-        26
-      ],
-      "description": "Enable agents to communicate and share context securely.",
-      "details": "Features:\n1. Secure messaging channels.\n2. Context sharing APIs.\n3. Encryption and authentication.\n4. Message queue management.",
-      "id": 53,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 53.1,
-          "status": "pending",
-          "title": "Implement secure messaging"
-        },
-        {
-          "dependencies": [
-            53.1
-          ],
-          "id": 53.2,
-          "status": "pending",
-          "title": "Add context sharing APIs"
-        },
-        {
-          "dependencies": [
-            53.2
-          ],
-          "id": 53.3,
-          "status": "pending",
-          "title": "Implement encryption and authentication"
-        }
-      ],
-      "testStrategy": "1. Unit tests for messaging.\n2. Integration tests for context sharing.\n3. Security audits.",
-      "title": "Implement Cross-Agent Communication Protocol"
-    },
-    {
-      "dependencies": [
-        27
-      ],
-      "description": "Automate agent software upgrades with rollback support.",
-      "details": "Features:\n1. Upgrade scheduling.\n2. Rollback on failure.\n3. Version compatibility checks.\n4. Upgrade notifications.",
-      "id": 54,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 54.1,
-          "status": "pending",
-          "title": "Implement upgrade scheduler"
-        },
-        {
-          "dependencies": [
-            54.1
-          ],
-          "id": 54.2,
-          "status": "pending",
-          "title": "Add rollback support"
-        },
-        {
-          "dependencies": [
-            54.2
-          ],
-          "id": 54.3,
-          "status": "pending",
-          "title": "Develop compatibility checks"
-        }
-      ],
-      "testStrategy": "1. Unit tests for upgrade logic.\n2. Integration tests for rollback.\n3. Compatibility validation.",
-      "title": "Implement Agent Upgrade Automation"
-    },
-    {
-      "dependencies": [
-        35
-      ],
-      "description": "Create a dashboard to visualize agent usage metrics and trends.",
-      "details": "Features:\n1. Visualize tool usage.\n2. Track latency trends.\n3. User engagement metrics.\n4. Exportable reports.",
-      "id": 55,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 55.1,
-          "status": "pending",
-          "title": "Implement data aggregation"
-        },
-        {
-          "dependencies": [
-            55.1
-          ],
-          "id": 55.2,
-          "status": "pending",
-          "title": "Develop dashboard UI"
-        },
-        {
-          "dependencies": [
-            55.2
-          ],
-          "id": 55.3,
-          "status": "pending",
-          "title": "Add export functionality"
-        }
-      ],
-      "testStrategy": "1. Unit tests for data aggregation.\n2. Integration tests for dashboard rendering.\n3. User feedback collection.",
-      "title": "Implement Agent Usage Analytics Dashboard"
-    },
-    {
-      "dependencies": [
-        45,
-        52
-      ],
-      "description": "Create mechanisms for agents to learn from user feedback and improve over time.",
-      "details": "Features:\n1. Collect explicit feedback.\n2. Analyze feedback trends.\n3. Adjust agent behavior dynamically.\n4. Feedback reporting tools.",
-      "id": 56,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 56.1,
-          "status": "pending",
-          "title": "Implement feedback collection"
-        },
-        {
-          "dependencies": [
-            56.1
-          ],
-          "id": 56.2,
-          "status": "pending",
-          "title": "Develop feedback analysis"
-        },
-        {
-          "dependencies": [
-            56.2
-          ],
-          "id": 56.3,
-          "status": "pending",
-          "title": "Integrate behavior adjustment"
-        }
-      ],
-      "testStrategy": "1. Unit tests for feedback collection.\n2. Integration tests for behavior adjustment.\n3. User satisfaction surveys.",
-      "title": "Implement Agent Feedback Loop"
-    },
-    {
-      "dependencies": [
-        24,
-        34
-      ],
-      "description": "Add features to explain agent decisions, tool choices, and reasoning paths.",
-      "details": "Features:\n1. Decision trace logging.\n2. User-friendly explanations.\n3. Visualization tools.\n4. Explainability commands.",
-      "id": 57,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 57.1,
-          "status": "pending",
-          "title": "Implement decision trace logging"
-        },
-        {
-          "dependencies": [
-            57.1
-          ],
-          "id": 57.2,
-          "status": "pending",
-          "title": "Develop explanation generation"
-        },
-        {
-          "dependencies": [
-            57.2
-          ],
-          "id": 57.3,
-          "status": "pending",
-          "title": "Add visualization tools"
-        }
-      ],
-      "testStrategy": "1. Unit tests for trace logging.\n2. Integration tests for explanation generation.\n3. User comprehension testing.",
-      "title": "Implement Agent Explainability Features"
-    },
-    {
-      "dependencies": [
-        34,
-        52
-      ],
-      "description": "Allow users to customize agent behavior, tone, and preferences.",
-      "details": "Features:\n1. User preference storage.\n2. Behavior customization UI.\n3. Preference syncing across devices.\n4. Personalization commands.",
-      "id": 58,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 58.1,
-          "status": "pending",
-          "title": "Implement preference storage"
-        },
-        {
-          "dependencies": [
-            58.1
-          ],
-          "id": 58.2,
-          "status": "pending",
-          "title": "Develop customization UI"
-        },
-        {
-          "dependencies": [
-            58.2
-          ],
-          "id": 58.3,
-          "status": "pending",
-          "title": "Add syncing logic"
-        }
-      ],
-      "testStrategy": "1. Unit tests for preference storage.\n2. Integration tests for syncing.\n3. User acceptance testing.",
-      "title": "Implement Agent Personalization Engine"
-    },
-    {
-      "dependencies": [
-        21,
-        23
-      ],
-      "description": "Add support for multiple languages in input, output, and reasoning.",
-      "details": "Features:\n1. Language detection.\n2. Translation integration.\n3. Multi-language prompt templates.\n4. Language switching commands.",
-      "id": 59,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 59.1,
-          "status": "pending",
-          "title": "Implement language detection"
-        },
-        {
-          "dependencies": [
-            59.1
-          ],
-          "id": 59.2,
-          "status": "pending",
-          "title": "Integrate translation APIs"
-        },
-        {
-          "dependencies": [
-            59.2
-          ],
-          "id": 59.3,
-          "status": "pending",
-          "title": "Develop multi-language templates"
-        }
-      ],
-      "testStrategy": "1. Unit tests for detection.\n2. Integration tests for translation.\n3. User testing for language switching.",
-      "title": "Implement Agent Multi-Language Support"
-    },
-    {
-      "dependencies": [
-        29
-      ],
-      "description": "Allow agent to operate with limited functionality without internet connectivity.",
-      "details": "Features:\n1. Cache critical data locally.\n2. Graceful degradation of features.\n3. Offline command queueing.\n4. Offline mode toggle.",
-      "id": 60,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 60.1,
-          "status": "pending",
-          "title": "Implement local caching"
-        },
-        {
-          "dependencies": [
-            60.1
-          ],
-          "id": 60.2,
-          "status": "pending",
-          "title": "Add feature degradation logic"
-        },
-        {
-          "dependencies": [
-            60.2
-          ],
-          "id": 60.3,
-          "status": "pending",
-          "title": "Develop offline command queue"
-        }
-      ],
-      "testStrategy": "1. Unit tests for caching.\n2. Integration tests for degradation.\n3. User testing for offline toggle.",
-      "title": "Implement Agent Offline Mode"
-    },
-    {
-      "dependencies": [
-        21,
-        50
-      ],
-      "description": "Optimize agent operations to reduce energy consumption on devices.",
-      "details": "Features:\n1. Reduced CPU usage modes.\n2. Task batching.\n3. Energy usage reporting.\n4. Energy mode toggle.",
-      "id": 61,
-      "priority": "low",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 61.1,
-          "status": "pending",
-          "title": "Implement CPU usage reduction"
-        },
-        {
-          "dependencies": [
-            61.1
-          ],
-          "id": 61.2,
-          "status": "pending",
-          "title": "Add task batching"
-        },
-        {
-          "dependencies": [
-            61.2
-          ],
-          "id": 61.3,
-          "status": "pending",
-          "title": "Develop energy reporting"
-        }
-      ],
-      "testStrategy": "1. Unit tests for CPU usage.\n2. Integration tests for batching.\n3. User feedback on energy mode.",
-      "title": "Implement Agent Energy Efficiency Mode"
-    },
-    {
-      "dependencies": [
-        30,
-        35
-      ],
-      "description": "Add advanced debugging tools for developers and power users.",
-      "details": "Features:\n1. Debug logs with filters.\n2. Interactive debugging sessions.\n3. Performance profiling.\n4. Debug command interface.",
-      "id": 62,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 62.1,
-          "status": "pending",
-          "title": "Implement filtered debug logs"
-        },
-        {
-          "dependencies": [
-            62.1
-          ],
-          "id": 62.2,
-          "status": "pending",
-          "title": "Add interactive debugging"
-        },
-        {
-          "dependencies": [
-            62.2
-          ],
-          "id": 62.3,
-          "status": "pending",
-          "title": "Develop performance profiling"
-        }
-      ],
-      "testStrategy": "1. Unit tests for debug logs.\n2. Integration tests for sessions.\n3. Profiling accuracy tests.",
-      "title": "Implement Agent Debugging Tools"
-    },
-    {
-      "dependencies": [
-        23
-      ],
-      "description": "Automatically generate documentation for agent skills, commands, and configurations.",
-      "details": "Features:\n1. Parse skill manifests.\n2. Generate markdown docs.\n3. Update docs on skill changes.\n4. Documentation command.",
-      "id": 63,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 63.1,
-          "status": "pending",
-          "title": "Implement manifest parser"
-        },
-        {
-          "dependencies": [
-            63.1
-          ],
-          "id": 63.2,
-          "status": "pending",
-          "title": "Generate markdown documentation"
-        },
-        {
-          "dependencies": [
-            63.2
-          ],
-          "id": 63.3,
-          "status": "pending",
-          "title": "Add documentation update triggers"
-        }
-      ],
-      "testStrategy": "1. Unit tests for parsing.\n2. Integration tests for doc generation.\n3. User feedback on docs.",
-      "title": "Implement Agent Documentation Generator"
-    },
-    {
-      "dependencies": [],
-      "description": "Add a cpu_router folder with all supporting files: backend trait, request/response types, router error, and a Grok-only backend implementation with Starlink-resilient retry logic.",
-      "details": "Created src/router/ with: backend.rs (async Backend trait, BackendKind with PartialEq), cpu_router.rs (CpuRouter with model-prefix dispatch and unit tests), request.rs (RouterRequest, ToolDefinition, FunctionDefinition, with_json_tools helper), response.rs (RouterResponse, UsageStats, into_message_with_finish_reason), router_error.rs (BackendUnavailable, BackendError, Serialization, Network, Auth, RateLimit variants), backends/grok.rs (GrokBackend with new/new_with_timeout, exponential back-off with jitter, Starlink-resilient retry, smart error classification). Added async-trait = 0.1 to Cargo.toml. Registered pub mod router in lib.rs.",
-      "id": 64,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 64.1,
-          "status": "done",
-          "title": "Core types and traits (backend, request, response, error)"
-        },
-        {
-          "dependencies": [
-            64.1
-          ],
-          "id": 64.2,
-          "status": "done",
-          "title": "GrokBackend with Starlink-resilient retry"
-        },
-        {
-          "dependencies": [
-            64.1
-          ],
-          "id": 64.3,
-          "status": "done",
-          "title": "CpuRouter dispatch with model-prefix routing"
-        }
-      ],
-      "testStrategy": "cargo test --lib router -- all 19 tests pass.",
-      "title": "Build CpuRouter / GrokBackend module"
-    },
-    {
-      "dependencies": [
-        64
-      ],
-      "description": "Replace direct GrokClient usage in chat.rs, code.rs, and display/interactive.rs with the new AppRouter so all AI calls flow through the CpuRouter stack.",
-      "details": "Created AppRouter (src/router/app_router.rs): Arc<CpuRouter> wrapper with GrokClient-compatible chat_completion and chat_completion_with_history methods. Added initialize_router() to utils/client.rs alongside legacy initialize_client(). Updated imports and constructors in: cli/commands/chat.rs, cli/commands/code.rs, display/interactive.rs. All function signatures changed from GrokClient to AppRouter with zero changes to method call bodies. Added into_message_with_finish_reason() to RouterResponse. Added with_json_tools() to RouterRequest. Added new_with_timeout() to GrokBackend. Added manual Debug impl for CpuRouter.",
-      "id": 65,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 65.1,
-          "status": "done",
-          "title": "AppRouter shim with GrokClient-compatible API"
-        },
-        {
-          "dependencies": [
-            65.1
-          ],
-          "id": 65.2,
-          "status": "done",
-          "title": "Wire cli/commands/chat.rs"
-        },
-        {
-          "dependencies": [
-            65.1
-          ],
-          "id": 65.3,
-          "status": "done",
-          "title": "Wire cli/commands/code.rs"
-        },
-        {
-          "dependencies": [
-            65.1
-          ],
-          "id": 65.4,
-          "status": "done",
-          "title": "Wire display/interactive.rs"
-        }
-      ],
-      "testStrategy": "cargo build succeeds with only pre-existing warnings. cargo test --lib router: 19/19 pass.",
-      "title": "Wire AppRouter into CLI commands and interactive mode"
-    },
-    {
-      "dependencies": [
-        65
-      ],
-      "description": "Migrate acp/mod.rs from direct GrokClient construction to AppRouter so the Zed ACP integration also benefits from the router stack.",
-      "details": "acp/mod.rs currently calls GrokClient::with_settings() directly inside GrokAcpAgent::new() and calls chat_completion_with_history in handle_chat_completion and handle_chat_with_system_prompt. Replace those with AppRouter::new(api_key, config.timeout_secs) and use the same chat_completion_with_history API. GrokAcpAgent should store AppRouter instead of Option<GrokClient>.",
-      "id": 66,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 66.1,
-          "status": "done",
-          "title": "Replace GrokClient field with AppRouter in GrokAcpAgent"
-        },
-        {
-          "dependencies": [
-            66.1
-          ],
-          "id": 66.2,
-          "status": "done",
-          "title": "Update handle_chat_completion to use AppRouter"
-        },
-        {
-          "dependencies": [
-            66.2
-          ],
-          "id": 66.3,
-          "status": "done",
-          "title": "Update handle_chat_with_system_prompt to use AppRouter"
-        }
-      ],
-      "testStrategy": "cargo build succeeds. grok acp stdio launches without errors. Zed slash commands respond normally.",
-      "title": "Wire AppRouter into ACP session handler"
-    },
-    {
-      "dependencies": [
-        64,
-        65
-      ],
-      "description": "Consolidate all scattered memory patterns into a four-tier hierarchy: short-term, long-term, episodic, and working memory.",
-      "details": "Created src/memory/ with five files. types.rs: shared ChatMessage, MemoryEntry, EpisodeSummary, MemoryKind, MemorySource, estimate_tokens. short_term.rs: ShortTermMemory bounded buffer with auto-trim, pinned system message, to_json_messages(), recent(n). long_term.rs: LongTermMemory structured fact store with dual-file storage (memory.json + memory.md), atomic writes, dedup, search, by_tags, by_source, prompt injection. episodic.rs: EpisodicMemory session archive with summary + transcript, to_prompt_context. working.rs: WorkingMemory thin wrapper over utils/context with reload and append. mod.rs: MemoryStore facade - new_for_session, remember, save_episode, reload_context, status_line. Migrated acp/tools.rs save_memory to delegate to LongTermMemory. 97/97 tests pass.",
-      "id": 67,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 67.1,
-          "status": "done",
-          "title": "types.rs - shared types"
-        },
-        {
-          "dependencies": [
-            67.1
-          ],
-          "id": 67.2,
-          "status": "done",
-          "title": "short_term.rs - bounded message buffer"
-        },
-        {
-          "dependencies": [
-            67.1
-          ],
-          "id": 67.3,
-          "status": "done",
-          "title": "long_term.rs - persistent fact store"
-        },
-        {
-          "dependencies": [
-            67.1
-          ],
-          "id": 67.4,
-          "status": "done",
-          "title": "episodic.rs - session archive"
-        },
-        {
-          "dependencies": [
-            67.1
-          ],
-          "id": 67.5,
-          "status": "done",
-          "title": "working.rs - project context wrapper"
-        },
-        {
-          "dependencies": [
-            67.2,
-            67.3,
-            67.4,
-            67.5
-          ],
-          "id": 67.6,
-          "status": "done",
-          "title": "mod.rs - MemoryStore facade"
-        },
-        {
-          "dependencies": [
-            67.3
-          ],
-          "id": 67.7,
-          "status": "done",
-          "title": "Migrate acp/tools.rs save_memory to LongTermMemory"
-        }
-      ],
-      "testStrategy": "cargo test --lib memory: 97/97 pass. cargo build: clean.",
-      "title": "Unified memory module (src/memory/)"
-    },
-    {
-      "dependencies": [],
-      "description": "Move all tool implementations from the monolithic src/acp/tools.rs into the properly structured src/tools/ module per the Grok-CLI Tools Build Instructions spec.",
-      "details": "Created src/tools/ module with: tool_error.rs (ToolError enum, 9 variants), tool_context.rs (ToolContext wrapping SecurityPolicy), file_tools.rs (8 file-system tools), shell_tools.rs (run_shell_command), web_tools.rs (web_search + web_fetch), memory_tools.rs (save_memory), registry.rs (execute_tool entry point + JSON definitions), mod.rs (flat re-exports). Rewrote src/acp/tools.rs as a 1-line pub use crate::tools::* shim preserving all existing call-sites. Added route_with_tools() tool-execution loop to CpuRouter. Added ToolError + MaxToolIterations variants to RouterError. Added pub mod tools to lib.rs. 37/37 tools tests pass.",
-      "id": 68,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 68.1,
-          "status": "done",
-          "title": "Create tool_error.rs, tool_context.rs, memory_tools.rs, shell_tools.rs"
-        },
-        {
-          "dependencies": [
-            68.1
-          ],
-          "id": 68.2,
-          "status": "done",
-          "title": "Create file_tools.rs"
-        },
-        {
-          "dependencies": [
-            68.1,
-            68.2
-          ],
-          "id": 68.3,
-          "status": "done",
-          "title": "Create web_tools.rs, registry.rs, mod.rs"
-        },
-        {
-          "dependencies": [
-            68.3
-          ],
-          "id": 68.4,
-          "status": "done",
-          "title": "Rewrite src/acp/tools.rs as thin re-export shim"
-        },
-        {
-          "dependencies": [
-            68.3
-          ],
-          "id": 68.5,
-          "status": "done",
-          "title": "Add route_with_tools to CpuRouter + new RouterError variants"
-        }
-      ],
-      "testStrategy": "cargo test --lib tools:: (37/37 pass). cargo test --lib router:: (all router tests pass, 3 new tool-loop tests pass). cargo build succeeds with zero errors.",
-      "title": "Tools Module Restructuring"
-    },
-    {
-      "dependencies": [],
-      "description": "Define the structure, purpose, and integration points for the Reasoning Protocol Layer.",
-      "details": "Create a high-level architecture document describing how the RPL fits between the model, CPU/state machine, and skill arbitration layers. Specify the reasoning schema, message envelope extensions, and how reasoning traces are logged or suppressed. Include diagrams showing data flow and lifecycle.",
-      "id": 69,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 69.1,
-          "status": "pending",
-          "title": "Define RPL goals and constraints"
-        },
-        {
-          "dependencies": [
-            69.1
-          ],
-          "id": 69.2,
-          "status": "pending",
-          "title": "Map RPL to CPU/state-machine lifecycle"
-        },
-        {
-          "dependencies": [
-            69.2
-          ],
-          "id": 69.3,
-          "status": "pending",
-          "title": "Define reasoning schema and envelope fields"
-        }
-      ],
-      "testStrategy": "Verify the architecture document is complete, internally consistent, and covers all integration points. Review with future tasks to ensure feasibility.",
-      "title": "Design Reasoning Protocol Layer (RPL) Architecture"
-    },
-    {
-      "dependencies": [
-        69
-      ],
-      "description": "Add the structured reasoning schema used internally by the RPL.",
-      "details": "Implement a structured reasoning schema with fields such as: goal, context, tool_evaluation, memory_considerations, plan, and uncertainty. Ensure schema is serializable, versioned, and compatible with existing message envelopes. Add Rust types and validation.",
-      "id": 70,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 70.1,
-          "status": "pending",
-          "title": "Create Rust types for reasoning schema"
-        },
-        {
-          "dependencies": [
-            70.1
-          ],
-          "id": 70.2,
-          "status": "pending",
-          "title": "Implement schema validation"
-        },
-        {
-          "dependencies": [
-            70.2
-          ],
-          "id": 70.3,
-          "status": "pending",
-          "title": "Add versioning and compatibility layer"
-        }
-      ],
-      "testStrategy": "Unit test schema serialization/deserialization. Validate schema against example reasoning traces. Confirm compatibility with existing message structures.",
-      "title": "Implement Reasoning Schema"
-    },
-    {
-      "dependencies": [
-        70
-      ],
-      "description": "Connect the Reasoning Protocol Layer to the CPU execution lifecycle.",
-      "details": "Modify the CPU/state machine to call into the RPL at key lifecycle stages: pre-evaluation, tool selection, memory lookup, and final action planning. Ensure deterministic behavior and clean separation of concerns. Add hooks for reasoning injection and extraction.",
-      "id": 71,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 71.1,
-          "status": "pending",
-          "title": "Add RPL hooks to CPU lifecycle"
-        },
-        {
-          "dependencies": [
-            71.1
-          ],
-          "id": 71.2,
-          "status": "pending",
-          "title": "Implement reasoning injection/extraction"
-        },
-        {
-          "dependencies": [
-            71.2
-          ],
-          "id": 71.3,
-          "status": "pending",
-          "title": "Ensure deterministic execution ordering"
-        }
-      ],
-      "testStrategy": "Run CPU lifecycle tests ensuring reasoning steps are invoked at correct times. Validate that reasoning does not break existing tool execution or message flow.",
-      "title": "Integrate RPL with CPU/State Machine"
-    },
-    {
-      "dependencies": [
-        71
-      ],
-      "description": "Use the RPL to influence skill scoring, ranking, and fallback logic.",
-      "details": "Modify the skill arbitration layer to consume reasoning outputs such as tool_evaluation and uncertainty. Allow RPL to provide weighted recommendations. Ensure arbitration remains deterministic and overrideable.",
-      "id": 72,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 72.1,
-          "status": "pending",
-          "title": "Connect RPL outputs to skill scoring"
-        },
-        {
-          "dependencies": [
-            72.1
-          ],
-          "id": 72.2,
-          "status": "pending",
-          "title": "Implement uncertainty-aware fallback logic"
-        }
-      ],
-      "testStrategy": "Simulate multiple arbitration scenarios and confirm RPL influences scoring correctly. Validate fallback behavior when reasoning is incomplete or suppressed.",
-      "title": "Integrate RPL with Skill Arbitration"
-    },
-    {
-      "dependencies": [
-        71
-      ],
-      "description": "Implement structured logging for reasoning traces.",
-      "details": "Add structured logs for reasoning steps using correlation IDs and the unified logging system. Ensure logs can be toggled, redacted, or suppressed. Add log levels for reasoning: trace, debug, summary.",
-      "id": 73,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 73.1,
-          "status": "pending",
-          "title": "Implement reasoning log format"
-        },
-        {
-          "dependencies": [
-            73.1
-          ],
-          "id": 73.2,
-          "status": "pending",
-          "title": "Add log-level controls for reasoning"
-        }
-      ],
-      "testStrategy": "Verify logs appear correctly in trace mode and are suppressed in normal mode. Confirm correlation IDs match CPU execution logs.",
-      "title": "Add Reasoning Trace Logging"
-    },
-    {
-      "dependencies": [
-        73
-      ],
-      "description": "Ensure reasoning traces never leak unless explicitly requested.",
-      "details": "Implement a suppression layer that prevents reasoning traces from being returned to the user unless a debug flag is set. Add redaction rules for sensitive memory or internal state. Ensure compliance with safety and privacy constraints.",
-      "id": 74,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 74.1,
-          "status": "pending",
-          "title": "Implement suppression layer"
-        },
-        {
-          "dependencies": [
-            74.1
-          ],
-          "id": 74.2,
-          "status": "pending",
-          "title": "Add redaction rules"
-        }
-      ],
-      "testStrategy": "Test that reasoning traces never appear in normal responses. Validate that debug mode shows traces only when explicitly enabled.",
-      "title": "Add Reasoning Suppression and Privacy Controls"
-    },
-    {
-      "dependencies": [
-        74
-      ],
-      "description": "Create a full test suite validating the entire Reasoning Protocol Layer.",
-      "details": "Build integration tests covering: schema correctness, CPU lifecycle integration, skill arbitration influence, logging, suppression, and deterministic behavior. Include regression tests to prevent reasoning leakage.",
-      "id": 75,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 75.1,
-          "status": "pending",
-          "title": "Create integration test harness"
-        },
-        {
-          "dependencies": [
-            75.1
-          ],
-          "id": 75.2,
-          "status": "pending",
-          "title": "Write full RPL test scenarios"
-        }
-      ],
-      "testStrategy": "Run full suite and confirm all reasoning behaviors match expected outputs. Validate no regressions in existing Grok-CLI functionality.",
-      "title": "End-to-End RPL Integration Test Suite"
-    },
-    {
-      "dependencies": [
-        75
-      ],
-      "description": "Define the architecture for a full reasoning engine tightly integrated into the CPU/state machine.",
-      "details": "Design a reasoning engine that operates as a first-class component in the CPU lifecycle. It should orchestrate goal analysis, planning, tool selection, memory usage, uncertainty handling, and self-correction. Define clear interfaces between the CPU, Reasoning Engine, MemoryManager, and Skill Arbitration. Specify how reasoning states are represented, advanced, and persisted across turns.",
-      "id": 76,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 76.1,
-          "status": "pending",
-          "title": "Define reasoning engine responsibilities and boundaries"
-        },
-        {
-          "dependencies": [
-            76.1
-          ],
-          "id": 76.2,
-          "status": "pending",
-          "title": "Map CPU phases to reasoning phases"
-        },
-        {
-          "dependencies": [
-            76.2
-          ],
-          "id": 76.3,
-          "status": "pending",
-          "title": "Specify interfaces to MemoryManager and Skill Arbitration"
-        }
-      ],
-      "testStrategy": "Review the architecture document for completeness and consistency. Validate that all CPU phases have corresponding reasoning phases and that interfaces are well-defined and testable.",
-      "title": "Design Full Reasoning Engine Integrated with CPU"
-    },
-    {
-      "dependencies": [
-        76
-      ],
-      "description": "Create the core state structures and transitions for the reasoning engine.",
-      "details": "Implement Rust types representing the reasoning engine state, including fields for current goal, hypotheses, candidate plans, selected tools, memory references, and uncertainty metrics. Define explicit state transitions (e.g., AnalyzeGoal, ExpandOptions, EvaluateOptions, CommitPlan, ExecuteStep, RevisePlan). Ensure the state model is serializable and compatible with existing message envelopes and RPL schema.",
-      "id": 77,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 77.1,
-          "status": "pending",
-          "title": "Define reasoning state enums and structs"
-        },
-        {
-          "dependencies": [
-            77.1
-          ],
-          "id": 77.2,
-          "status": "pending",
-          "title": "Implement state transition functions"
-        },
-        {
-          "dependencies": [
-            77.2
-          ],
-          "id": 77.3,
-          "status": "pending",
-          "title": "Add serialization and versioning for reasoning state"
-        }
-      ],
-      "testStrategy": "Add unit tests for state transitions, ensuring valid transitions succeed and invalid transitions are rejected. Verify serialization/deserialization round-trips without data loss.",
-      "title": "Implement Reasoning Engine Core State Model"
-    },
-    {
-      "dependencies": [
-        77
-      ],
-      "description": "Wire Bayesian belief updates into the reasoning engine's decision process.",
-      "details": "Connect the existing Bayesian reasoning layer to the reasoning engine so that hypotheses, tool choices, and plans are scored and updated using probabilistic beliefs. Define how evidence from tool results, model outputs, and memory lookups updates beliefs. Ensure the Bayesian layer can influence plan selection, fallback decisions, and self-correction triggers.",
-      "id": 78,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 78.1,
-          "status": "pending",
-          "title": "Define belief structures for hypotheses and tools"
-        },
-        {
-          "dependencies": [
-            78.1
-          ],
-          "id": 78.2,
-          "status": "pending",
-          "title": "Implement evidence update hooks in reasoning engine"
-        },
-        {
-          "dependencies": [
-            78.2
-          ],
-          "id": 78.3,
-          "status": "pending",
-          "title": "Connect Bayesian scores to plan and tool selection"
-        }
-      ],
-      "testStrategy": "Create tests where controlled evidence updates beliefs in predictable ways. Verify that belief changes affect plan selection and fallback behavior as expected.",
-      "title": "Integrate Bayesian Reasoning into Reasoning Engine"
-    },
-    {
-      "dependencies": [
-        77,
-        78
-      ],
-      "description": "Enable the reasoning engine to construct and manage multi-step plans executed via the CPU.",
-      "details": "Implement a planning layer inside the reasoning engine that can decompose goals into ordered steps, each mapped to tools, memory operations, or model calls. Integrate with the CPU/state machine so that each plan step corresponds to a CPU action. Support plan revision when evidence contradicts assumptions or when steps fail.",
-      "id": 79,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 79.1,
-          "status": "pending",
-          "title": "Implement plan representation and step types"
-        },
-        {
-          "dependencies": [
-            79.1
-          ],
-          "id": 79.2,
-          "status": "pending",
-          "title": "Connect plan steps to CPU actions"
-        },
-        {
-          "dependencies": [
-            79.2
-          ],
-          "id": 79.3,
-          "status": "pending",
-          "title": "Implement plan revision and re-planning logic"
-        }
-      ],
-      "testStrategy": "Create scenarios where a goal requires multiple steps and verify that the engine builds a plan, executes steps in order, and revises the plan when intermediate results differ from expectations.",
-      "title": "Add Planning and Multi-Step Execution Logic"
-    },
-    {
-      "dependencies": [
-        77
-      ],
-      "description": "Make the reasoning engine memory-aware for context, retrieval, and write-back decisions.",
-      "details": "Add hooks for the reasoning engine to request memory lookups, evaluate which memories are relevant, and decide when to write new memories. Use reasoning state (goal, hypotheses, uncertainty) to guide which memories to fetch. Ensure memory operations are explicit steps in the plan and are logged via the RPL.",
-      "id": 80,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 80.1,
-          "status": "pending",
-          "title": "Define memory interaction API for reasoning engine"
-        },
-        {
-          "dependencies": [
-            80.1
-          ],
-          "id": 80.2,
-          "status": "pending",
-          "title": "Implement memory-aware reasoning steps"
-        },
-        {
-          "dependencies": [
-            80.2
-          ],
-          "id": 80.3,
-          "status": "pending",
-          "title": "Add tests for memory-driven reasoning decisions"
-        }
-      ],
-      "testStrategy": "Test scenarios where memory is required to answer a query or continue a multi-turn interaction. Verify that the reasoning engine requests appropriate memory lookups and writes back useful summaries or state.",
-      "title": "Integrate Reasoning Engine with MemoryManager"
-    },
-    {
-      "dependencies": [
-        78,
-        79
-      ],
-      "description": "Use the reasoning engine to drive tool selection, ordering, and fallback strategies.",
-      "details": "Refactor skill arbitration so that it becomes a collaborative process with the reasoning engine. The engine should propose candidate tools and sequences based on the plan, while arbitration scores and constraints refine the final selection. Support uncertainty-aware fallbacks, parallelizable tool steps, and explicit no-op decisions when tools are not needed.",
-      "id": 81,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 81.1,
-          "status": "pending",
-          "title": "Expose tool capabilities and costs to reasoning engine"
-        },
-        {
-          "dependencies": [
-            81.1
-          ],
-          "id": 81.2,
-          "status": "pending",
-          "title": "Implement joint reasoning—arbitration selection flow"
-        },
-        {
-          "dependencies": [
-            81.2
-          ],
-          "id": 81.3,
-          "status": "pending",
-          "title": "Add uncertainty-aware fallback and retry logic"
-        }
-      ],
-      "testStrategy": "Simulate multiple tool-heavy scenarios and verify that the reasoning engine and arbitration jointly select appropriate tools, handle failures gracefully, and avoid unnecessary calls.",
-      "title": "Deep Integration with Skill Arbitration and Tool Planning"
-    },
-    {
-      "dependencies": [
-        78,
-        79
-      ],
-      "description": "Enable the reasoning engine to detect mistakes and trigger self-correction cycles.",
-      "details": "Implement mechanisms for the reasoning engine to detect inconsistencies, low-confidence outcomes, or user feedback indicating failure. When triggered, the engine should re-evaluate beliefs, revise plans, or choose alternative tools. Ensure loops are bounded to avoid infinite retries and are fully observable in reasoning traces and logs.",
-      "id": 82,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 82.1,
-          "status": "pending",
-          "title": "Define error signals and self-correction triggers"
-        },
-        {
-          "dependencies": [
-            82.1
-          ],
-          "id": 82.2,
-          "status": "pending",
-          "title": "Implement self-correction loop logic"
-        },
-        {
-          "dependencies": [
-            82.2
-          ],
-          "id": 82.3,
-          "status": "pending",
-          "title": "Add safeguards against infinite correction loops"
-        }
-      ],
-      "testStrategy": "Create tests where initial plans are flawed or tools fail. Verify that the engine detects issues, revises its approach, and converges on a better outcome or gracefully reports limitations.",
-      "title": "Self-Correction and Error Recovery Loops"
-    },
-    {
-      "dependencies": [
-        73,
-        74,
-        77
-      ],
-      "description": "Expose rich but safe observability for the reasoning engine integrated with existing logging and RPL.",
-      "details": "Extend the existing RPL logging to capture reasoning engine states, transitions, and decisions with correlation IDs. Add debug flags or modes to enable deep reasoning traces for development while keeping them suppressed or summarized in normal operation. Ensure logs are structured, filterable, and respect privacy and redaction rules.",
-      "id": 83,
-      "priority": "medium",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 83.1,
-          "status": "pending",
-          "title": "Connect reasoning engine state to structured logs"
-        },
-        {
-          "dependencies": [
-            83.1
-          ],
-          "id": 83.2,
-          "status": "pending",
-          "title": "Implement debug flags and modes for reasoning"
-        },
-        {
-          "dependencies": [
-            83.2
-          ],
-          "id": 83.3,
-          "status": "pending",
-          "title": "Validate redaction and privacy behavior in logs"
-        }
-      ],
-      "testStrategy": "Run end-to-end flows in both normal and debug modes. Verify that debug mode shows detailed reasoning traces, while normal mode only shows high-level summaries or none at all.",
-      "title": "Reasoning Engine Observability and Debug Controls"
-    },
-    {
-      "dependencies": [
-        79,
-        80,
-        81,
-        82,
-        83
-      ],
-      "description": "Build a comprehensive test suite for the fully integrated reasoning engine and CPU.",
-      "details": "Create an integration test suite that exercises the full reasoning engine lifecycle: goal analysis, planning, Bayesian updates, memory usage, tool selection, self-correction, and final response generation. Include regression tests to ensure existing Grok-CLI behaviors remain stable and that reasoning does not leak unintentionally.",
-      "id": 84,
-      "priority": "high",
-      "status": "pending",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 84.1,
-          "status": "pending",
-          "title": "Create integration test harness for CPU + reasoning engine"
-        },
-        {
-          "dependencies": [
-            84.1
-          ],
-          "id": 84.2,
-          "status": "pending",
-          "title": "Author scenario-based tests covering all reasoning phases"
-        },
-        {
-          "dependencies": [
-            84.2
-          ],
-          "id": 84.3,
-          "status": "pending",
-          "title": "Add regression tests for existing Grok-CLI behaviors"
-        }
-      ],
-      "testStrategy": "Run the full suite on representative scenarios (simple Q&A, multi-step tasks, tool-heavy flows, memory-dependent conversations). Confirm that outputs are correct, deterministic where expected, and that reasoning behavior matches the designed architecture.",
-      "title": "End-to-End Reasoning Engine CPU Integration Tests"
-    },
-    {
-      "dependencies": [],
-      "description": "Added two-stage JSON/JSONC validation to read_file, fixed route_with_tools_traced to use format_tool_error_for_llm, and wired log_tool_success/log_tool_error into both tool dispatch loops.",
-      "details": "Implemented two-stage validation in read_file: (1) strip JSONC trailing commas and inline comments with a regex pass, then (2) attempt JSON.parse and surface a structured ToolError::ParseError if parsing fails. Patched route_with_tools_traced to call format_tool_error_for_llm instead of the raw Display impl so error messages are LLM-safe. Wired log_tool_success and log_tool_error into both the primary tool-call loop and the fallback dispatch path so every tool invocation is fully traced with correlation IDs.",
-      "id": 85,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "Feed malformed JSON and valid JSONC files to read_file and confirm structured ToolError::ParseError is returned with a useful message. Run cargo test --lib tools:: (37/37 must pass). Confirm tracing log lines appear in RUST_LOG=trace output for both success and error paths across both dispatch loops.",
-      "title": "Harden read_file: JSON/JSONC Validation and Error Reporting"
-    },
-    {
-      "dependencies": [
-        85
-      ],
-      "description": "Add retry loops (Starlink-aware), atomic writes, input validation, tracing::warn on all error paths, and mcp_call built-in timeout across all 12 tool modules.",
-      "details": "Completed: retry loops on all network tools, atomic writes on file tools, tracing::warn at all error sites, mcp_call timeout, branch sanitization, empty-input guards, fix trivially-true tests. All 12 tool modules hardened.",
-      "id": 86,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "Simulate network failures by dropping the connection mid-request and confirm the retry loop fires with correct exponential back-off timing and jitter. Test atomic write correctness by sending SIGKILL mid-write and verifying no partial files exist on disk. Fuzz all tool entry points with invalid and edge-case inputs (empty strings, path-traversal sequences, oversized payloads). Run cargo clippy -- -D warnings and confirm zero new warnings introduced. Run the full cargo test suite and confirm no regressions.",
-      "title": "Harden All Tool Implementations"
-    },
-    {
-      "dependencies": [
-        86
-      ],
-      "description": "Add dedicated task_get(id) tool that returns a single task instead of the full file, supporting three task_list.json formats.",
-      "details": "Format A: {\"tasks\":[â€¦]}. Format C: [{â€¦},â€¦] plain array (bot project). Format B: {\"0\":{â€¦},â€¦} numeric-indexed object. Subtask IDs can be string (\"60.1\") or float. 20 integration tests in tests/tool_data_flow.rs cover full pipeline from tool call through message history trimmer to LLM context.",
-      "id": 87,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "cargo test --test tool_data_flow â€” 20 tests, all formats covered",
-      "title": "task_get Tool â€” Multi-Format Task File Detection"
-    },
-    {
-      "dependencies": [
-        87
-      ],
-      "description": "Fix the full chain of bugs that caused the LLM to fabricate task information.",
-      "details": "1) System prompt was stored in session.config but never inserted into session.messages â€” fixed in initialize_session. 2) History trimmer drain(0..n) deleted system prompt â€” fixed with trim_from=1 guard. 3) LLM ignores TOOL ERROR and hallucinates â€” fixed by injecting anti-hallucination system message immediately after every TOOL ERROR. 4) System prompt rewritten with explicit success/failure branches.",
-      "id": 88,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "DATA-TRACE logs in .grok/logs/grok-tool-error-log.log show iter, layout, LLM response preview on every turn.",
-      "title": "ACP Session Hardening â€” System Prompt, Trimmer, Anti-Hallucination"
-    },
-    {
-      "dependencies": [
-        88
-      ],
-      "description": "Fix chat_logger::init idempotency and SecurityPolicy trusted-directory deduplication.",
-      "details": "1) chat_logger::init replaced global logger unconditionally â€” reconnects wiped active session causing \"no active session\" warnings. Fixed with is_none() guard. 2) add_trusted_directory had no dedup check â€” same path pushed 3-4 times per session. Fixed with contains() check. 3) initialize_session now calls security.set_working_directory(cwd) so relative paths resolve against Zed workspace root, not process launch dir.",
-      "id": 89,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "TOOL-ERROR logs should show exactly one trusted directory entry per session.",
-      "title": "Chat Logger & Security Policy Hardening"
-    },
-    {
-      "dependencies": [
-        89
-      ],
-      "description": "Harden task_tools.rs with full production-grade robustness: tracing instrumentation (info/warn on every path), atomic JSON write (.tmp then rename), .bak snapshot and corrupt-file recovery, dependency-ID existence checks, duplicate-title detection, and input sanitisation (trim + length guard).",
-      "details": "1. Add `use tracing::{info, warn};` to task_tools.rs.\n2. save_task_file: write JSON to task_list.json.tmp then fs::rename for atomic swap; best-effort copy to task_list.json.bak before rename.\n3. load_task_file: if serde parse fails on live file, try .bak; emit tracing::warn! on fallback; return structured error if both are corrupt.\n4. task_create: trim title/description/details/test_strategy; hard-error on empty title; warn! if len > 200; warn! if case-insensitive duplicate title detected; warn! for each dep ID not found in existing task list; info! on successful creation with task_id, title, priority fields.\n5. task_update: info! on every field change; warn! if id not found before the iterator search (gives cleaner log line).\n6. New unit tests: atomic_save_leaves_no_tmp, load_recovers_from_bak_on_corrupt_live, create_trims_whitespace_in_title, create_rejects_overlong_title.",
-      "id": 90,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 90.1,
-          "status": "done",
-          "title": "Add tracing + save_task_file atomic write + .bak backup"
-        },
-        {
-          "dependencies": [
-            90.1
-          ],
-          "id": 90.2,
-          "status": "done",
-          "title": "Harden load_task_file with .bak fallback recovery"
-        },
-        {
-          "dependencies": [
-            90.2
-          ],
-          "id": 90.3,
-          "status": "done",
-          "title": "Add input sanitisation, dup-title warn, dep-existence warn to task_create"
-        },
-        {
-          "dependencies": [
-            90.3
-          ],
-          "id": 90.4,
-          "status": "done",
-          "title": "Add tracing to task_update + new unit tests"
-        }
-      ],
-      "testStrategy": "cargo test --lib task_tools — all 13 tests must pass (9 existing + 4 new). Manually verify RUST_LOG=trace output shows info!/warn! lines for create and update paths. Corrupt task_list.json in a temp dir and confirm the tool recovers from .bak without returning an error.",
-      "title": "Harden task_create / task_update — Tracing, Atomic Writes, Dependency Validation & Backup Recovery"
-    },
-    {
-      "dependencies": [
-        90
-      ],
-      "description": "acp/mod.rs still stores Option<GrokClient> from before the repo cut. Wire in AppRouter so all AI calls in the ACP path flow through the CpuRouter stack (Starlink-resilient retry, multi-backend support).",
-      "details": "1. Remove `use crate::GrokClient;`, add `use crate::router::AppRouter;`.\n2. Rename struct field: `grok_client: Option<GrokClient>` -> `router: Option<AppRouter>`.\n3. In `new()`: replace `GrokClient::with_settings(api_key, timeout_secs, max_retries)` with `AppRouter::new(api_key, timeout_secs)` (retries live inside GrokBackend now). Update log messages. Rename local `grok_client` -> `router`.\n4. Rename method `get_client` -> `get_router`, return `Result<&AppRouter>`.\n5. Update both call sites: `self.get_client()?` -> `self.get_router()?` at handle_chat_completion (L560) and handle_chat_with_system_prompt (L1057).",
-      "id": 91,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "cargo build succeeds with zero new errors. cargo test --lib acp (all tests pass). `grok acp stdio` launches without panics.",
-      "title": "Replace GrokClient with AppRouter in ACP module"
-    },
-    {
-      "dependencies": [
-        91
-      ],
-      "description": "The Reasoning Protocol Layer (src/rpl/) was written on the test-old_10 branch in commit a6c6f82 but was never merged into PreRelese. Port all 6 source files plus integration tests.",
-      "details": "Files to port from git branch test-old_10 (commit a6c6f82):\n- src/rpl/layer.rs (518 lines) — RplLayer lifecycle management\n- src/rpl/logging.rs (301 lines) — ReasoningLogLevel + log_trace\n- src/rpl/schema.rs (504 lines) — ReasoningTrace, ToolEvaluation, MemoryConsideration\n- src/rpl/validation.rs (484 lines) — ValidationError + validate()\n- src/rpl/suppression.rs (643 lines) — SuppressionLayer + RedactionConfig\n- src/rpl/mod.rs (104 lines) — flat re-exports\n- tests/rpl_integration.rs (302 lines) — integration tests\n\nSteps:\n1. Run: git show a6c6f82:src/rpl/layer.rs > src/rpl/layer.rs (repeat for each file)\n2. Add `pub mod rpl;` to src/lib.rs\n3. Run `cargo test --lib rpl` — all tests must pass",
-      "id": 92,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 92.1,
-          "status": "done",
-          "title": "Extract rpl/ source files from test-old_10 via git-show"
-        },
-        {
-          "dependencies": [
-            92.1
-          ],
-          "id": 92.2,
-          "status": "done",
-          "title": "Register pub mod rpl in src/lib.rs"
-        },
-        {
-          "dependencies": [
-            92.2
-          ],
-          "id": 92.3,
-          "status": "done",
-          "title": "Copy tests/rpl_integration.rs and verify all pass"
-        }
-      ],
-      "testStrategy": "cargo build with zero errors. cargo test --lib rpl (all pass). cargo test --test rpl_integration (all pass).",
-      "title": "Port RPL Module from test-old_10 to PreRelese"
-    },
-    {
-      "dependencies": [
-        92
-      ],
-      "description": "The FSM core of the reasoning engine — state.rs (987 lines) — is the only fully-implemented engine module on test-old_10. Port it first as the foundation for the other engine modules.",
-      "details": "Files to port from test-old_10:\n- src/engine/state.rs (987 lines) — EngineState FSM enum, ReasoningEngineState, Hypothesis, PlanStep, StepAction, StepStatus, TransitionError, PlanError, ENGINE_SCHEMA_VERSION, validate_version\n- src/engine/mod.rs (109 lines) — module declarations and flat re-exports\n\nSteps:\n1. git show a6c6f82:src/engine/state.rs > src/engine/state.rs\n2. git show a6c6f82:src/engine/mod.rs > src/engine/mod.rs (will need stub sub-modules first)\n3. Add `pub mod engine;` to src/lib.rs\n4. cargo build — fix any import mismatches against the current codebase",
-      "id": 93,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 93.1,
-          "status": "done",
-          "title": "Extract engine/state.rs from test-old_10"
-        },
-        {
-          "dependencies": [
-            93.1
-          ],
-          "id": 93.2,
-          "status": "done",
-          "title": "Create engine/mod.rs with stub declarations for remaining modules"
-        },
-        {
-          "dependencies": [
-            93.2
-          ],
-          "id": 93.3,
-          "status": "done",
-          "title": "Register pub mod engine in src/lib.rs and verify cargo build"
-        }
-      ],
-      "testStrategy": "cargo test --lib engine::state — all 25+ state transition unit tests pass. cargo build clean.",
-      "title": "Port Reasoning Engine State Model (src/engine/state.rs)"
-    },
-    {
-      "dependencies": [
-        93
-      ],
-      "description": "Port the 6 supporting engine modules from test-old_10. These exist as stubs there but provide the correct public API surface and unit tests. Full implementations can be completed in follow-up tasks (76-84).",
-      "details": "Files to port from test-old_10 (all are stubs with correct public API + unit tests):\n- src/engine/beliefs.rs (632 lines) — EngineBeliefs, Evidence, ToolBelief\n- src/engine/planner.rs (542 lines) — PlanBuilder, PlanBuilderConfig, ToolHint\n- src/engine/memory_bridge.rs (402 lines) — MemoryBridge, MemoryBridgeConfig\n- src/engine/arbitration.rs (811 lines) — ArbitrationEngine, RankedTool, ToolCapability\n- src/engine/correction.rs (975 lines) — CorrectionEngine, CorrectionConfig, CorrectionOutcome\n- src/engine/observability.rs (890 lines) — EngineObserver, ObserverConfig, is_safe_to_log, redact_state\n\nSteps (per file):\n  git show a6c6f82:src/engine/<module>.rs > src/engine/<module>.rs\nThen run cargo build and fix any API mismatches against the current codebase (memory module, skills module, etc. may have diverged slightly).",
-      "id": 94,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [
-            93.3
-          ],
-          "id": 94.1,
-          "status": "done",
-          "title": "Port engine/beliefs.rs"
-        },
-        {
-          "dependencies": [
-            93.3
-          ],
-          "id": 94.2,
-          "status": "done",
-          "title": "Port engine/planner.rs"
-        },
-        {
-          "dependencies": [
-            94.1
-          ],
-          "id": 94.3,
-          "status": "done",
-          "title": "Port engine/memory_bridge.rs"
-        },
-        {
-          "dependencies": [
-            94.1,
-            94.2
-          ],
-          "id": 94.4,
-          "status": "done",
-          "title": "Port engine/arbitration.rs"
-        },
-        {
-          "dependencies": [
-            94.4
-          ],
-          "id": 94.5,
-          "status": "done",
-          "title": "Port engine/correction.rs"
-        },
-        {
-          "dependencies": [
-            94.5
-          ],
-          "id": 94.6,
-          "status": "done",
-          "title": "Port engine/observability.rs"
-        }
-      ],
-      "testStrategy": "cargo test --lib engine:: — all tests pass. cargo build with zero errors. All public types from src/engine/mod.rs re-exports are reachable.",
-      "title": "Port Reasoning Engine Sub-Modules (beliefs, planner, memory_bridge, arbitration, correction, observability)"
-    },
-    {
-      "dependencies": [
-        92,
-        93
-      ],
-      "description": "The test-old_10 version of CpuRouter had an optional RplLayer field, with_rpl() builder, and route_with_tools_traced(). These were stripped when PreRelese diverged. Re-add them to src/router/cpu_router.rs.",
-      "details": "Changes needed to src/router/cpu_router.rs:\n1. Add `rpl: Option<crate::rpl::RplLayer>` field to CpuRouter struct\n2. Update CpuRouter::new() to set rpl: None\n3. Add pub fn with_rpl(mut self, rpl: crate::rpl::RplLayer) -> Self builder\n4. Add pub async fn route_with_tools_traced() — same as route_with_tools but calls RPL lifecycle hooks: on_pre_evaluate, on_tool_selection, on_complete\n5. Update Debug impl to include rpl_enabled field\n\nReference: git show a6c6f82:src/router/cpu_router.rs for the original implementation.",
-      "id": 95,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 95.1,
-          "status": "done",
-          "title": "Add rpl field + with_rpl() to CpuRouter"
-        },
-        {
-          "dependencies": [
-            95.1
-          ],
-          "id": 95.2,
-          "status": "done",
-          "title": "Implement route_with_tools_traced() with RPL lifecycle hooks"
-        },
-        {
-          "dependencies": [
-            95.2
-          ],
-          "id": 95.3,
-          "status": "done",
-          "title": "Add unit tests for traced route path"
-        }
-      ],
-      "testStrategy": "cargo test --lib router:: — all existing tests pass plus new route_with_tools_traced tests. cargo build clean.",
-      "title": "Wire RPL into CpuRouter on PreRelese"
-    },
-    {
-      "dependencies": [
-        94,
-        95
-      ],
-      "description": "Port tests/engine_integration.rs (338 lines) and ensure they pass against the ported engine modules.",
-      "details": "Files to port:\n- tests/engine_integration.rs (338 lines) — full CPU+engine lifecycle scenarios\n\nSteps:\n1. git show a6c6f82:tests/engine_integration.rs > tests/engine_integration.rs\n2. cargo test --test engine_integration\n3. Fix any API mismatches caused by codebase divergence",
-      "id": 96,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 96.1,
-          "status": "done",
-          "title": "Extract tests/engine_integration.rs from test-old_10"
-        },
-        {
-          "dependencies": [
-            96.1
-          ],
-          "id": 96.2,
-          "status": "done",
-          "title": "Fix import/API mismatches and verify all tests pass"
-        }
-      ],
-      "testStrategy": "cargo test --test engine_integration — all tests pass.",
-      "title": "Port Engine Integration Tests"
-    },
-    {
-      "dependencies": [
-        94
-      ],
-      "description": "src/agent/planner.rs is a stub with mock methods (call_model_for_plan always returns Plan{}). Replace it with a real Planner that uses ReasoningEngineState to drive goal analysis and multi-step planning.",
-      "details": "Current state: planner.rs has Plan{} struct with mock heuristic_confidence(), Planner struct with BayesianEngine, and async fn call_model_for_plan() that always returns Ok(Plan{}).\n\nTarget state:\n1. Import ReasoningEngineState from crate::engine::state\n2. Planner drives a ReasoningEngineState FSM turn\n3. Plan struct wraps a completed CommitPlan state\n4. Remove mock methods — replace with real calls through the engine\n5. planner.rs should be ~100-150 lines (thin adapter over engine)",
-      "id": 97,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 97.1,
-          "status": "done",
-          "title": "Rewrite Plan struct to wrap engine CommitPlan state"
-        },
-        {
-          "dependencies": [
-            97.1
-          ],
-          "id": 97.2,
-          "status": "done",
-          "title": "Rewrite Planner::plan() to drive ReasoningEngineState FSM"
-        },
-        {
-          "dependencies": [
-            97.2
-          ],
-          "id": 97.3,
-          "status": "done",
-          "title": "Add unit tests for planner FSM integration"
-        }
-      ],
-      "testStrategy": "cargo test --lib agent::planner — unit tests verify FSM transitions. cargo build clean.",
-      "title": "Replace agent/planner.rs Stub with Real Engine Integration"
-    },
-    {
-      "dependencies": [],
-      "description": "Add a DAG-based multi-step execution engine to Grok-CLI.",
-      "details": "Create a task graph executor capable of running multi-step workflows. Implement node definitions, dependency resolution, execution ordering, error propagation, and caching of successful nodes. Add JSON schema for LLM-generated task graphs and integrate with the tool loop.",
-      "id": 98,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 98.1,
-          "status": "done",
-          "title": "Define Task Graph Node Schema"
-        },
-        {
-          "dependencies": [
-            98.1
-          ],
-          "id": 98.2,
-          "status": "done",
-          "title": "Implement DAG Executor"
-        },
-        {
-          "dependencies": [
-            98.2
-          ],
-          "id": 98.3,
-          "status": "done",
-          "title": "Integrate Executor with Tool Loop"
-        }
-      ],
-      "testStrategy": "Create a 3-step workflow (read → edit → write) and verify correct ordering, dependency enforcement, and error handling.",
-      "title": "Implement Task Graph Engine"
-    },
-    {
-      "dependencies": [],
-      "description": "Expose tool metadata so the LLM can discover available tools and schemas.",
-      "details": "Implement a tool registry query interface. Add commands for listing tools, describing schemas, and showing examples. Integrate with the LLM so it can request tool metadata before generating calls.",
-      "id": 99,
-      "priority": "high",
-      "status": "done",
-      "subtasks": [
-        {
-          "dependencies": [],
-          "id": 99.1,
-          "status": "done",
-          "title": "Implement Tool Registry Query API"
-        },
-        {
-          "dependencies": [
-            99.1
-          ],
-          "id": 99.2,
-          "status": "done",
-          "title": "Add CLI Commands for Tool Introspection"
-        }
-      ],
-      "testStrategy": "Run `/tools list` and `/tools describe file_read` and verify correct output.",
-      "title": "Add Tool Introspection System"
-    },
-    {
-      "dependencies": [],
-      "description": "Create commands to inspect, reset, and explain Bayesian routing state.",
-      "details": "Add commands `/bayes show`, `/bayes reset`, and `/bayes explain`. Display current belief weights, last intent decision, and reasoning. Integrate with the router to expose internal state safely.",
-      "id": 100,
-      "priority": "medium",
-      "status": "done",
-      "subtasks": [],
-      "testStrategy": "Trigger several intents, then run `/bayes show` and verify belief updates.",
-      "title": "Add Bayesian Belief Debugger"
-    },
-    {
-      "dependencies": [
-        98
-      ],
+      "dependencies": [98],
       "description": "Automatically retry failed tool calls using LLM-guided correction.",
       "details": "Capture tool errors, feed them back into the LLM, request a corrected tool call, and retry. Add retry limits and error classification. Integrate with the task graph engine for multi-step correction.",
       "id": 101,
@@ -3471,7 +9,7 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Force a file_read error and verify that the system retries with corrected arguments.",
-      "title": "Implement Self-Correction Loop"
+      "title": "Implement Self-Correction Loop",
     },
     {
       "dependencies": [],
@@ -3483,7 +21,7 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Place a markdown file in `knowledge/` and verify that the LLM references it when relevant.",
-      "title": "Add Local Knowledge Pack Loader"
+      "title": "Add Local Knowledge Pack Loader",
     },
     {
       "dependencies": [],
@@ -3495,7 +33,7 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Modify tone settings and verify that LLM responses change accordingly.",
-      "title": "Implement Session DNA System"
+      "title": "Implement Session DNA System",
     },
     {
       "dependencies": [],
@@ -3509,24 +47,20 @@
           "dependencies": [],
           "id": 104.1,
           "status": "done",
-          "title": "Implement Dynamic Tool Loader"
+          "title": "Implement Dynamic Tool Loader",
         },
         {
-          "dependencies": [
-            104.1
-          ],
+          "dependencies": [104.1],
           "id": 104.2,
           "status": "done",
-          "title": "Add Schema Validation for Custom Tools"
-        }
+          "title": "Add Schema Validation for Custom Tools",
+        },
       ],
       "testStrategy": "Create a simple custom tool and verify that Grok-CLI loads and executes it.",
-      "title": "Add Plugin Sandbox for Custom Tools"
+      "title": "Add Plugin Sandbox for Custom Tools",
     },
     {
-      "dependencies": [
-        98
-      ],
+      "dependencies": [98],
       "description": "Implement a dry-run mode where tools do not execute but return simulated results.",
       "details": "Add a `--simulate` flag. Wrap tool calls in a simulation layer that returns mock outputs. Ensure no file writes or shell commands execute. Integrate with task graph engine.",
       "id": 105,
@@ -3535,12 +69,10 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Run a workflow in simulation mode and verify that no real system changes occur.",
-      "title": "Add Simulation Mode"
+      "title": "Add Simulation Mode",
     },
     {
-      "dependencies": [
-        103
-      ],
+      "dependencies": [103],
       "description": "Allow users to set persistent goals that influence interpretation of all messages.",
       "details": "Add `/goal` and `/goal clear` commands. Store goals in session state. Modify routing and prompting to incorporate the active goal into every LLM request.",
       "id": 106,
@@ -3548,13 +80,10 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Set a goal and verify that subsequent messages are interpreted through that goal.",
-      "title": "Add Goal Mode System"
+      "title": "Add Goal Mode System",
     },
     {
-      "dependencies": [
-        98,
-        100
-      ],
+      "dependencies": [98, 100],
       "description": "Generate a visual graph of the Grok-CLI routing and execution pipeline.",
       "details": "Create a module that outputs a DOT/Graphviz representation of the routing pipeline: user input → bayesian router → intent → tool loop → LLM output. Add a CLI command to export the graph.",
       "id": 107,
@@ -3562,12 +91,10 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Generate a graph and verify that all pipeline states and transitions are represented.",
-      "title": "Add State Machine Visualizer"
+      "title": "Add State Machine Visualizer",
     },
     {
-      "dependencies": [
-        107
-      ],
+      "dependencies": [107],
       "description": "When conversation history approaches the model token limit, automatically summarize the oldest messages with the AI, persist them to the session archive on disk, replace them with a compact notice in the active context, and allow retrieval via /recall or a recall_context tool.",
       "details": "## Problem\nThe current trimming strategy (count-based + token-budget) simply drops old messages when context fills up. This permanently loses potentially important conversation history. Users working on long coding sessions frequently lose earlier decisions, file edits, and reasoning chains.\n\n## Goal\nImplement a four-stage context lifecycle that replaces blind dropping with intelligent summarization:\n\n1. DETECT — when estimated prompt tokens exceed `compression_threshold` (default 75%) of `max_context_tokens`, trigger compression.\n2. SUMMARIZE — take the oldest `compression_chunk_ratio` (default 40%) of messages and make a fast API call to produce a bullet-point summary + key_facts list.\n3. ARCHIVE — persist the full raw messages + summary to disk at `~/.grok/sessions/{session_id}/archives/chunk_NNN.json` and update an `index.json`.\n4. REPLACE — remove the archived messages from `session.messages` and insert a compact system-role archive-notice message (~50 tokens) so the model knows the history exists and how to recall it.\n\n## Archive Notice Format (injected into active context)\n```\n[Context Archive #N | {timestamp}]\nSummary: {2-3 sentence AI summary of what was discussed/done}.\nKey facts: {bullet list}.\nSay \"recall archive N\" or type `/recall N` to restore this context.\n```\n\n## Storage Layout\n```\n~/.grok/sessions/{session_id}/\n  episode.json          (existing — end-of-session metadata)\n  transcript.json       (existing — full raw transcript)\n  archives/\n    index.json          (list of chunk IDs + token counts)\n    chunk_001.json      (raw messages + AI summary)\n    chunk_002.json\n    ...\n```\n\n## New Rust Modules\n- `src/memory/context_archive.rs` — `ContextChunk`, `ContextArchive` structs + atomic disk I/O.\n- `src/memory/context_compressor.rs` — `ContextCompressor` that calls the Grok API to summarize a message batch.\n\n## New Config Fields (AcpConfig in src/config/mod.rs)\n```toml\n# Master switch — disable to revert to old drop-only behaviour.\nauto_compress = true\n# Fraction of max_context_tokens at which compression fires (0.0–1.0).\ncompression_threshold = 0.75\n# Fraction of current non-system messages compressed per event (0.0–1.0).\ncompression_chunk_ratio = 0.40\n```\n\n## Integration Point\nLayer 4 is added to `handle_chat_completion` in `src/acp/mod.rs`, after the existing three layers (per-message truncation, count trim, token-budget trim).\n\n## New Slash Commands (src/acp/slash_commands.rs)\n- `/recall N` — retrieve chunk N back into active context as a system message.\n- `/archives` — list all archived chunks for this session (ID, timestamp, token count, one-line summary).\n\n## New Tool (src/tools/ or src/acp/tools.rs)\n- `recall_context { chunk_id }` — allows the AI itself to pull an archived chunk back in when it detects it needs earlier information. Returns the summary + key_facts; the full raw messages are injected as a system message.",
       "id": 108,
@@ -3579,88 +106,63 @@
           "details": "Define ContextChunk { chunk_id: u32, session_id, created_at, message_count, estimated_tokens_saved, summary, key_facts: Vec<String>, raw_messages: Vec<Value> } and ContextArchive { session_id, sessions_dir, index: Vec<ChunkMeta> }. Implement save_chunk (atomic write-then-rename to chunk_NNN.json + update index.json), load_chunk, list_chunks, and session_archive_dir helper. Mirror the atomic_write pattern from EpisodicMemory.",
           "id": 108.1,
           "status": "done",
-          "title": "ContextChunk + ContextArchive types and disk I/O (src/memory/context_archive.rs)"
+          "title": "ContextChunk + ContextArchive types and disk I/O (src/memory/context_archive.rs)",
         },
         {
-          "dependencies": [
-            108.1
-          ],
+          "dependencies": [108.1],
           "details": "Implement async fn compress(messages: &[Value], router: &AppRouter, model: &str) -> Result<(String, Vec<String>)>. Build a one-shot prompt: 'Summarize the following conversation in 2-3 sentences and list up to 10 key facts as bullet points.' Call chat_completion_with_history with the batch as user content. Parse the response into (summary_text, key_facts). Apply Starlink-safe retries (3 attempts, 5s/10s/20s backoff). Keep the summarization call short-circuited if messages is empty.",
           "id": 108.2,
           "status": "done",
-          "title": "ContextCompressor — AI-powered batch summarizer (src/memory/context_compressor.rs)"
+          "title": "ContextCompressor — AI-powered batch summarizer (src/memory/context_compressor.rs)",
         },
         {
-          "dependencies": [
-            108.1
-          ],
+          "dependencies": [108.1],
           "details": "Add three fields to AcpConfig in src/config/mod.rs with serde defaults. Add matching default fns: default_auto_compress() -> bool = true, default_compression_threshold() -> f32 = 0.75, default_compression_chunk_ratio() -> f32 = 0.40. Update AcpConfig::default(). Document all three fields in config.example.toml and .grok/config.toml.",
           "id": 108.3,
           "status": "done",
-          "title": "New AcpConfig fields: auto_compress, compression_threshold, compression_chunk_ratio"
+          "title": "New AcpConfig fields: auto_compress, compression_threshold, compression_chunk_ratio",
         },
         {
-          "dependencies": [
-            108.2,
-            108.3
-          ],
+          "dependencies": [108.2, 108.3],
           "details": "After the existing three-layer trim block, add Layer 4. Check: config.acp.auto_compress && estimated_tokens > threshold. If triggered: 1) Calculate how many non-system messages to compress (len * compression_chunk_ratio, minimum 4). 2) Drain those messages from session.messages (preserve system message at index 0). 3) Call ContextCompressor::compress. 4) Call ContextArchive::save_chunk. 5) Build the archive notice JSON value and insert at index 1 (right after system message). 6) Emit a warn!() log with chunk ID and tokens saved. If the summarization API call itself fails (network drop), fall back to the existing token-budget trim — never crash the session.",
           "id": 108.4,
           "status": "done",
-          "title": "Layer 4 compression trigger in handle_chat_completion (src/acp/mod.rs)"
+          "title": "Layer 4 compression trigger in handle_chat_completion (src/acp/mod.rs)",
         },
         {
-          "dependencies": [
-            108.4
-          ],
+          "dependencies": [108.4],
           "details": "Extract a pure fn build_archive_notice(chunk: &ContextChunk) -> serde_json::Value that produces a system-role JSON message. Format: '[Context Archive #N | YYYY-MM-DD HH:MM]\\nSummary: {summary}\\nKey facts:\\n{bullet list}\\n\\nType `/recall N` or say \"recall archive N\" to restore this context.' Keep the notice under 400 characters to minimise its own token footprint. Add a unit test that checks the resulting JSON has role=\"system\" and contains the chunk ID.",
           "id": 108.5,
           "status": "done",
-          "title": "Archive notice message builder"
+          "title": "Archive notice message builder",
         },
         {
-          "dependencies": [
-            108.1,
-            108.5
-          ],
+          "dependencies": [108.1, 108.5],
           "details": "Add SlashCommand::Recall { chunk_id: Option<u32> } and SlashCommand::Archives. Parse '/recall' (list all) and '/recall N' (inject chunk N). In handle_builtin: for Archives — call ContextArchive::list_chunks and format as a markdown table (ID | Date | Messages | Tokens Saved | Summary preview). For Recall { Some(n) } — load chunk from disk, inject raw messages as a single merged system message prefixed with '[Recalled Archive #N]', return BuiltinResult::InjectMessages. For Recall { None } — same as Archives. Wire into parse_slash_command.",
           "id": 108.6,
           "status": "done",
-          "title": "/recall and /archives slash commands (src/acp/slash_commands.rs)"
+          "title": "/recall and /archives slash commands (src/acp/slash_commands.rs)",
         },
         {
-          "dependencies": [
-            108.1,
-            108.6
-          ],
+          "dependencies": [108.1, 108.6],
           "details": "Register a new tool definition recall_context with parameter chunk_id: u32 (required). When called during a tool loop in handle_chat_completion: load the chunk from ContextArchive, return its summary + key_facts as the tool result string, and append the raw messages to session.messages as a batch system message. This allows the AI to self-retrieve earlier context when it detects it needs information it can no longer see. Add to get_available_tool_definitions().",
           "id": 108.7,
           "status": "done",
-          "title": "recall_context AI tool (src/acp/tools.rs or src/tools/)"
+          "title": "recall_context AI tool (src/acp/tools.rs or src/tools/)",
         },
         {
-          "dependencies": [
-            108.1,
-            108.2,
-            108.3,
-            108.4,
-            108.5,
-            108.6,
-            108.7
-          ],
+          "dependencies": [108.1, 108.2, 108.3, 108.4, 108.5, 108.6, 108.7],
           "details": "Unit tests: ContextChunk serialisation round-trip, ContextArchive save + load, build_archive_notice format check, compression_chunk_ratio boundary cases (min 4 messages). Integration test: mock router that returns a fixed summary; run Layer 4 trigger; assert chunk file exists and session.messages contains the notice. Update CONFIGURATION.md with new ACP config fields. Update TROUBLESHOOTING.md: 'Why did my context get archived?' section. Add CHANGELOG entry. Run cargo clippy -D warnings and cargo test before marking done.",
           "id": 108.8,
           "status": "done",
-          "title": "Tests, docs, and CHANGELOG"
-        }
+          "title": "Tests, docs, and CHANGELOG",
+        },
       ],
       "testStrategy": "1. Start a long session that produces > 75% of max_context_tokens. Verify that chunk_001.json appears in ~/.grok/sessions/{id}/archives/ and that the active session.messages contains the archive notice instead of the original messages.\n2. Type `/recall 1` — verify the archived context is injected back and the model can answer questions about it.\n3. Use the `recall_context` tool from within an AI turn — verify it returns the summary correctly.\n4. Run `/archives` — verify all chunk IDs + metadata are listed.\n5. Set `auto_compress = false` — verify old drop-only behaviour is restored.\n6. Simulate Starlink drop during the summarization API call — verify the archive write is atomic (no partial files) and the session continues without error.",
-      "title": "Intelligent Auto Context Management"
+      "title": "Intelligent Auto Context Management",
     },
     {
-      "dependencies": [
-        108
-      ],
+      "dependencies": [108],
       "description": "Update all model references, capabilities, and context-management logic to fully leverage grok-4.3's 1,000,000-token context window while keeping backward compatibility with grok-3 (256 k) and grok-2 (131 k).",
       "details": "## Background\ngrok-4.3 is now the default model and exposes a 1,048,576-token context window — roughly 4× the grok-3 window.  The current code has several hardcoded or config-defaulted values that are tuned for grok-3 (256 k) and must be updated.\n\n## Changes Required\n\n### 1. src/acp/mod.rs — create_capabilities()\n- Set `max_context_length: 1_048_576` (up from 131_072).\n- Add `\"grok-4.3\"` as the first entry in `models` vec; keep grok-3, grok-3-mini, grok-2-vision-1212, grok-2 as fallbacks.\n- Add feature flags: `\"1m_context\"`, `\"vision\"` (grok-4.3 is multimodal).\n\n### 2. src/config/mod.rs — AcpConfig\n- Add new field `grok4_max_context_tokens: usize` (default: 950_000).  This is the soft budget for grok-4.x models — leaves 50 k headroom for response + tool definitions.\n- Rename/update the doc comment on `max_context_tokens` to clarify it applies to grok-3 and older.\n- Add `fn default_grok4_max_context_tokens() -> usize { 950_000 }`.\n- Update `AcpConfig::default()` to include the new field.\n\n### 3. src/acp/mod.rs — handle_chat_completion (Layer 3 token-budget trim)\n- Replace the single `max_ctx_tokens` lookup with model-aware selection:\n```rust\nlet max_ctx_tokens = model_context_budget(\n    &session.config.model,\n    self.config.acp.max_context_tokens,\n    self.config.acp.grok4_max_context_tokens,\n);\n```\n- Add free function `fn model_context_budget(model: &str, grok3_budget: usize, grok4_budget: usize) -> usize` that returns grok4_budget when `model.starts_with(\"grok-4\")`, else grok3_budget.\n- Apply the same model-aware budget in Layer 4 (compression threshold calculation).\n\n### 4. src/acp/mod.rs — SessionConfig::default()\n- Keep model as `\"grok-4.3\"`.\n- Raise `max_tokens` (output) to 16_384 — grok-4.3 supports higher output token limits.\n\n### 5. src/config/mod.rs — Config defaults\n- Update `default_max_tokens()` from 256_000 to 16_384 (this is the output-token budget; 256 k was erroneously set to match the input window).\n- Update comment on `default_max_context_tokens()` to clarify 220_000 is the grok-3 budget.\n\n### 6. config.example.toml + .grok/config.toml\n- Add `grok4_max_context_tokens = 950000` under `[acp]`.\n- Update comments to describe the model-selection logic.\n\n### 7. CONFIGURATION.md\n- Add a \"Model Context Budgets\" section documenting grok-4.3 vs grok-3 limits.\n\n### 8. CHANGELOG.md\n- Add entry for v0.2.0 noting grok-4.3 default and 1 M context support.",
       "id": 109,
@@ -3671,46 +173,38 @@
           "dependencies": [],
           "id": 109.1,
           "status": "done",
-          "title": "Update create_capabilities — max_context_length = 1_048_576, models list"
+          "title": "Update create_capabilities — max_context_length = 1_048_576, models list",
         },
         {
           "dependencies": [],
           "id": 109.2,
           "status": "done",
-          "title": "Add grok4_max_context_tokens field to AcpConfig + default fn"
+          "title": "Add grok4_max_context_tokens field to AcpConfig + default fn",
         },
         {
-          "dependencies": [
-            109.2
-          ],
+          "dependencies": [109.2],
           "id": 109.3,
           "status": "done",
-          "title": "Add model_context_budget() helper and wire into Layer 3 + Layer 4"
+          "title": "Add model_context_budget() helper and wire into Layer 3 + Layer 4",
         },
         {
           "dependencies": [],
           "id": 109.4,
           "status": "done",
-          "title": "Fix default_max_tokens (output) from 256_000 to 16_384; update SessionConfig::default max_tokens"
+          "title": "Fix default_max_tokens (output) from 256_000 to 16_384; update SessionConfig::default max_tokens",
         },
         {
-          "dependencies": [
-            109.2,
-            109.3,
-            109.4
-          ],
+          "dependencies": [109.2, 109.3, 109.4],
           "id": 109.5,
           "status": "done",
-          "title": "Update config.example.toml, CONFIGURATION.md, and CHANGELOG.md"
-        }
+          "title": "Update config.example.toml, CONFIGURATION.md, and CHANGELOG.md",
+        },
       ],
       "testStrategy": "1. `cargo build --release` passes with zero warnings.\n2. `cargo test` passes.\n3. Run `cargo clippy -- -D warnings` — zero issues.\n4. Start a session with grok-4.3: verify log line shows `max_ctx_tokens = 950000`.\n5. Start a session with grok-3: verify log line shows `max_ctx_tokens = 220000`.\n6. Confirm `GrokAgentCapabilities::max_context_length` equals 1_048_576 in a unit test.\n7. Check `config.example.toml` contains `grok4_max_context_tokens`.",
-      "title": "grok-4.3 Full Support — 1 Million Token Context Window"
+      "title": "grok-4.3 Full Support — 1 Million Token Context Window",
     },
     {
-      "dependencies": [
-        109
-      ],
+      "dependencies": [109],
       "description": "Add first-class support for grok-4.3 thinking/reasoning modes via the xAI API's reasoning_effort parameter.  Users can switch between Off / Low / High reasoning at runtime; thinking tokens are surfaced in the terminal UI and optionally persisted with session history.",
       "details": "## Background\nThe xAI API exposes a `reasoning_effort` field on chat completion requests for models that support extended thinking (grok-3-mini, grok-4.x).  Valid values:\n- `\"none\"` — standard response, no internal reasoning trace.\n- `\"low\"` — light reasoning; faster and cheaper.\n- `\"high\"` — deep reasoning; highest quality, slower, higher token cost.\nThe response may include a `thinking` or `reasoning_content` field in `choices[0].message` containing the model's internal chain-of-thought.\n\n## Changes Required\n\n### 1. src/config/mod.rs\n- Add `ThinkingMode` enum:\n```rust\n#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, Default)]\n#[serde(rename_all = \"snake_case\")]\npub enum ThinkingMode {\n    #[default]\n    Off,    // reasoning_effort = \"none\" (not sent for non-reasoning models)\n    Low,    // reasoning_effort = \"low\"\n    High,   // reasoning_effort = \"high\"\n}\n```\n- Add `thinking_mode: ThinkingMode` field to `AcpConfig` with `#[serde(default)]` and `default_thinking_mode` fn returning `ThinkingMode::Off`.\n\n### 2. src/acp/mod.rs — SessionConfig\n- Add `pub thinking_mode: ThinkingMode` field to `SessionConfig`.\n- Update `SessionConfig::default()` to set `thinking_mode: ThinkingMode::Off`.\n\n### 3. src/grok_client_ext.rs — GrokClient::chat_completion_with_history\n- Add `reasoning_effort: Option<&str>` parameter (or `thinking_mode: Option<ThinkingMode>`).\n- If `Some` and not `ThinkingMode::Off`, append `\"reasoning_effort\": \"low\"|\"high\"` to the JSON request body.\n- Since grok_api v0.1.7's builder may not expose this field, inject it by either:\n  (a) Adding a `.reasoning_effort(val)` builder method to the local grok_api crate (`../grok_crate/grok_api/src/client.rs`), or\n  (b) Adding an `extra_body` field to the builder that merges a `serde_json::Map` into the request body before serialization.\n- Preferred: option (a) — add `reasoning_effort: Option<String>` to the request builder in grok_api.\n\n### 4. src/grok_client_ext.rs — MessageWithFinishReason + response parsing\n- Extend `MessageWithFinishReason` with `pub thinking_content: Option<String>`.\n- In `convert_response_to_message_with_finish_reason`: extract `choices[0].message.reasoning_content` or `choices[0].message.thinking` if present and store in `thinking_content`.\n- Forward `thinking_content` back through `handle_chat_completion` → display layer.\n\n### 5. src/acp/mod.rs — handle_chat_completion\n- Pass `session.config.thinking_mode` (converted to `Option<&str>`) when calling `chat_completion_with_history`.\n- After receiving the response, if `thinking_content` is Some, prepend it to the assistant message as a fenced block:\n```\n<details><summary>🧠 Thinking…</summary>\n\n{thinking_content}\n\n</details>\n```\n- Emit a `debug!()` log with token count of thinking content (len / 4).\n\n### 6. src/acp/slash_commands.rs — /think command\n- Add `SlashCommand::Think { mode: ThinkingMode }`.\n- Parse `/think` → list current mode.\n- Parse `/think off` → ThinkingMode::Off.\n- Parse `/think low` → ThinkingMode::Low.\n- Parse `/think high` → ThinkingMode::High.\n- Call a new `GrokAcpAgent::set_thinking_mode(session_id, mode)` method.\n- Return a `BuiltinResult::Handled(msg)` describing the change.\n\n### 7. src/acp/mod.rs — set_thinking_mode()\n- Add `pub async fn set_thinking_mode(&self, session_id: &SessionId, mode: ThinkingMode) -> Result<()>`.\n\n### 8. src/main.rs / CLI chat command\n- Add `--thinking <off|low|high>` flag to the `chat` subcommand.\n- Pass it through `SessionConfig` when starting a chat session.\n\n### 9. Config files + docs\n- Add `thinking_mode = \"off\"` to `[acp]` in `config.example.toml` with a comment.\n- Document in `CONFIGURATION.md`.\n- Add CHANGELOG entry.\n\n## Network / Starlink Considerations\nThinking mode requests take significantly longer (especially `high`).  Ensure:\n- `timeout_secs` is respected (already configured for long operations).\n- The existing Starlink retry loop covers thinking-mode requests without special changes (they're the same HTTP call, just longer).",
       "id": 110,
@@ -3721,63 +215,47 @@
           "dependencies": [],
           "id": 110.1,
           "status": "done",
-          "title": "Add ThinkingMode enum + AcpConfig.thinking_mode + SessionConfig.thinking_mode"
+          "title": "Add ThinkingMode enum + AcpConfig.thinking_mode + SessionConfig.thinking_mode",
         },
         {
-          "dependencies": [
-            110.1
-          ],
+          "dependencies": [110.1],
           "id": 110.2,
           "status": "done",
-          "title": "Add reasoning_effort to grok_api builder (../grok_crate/grok_api/src/client.rs)"
+          "title": "Add reasoning_effort to grok_api builder (../grok_crate/grok_api/src/client.rs)",
         },
         {
-          "dependencies": [
-            110.2
-          ],
+          "dependencies": [110.2],
           "id": 110.3,
           "status": "done",
-          "title": "Wire thinking_mode through GrokClient::chat_completion_with_history"
+          "title": "Wire thinking_mode through GrokClient::chat_completion_with_history",
         },
         {
-          "dependencies": [
-            110.3
-          ],
+          "dependencies": [110.3],
           "id": 110.4,
           "status": "done",
-          "title": "Parse thinking_content from API response; surface in handle_chat_completion"
+          "title": "Parse thinking_content from API response; surface in handle_chat_completion",
         },
         {
-          "dependencies": [
-            110.1
-          ],
+          "dependencies": [110.1],
           "id": 110.5,
           "status": "done",
-          "title": "Add /think slash command + set_thinking_mode() agent method"
+          "title": "Add /think slash command + set_thinking_mode() agent method",
         },
         {
-          "dependencies": [
-            110.1
-          ],
+          "dependencies": [110.1],
           "id": 110.6,
           "status": "done",
-          "title": "Add --thinking CLI flag to the chat subcommand"
+          "title": "Add --thinking CLI flag to the chat subcommand",
         },
         {
-          "dependencies": [
-            110.1,
-            110.3,
-            110.4,
-            110.5,
-            110.6
-          ],
+          "dependencies": [110.1, 110.3, 110.4, 110.5, 110.6],
           "id": 110.7,
           "status": "done",
-          "title": "Update config.example.toml, CONFIGURATION.md, and CHANGELOG.md"
-        }
+          "title": "Update config.example.toml, CONFIGURATION.md, and CHANGELOG.md",
+        },
       ],
       "testStrategy": "1. `cargo build --release` and `cargo clippy -- -D warnings` pass.\n2. Unit test: `ThinkingMode` serialises to/from `\"off\"`, `\"low\"`, `\"high\"` correctly.\n3. Unit test: `SessionConfig` default has `thinking_mode = ThinkingMode::Off`.\n4. Integration test (with GROK_API_KEY): start session, send `/think high`, verify session config updated, make a simple request, verify response includes a `<details>` block with thinking content (or gracefully skips it if the model returns none).\n5. Slash command test: parse `/think low` → produces `SlashCommand::Think { mode: ThinkingMode::Low }`.\n6. `--thinking high` CLI flag sets `SessionConfig::thinking_mode` before first call.\n7. No regression on sessions using `ThinkingMode::Off` (default).",
-      "title": "grok-4.3 Thinking Modes — reasoning_effort Support"
+      "title": "grok-4.3 Thinking Modes — reasoning_effort Support",
     },
     {
       "dependencies": [],
@@ -3791,72 +269,56 @@
           "dependencies": [],
           "id": 111.1,
           "status": "done",
-          "title": "Phase A — Audit crate API; produce Doc/acp-migration-map.md"
+          "title": "Phase A — Audit crate API; produce Doc/acp-migration-map.md",
         },
         {
-          "dependencies": [
-            111.1
-          ],
+          "dependencies": [111.1],
           "id": 111.2,
           "status": "done",
-          "title": "Phase B-1 — Swap protocol.rs schema types for official crate equivalents"
+          "title": "Phase B-1 — Swap protocol.rs schema types for official crate equivalents",
         },
         {
-          "dependencies": [
-            111.2
-          ],
+          "dependencies": [111.2],
           "id": 111.3,
           "status": "done",
-          "title": "Phase B-2 — Rewrite ACP connection loop using the Agent trait"
+          "title": "Phase B-2 — Rewrite ACP connection loop using the Agent trait",
         },
         {
-          "dependencies": [
-            111.2
-          ],
+          "dependencies": [111.2],
           "id": 111.4,
           "status": "done",
-          "title": "Phase B-3 — Replace AvailableCommand with official crate type in slash_commands.rs"
+          "title": "Phase B-3 — Replace AvailableCommand with official crate type in slash_commands.rs",
         },
         {
-          "dependencies": [
-            111.2
-          ],
+          "dependencies": [111.2],
           "id": 111.5,
           "status": "done",
-          "title": "Phase C-1 — Session resume: persist + reload session state via session/load"
+          "title": "Phase C-1 — Session resume: persist + reload session state via session/load",
         },
         {
-          "dependencies": [
-            111.3
-          ],
+          "dependencies": [111.3],
           "id": 111.6,
           "status": "deferred",
-          "title": "Phase C-2 — Elicitation: replace PermissionBridge with official elicitation RPC"
+          "title": "Phase C-2 — Elicitation: replace PermissionBridge with official elicitation RPC",
         },
         {
-          "dependencies": [
-            111.2
-          ],
+          "dependencies": [111.2],
           "id": 111.7,
           "status": "done",
-          "title": "Phase C-3 — Session fork: clone session state on session/fork request"
+          "title": "Phase C-3 — Session fork: clone session state on session/fork request",
         },
         {
-          "dependencies": [
-            111.3
-          ],
+          "dependencies": [111.3],
           "id": 111.8,
           "status": "deferred",
-          "title": "Phase C-4 — MCP-over-ACP: expose LLM tools as MCP server endpoint"
-        }
+          "title": "Phase C-4 — MCP-over-ACP: expose LLM tools as MCP server endpoint",
+        },
       ],
       "testStrategy": "Phase A: Doc/acp-migration-map.md exists with every protocol.rs type classified.\nPhase B: after each subtask, cargo test --lib passes all existing tests (45 slash-command + all other lib tests). Integration smoke-test with Zed: /bayes show, /think high, 3-turn chat — behaviour identical to pre-migration. cargo clippy --all-targets zero warnings.\nPhase C per feature — 111.5: kill grok mid-session, relaunch, send session/load, confirm history+goal restored. 111.6: trigger a file-write tool, confirm Zed shows structured permission dialog. 111.7: fork conversation in Zed, confirm independent branch. 111.8: connect plain MCP client to ACP stdio, list tools — all 32 visible.",
-      "title": "Migrate ACP Layer to Official agent-client-protocol Rust Crate"
+      "title": "Migrate ACP Layer to Official agent-client-protocol Rust Crate",
     },
     {
-      "dependencies": [
-        111
-      ],
+      "dependencies": [111],
       "description": "Design and implement a Text-Graph Synergy RAG engine for grok-cli using a hybrid tree-sitter + syn parser to build a semantic-entity project graph (structs, enums, traits, impls, functions, modules), coupled with embeddings and hybrid retrieval (BM25 + vectors) to drive graph-aware, retrieval-aware context compression and LLM prompting.",
       "details": "## Background\nCurrent grok-cli context handling includes context discovery and AI-powered summarization/archiving, but it is linear and text-only. The next step is a Text-Graph Synergy RAG (TGS-RAG) engine that couples a semantic project graph with embeddings and hybrid retrieval. The goal is to retrieve minimal, highly relevant context for each request by traversing a semantic entity graph (structs, enums, traits, impls, functions, modules) and combining it with vector search and BM25.\n\nThis epic uses a hybrid parsing approach: tree-sitter for fast, incremental file/function boundaries and syn for deep semantic extraction. The resulting graph will power graph-expanded retrieval, reranking, and Context Compression 2.0.\n\n## Scope\n- Build a semantic-entity project graph for Rust (and later, language-agnostic hooks).\n- Integrate embeddings + BM25 hybrid retrieval.\n- Implement graph-expanded retrieval and reranking.\n- Implement Context Compression 2.0 (retrieval-aware pruning + summarization).\n- Integrate with ACP sessions, Session DNA, and existing context-discovery pipeline.\n- Add configuration, docs, and tests.\n\n## Out of Scope\n- Non-Rust language-specific parsers (future tasks).\n- Full MCP-based external knowledge sources (future tasks).",
       "id": 112,
@@ -3867,172 +329,125 @@
           "details": "Created Doc/TGS_RAG_ARCHITECTURE.md and initial src/rag/ module with GraphNode, GraphEdge, ProjectGraph, and supporting types.",
           "id": 112.1,
           "status": "done",
-          "title": "Design TGS-RAG architecture and data model (semantic entity graph + retrieval pipeline)"
+          "title": "Design TGS-RAG architecture and data model (semantic entity graph + retrieval pipeline)",
         },
         {
           "details": "Added optional dependencies behind 'tgs-rag' feature in Cargo.toml.",
           "id": 112.2,
           "status": "done",
-          "title": "Add tree-sitter-rust + syn dependencies and feature flags"
+          "title": "Add tree-sitter-rust + syn dependencies and feature flags",
         },
         {
           "details": "Created src/rag/parser/tree_sitter_scanner.rs with TreeSitterScanner.",
           "id": 112.3,
           "status": "done",
-          "title": "Implement tree-sitter-based file and function boundary scanner"
+          "title": "Implement tree-sitter-based file and function boundary scanner",
         },
         {
           "details": "Created src/rag/parser/syn_extractor.rs with SynExtractor.",
           "id": 112.4,
           "status": "done",
-          "title": "Implement syn-based semantic entity extractor (structs, enums, traits, impls, functions)"
+          "title": "Implement syn-based semantic entity extractor (structs, enums, traits, impls, functions)",
         },
         {
-          "dependencies": [
-            112.1,
-            112.3,
-            112.4
-          ],
+          "dependencies": [112.1, 112.3, 112.4],
           "id": 112.5,
           "status": "in_progress",
-          "title": "Define GraphNode and GraphEdge types for semantic entity graph"
+          "title": "Define GraphNode and GraphEdge types for semantic entity graph",
         },
         {
-          "dependencies": [
-            112.3,
-            112.4,
-            112.5
-          ],
+          "dependencies": [112.3, 112.4, 112.5],
           "id": 112.6,
           "status": "in_progress",
-          "title": "Build project graph builder: scan workspace, parse files, populate semantic entity graph"
+          "title": "Build project graph builder: scan workspace, parse files, populate semantic entity graph",
         },
         {
-          "dependencies": [
-            112.6
-          ],
+          "dependencies": [112.6],
           "id": 112.7,
           "status": "in_progress",
-          "title": "Add graph persistence and incremental update mechanism"
+          "title": "Add graph persistence and incremental update mechanism",
         },
         {
-          "dependencies": [
-            112.6
-          ],
+          "dependencies": [112.6],
           "id": 112.8,
           "status": "in_progress",
-          "title": "Integrate embeddings index (vectors) for graph nodes + BM25 text index"
+          "title": "Integrate embeddings index (vectors) for graph nodes + BM25 text index",
         },
         {
-          "dependencies": [
-            112.8
-          ],
+          "dependencies": [112.8],
           "id": 112.9,
           "status": "in_progress",
-          "title": "Implement hybrid retrieval: BM25 + embeddings over graph nodes"
+          "title": "Implement hybrid retrieval: BM25 + embeddings over graph nodes",
         },
         {
-          "dependencies": [
-            112.6,
-            112.9
-          ],
+          "dependencies": [112.6, 112.9],
           "id": 112.1,
           "status": "in_progress",
-          "title": "Implement graph-expanded retrieval (neighbors, parents, children, related entities)"
+          "title": "Implement graph-expanded retrieval (neighbors, parents, children, related entities)",
         },
         {
-          "dependencies": [
-            112.9,
-            112.1
-          ],
+          "dependencies": [112.9, 112.1],
           "id": 112.11,
           "status": "in_progress",
-          "title": "Implement reranking layer for retrieved nodes and chunks"
+          "title": "Implement reranking layer for retrieved nodes and chunks",
         },
         {
-          "dependencies": [
-            112.1,
-            112.11
-          ],
+          "dependencies": [112.1, 112.11],
           "id": 112.12,
           "status": "in_progress",
-          "title": "Implement Context Compression 2.0: retrieval-aware pruning + summarization"
+          "title": "Implement Context Compression 2.0: retrieval-aware pruning + summarization",
         },
         {
-          "dependencies": [
-            112.7,
-            112.12
-          ],
+          "dependencies": [112.7, 112.12],
           "id": 112.13,
           "status": "in_progress",
-          "title": "Wire TGS-RAG into ACP session context assembly pipeline"
+          "title": "Wire TGS-RAG into ACP session context assembly pipeline",
         },
         {
-          "dependencies": [
-            112.13
-          ],
+          "dependencies": [112.13],
           "id": 112.14,
           "status": "in_progress",
-          "title": "Integrate Session DNA and project context discovery with TGS-RAG"
+          "title": "Integrate Session DNA and project context discovery with TGS-RAG",
         },
         {
-          "dependencies": [
-            112.12,
-            112.13
-          ],
+          "dependencies": [112.12, 112.13],
           "id": 112.15,
           "status": "in_progress",
-          "title": "Add configuration options for TGS-RAG (enable/disable, budgets, thresholds)"
+          "title": "Add configuration options for TGS-RAG (enable/disable, budgets, thresholds)",
         },
         {
-          "dependencies": [
-            112.1,
-            112.11,
-            112.12
-          ],
+          "dependencies": [112.1, 112.11, 112.12],
           "id": 112.16,
           "status": "in_progress",
-          "title": "Add logging and debug tooling for TGS-RAG decisions (selected nodes, edges, chunks)"
+          "title": "Add logging and debug tooling for TGS-RAG decisions (selected nodes, edges, chunks)",
         },
         {
-          "dependencies": [
-            112.6,
-            112.9,
-            112.1
-          ],
+          "dependencies": [112.6, 112.9, 112.1],
           "id": 112.17,
           "status": "in_progress",
-          "title": "Add unit tests for graph builder and retrieval components"
+          "title": "Add unit tests for graph builder and retrieval components",
         },
         {
-          "dependencies": [
-            112.13,
-            112.14
-          ],
+          "dependencies": [112.13, 112.14],
           "id": 112.18,
           "status": "in_progress",
-          "title": "Add integration tests for TGS-RAG in real Rust projects"
+          "title": "Add integration tests for TGS-RAG in real Rust projects",
         },
         {
-          "dependencies": [
-            112.15
-          ],
+          "dependencies": [112.15],
           "id": 112.19,
           "status": "in_progress",
-          "title": "Update config.example.toml, CONFIGURATION.md, and README.md with TGS-RAG details"
+          "title": "Update config.example.toml, CONFIGURATION.md, and README.md with TGS-RAG details",
         },
         {
-          "dependencies": [
-            112.12,
-            112.19
-          ],
+          "dependencies": [112.12, 112.19],
           "id": 112.2,
           "status": "in_progress",
-          "title": "Add CHANGELOG entry for TGS-RAG and Context Compression 2.0"
-        }
+          "title": "Add CHANGELOG entry for TGS-RAG and Context Compression 2.0",
+        },
       ],
       "testStrategy": "1. `cargo build --release` and `cargo clippy -- -D warnings` pass after each subtask.\n2. Unit tests for graph construction: given a small Rust fixture project, the graph contains expected nodes (structs, enums, traits, impls, functions) and edges (module imports, call edges, impl relationships).\n3. Unit tests for retrieval: given a query about a specific function or struct, TGS-RAG returns the correct primary node plus relevant neighbors.\n4. Integration test: run grok-cli in a Rust project, ask for a refactor of a function that touches multiple modules; verify only relevant files/functions are loaded into context and the patch is consistent with the graph.\n5. Regression test: context compression still triggers correctly when context is full, but now uses graph-aware pruning.\n6. Logging/telemetry: debug logs show which graph nodes and chunks were selected for a given request.\n7. Performance: indexing a medium-sized Rust project (< 1k files) completes within a reasonable time (e.g., < 5 seconds on a typical dev machine).",
-      "title": "TGS-RAG Epic — Text-Graph Synergy Retrieval Engine (Semantic Entity Graph)"
+      "title": "TGS-RAG Epic — Text-Graph Synergy Retrieval Engine (Semantic Entity Graph)",
     },
     {
       "dependencies": [],
@@ -4043,38 +458,36 @@
       "status": "pending",
       "subtasks": [
         {
-          "id": 1131,
+          "id": 113.1,
           "status": "done",
-          "title": "Define TokenCache struct"
+          "title": "Define TokenCache struct",
         },
         {
-          "id": 1132,
+          "id": 113.2,
           "status": "done",
-          "title": "Implement system prompt hashing"
+          "title": "Implement system prompt hashing",
         },
         {
-          "id": 1133,
+          "id": 113.3,
           "status": "done",
-          "title": "Implement tool schema fingerprinting"
+          "title": "Implement tool schema fingerprinting",
         },
         {
-          "id": 1134,
+          "id": 113.4,
           "status": "done",
-          "title": "Add compressed context caching"
+          "title": "Add compressed context caching",
         },
         {
-          "id": 1135,
+          "id": 113.5,
           "status": "done",
-          "title": "Integrate cache into prompt builder"
-        }
+          "title": "Integrate cache into prompt builder",
+        },
       ],
       "testStrategy": "Simulate repeated requests and verify that cached components are reused and token count decreases by at least 30%.",
-      "title": "Implement Token Cache Module"
+      "title": "Implement Token Cache Module",
     },
     {
-      "dependencies": [
-        113
-      ],
+      "dependencies": [113],
       "description": "Add a cost-aware routing layer that selects model, compression level, and token budget based on request type and complexity.",
       "details": "Create src/optimizer/cost_router.rs with CostProfile and routing logic for cheap, balanced, and high-precision modes.",
       "id": 114,
@@ -4082,33 +495,31 @@
       "status": "pending",
       "subtasks": [
         {
-          "id": 1141,
+          "id": 114.1,
           "status": "done",
-          "title": "Define CostProfile struct"
+          "title": "Define CostProfile struct",
         },
         {
-          "id": 1142,
+          "id": 114.2,
           "status": "done",
-          "title": "Implement request classification"
+          "title": "Implement request classification",
         },
         {
-          "id": 1143,
+          "id": 114.3,
           "status": "done",
-          "title": "Add model selection logic"
+          "title": "Add model selection logic",
         },
         {
-          "id": 1144,
+          "id": 114.4,
           "status": "done",
-          "title": "Integrate router into session pipeline"
-        }
+          "title": "Integrate router into session pipeline",
+        },
       ],
       "testStrategy": "Verify that different request types trigger different cost profiles and that token usage aligns with configured budgets.",
-      "title": "Implement Cost Router"
+      "title": "Implement Cost Router",
     },
     {
-      "dependencies": [
-        113
-      ],
+      "dependencies": [113],
       "description": "Add delta-based prompt construction that sends only changed messages, updated tool schemas, and new context segments.",
       "details": "Create src/optimizer/delta_prompt.rs with PromptDelta enum and diff computation logic.",
       "id": 115,
@@ -4116,28 +527,26 @@
       "status": "pending",
       "subtasks": [
         {
-          "id": 1151,
+          "id": 115.1,
           "status": "pending",
-          "title": "Define PromptDelta enum"
+          "title": "Define PromptDelta enum",
         },
         {
-          "id": 1152,
+          "id": 115.2,
           "status": "pending",
-          "title": "Implement diff computation"
+          "title": "Implement diff computation",
         },
         {
-          "id": 1153,
+          "id": 115.3,
           "status": "pending",
-          "title": "Integrate delta builder into prompt pipeline"
-        }
+          "title": "Integrate delta builder into prompt pipeline",
+        },
       ],
       "testStrategy": "Verify that repeated requests send only deltas and reduce token usage by 40–70%.",
-      "title": "Implement Delta Prompting Engine"
+      "title": "Implement Delta Prompting Engine",
     },
     {
-      "dependencies": [
-        113
-      ],
+      "dependencies": [113],
       "description": "Add schema hashing, pruning, and compression to reduce tool overhead in prompts.",
       "details": "Create src/optimizer/tool_optimizer.rs with schema hashing and pruning logic.",
       "id": 116,
@@ -4145,28 +554,26 @@
       "status": "done",
       "subtasks": [
         {
-          "id": 1161,
+          "id": 116.1,
           "status": "done",
-          "title": "Add schema hashing"
+          "title": "Add schema hashing",
         },
         {
-          "id": 1162,
+          "id": 116.2,
           "status": "done",
-          "title": "Add unused tool pruning"
+          "title": "Add unused tool pruning",
         },
         {
-          "id": 1163,
+          "id": 116.3,
           "status": "done",
-          "title": "Add schema compression"
-        }
+          "title": "Add schema compression",
+        },
       ],
       "testStrategy": "Verify that unused tools are not included and schema size is reduced by 70–90%.",
-      "title": "Implement Tool Schema Optimizer"
+      "title": "Implement Tool Schema Optimizer",
     },
     {
-      "dependencies": [
-        113
-      ],
+      "dependencies": [113],
       "description": "Add embedding-based context summarization and semantic dedupe to reduce long-term context size.",
       "details": "Create src/optimizer/semantic_compression.rs with embedding store and summarization logic.",
       "id": 117,
@@ -4174,28 +581,26 @@
       "status": "done",
       "subtasks": [
         {
-          "id": 1171,
+          "id": 117.1,
           "status": "done",
-          "title": "Add embedding store"
+          "title": "Add embedding store",
         },
         {
-          "id": 1172,
+          "id": 117.2,
           "status": "done",
-          "title": "Implement semantic dedupe"
+          "title": "Implement semantic dedupe",
         },
         {
-          "id": 1173,
+          "id": 117.3,
           "status": "done",
-          "title": "Add summarization engine"
-        }
+          "title": "Add summarization engine",
+        },
       ],
       "testStrategy": "Verify that long conversations compress into semantic summaries while preserving meaning.",
-      "title": "Implement Semantic Compression Layer"
+      "title": "Implement Semantic Compression Layer",
     },
     {
-      "dependencies": [
-        113
-      ],
+      "dependencies": [113],
       "description": "Cache tokenized versions of system prompt, tool schemas, and compressed context to avoid repeated tokenization.",
       "details": "Extend token_cache.rs with token-level caching and token reuse logic.",
       "id": 118,
@@ -4203,29 +608,26 @@
       "status": "pending",
       "subtasks": [
         {
-          "id": 1181,
+          "id": 118.1,
           "status": "done",
-          "title": "Cache system prompt tokens"
+          "title": "Cache system prompt tokens",
         },
         {
-          "id": 1182,
+          "id": 118.2,
           "status": "done",
-          "title": "Cache tool schema tokens"
+          "title": "Cache tool schema tokens",
         },
         {
-          "id": 1183,
+          "id": 118.3,
           "status": "done",
-          "title": "Cache compressed context tokens"
-        }
+          "title": "Cache compressed context tokens",
+        },
       ],
       "testStrategy": "Verify that repeated requests skip tokenization and reduce CPU usage.",
-      "title": "Implement Token-Level Caching"
+      "title": "Implement Token-Level Caching",
     },
     {
-      "dependencies": [
-        114,
-        117
-      ],
+      "dependencies": [114, 117],
       "description": "Add token estimation and aggressive compression fallback when prompt exceeds cost profile limits.",
       "details": "Add token estimation and compression fallback to prompt builder.",
       "id": 119,
@@ -4233,29 +635,21 @@
       "status": "done",
       "subtasks": [
         {
-          "id": 1191,
+          "id": 119.1,
           "status": "done",
-          "title": "Add token estimator"
+          "title": "Add token estimator",
         },
         {
-          "id": 1192,
+          "id": 119.2,
           "status": "done",
-          "title": "Add compression fallback"
-        }
+          "title": "Add compression fallback",
+        },
       ],
       "testStrategy": "Verify that prompts never exceed configured token budgets.",
-      "title": "Implement Real-Time Token Budget Enforcement"
+      "title": "Implement Real-Time Token Budget Enforcement",
     },
     {
-      "dependencies": [
-        113,
-        114,
-        115,
-        116,
-        117,
-        118,
-        119
-      ],
+      "dependencies": [113, 114, 115, 116, 117, 118, 119],
       "description": "Wire token cache, cost router, delta prompting, semantic compression, and schema optimizer into the main Grok-CLI request pipeline.",
       "details": "Modify session.rs and prompt_builder.rs to use all optimization modules.",
       "id": 120,
@@ -4263,33 +657,33 @@
       "status": "done",
       "subtasks": [
         {
-          "id": 1201,
+          "id": 120.1,
           "status": "done",
-          "title": "Integrate token cache"
+          "title": "Integrate token cache",
         },
         {
-          "id": 1202,
+          "id": 120.2,
           "status": "done",
-          "title": "Integrate cost router"
+          "title": "Integrate cost router",
         },
         {
-          "id": 1203,
+          "id": 120.3,
           "status": "done",
-          "title": "Integrate delta prompting"
+          "title": "Integrate delta prompting",
         },
         {
-          "id": 1204,
+          "id": 120.4,
           "status": "done",
-          "title": "Integrate semantic compression"
+          "title": "Integrate semantic compression",
         },
         {
-          "id": 1205,
+          "id": 120.5,
           "status": "done",
-          "title": "Integrate tool schema optimizer"
-        }
+          "title": "Integrate tool schema optimizer",
+        },
       ],
       "testStrategy": "Run full end-to-end tests verifying reduced token usage, stable behavior, and correct tool routing.",
-      "title": "Integrate Optimization Suite Into Grok-CLI Pipeline"
+      "title": "Integrate Optimization Suite Into Grok-CLI Pipeline",
     },
     {
       "dependencies": [],
@@ -4300,12 +694,10 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Measure time from 'grok acp stdio' to ready state before/after. Verify capabilities still appear correctly in initialize response.",
-      "title": "Lazy-load ACP capabilities and tool definitions"
+      "title": "Lazy-load ACP capabilities and tool definitions",
     },
     {
-      "dependencies": [
-        121
-      ],
+      "dependencies": [121],
       "description": "Wrap get_tool_definitions() and get_available_tool_definitions() results in a global lazy static so the expensive JSON construction only happens once per process.",
       "details": "The big vec![json!(...)] in registry.rs is rebuilt on every agent creation. Cache it.",
       "id": 122,
@@ -4313,7 +705,7 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Add a simple timing test or log line showing construction only happens once.",
-      "title": "Cache tool definitions globally with once_cell / LazyLock"
+      "title": "Cache tool definitions globally with once_cell / LazyLock",
     },
     {
       "dependencies": [],
@@ -4324,12 +716,10 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Confirm no API key validation or network work happens until first prompt in Zed.",
-      "title": "Make AppRouter creation fully lazy in ACP path"
+      "title": "Make AppRouter creation fully lazy in ACP path",
     },
     {
-      "dependencies": [
-        121
-      ],
+      "dependencies": [121],
       "description": "Add a fast-path flag that skips non-essential init (knowledge packs, SessionDNA, Bayesian engine, HookManager) until after the first prompt when launched from Zed.",
       "details": "Zed starts 90% of ACP sessions. A dedicated fast path can shave noticeable time.",
       "id": 124,
@@ -4337,7 +727,7 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Benchmark with and without the flag. Ensure full features still activate on first real prompt.",
-      "title": "Add --zed / --fast startup flag for ACP stdio"
+      "title": "Add --zed / --fast startup flag for ACP stdio",
     },
     {
       "dependencies": [],
@@ -4348,12 +738,10 @@
       "status": "done",
       "subtasks": [],
       "testStrategy": "Produce before/after timing numbers for 'grok acp stdio' and actual Zed connection.",
-      "title": "Profile and trim unnecessary work in start_acp_stdio path"
+      "title": "Profile and trim unnecessary work in start_acp_stdio path",
     },
     {
-      "dependencies": [
-        121
-      ],
+      "dependencies": [121],
       "description": "Defer creation of SecurityManager and HookManager until they are actually needed instead of doing it in every GrokAcpAgent::new().",
       "details": "These are created unconditionally even though many ACP sessions may never need them.",
       "id": 126,
@@ -4361,7 +749,7 @@
       "status": "in_progress",
       "subtasks": [],
       "testStrategy": "Verify no behavior change for normal Zed usage.",
-      "title": "Make SecurityManager and HookManager initialization lazy"
+      "title": "Make SecurityManager and HookManager initialization lazy",
     },
     {
       "dependencies": [26],
@@ -4375,29 +763,29 @@
           "dependencies": [],
           "id": 127.1,
           "status": "pending",
-          "title": "Create AgentManager for tracking active sub-agents and their state"
+          "title": "Create AgentManager for tracking active sub-agents and their state",
         },
         {
           "dependencies": [127.1],
           "id": 127.2,
           "status": "pending",
-          "title": "Wire spawn_agent into ReasoningEngine planner as a PlanStep type"
+          "title": "Wire spawn_agent into ReasoningEngine planner as a PlanStep type",
         },
         {
           "dependencies": [127.2],
           "id": 127.3,
           "status": "pending",
-          "title": "Improve inter-agent communication (message bus over file-based JSONL)"
+          "title": "Improve inter-agent communication (message bus over file-based JSONL)",
         },
         {
           "dependencies": [],
           "id": 127.4,
           "status": "pending",
-          "title": "Add agent orchestration tools (fork, join, delegate_plan_step)"
-        }
+          "title": "Add agent orchestration tools (fork, join, delegate_plan_step)",
+        },
       ],
       "testStrategy": "Integration tests for spawning + merging results. Verify delegation appears in RPL traces.",
-      "title": "Advance Multi-Agent / Sub-Agent Orchestration"
+      "title": "Advance Multi-Agent / Sub-Agent Orchestration",
     },
     {
       "dependencies": [26],
@@ -4411,29 +799,29 @@
           "dependencies": [],
           "id": 128.1,
           "status": "done",
-          "title": "Define AgentActivityUpdate struct in protocol.rs"
+          "title": "Define AgentActivityUpdate struct in protocol.rs",
         },
         {
           "dependencies": [128.1],
           "id": 128.2,
           "status": "done",
-          "title": "Add helper to emit sub-agent lifecycle events from GrokAcpAgent"
+          "title": "Add helper to emit sub-agent lifecycle events from GrokAcpAgent",
         },
         {
           "dependencies": [128.2],
           "id": 128.3,
           "status": "deferred",
-          "title": "Wire emission points in spawn_agent, fork_agent, join_agents tools (blocked on Task 26)"
+          "title": "Wire emission points in spawn_agent, fork_agent, join_agents tools (blocked on Task 26)",
         },
         {
           "dependencies": [128.3],
           "id": 128.4,
           "status": "deferred",
-          "title": "Update handle_chat_completion to forward events via event_sender (blocked on Task 26)"
-        }
+          "title": "Update handle_chat_completion to forward events via event_sender (blocked on Task 26)",
+        },
       ],
       "testStrategy": "Manual test in Zed: spawn a sub-agent and verify a visible status update appears in the ACP panel.",
-      "title": "ACP Sub-Agent Activity Notifications"
+      "title": "ACP Sub-Agent Activity Notifications",
     },
     {
       "dependencies": [],
@@ -4447,29 +835,29 @@
           "dependencies": [],
           "id": 129.1,
           "status": "done",
-          "title": "Extend protocol.rs with ThinkingUpdate / PartialThinking types"
+          "title": "Extend protocol.rs with ThinkingUpdate / PartialThinking types",
         },
         {
           "dependencies": [129.1],
           "id": 129.2,
           "status": "done",
-          "title": "Modify response handling to emit partial thinking chunks when available"
+          "title": "Modify response handling to emit partial thinking chunks when available",
         },
         {
           "dependencies": [129.2],
           "id": 129.3,
           "status": "done",
-          "title": "Hook partial thinking emission into the main chat loop in acp/mod.rs"
+          "title": "Hook partial thinking emission into the main chat loop in acp/mod.rs",
         },
         {
           "dependencies": [129.3],
           "id": 129.4,
-          "status": "pending",
-          "title": "Add config flag (acp.stream_thinking) to enable/disable live thinking"
-        }
+          "status": "done",
+          "title": "Add config flag (acp.stream_thinking) to enable/disable live thinking",
+        },
       ],
       "testStrategy": "In Zed, start a complex task and watch a live collapsible 'Thinking' block appear and grow.",
-      "title": "Real-time Thinking Trace Streaming via ACP"
+      "title": "Real-time Thinking Trace Streaming via ACP",
     },
     {
       "dependencies": [],
@@ -4483,29 +871,29 @@
           "dependencies": [],
           "id": 130.1,
           "status": "done",
-          "title": "Define ContextUsageUpdate struct in protocol.rs"
+          "title": "Define ContextUsageUpdate struct in protocol.rs",
         },
         {
           "dependencies": [130.1],
           "id": 130.2,
           "status": "done",
-          "title": "Calculate usage stats after every API response in handle_chat_completion"
+          "title": "Calculate usage stats after every API response in handle_chat_completion",
         },
         {
           "dependencies": [130.2],
           "id": 130.3,
           "status": "done",
-          "title": "Emit ContextUsageUpdate via event_sender at the end of each turn"
+          "title": "Emit ContextUsageUpdate via event_sender at the end of each turn",
         },
         {
           "dependencies": [130.3],
           "id": 130.4,
           "status": "done",
-          "title": "Add acp.show_context_usage toggle in config"
-        }
+          "title": "Add acp.show_context_usage toggle in config",
+        },
       ],
       "testStrategy": "Verify Zed displays a context usage indicator that updates after each turn.",
-      "title": "ACP Context / Token Usage Feedback"
-    }
-  ]
+      "title": "ACP Context / Token Usage Feedback",
+    },
+  ],
 }

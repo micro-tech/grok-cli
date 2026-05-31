@@ -1042,8 +1042,10 @@ impl GrokAcpAgent {
             info!("📋 Finish reason: {:?}", finish_reason);
 
             // If the model produced a reasoning/thinking trace, log it and
-            // emit a thinking update to the ACP client (Task 129).
-            if let Some(ref tc) = thinking_content {
+            // emit a thinking update to the ACP client (Task 129) — only if enabled.
+            if self.config.acp.stream_thinking
+                && let Some(ref tc) = thinking_content
+            {
                 let think_tokens = tc.len() / 4;
                 debug!("🧠 Thinking trace received: ~{} tokens", think_tokens);
 
@@ -1082,8 +1084,10 @@ impl GrokAcpAgent {
                 );
                 // Prepend thinking block if present
                 let final_response = if let Some(tc) = thinking_content {
-                    // Emit final thinking update
-                    if let Some(sender) = &event_sender {
+                    // Emit final thinking update (only if stream_thinking is enabled)
+                    if self.config.acp.stream_thinking
+                        && let Some(sender) = &event_sender
+                    {
                         let update = crate::acp::protocol::ThinkingUpdate {
                             content: tc.clone(),
                             is_final: true,

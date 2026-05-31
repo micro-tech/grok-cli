@@ -287,6 +287,12 @@ pub struct AcpConfig {
     /// Default: true
     #[serde(default = "default_true")]
     pub show_context_usage: bool,
+
+    /// Whether to emit `thinking_update` notifications containing the model's
+    /// chain-of-thought / reasoning trace.
+    /// Default: true
+    #[serde(default = "default_true")]
+    pub stream_thinking: bool,
 }
 
 /// Network configuration optimized for satellite connections
@@ -1127,6 +1133,7 @@ impl Default for AcpConfig {
             compression_chunk_ratio: default_compression_chunk_ratio(),
             thinking_mode: ThinkingMode::Off,
             show_context_usage: true,
+            stream_thinking: true,
         }
     }
 }
