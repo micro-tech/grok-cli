@@ -26,6 +26,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 - **Code Intelligence** — Explain, review, generate, and refactor across any language
 - **Starlink Optimizations** — Smart retries and timeout handling for satellite connections
 - **Multi-Agent Orchestration** — `AgentManager`, sub-agent spawning (`spawn_agent`/`fork_agent`), result joining, in-memory messaging, and `DelegateToSubAgent` plan steps (Task 127)
+- **Bayesian Stabilization** — Configurable belief decay (`belief_decay_rate` / `prior_pull_rate`) prevents extreme intent dominance while keeping routing responsive
 
 See [Doc/QUICK_REFERENCE.md](Doc/QUICK_REFERENCE.md) for the full command list and [Doc/FEATURES.md](Doc/FEATURES.md) (coming soon) for details.
 

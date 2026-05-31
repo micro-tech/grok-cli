@@ -11,6 +11,19 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Bayesian Belief Stabilization
+
+- **Configurable Decay** — Added `belief_decay_rate` (default `0.95`) and `prior_pull_rate` (default `0.05`) to `[bayesian]` in `config.toml`.
+- **Decay Step** — `bayes_update()` now includes a stabilization pass after every likelihood update:
+  ```rust
+  *belief_value = *belief_value * decay_rate + prior * pull_rate;
+  ```
+  This gently regresses beliefs toward their long-term priors, preventing any single intent from dominating (e.g. 98.5% vs near-zero).
+- **Engine Integration** — `BayesianEngine` stores the decay parameters and passes them through all update paths (`update_from_text`, `update_from_model_confidence`, `update_from_tool_failure`).
+- **Example Config** — `config.example.toml` now documents the new parameters with recommended values for stable routing.
+
+This change dramatically improves belief distribution stability while preserving responsiveness to strong signals.
+
 ### Multi-Agent Orchestration (Task 127)
 
 - **AgentManager** — New central registry (`src/agent/manager.rs`) for tracking sub-agents with full lifecycle states (`Running`, `Completed`, `Failed`, `Cancelled`).

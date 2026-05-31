@@ -426,6 +426,44 @@ This data flow map provides a comprehensive view of how data moves through the G
 
 ---
 
+## Bayesian Belief Stabilization (Decay Step)
+
+The Bayesian engine now includes a **decay / stabilization step** after every update to prevent extreme probability collapse.
+
+### Problem
+Without stabilization, repeated updates could drive one intent to 98–99% while crushing others to near-zero, making the router overly decisive and brittle.
+
+### Solution
+After the likelihood multiplication and floor, a decay pass is applied:
+
+```rust
+// --- DECAY STEP ---
+for (intent, belief_value) in priors.iter_mut() {
+    let prior = likelihoods.get(intent).copied().unwrap_or(0.0);
+    *belief_value = *belief_value * decay_rate + prior * pull_rate;
+}
+```
+
+- `decay_rate` (default `0.95`) — how much of the current belief is retained
+- `pull_rate` (default `0.05`) — how strongly beliefs are pulled toward their long-term priors
+
+### Configuration
+
+```toml
+[bayesian]
+belief_decay_rate = 0.92   # stronger stabilization
+prior_pull_rate   = 0.08
+```
+
+Higher `pull_rate` values produce more conservative, stable distributions. Lower values allow faster adaptation at the cost of occasional extreme spikes.
+
+This mechanism is applied uniformly in:
+- `update_from_text()`
+- `update_from_model_confidence()`
+- `update_from_tool_failure()`
+
+---
+
 ## Reasoning Protocol Layer (RPL) Data Flow
 
 The RPL is a **passive observability layer** that wraps the `CpuRouter::route_with_tools_traced()` call. It captures structured `ReasoningTrace` objects without influencing the control flow.
