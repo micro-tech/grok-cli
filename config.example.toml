@@ -155,38 +155,6 @@ blocked = []
 # Master on/off switch. When false the router is fully bypassed.
 enabled = true
 
-[security.external_access]
-enabled = false
-require_approval = true
-logging = true
-allowed_paths = ["./", "./logs", "./config", "./zed"]
-excluded_patterns = [
-    "**/.env",
-    "**/.env.*",
-    "**/.git/**",
-    "**/.ssh/**",
-    "**/*.key",
-    "**/*.pem",
-    "**/*.p12",
-    "**/*.pfx",
-    "**/id_rsa*",
-    "**/password*",
-    "**/secret*",
-    "**/.aws/**",
-    "**/.azure/**",
-]
-
-[experimental]
-enable_agents = false
-extension_management = false
-extension_reloading = false
-jit_context = false
-
-
-[bayesian]
-# Master on/off switch. When false the router is fully bypassed.
-enabled = true
-
 # Show the real-time ASCII belief-graph after each message.
 show_belief_graph = false
 
@@ -205,7 +173,7 @@ uncertainty_threshold = 0.85
 # "Request is vague" note injected when P(is_vague) exceeds this.
 vagueness_threshold = 0.80
 
-# ── Learning parameters ───────────────────────────────────────────────────────
+# ── Learning & Stabilization parameters ───────────────────────────────────────
 
 # Strength of keyword → intent likelihood spikes.
 # Higher = more decisive routing on a keyword match.
@@ -214,17 +182,25 @@ intent_likelihood_weight = 1.6
 # Fractional boost per successful tool call (0.1 = 10%).
 profile_learning_rate = 0.05
 
+# Decay factor applied after each Bayesian update (0.0 – 1.0).
+# Higher values = slower decay toward priors (more stable distribution).
+belief_decay_rate = 0.92
+
+# Strength of the pull toward long-term priors during the decay step.
+# Higher values = stronger regression toward base priors.
+prior_pull_rate = 0.08
+
 # ── Default priors ────────────────────────────────────────────────────────────
 # Starting belief weights used when no saved profile exists on disk.
 # Values need not sum to 1 — they are normalised on load.
 [bayesian.priors]
-intent_edit         = 0.2
-intent_shell        = 0.2
-intent_search       = 0.2
-intent_question     = 0.3
-need_clarification  = 0.1
-low_confidence      = 0.2
-is_vague            = 0.1
+intent_edit        = 0.2
+intent_shell       = 0.2
+intent_search      = 0.2
+intent_question    = 0.3
+need_clarification = 0.1
+low_confidence     = 0.2
+is_vague           = 0.1
 
 [experimental.codebase_investigator_settings]
 enabled = true
