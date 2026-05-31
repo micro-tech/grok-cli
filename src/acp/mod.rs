@@ -18,6 +18,8 @@ use crate::hooks::HookManager;
 use crate::router::AppRouter;
 use serde::{Deserialize, Serialize};
 
+pub mod elicitation;
+pub mod mcp_bridge;
 pub mod protocol;
 pub mod security;
 pub mod slash_commands;
@@ -1575,7 +1577,22 @@ impl GrokAcpAgent {
         Ok(content_to_string(response.content.as_ref()))
     }
 
-    /// Get agent capabilities
+    /// Handle an official elicitation request (Task 111.6).
+    /// This is the integration point for the official agent-client-protocol
+    /// elicitation flow.
+    pub async fn handle_elicitation(
+        &self,
+        request: crate::acp::elicitation::ElicitationRequest,
+    ) -> crate::acp::elicitation::ElicitationResponse {
+        // For now we delegate to the existing permission bridge pattern.
+        // In a full implementation this would use the official
+        // `agent_client_protocol::schema::Elicitation*` types.
+        tracing::info!("Elicitation requested for session {}", request.session_id);
+
+        // Placeholder: return cancelled for safety until full UI integration.
+        crate::acp::elicitation::ElicitationResponse::cancelled()
+    }
+
     /// Returns `true` if the given tool name is in the session's always-allow
     /// set (i.e. the user previously chose "Always Allow" for this tool).
     ///

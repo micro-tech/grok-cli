@@ -47,7 +47,7 @@
 /// Skill arbitration integration.
 ///
 /// Stub — full implementation in Task 98.
-pub mod arbitration;
+pub mod execution;
 
 /// Bayesian belief management for the reasoning engine.
 ///
@@ -94,7 +94,7 @@ pub use planner::{PlanBuilder, PlanBuilderConfig, ToolHint};
 pub use memory_bridge::{MemoryBridge, MemoryBridgeConfig};
 
 // From arbitration.rs (Task 98)
-pub use arbitration::{ArbitrationConfig, ArbitrationEngine, RankedTool, ToolCapability};
+pub use execution::execute_delegate_to_sub_agent;
 
 // From correction.rs (Task 99)
 pub use correction::{CorrectionConfig, CorrectionEngine, CorrectionOutcome, CorrectionTrigger};

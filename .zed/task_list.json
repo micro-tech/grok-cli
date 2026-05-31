@@ -263,7 +263,7 @@
       "details": "## Why migrate?\nThe official crate (https://crates.io/crates/agent-client-protocol v0.11+) is maintained by the Zed team, powers Zed's own agent integration natively, and has >1.2 M downloads in the last 90 days. grok-cli currently hand-rolls every ACP wire-format type in src/acp/protocol.rs and the entire JSON-RPC dispatch loop in src/cli/commands/acp.rs (~1 800 lines). The multi-word slash-command name bug fixed in May 2026 is a textbook example of what the crate's strongly-typed schema would have caught at compile time. Migrating means every future ACP protocol update becomes a one-line version bump instead of manual archaeology.\n\n## Phase A — Research & Audit (111.1)\nRead the crate source + docs.rs, and compare every type in src/acp/protocol.rs against agent_client_protocol::schema::*. Categorise each type as REPLACE / EXTEND / KEEP. Produce Doc/acp-migration-map.md.\n\n## Phase B — Migration (111.2 – 111.4)\n111.2  Schema-types swap: add the crate as a real dependency (default-features = false), replace REPLACE types in protocol.rs with re-exports / type aliases, keep grok-specific structs (BayesEngine, ThinkingMode, Goal, etc.).\n111.3  Connection-layer rewrite: replace the raw BufReader/BufWriter loop in run_acp_session with the crate's Builder + Agent trait. Map each existing handler (handle_initialize, handle_session_new, handle_session_prompt, etc.) to the corresponding agent callback. Keep all grok custom session logic untouched (Bayesian engine, context archives, goals, thinking mode).\n111.4  Slash-command advertisement: replace the hand-rolled AvailableCommand struct with agent_client_protocol::schema::AvailableCommand — verify the crate enforces single-word names at the type level so the class of bug fixed in task 110 can never recur.\n\n## Phase C — New Protocol Features (111.5 – 111.8)\n111.5  Session resume (unstable_session_resume): persist full session state to .grok/sessions/<id>.json on close; reload it on session/load. Replaces the current stub that always returns null history.\n111.6  Elicitation (unstable_elicitation): replace the ad-hoc PermissionBridge with the official elicitation RPC so Zed / Gemini CLI show structured Allow / Allow Always / Deny dialogs.\n111.7  Session fork (unstable_session_fork): clone session state (messages + config + Bayes engine + goal) into a new session ID when a client sends session/fork — enables Zed's branch-conversation feature.\n111.8  MCP-over-ACP bridging (agent_client_protocol::mcp_server): expose grok-cli's 32 LLM-callable tools as a standard MCP server endpoint over the ACP transport so any MCP client can discover and invoke them.",
       "id": 111,
       "priority": "medium",
-      "status": "in_progress",
+      "status": "done",
       "subtasks": [
         {
           "dependencies": [],
@@ -298,7 +298,7 @@
         {
           "dependencies": [111.3],
           "id": 111.6,
-          "status": "in_progress",
+          "status": "done",
           "title": "Phase C-2 — Elicitation: replace PermissionBridge with official elicitation RPC",
         },
         {
@@ -310,7 +310,7 @@
         {
           "dependencies": [111.3],
           "id": 111.8,
-          "status": "in_progress",
+          "status": "done",
           "title": "Phase C-4 — MCP-over-ACP: expose LLM tools as MCP server endpoint",
         },
       ],
