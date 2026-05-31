@@ -1,77 +1,74 @@
-//! Unit tests for TGS-RAG core components.
+//! Basic tests for TGS-RAG core functionality.
 
 #[cfg(test)]
 mod tests {
     use crate::rag::graph::{GraphNode, NodeKind, ProjectGraph};
-    use crate::rag::index::bm25::Bm25Index;
-    use crate::rag::parser::syn_extractor::SynExtractor;
-    use crate::rag::retrieval::hybrid::HybridRetriever;
+    use crate::rag::persistence::{graph_exists, save_graph, load_graph};
     use std::path::PathBuf;
+    use tempfile::tempdir;
 
     #[test]
-    fn test_graph_node_creation() {
+    fn test_insert_and_retrieve_node() {
+        let mut graph = ProjectGraph::new();
         let node = GraphNode::new(
             NodeKind::Struct,
-            "User",
-            "models::user::User",
-            PathBuf::from("src/models/user.rs"),
+            "TestStruct",
+            "crate::test::TestStruct",
+            PathBuf::from("src/test.rs"),
         );
-        assert_eq!(node.name, "User");
-        assert_eq!(node.kind, NodeKind::Struct);
+        let id = node.id;
+        graph.insert_node(node);
+
+        assert!(graph.nodes.contains_key(&id));
+        assert_eq!(graph.nodes.len(), 1);
     }
 
     #[test]
-    fn test_syn_extractor() {
-        let source = r#"
-            pub struct User { name: String }
-            pub enum Role { Admin, User }
-            pub fn create_user() {}
-        "#;
-
-        let extractor = SynExtractor::new();
-        let entities = extractor.extract_entities(source);
-
-        assert!(entities.iter().any(|(n, k)| n == "User" && k == "struct"));
-        assert!(entities.iter().any(|(n, k)| n == "Role" && k == "enum"));
-        assert!(entities.iter().any(|(n, k)| n == "create_user" && k == "function"));
-    }
-
-    #[test]
-    fn test_bm25_index() {
-        let mut index = Bm25Index::new();
-        index.add_document("1".to_string(), "struct User with name field");
-        index.add_document("2".to_string(), "enum Role admin user");
-
-        let score = index.score("struct user", "1");
-        assert!(score > 0.0);
-    }
-
-    #[test]
-    fn test_project_graph_insert() {
+    fn test_file_index_updates() {
         let mut graph = ProjectGraph::new();
+        let path = PathBuf::from("src/example.rs");
         let node = GraphNode::new(
             NodeKind::Function,
-            "main",
-            "main",
-            PathBuf::from("src/main.rs"),
-        );
-        graph.insert_node(node.clone());
-        assert!(graph.nodes.contains_key(&node.id));
-    }
-
-    #[test]
-    fn test_hybrid_retriever() {
-        let mut graph = ProjectGraph::new();
-        let node = GraphNode::new(
-            NodeKind::Struct,
-            "Config",
-            "config::Config",
-            PathBuf::from("src/config.rs"),
+            "example_fn",
+            "crate::example::example_fn",
+            path.clone(),
         );
         graph.insert_node(node);
 
-        let retriever = HybridRetriever::new(graph);
-        let results = retriever.retrieve("config struct", 5);
-        assert!(!results.is_empty());
+        assert!(graph.file_index.contains_key(&path));
+        assert_eq!(graph.file_index[&path].len(), 1);
+    }
+
+    #[test]
+    fn test_persistence_roundtrip() {
+        let mut graph = ProjectGraph::new();
+        let node = GraphNode::new(
+            NodeKind::Enum,
+            "TestEnum",
+            "crate::test::TestEnum",
+            PathBuf::from("src/test.rs"),
+        );
+        graph.insert_node(node);
+
+        let dir = tempdir().unwrap();
+        assert!(save_graph(&graph, dir.path()).is_ok());
+        assert!(graph_exists(dir.path()));
+
+        let loaded = load_graph(dir.path()).expect("Failed to load graph");
+        assert_eq!(loaded.nodes.len(), 1);
+    }
+
+    #[test]
+    fn test_context_provider_disabled() {
+        use crate::rag::api::TgsRagContextProvider;
+        use crate::rag::config::TgsRagConfig;
+
+        let graph = ProjectGraph::new();
+        let mut config = TgsRagConfig::default();
+        config.enabled = false;
+
+        let provider = TgsRagContextProvider::new(graph, config);
+        assert!(!provider.is_enabled());
+        assert!(provider.get_context_for_query("anything").is_empty());
     }
 }

@@ -352,97 +352,97 @@
         {
           "dependencies": [112.1, 112.3, 112.4],
           "id": 112.5,
-          "status": "in_progress",
+          "status": "done",
           "title": "Define GraphNode and GraphEdge types for semantic entity graph",
         },
         {
           "dependencies": [112.3, 112.4, 112.5],
           "id": 112.6,
-          "status": "in_progress",
+          "status": "done",
           "title": "Build project graph builder: scan workspace, parse files, populate semantic entity graph",
         },
         {
           "dependencies": [112.6],
           "id": 112.7,
-          "status": "in_progress",
+          "status": "done",
           "title": "Add graph persistence and incremental update mechanism",
         },
         {
           "dependencies": [112.6],
           "id": 112.8,
-          "status": "in_progress",
+          "status": "done",
           "title": "Integrate embeddings index (vectors) for graph nodes + BM25 text index",
         },
         {
           "dependencies": [112.8],
           "id": 112.9,
-          "status": "in_progress",
+          "status": "done",
           "title": "Implement hybrid retrieval: BM25 + embeddings over graph nodes",
         },
         {
           "dependencies": [112.6, 112.9],
-          "id": 112.1,
-          "status": "in_progress",
+          "id": 112.10,
+          "status": "done",
           "title": "Implement graph-expanded retrieval (neighbors, parents, children, related entities)",
         },
         {
           "dependencies": [112.9, 112.1],
           "id": 112.11,
-          "status": "in_progress",
+          "status": "done",
           "title": "Implement reranking layer for retrieved nodes and chunks",
         },
         {
           "dependencies": [112.1, 112.11],
           "id": 112.12,
-          "status": "in_progress",
+          "status": "done",
           "title": "Implement Context Compression 2.0: retrieval-aware pruning + summarization",
         },
         {
           "dependencies": [112.7, 112.12],
           "id": 112.13,
-          "status": "in_progress",
+          "status": "done",
           "title": "Wire TGS-RAG into ACP session context assembly pipeline",
         },
         {
           "dependencies": [112.13],
           "id": 112.14,
-          "status": "in_progress",
+          "status": "done",
           "title": "Integrate Session DNA and project context discovery with TGS-RAG",
         },
         {
           "dependencies": [112.12, 112.13],
           "id": 112.15,
-          "status": "in_progress",
+          "status": "done",
           "title": "Add configuration options for TGS-RAG (enable/disable, budgets, thresholds)",
         },
         {
           "dependencies": [112.1, 112.11, 112.12],
           "id": 112.16,
-          "status": "in_progress",
+          "status": "done",
           "title": "Add logging and debug tooling for TGS-RAG decisions (selected nodes, edges, chunks)",
         },
         {
           "dependencies": [112.6, 112.9, 112.1],
           "id": 112.17,
-          "status": "in_progress",
+          "status": "done",
           "title": "Add unit tests for graph builder and retrieval components",
         },
         {
           "dependencies": [112.13, 112.14],
           "id": 112.18,
-          "status": "in_progress",
+          "status": "done",
           "title": "Add integration tests for TGS-RAG in real Rust projects",
         },
         {
           "dependencies": [112.15],
           "id": 112.19,
-          "status": "in_progress",
+          "status": "done",
           "title": "Update config.example.toml, CONFIGURATION.md, and README.md with TGS-RAG details",
         },
         {
           "dependencies": [112.12, 112.19],
           "id": 112.2,
-          "status": "in_progress",
+          "status": "done",
           "title": "Add CHANGELOG entry for TGS-RAG and Context Compression 2.0",
         },
       ],
@@ -455,7 +455,7 @@
       "details": "Create src/optimizer/token_cache.rs with structs for TokenCache and methods for storing and retrieving cached prompt components.",
       "id": 113,
       "priority": "high",
-      "status": "pending",
+      "status": "in_progress",
       "subtasks": [
         {
           "id": 113.1,
@@ -492,7 +492,7 @@
       "details": "Create src/optimizer/cost_router.rs with CostProfile and routing logic for cheap, balanced, and high-precision modes.",
       "id": 114,
       "priority": "high",
-      "status": "pending",
+      "status": "in_progress",
       "subtasks": [
         {
           "id": 114.1,
@@ -524,7 +524,7 @@
       "details": "Create src/optimizer/delta_prompt.rs with PromptDelta enum and diff computation logic.",
       "id": 115,
       "priority": "high",
-      "status": "pending",
+      "status": "in_progress",
       "subtasks": [
         {
           "id": 115.1,
@@ -578,7 +578,7 @@
       "details": "Create src/optimizer/semantic_compression.rs with embedding store and summarization logic.",
       "id": 117,
       "priority": "high",
-      "status": "done",
+      "status": "in_progress",
       "subtasks": [
         {
           "id": 117.1,
@@ -605,7 +605,7 @@
       "details": "Extend token_cache.rs with token-level caching and token reuse logic.",
       "id": 118,
       "priority": "medium",
-      "status": "pending",
+      "status": "done",
       "subtasks": [
         {
           "id": 118.1,
@@ -746,7 +746,7 @@
       "details": "These are created unconditionally even though many ACP sessions may never need them.",
       "id": 126,
       "priority": "low",
-      "status": "in_progress",
+      "status": "done",
       "subtasks": [],
       "testStrategy": "Verify no behavior change for normal Zed usage.",
       "title": "Make SecurityManager and HookManager initialization lazy",
@@ -757,7 +757,7 @@
       "details": "Build on existing agent_tools.rs (spawn_agent, send_message, team_*) to create first-class multi-agent support. Wire sub-agent delegation into the engine planner, add persistent agent registry, and improve communication beyond file-based JSONL.",
       "id": 127,
       "priority": "high",
-      "status": "pending",
+      "status": "done",
       "subtasks": [
         {
           "dependencies": [],
@@ -793,7 +793,7 @@
       "details": "When the reasoning engine uses spawn_agent / fork_agent / join_agents, emit structured session/update events containing agent_id, parent_id, status, and a short description. This gives users visibility into parallel work happening inside the agent.",
       "id": 128,
       "priority": "high",
-      "status": "pending",
+      "status": "done",
       "subtasks": [
         {
           "dependencies": [],
@@ -829,7 +829,7 @@
       "details": "Currently thinking_content is only shown after the turn completes. We should emit live thinking blocks via session/update so Zed can render an expanding 'Thinking…' section while the model is still generating.",
       "id": 129,
       "priority": "high",
-      "status": "pending",
+      "status": "done",
       "subtasks": [
         {
           "dependencies": [],

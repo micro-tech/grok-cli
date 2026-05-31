@@ -11,6 +11,23 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### TGS-RAG Epic (Tasks 112.x)
+
+- Added full **Text-Graph Synergy RAG** engine (`src/rag/`)
+  - Semantic entity graph (structs, enums, traits, functions, impls) built with tree-sitter + syn
+  - Hybrid retrieval (BM25 + embeddings) + graph expansion
+  - Context Compression 2.0 with retrieval-aware pruning
+  - Persistence + incremental mtime-based updates
+  - `TgsRagContextProvider` + ACP integration layer
+  - Session DNA influence on retrieval budgets (verbosity → node/token limits)
+  - Debug logging and basic unit tests
+
+- New modules: `graph`, `parser`, `retrieval`, `compression`, `persistence`, `api`, `acp_integration`, `dna_integration`, `debug`
+- Configuration via `TgsRagConfig` (enable/disable, budgets, auto-load)
+- Documentation: `Doc/TGS_RAG.md`
+
+This enables project-aware, graph-guided context retrieval for much more precise LLM prompting.
+
 ### ACP Structured Feedback (Tasks 128–130)
 
 - **Agent Activity Notifications** (Task 128)

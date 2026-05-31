@@ -4,7 +4,7 @@ use super::{GraphEdge, GraphNode, NodeId};
 use std::collections::HashMap;
 use std::path::PathBuf;
 
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ProjectGraph {
     pub nodes: HashMap<NodeId, GraphNode>,
     pub edges: Vec<GraphEdge>,

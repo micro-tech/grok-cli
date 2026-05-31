@@ -59,6 +59,7 @@ pub mod visualizer;
 
 #[cfg(feature = "tgs-rag")]
 pub mod rag;
+pub mod optimizer;
 
 // Re-export grok_api types for use throughout the crate
 pub use grok_api::{

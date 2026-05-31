@@ -7,6 +7,7 @@ use crate::rag::retrieval::reranker::rerank;
 use crate::rag::compression::compress_context;
 use crate::rag::config::TgsRagConfig;
 
+/// High-level TGS-RAG engine.
 pub struct TgsRag {
     graph: ProjectGraph,
     config: TgsRagConfig,
@@ -42,5 +43,40 @@ impl TgsRag {
                 )
             })
             .collect()
+    }
+}
+
+/// Context provider designed for ACP session integration.
+/// This is the main entry point the ACP layer should use.
+pub struct TgsRagContextProvider {
+    rag: TgsRag,
+}
+
+impl TgsRagContextProvider {
+    pub fn new(graph: ProjectGraph, config: TgsRagConfig) -> Self {
+        Self {
+            rag: TgsRag::new(graph, config),
+        }
+    }
+
+    /// Create a provider by loading a persisted graph if available.
+    pub fn from_persisted(dir: &std::path::Path, config: TgsRagConfig) -> Option<Self> {
+        if crate::rag::persistence::graph_exists(dir) {
+            if let Ok(graph) = crate::rag::persistence::load_graph(dir) {
+                return Some(Self::new(graph, config));
+            }
+        }
+        None
+    }
+
+    /// Retrieve relevant context for a user query.
+    /// Returns formatted strings suitable for injection into the system prompt.
+    pub fn get_context_for_query(&self, query: &str) -> Vec<String> {
+        self.rag.retrieve_context(query)
+    }
+
+    /// Check if TGS-RAG is enabled.
+    pub fn is_enabled(&self) -> bool {
+        self.rag.config.enabled
     }
 }

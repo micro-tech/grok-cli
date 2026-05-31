@@ -33,7 +33,7 @@ pub enum Visibility {
 }
 
 /// A node in the semantic entity graph.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct GraphNode {
     pub id: NodeId,
     pub kind: NodeKind,
