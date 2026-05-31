@@ -20,7 +20,10 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 - **External Access Controls** — Securely read files outside the project with approval + audit logging
 - **Chat Logging & Replay** — Automatic logging with search and history replay
 - **Context Compression** — AI-powered summarization + archiving when context fills up
-- **Zed Editor Integration** — Full Agent Client Protocol (ACP) support with **instant stdio startup** (lazy router, security & hook managers) and session resume/fork
+- **Zed Editor Integration** — Full Agent Client Protocol (ACP) support with **instant stdio startup** (lazy router, security & hook managers), session resume/fork, and rich structured feedback:
+  - Real-time thinking traces (`ThinkingUpdate`)
+  - Live context usage meter (`ContextUsageUpdate`)
+  - Future sub-agent activity notifications (`AgentActivityUpdate`)
 - **Thinking Modes** — `/think off|low|high` for controllable reasoning effort
 - **TGS-RAG Engine** — Text-Graph Synergy Retrieval: hybrid BM25 + embeddings + graph-aware code context (tree-sitter + syn)
 - **Code Intelligence** — Explain, review, generate, and refactor across any language

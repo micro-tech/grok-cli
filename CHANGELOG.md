@@ -11,7 +11,25 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-### Bayesian Belief Stabilization
+### ACP Structured Feedback (Tasks 128–130)
+
+- **Agent Activity Notifications** (Task 128)
+  - New `AgentActivityUpdate` session update type for sub-agent lifecycle events.
+  - `GrokAcpAgent::emit_agent_activity()` helper ready for `spawn_agent`/`fork_agent`/`join_agents` tools (deferred wiring until Task 26).
+  - Enables Zed to render agent trees and status in the UI.
+
+- **Real-time Thinking Trace Streaming** (Task 129)
+  - New `ThinkingUpdate` session update with `content` + `is_final` flag.
+  - Thinking traces are emitted on every Grok response (initial chunk + final marker).
+  - Supports future live partial thinking streaming once the backend provides incremental chunks.
+
+- **Context / Token Usage Feedback** (Task 130)
+  - New `ContextUsageUpdate` session update containing `estimated_tokens`, `context_limit`, and `message_count`.
+  - Emitted after every turn and after every tool-loop iteration.
+  - New config toggle: `acp.show_context_usage` (default `true`).
+  - Enables Zed to display a live context meter / token usage indicator.
+
+These updates give Zed (and other ACP clients) rich, structured visibility into agent state without changing the core chat flow.
 
 - **Configurable Decay** — Added `belief_decay_rate` (default `0.95`) and `prior_pull_rate` (default `0.05`) to `[bayesian]` in `config.toml`.
 - **Decay Step** — `bayes_update()` now includes a stabilization pass after every likelihood update:

@@ -464,7 +464,54 @@ This mechanism is applied uniformly in:
 
 ---
 
-## Reasoning Protocol Layer (RPL) Data Flow
+## ACP SessionUpdate Feedback Flow (Tasks 128–130)
+
+When `grok acp stdio` is connected to Zed (or any ACP client), `handle_chat_completion` emits rich structured updates via the `event_sender` channel.
+
+### SessionUpdate Variants
+
+```
+handle_chat_completion
+    │
+    ├── ThinkingUpdate { content, is_final }
+    │       └── Emitted when Grok returns a reasoning trace
+    │
+    ├── ContextUsageUpdate { estimated_tokens, context_limit, message_count }
+    │       └── Emitted after every turn + every tool iteration (if acp.show_context_usage = true)
+    │
+    ├── AgentActivityUpdate { agent_id, parent_id, status, description }
+    │       └── Emitted by emit_agent_activity() for sub-agent lifecycle (spawn/fork/join)
+    │
+    ├── ToolCall / ToolCallUpdate
+    │       └── Existing tool progress notifications
+    │
+    └── Text / other updates
+            └── Normal assistant content
+```
+
+### Data Flow
+
+```
+Grok API Response
+    │
+    ├── thinking_content → ThinkingUpdate (is_final=false)
+    │
+    ├── final response   → ThinkingUpdate (is_final=true) + Text
+    │
+    └── after tool loop  → ContextUsageUpdate (current tokens / limit)
+```
+
+### Configuration
+
+```toml
+[acp]
+show_context_usage = true   # toggle ContextUsageUpdate emission
+```
+
+This flow allows Zed to render:
+- Live context usage meters
+- Thinking trace accordions
+- Future agent tree visualizations (once Task 26 lands)
 
 The RPL is a **passive observability layer** that wraps the `CpuRouter::route_with_tools_traced()` call. It captures structured `ReasoningTrace` objects without influencing the control flow.
 
