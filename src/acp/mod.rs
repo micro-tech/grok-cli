@@ -969,6 +969,8 @@ impl GrokAcpAgent {
                                     || msg.contains("timed out")
                                     || msg.contains("reset")
                                     || msg.contains("connection")
+                                    || msg.contains("network error")
+                                    || msg.contains("error sending request")
                                     || msg.contains("503")
                                     || msg.contains("502")
                                     || msg.contains("504")
@@ -1059,7 +1061,8 @@ impl GrokAcpAgent {
                         content: tc.clone(),
                         is_final: false,
                     };
-                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
+                    let _ =
+                        sender.send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
                 }
             }
 
@@ -1097,7 +1100,8 @@ impl GrokAcpAgent {
                             content: tc.clone(),
                             is_final: true,
                         };
-                        let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
+                        let _ = sender
+                            .send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
                     }
 
                     format!(
@@ -1138,7 +1142,9 @@ impl GrokAcpAgent {
                 }
 
                 if let (Some(sender), Some(usage)) = (&event_sender, context_usage) {
-                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                        usage,
+                    ));
                 }
 
                 return Ok(final_response);
@@ -1177,7 +1183,9 @@ impl GrokAcpAgent {
                 }
 
                 if let (Some(sender), Some(usage)) = (&event_sender, context_usage) {
-                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                        usage,
+                    ));
                 }
 
                 return Ok(response_text);
@@ -1388,7 +1396,9 @@ impl GrokAcpAgent {
                     ),
                     messages.len(),
                 );
-                let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                    usage,
+                ));
             }
 
             // Post-tool-loop guard: if the model signalled "stop" alongside
@@ -1412,7 +1422,9 @@ impl GrokAcpAgent {
                         ),
                         messages.len(),
                     );
-                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                        usage,
+                    ));
                 }
                 // ── Phase 3: Final sync (brief write lock) ──────────────────────────
                 {
@@ -1628,7 +1640,9 @@ impl GrokAcpAgent {
     /// Emit a sub-agent activity notification to the ACP client (Task 128).
     pub fn emit_agent_activity(
         &self,
-        event_sender: Option<&tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>>,
+        event_sender: Option<
+            &tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
+        >,
         agent_id: impl Into<String>,
         parent_id: Option<String>,
         status: crate::acp::protocol::AgentActivityStatus,
