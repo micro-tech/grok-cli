@@ -19,7 +19,8 @@ path = "src/bin/github_mcp.rs"
 
 
 [dependencies]
-grok_api = { path = "../grok_crate/grok_api", version = "0.1.71" }
+#grok_api = { path = "../grok_crate/grok_api", version = "0.1.71" }
+grok_api = "0.1.73"
 # HTTP client with timeout support for network drops
 #grok_api = "0.1.7"
 
