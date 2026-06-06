@@ -329,6 +329,8 @@ mod tests {
             vagueness_threshold: 0.75,
             intent_likelihood_weight: 8.0,
             profile_learning_rate: 0.05,
+            belief_decay_rate: DEFAULT_BELIEF_DECAY_RATE,
+            prior_pull_rate: DEFAULT_PRIOR_PULL_RATE,
             priors: BayesianPriorsConfig::default(),
             show_belief_graph: false,
         };

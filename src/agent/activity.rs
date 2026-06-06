@@ -38,3 +38,14 @@ pub fn emit_agent_activity(
         let _ = sender.send(SessionUpdate::AgentActivity(update));
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_set_and_emit_does_not_panic_without_sender() {
+        // Should be a no-op when no sender is registered
+        emit_agent_activity("agent-1", None, AgentActivityStatus::Spawned, "test");
+    }
+}

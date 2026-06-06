@@ -205,7 +205,7 @@ impl Backend for GrokBackend {
                     // "stop".  Propagating the real value lets handle_chat_completion
                     // correctly continue the tool loop instead of short-circuiting
                     // and returning an empty response.
-                    let finish_reason = mwfr.finish_reason.clone();
+                    let _finish_reason = mwfr.finish_reason.clone();
 
                     let tool_calls = mwfr.message.tool_calls.unwrap_or_default();
                     let thinking_content = mwfr.thinking_content;

@@ -66,6 +66,50 @@ impl AgentMessageBus {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_send_and_receive() {
+        let bus = AgentMessageBus::new();
+        bus.send("agent_a", "agent_b", "hello").await;
+
+        let msgs = bus.receive("agent_b").await;
+        assert_eq!(msgs.len(), 1);
+        assert_eq!(msgs[0].from, "agent_a");
+        assert_eq!(msgs[0].content, "hello");
+    }
+
+    #[tokio::test]
+    async fn test_receive_empty_channel() {
+        let bus = AgentMessageBus::new();
+        let msgs = bus.receive("nonexistent").await;
+        assert!(msgs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_clear_removes_messages() {
+        let bus = AgentMessageBus::new();
+        bus.send("a", "b", "msg1").await;
+        bus.send("a", "b", "msg2").await;
+
+        bus.clear("b").await;
+        let msgs = bus.receive("b").await;
+        assert!(msgs.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_multiple_senders() {
+        let bus = AgentMessageBus::new();
+        bus.send("a1", "target", "one").await;
+        bus.send("a2", "target", "two").await;
+
+        let msgs = bus.receive("target").await;
+        assert_eq!(msgs.len(), 2);
+    }
+}
+
 /// Global shared message bus instance.
 pub static MESSAGE_BUS: once_cell::sync::Lazy<Arc<AgentMessageBus>> =
     once_cell::sync::Lazy::new(|| Arc::new(AgentMessageBus::new()));

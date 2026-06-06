@@ -7,11 +7,12 @@
 #![allow(unused_imports)]
 
 use grok_cli::engine::{
-    ArbitrationEngine, CorrectionConfig, CorrectionEngine, CorrectionOutcome, CorrectionTrigger,
-    EngineBeliefs, EngineObserver, EngineState, Evidence, MemoryBridge, MemoryBridgeConfig,
-    ObserverConfig, PlanBuilder, PlanBuilderConfig, ReasoningEngineState, StepAction, StepStatus,
+    CorrectionConfig, CorrectionEngine, CorrectionOutcome, CorrectionTrigger, EngineBeliefs,
+    EngineObserver, EngineState, Evidence, MemoryBridge, MemoryBridgeConfig, ObserverConfig,
+    PlanBuilder, PlanBuilderConfig, ReasoningEngineState, StepAction, StepStatus,
     is_safe_to_log, redact_state,
 };
+use grok_cli::engine::arbitration::ArbitrationEngine;
 use grok_cli::rpl::{ReasoningLogLevel, ReasoningPhase, RplConfig, RplLayer, SuppressionLayer};
 
 // ---------------------------------------------------------------------------
