@@ -15,7 +15,7 @@ use std::fs::File;
 use std::io::Write;
 
 use crate::AuditAction;
-use crate::cli::{confirm, print_info, print_success};
+use crate::cli::{confirm, format_info, format_success};
 use crate::security::audit::AuditLogger;
 
 /// Handle audit-related commands
@@ -45,7 +45,7 @@ async fn handle_external_access_audit(
     let logger = AuditLogger::new(true)?;
 
     if !logger.is_enabled() {
-        print_info("Audit logging is disabled");
+        println!("{}", format_info("Audit logging is disabled"));
         return Ok(());
     }
 
@@ -74,11 +74,11 @@ async fn handle_external_access_audit(
     // Export if requested
     if let Some(export_path) = export_file {
         export_to_csv(&logs, &export_path)?;
-        print_success(&format!(
+        println!("{}", format_success(&format!(
             "Exported {} entries to {}",
             logs.len(),
             export_path
-        ));
+        )));
         return Ok(());
     }
 
@@ -322,7 +322,7 @@ async fn clear_audit_logs(confirmed: bool) -> Result<()> {
     }
 
     logger.clear_logs()?;
-    print_success("All audit logs have been cleared");
+    println!("{}", format_success("All audit logs have been cleared"));
 
     Ok(())
 }

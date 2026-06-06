@@ -19,7 +19,9 @@ use crate::acp::security::SecurityPolicy;
 use crate::acp::slash_commands;
 use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
-use crate::cli::{create_spinner, format_grok_response, print_error, print_info, print_success};
+use crate::cli::{
+    create_spinner, format_error, format_grok_response, format_info, format_success, format_warning,
+};
 use crate::config::{BayesianConfig, RateLimitConfig, ThinkingMode};
 use crate::router::AppRouter;
 use crate::tools::registry as tool_registry;
@@ -81,7 +83,7 @@ async fn handle_single_chat(
     model: &str,
     thinking_mode: ThinkingMode,
 ) -> Result<()> {
-    print_info(&format!("Sending message to Grok (model: {})...", model));
+    println!("{}", format_info(&format!("Sending message to Grok (model: {})...", model)));
 
     let spinner = create_spinner("Thinking...");
 
@@ -121,19 +123,19 @@ async fn handle_single_chat(
             if let Some(tool_calls) = &response.tool_calls
                 && !tool_calls.is_empty()
             {
-                print_info("Executing requested operations...");
+                println!("{}", format_info("Executing requested operations..."));
                 let mut security = SecurityPolicy::new();
                 security.add_trusted_directory(&env::current_dir()?);
 
                 for tool_call in tool_calls {
                     execute_tool_call(tool_call, &security).await?;
                 }
-                print_success("All operations completed!");
+                println!("{}", format_success("All operations completed!"));
                 return Ok(());
             }
 
             // Regular text response
-            print_success("Response received!");
+            println!("{}", format_success("Response received!"));
             println!();
             if let Some(content) = response.content {
                 let text = extract_text_content(&content);
@@ -141,7 +143,7 @@ async fn handle_single_chat(
             }
         }
         Err(e) => {
-            print_error(&format!("Failed to get response: {}", e));
+            println!("{}", format_error(&format!("Failed to get response: {}", e)));
             return Err(e);
         }
     }
@@ -170,7 +172,7 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
             }
         }
         Err(e) => {
-            print_error(&format!("Tool '{}' failed: {}", name, e));
+            println!("{}", format_error(&format!("Tool '{}' failed: {}", name, e)));
         }
     }
     Ok(())
@@ -350,7 +352,7 @@ async fn handle_interactive_chat(
 
                     for tool_call in tool_calls {
                         if let Err(e) = execute_tool_call(tool_call, &security).await {
-                            print_error(&format!("Tool execution failed: {}", e));
+                            println!("{}", format_error(&format!("Tool execution failed: {}", e)));
                         } else {
                             if enable_bayesian_router {
                                 router.learn_from_tool(&tool_call.function.name);
@@ -380,7 +382,7 @@ async fn handle_interactive_chat(
                 println!("{} {}", "Grok:".blue().bold(), response);
             }
             Err(e) => {
-                print_error(&format!("Failed to read input: {}", e));
+                println!("{}", format_error(&format!("Failed to read input: {}", e)));
                 break;
             }
         }
@@ -421,7 +423,7 @@ fn handle_interactive_command(
             } else {
                 conversation_history.clear();
             }
-            print_success("Conversation history cleared!");
+            println!("{}", format_success("Conversation history cleared!"));
             Ok(Some(CommandResult::Continue))
         }
         "history" => {
@@ -450,7 +452,7 @@ fn handle_interactive_command(
             } else {
                 conversation_history.clear();
             }
-            print_success("Conversation history cleared!");
+            println!("{}", format_success("Conversation history cleared!"));
             Ok(Some(CommandResult::Continue))
         }
 
@@ -475,7 +477,7 @@ fn handle_interactive_command(
                             } else {
                                 conversation_history.clear();
                             }
-                            print_success("Conversation history cleared!");
+                            println!("{}", format_success("Conversation history cleared!"));
                         }
                         slash_commands::BuiltinResult::SwitchModel(name) => {
                             println!("✅ Switched to model `{}` (CLI session).", name);
@@ -550,19 +552,19 @@ fn handle_interactive_command(
                         }
                     }
                 }
-                Err(e) => print_error(&format!("Failed to list directory: {}", e)),
+                Err(e) => println!("{}", format_error(&format!("Failed to list directory: {}", e))),
             }
             Ok(Some(CommandResult::Continue))
         }
         _ if lower_input.starts_with("cd ") => {
             let path = input[3..].trim();
             if let Err(e) = env::set_current_dir(path) {
-                print_error(&format!("Failed to change directory to '{}': {}", path, e));
+                println!("{}", format_error(&format!("Failed to change directory to '{}': {}", path, e)));
             } else {
-                print_success(&format!(
+                println!("{}", format_success(&format!(
                     "Changed directory to {}",
                     env::current_dir().unwrap_or_default().display()
-                ));
+                )));
             }
             Ok(Some(CommandResult::Continue))
         }
@@ -578,10 +580,10 @@ fn handle_interactive_command(
                 match result {
                     Ok(status) => {
                         if !status.success() {
-                            print_error(&format!("Command exited with status: {}", status));
+                            println!("{}", format_error(&format!("Command exited with status: {}", status)));
                         }
                     }
-                    Err(e) => print_error(&format!("Failed to execute command: {}", e)),
+                    Err(e) => println!("{}", format_error(&format!("Failed to execute command: {}", e))),
                 }
             }
             Ok(Some(CommandResult::Continue))
@@ -609,7 +611,7 @@ fn print_help() {
 
 fn print_conversation_history(history: &[Value]) {
     if history.is_empty() {
-        print_info("No conversation history yet.");
+        println!("{}", format_info("No conversation history yet."));
         return;
     }
 

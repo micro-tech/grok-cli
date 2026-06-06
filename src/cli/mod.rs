@@ -1,11 +1,17 @@
 //! CLI utilities for grok-cli
 //!
-//! This module contains formatting functions and legacy I/O helpers.
+//! This module now provides **pure formatting functions** (`format_success`,
+//! `format_error`, `format_info`, …) that return `String` and perform no I/O.
+//! These are the recommended API for command handlers.
 //!
-//! # Architecture Note
-//! The I/O functions below are deprecated and should be moved to the binary crate.
-//! They are kept here temporarily for backwards compatibility.
-//! TODO: Refactor command handlers to use the terminal module in src/main.rs
+//! The legacy I/O helpers (`print_success`, `confirm`, etc.) remain only for
+//! backwards compatibility during the migration and are gated behind
+//! `#[deprecated]`. They will be removed once all call sites have been updated
+//! to use the pure formatters and the binary crate performs the actual printing.
+//!
+//! # Architecture
+//! - Library crate (`src/lib.rs`, `src/cli/*`) → pure data transformation only.
+//! - Binary crate (`src/main.rs`) → all terminal I/O, spinners, stdin prompts.
 
 // Allow deprecated warnings in this module since we know these functions
 // are deprecated and will be refactored in Phase 2. The deprecation markers
@@ -22,7 +28,38 @@ use indicatif::{ProgressBar, ProgressStyle};
 use std::io::{self, Write};
 
 // ============================================================================
-// DEPRECATED I/O FUNCTIONS - TODO: Move to binary crate
+// PURE FORMATTING FUNCTIONS (library-safe)
+// ============================================================================
+
+/// Return a success message string (caller decides how to print)
+pub fn format_success(message: &str) -> String {
+    format!("{} {}", "✓".green(), message)
+}
+
+/// Return an error message string (caller decides how to print)
+pub fn format_error(message: &str) -> String {
+    format!("{} {}", "✗".red(), message)
+}
+
+/// Return a warning message string
+pub fn format_warning(message: &str) -> String {
+    format!("{} {}", "⚠".yellow(), message)
+}
+
+/// Return an info message string
+pub fn format_info(message: &str) -> String {
+    format!("{} {}", "ℹ".blue(), message)
+}
+
+/// Return the prompt text for a confirmation question (no I/O)
+pub fn format_confirm_prompt(message: &str) -> String {
+    format!("{} {} [y/N]: ", "?".cyan(), message)
+}
+
+// ============================================================================
+// DEPRECATED I/O FUNCTIONS - TODO: Move to binary crate (or remove)
+// These still exist for backwards compatibility during the migration.
+// They will be removed once all call sites have been updated.
 // ============================================================================
 
 /// Create a progress spinner with the given message

@@ -32,7 +32,7 @@ use crate::acp::slash_commands::{
     self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
 };
 use crate::acp::{GrokAcpAgent, PermissionBridge, SessionConfig};
-use crate::cli::{create_spinner, print_error, print_info, print_success, print_warning};
+use crate::cli::{create_spinner, format_error, format_info, format_success, format_warning};
 use crate::config::Config;
 
 use crate::utils::chat_logger;
@@ -52,8 +52,11 @@ pub async fn handle_acp_action(action: crate::AcpAction, config: &Config) -> Res
 /// Start the ACP server for Zed integration
 async fn start_acp_server(port: Option<u16>, host: &str, config: &Config) -> Result<()> {
     if !config.acp.enabled {
-        print_warning(
-            "ACP is disabled in configuration. Enable it with 'grok config set acp.enabled true'",
+        println!(
+            "{}",
+            format_warning(
+                "ACP is disabled in configuration. Enable it with 'grok config set acp.enabled true'"
+            )
         );
         return Ok(());
     }
@@ -61,17 +64,17 @@ async fn start_acp_server(port: Option<u16>, host: &str, config: &Config) -> Res
     let bind_port = port.or(config.acp.default_port).unwrap_or(0);
     let bind_addr = format!("{}:{}", host, bind_port);
 
-    print_info(&format!("Starting ACP server on {}", bind_addr));
+    println!("{}", format_info(&format!("Starting ACP server on {}", bind_addr)));
 
     let listener = TcpListener::bind(&bind_addr)
         .await
         .map_err(|e| anyhow!("Failed to bind ACP server to {}: {}", bind_addr, e))?;
 
     let actual_addr = listener.local_addr()?;
-    print_success(&format!("ACP server listening on {}", actual_addr));
+    println!("{}", format_success(&format!("ACP server listening on {}", actual_addr)));
 
     if config.acp.dev_mode {
-        print_info("Development mode enabled - additional debugging features available");
+        println!("{}", format_info("Development mode enabled - additional debugging features available"));
     }
 
     println!();
@@ -1605,7 +1608,7 @@ async fn handle_session_fork(params: &Value, agent: &GrokAcpAgent) -> Result<Val
 }
 
 async fn test_acp_connection(address: &str, config: &Config) -> Result<()> {
-    print_info(&format!("Testing ACP connection to {}", address));
+    println!("{}", format_info(&format!("Testing ACP connection to {}", address)));
 
     let spinner = create_spinner("Connecting...");
 
@@ -1619,16 +1622,16 @@ async fn test_acp_connection(address: &str, config: &Config) -> Result<()> {
 
     match result {
         Ok(Ok(())) => {
-            print_success("ACP connection test successful");
+            println!("{}", format_success("ACP connection test successful"));
             Ok(())
         }
         Ok(Err(e)) => {
-            print_error(&format!("ACP connection test failed: {}", e));
+            println!("{}", format_error(&format!("ACP connection test failed: {}", e)));
             Err(e)
         }
         Err(_) => {
             let err = anyhow!("ACP connection test timed out");
-            print_error(&err.to_string());
+            println!("{}", format_error(&err.to_string()));
             Err(err)
         }
     }

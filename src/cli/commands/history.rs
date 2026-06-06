@@ -11,7 +11,7 @@ use anyhow::{Context, Result};
 use colored::*;
 use std::path::PathBuf;
 
-use crate::cli::{print_error, print_info, print_success};
+use crate::cli::{format_error, format_info, format_success};
 use crate::utils::chat_logger::{ChatLogger, ChatLoggerConfig, ChatSession};
 
 /// Handle history-related commands
@@ -35,7 +35,7 @@ async fn list_sessions() -> Result<()> {
         .context("Failed to list chat sessions")?;
 
     if sessions.is_empty() {
-        print_info("No chat sessions found.");
+        println!("{}", format_info("No chat sessions found."));
         return Ok(());
     }
 
@@ -257,7 +257,7 @@ async fn search_sessions(query: &str) -> Result<()> {
         .context("Failed to list chat sessions")?;
 
     if sessions.is_empty() {
-        print_info("No chat sessions found.");
+        println!("{}", format_info("No chat sessions found."));
         return Ok(());
     }
 
@@ -276,7 +276,7 @@ async fn search_sessions(query: &str) -> Result<()> {
     }
 
     if matches.is_empty() {
-        print_info(&format!("No matches found for query: '{}'", query));
+        println!("{}", format_info(&format!("No matches found for query: '{}'", query)));
         return Ok(());
     }
 
@@ -359,7 +359,7 @@ fn highlight_query(text: &str, query: &str) -> String {
 /// Clear chat history
 async fn clear_history(confirm: bool) -> Result<()> {
     if !confirm {
-        print_error("This will delete all chat session logs!");
+        println!("{}", format_error("This will delete all chat session logs!"));
         println!(
             "{} {}",
             "To confirm, run:".bright_white(),
@@ -371,7 +371,7 @@ async fn clear_history(confirm: bool) -> Result<()> {
     let config = get_logger_config();
 
     if !config.log_dir.exists() {
-        print_info("No chat history to clear.");
+        println!("{}", format_info("No chat history to clear."));
         return Ok(());
     }
 
@@ -382,21 +382,21 @@ async fn clear_history(confirm: bool) -> Result<()> {
     for entry in entries.flatten() {
         if entry.path().is_file() {
             if let Err(e) = std::fs::remove_file(entry.path()) {
-                print_error(&format!(
+                println!("{}", format_error(&format!(
                     "Failed to delete {}: {}",
                     entry.path().display(),
                     e
-                ));
+                )));
             } else {
                 deleted_count += 1;
             }
         }
     }
 
-    print_success(&format!(
+    println!("{}", format_success(&format!(
         "Cleared chat history: {} files deleted",
         deleted_count
-    ));
+    )));
 
     Ok(())
 }

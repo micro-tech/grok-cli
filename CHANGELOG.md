@@ -11,6 +11,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Architectural Cleanup (Task 131)
+
+- Added pure formatting helpers in `src/cli/mod.rs`:
+  - `format_success`, `format_error`, `format_warning`, `format_info`
+  - `format_confirm_prompt`
+- These functions return `String` and perform **no I/O**, satisfying the “Pure Display + Library/Binary Separation” requirement.
+- Legacy I/O functions remain deprecated and will be removed after all command handlers are migrated to the pure API.
+- Module documentation updated to clearly state the new library-vs-binary boundary.
+
 ### TGS-RAG Epic (Tasks 112.x)
 
 - Added full **Text-Graph Synergy RAG** engine (`src/rag/`)

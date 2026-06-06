@@ -13,7 +13,7 @@ use colored::*;
 use std::io::{self, Write};
 
 use crate::SettingsAction;
-use crate::cli::{confirm, print_error, print_info, print_success, print_warning};
+use crate::cli::{confirm, format_error, format_info, format_success, format_warning};
 use crate::config::Config;
 
 /// Setting definition for interactive display
@@ -89,15 +89,15 @@ async fn show_settings_ui(config: &Config) -> Result<()> {
                 let category = &categories[choice - 1];
                 show_category_settings(category, &settings, config).await?;
             } else {
-                print_warning("Invalid selection. Please try again.");
+                println!("{}", format_warning("Invalid selection. Please try again."));
             }
         } else {
-            print_warning("Invalid input. Please enter a number or 'q'.");
+            println!("{}", format_warning("Invalid input. Please enter a number or 'q'."));
         }
         println!();
     }
 
-    print_info("Settings browser closed.");
+    println!("{}", format_info("Settings browser closed."));
     Ok(())
 }
 
@@ -145,7 +145,7 @@ async fn show_category_settings(
                 }
             }
             "3" => break,
-            _ => print_warning("Invalid selection. Please try again."),
+            _ => println!("{}", format_warning("Invalid selection. Please try again.")),
         }
         println!();
     }
@@ -228,7 +228,7 @@ pub async fn edit_category_setting(settings: &[&SettingDefinition], config: &Con
             let setting = settings[choice - 1];
             edit_single_setting(setting, config).await?;
         } else {
-            print_warning("Invalid selection.");
+            println!("{}", format_warning("Invalid selection."));
         }
     }
 
@@ -252,7 +252,7 @@ pub async fn edit_single_setting(setting: &SettingDefinition, config: &Config) -
         SettingType::Number => edit_number_setting(setting)?,
         SettingType::Array => edit_array_setting(setting)?,
         SettingType::Object => {
-            print_warning("Object settings must be edited manually in the config file.");
+            println!("{}", format_warning("Object settings must be edited manually in the config file."));
             return Ok(());
         }
     };
@@ -270,13 +270,13 @@ pub async fn edit_single_setting(setting: &SettingDefinition, config: &Config) -
         // Save the config
         updated_config.save(None).await?;
 
-        print_success(&format!("Updated {} = {}", setting.key, new_value));
+        println!("{}", format_success(&format!("Updated {} = {}", setting.key, new_value)));
 
         if setting.requires_restart {
-            print_warning("⚠️  This setting requires a restart to take effect.");
+            println!("{}", format_warning("⚠️  This setting requires a restart to take effect."));
         }
     } else {
-        print_info("No changes made.");
+        println!("{}", format_info("No changes made."));
     }
 
     Ok(())
@@ -303,7 +303,7 @@ fn edit_boolean_setting(setting: &SettingDefinition) -> Result<String> {
         "2" => Ok("false".to_string()),
         "3" => Ok(setting.current_value.clone()),
         _ => {
-            print_warning("Invalid selection, keeping current value.");
+            println!("{}", format_warning("Invalid selection, keeping current value."));
             Ok(setting.current_value.clone())
         }
     }
@@ -341,7 +341,7 @@ fn edit_number_setting(setting: &SettingDefinition) -> Result<String> {
         if input.parse::<f64>().is_ok() {
             Ok(input.to_string())
         } else {
-            print_warning("Invalid number format, keeping current value.");
+            println!("{}", format_warning("Invalid number format, keeping current value."));
             Ok(setting.current_value.clone())
         }
     }
@@ -388,13 +388,13 @@ async fn edit_settings_interactive(config: &Config) -> Result<()> {
 async fn reset_settings(category: Option<String>) -> Result<()> {
     match category {
         Some(cat) => {
-            print_info(&format!("Resetting {} settings to defaults...", cat));
+            println!("{}", format_info(&format!("Resetting {} settings to defaults...", cat)));
 
             if !confirm(&format!(
                 "This will reset all {} settings to their default values. Continue?",
                 cat
             ))? {
-                print_info("Reset cancelled.");
+                println!("{}", format_info("Reset cancelled."));
                 return Ok(());
             }
 
@@ -415,24 +415,24 @@ async fn reset_settings(category: Option<String>) -> Result<()> {
                 "network" => current_config.network = default_config.network,
                 "logging" => current_config.logging = default_config.logging,
                 _ => {
-                    print_error(&format!("Unknown category: {}", cat));
+                    println!("{}", format_error(&format!("Unknown category: {}", cat)));
                     return Err(anyhow!("Unknown category: {}", cat));
                 }
             }
 
             current_config.save(None).await?;
-            print_success(&format!("{} settings reset to defaults.", cat));
+            println!("{}", format_success(&format!("{} settings reset to defaults.", cat)));
         }
         None => {
-            print_info("Resetting ALL settings to defaults...");
+            println!("{}", format_info("Resetting ALL settings to defaults..."));
 
             if !confirm("This will reset ALL settings to their default values. Continue?")? {
-                print_info("Reset cancelled.");
+                println!("{}", format_info("Reset cancelled."));
                 return Ok(());
             }
 
             Config::init(true).await?;
-            print_success("All settings reset to defaults.");
+            println!("{}", format_success("All settings reset to defaults."));
         }
     }
 
@@ -443,7 +443,7 @@ async fn reset_settings(category: Option<String>) -> Result<()> {
 async fn export_settings(config: &Config, path: Option<String>) -> Result<()> {
     let export_path = path.unwrap_or_else(|| "grok-settings-export.toml".to_string());
 
-    print_info(&format!("Exporting settings to: {}", export_path));
+    println!("{}", format_info(&format!("Exporting settings to: {}", export_path)));
 
     let toml_content =
         toml::to_string_pretty(config).map_err(|e| anyhow!("Failed to serialize config: {}", e))?;
@@ -451,13 +451,13 @@ async fn export_settings(config: &Config, path: Option<String>) -> Result<()> {
     std::fs::write(&export_path, toml_content)
         .map_err(|e| anyhow!("Failed to write export file: {}", e))?;
 
-    print_success(&format!("Settings exported to: {}", export_path));
+    println!("{}", format_success(&format!("Settings exported to: {}", export_path)));
     Ok(())
 }
 
 /// Import settings from a file
 async fn import_settings(path: String) -> Result<()> {
-    print_info(&format!("Importing settings from: {}", path));
+    println!("{}", format_info(&format!("Importing settings from: {}", path)));
 
     if !std::path::Path::new(&path).exists() {
         return Err(anyhow!("Import file not found: {}", path));
@@ -474,9 +474,9 @@ async fn import_settings(path: String) -> Result<()> {
 
     if confirm("This will replace your current settings. Continue?")? {
         imported_config.save(None).await?;
-        print_success("Settings imported successfully.");
+        println!("{}", format_success("Settings imported successfully."));
     } else {
-        print_info("Import cancelled.");
+        println!("{}", format_info("Import cancelled."));
     }
 
     Ok(())
