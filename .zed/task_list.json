@@ -381,7 +381,7 @@
         },
         {
           "dependencies": [112.6, 112.9],
-          "id": 112.10,
+          "id": 112.1,
           "status": "done",
           "title": "Implement graph-expanded retrieval (neighbors, parents, children, related entities)",
         },
@@ -901,7 +901,7 @@
       "details": "Multiple TODOs exist in src/lib.rs and src/cli/mod.rs about separating concerns. This includes removing print_success/print_error, confirm(), and similar functions from the library, and making display functions return String instead of printing directly.",
       "id": 131,
       "priority": "high",
-      "status": "pending",
+      "status": "done",
       "subtasks": [],
       "testStrategy": "After refactor, ensure no I/O functions remain in the library crate and all display functions are pure.",
       "title": "Architectural Cleanup: Pure Display + Library/Binary Separation",
