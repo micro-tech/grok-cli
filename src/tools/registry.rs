@@ -182,6 +182,10 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                         policy,
                     )
                 }
+                "task_get" => {
+                    let id = args["id"].as_f64().ok_or_else(|| anyhow!("Missing: id"))?;
+                    task_tools::task_get(id, policy)
+                }
                 "task_update" => {
                     let id = args["id"].as_f64().ok_or_else(|| anyhow!("Missing: id"))?;
                     let status = args["status"].as_str();
@@ -289,24 +293,36 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                 "send_message_in_memory" => {
                     let from = args["from"].as_str().unwrap_or("main");
                     let to = args["to"].as_str().ok_or_else(|| anyhow!("Missing: to"))?;
-                    let message = args["message"].as_str().ok_or_else(|| anyhow!("Missing: message"))?;
+                    let message = args["message"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Missing: message"))?;
                     agent_tools::send_message_in_memory(from, to, message).await
                 }
                 "receive_messages" => {
-                    let target = args["target"].as_str().ok_or_else(|| anyhow!("Missing: target"))?;
+                    let target = args["target"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Missing: target"))?;
                     agent_tools::receive_messages(target).await
                 }
                 "fork_agent" => {
                     let tasks: Vec<String> = args["tasks"]
                         .as_array()
-                        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     agent_tools::fork_agent(tasks).await
                 }
                 "join_agents" => {
                     let ids: Vec<String> = args["agent_ids"]
                         .as_array()
-                        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+                        .map(|a| {
+                            a.iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect()
+                        })
                         .unwrap_or_default();
                     agent_tools::join_agents(ids).await
                 }
@@ -461,6 +477,7 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
         "sleep",
         "synthetic_output",
         "execute_task_graph",
+        "task_get",
         "task_create",
         "task_update",
         "enter_plan_mode",
@@ -714,6 +731,20 @@ pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
                         "graph": {"type": "string", "description": "JSON-serialised TaskGraph."}
                     },
                     "required": ["graph"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "task_get",
+                "description": "Retrieve a single task (or subtask) by numeric ID from .zed/task_list.json.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "id": {"type": "number", "description": "Task ID (e.g. 122 or 5.2 for a subtask)."}
+                    },
+                    "required": ["id"]
                 }
             }
         }),

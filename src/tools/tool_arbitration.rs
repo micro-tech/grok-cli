@@ -71,6 +71,7 @@ fn is_known_tool(name: &str) -> bool {
             | "save_memory"
             | "sleep"
             | "synthetic_output"
+            | "task_get"
             | "task_create"
             | "task_update"
             | "execute_task_graph"
@@ -152,6 +153,9 @@ fn missing_required_fields(name: &str, args: &Value) -> Vec<String> {
         "synthetic_output" => {
             require("schema_name", args, &mut missing);
             require("data", args, &mut missing);
+        }
+        "task_get" => {
+            require("id", args, &mut missing);
         }
         "task_create" => {
             require("title", args, &mut missing);
