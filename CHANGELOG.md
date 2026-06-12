@@ -11,6 +11,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Task 148 — Fully Automated Integration Test Harness
+
+- Added **85 offline integration tests** across 4 new test suites, all passing with zero network calls:
+  - `tests/task_tools_tests.rs` (18 tests) — task lifecycle, Format A/C normalisation, `.bak` recovery, atomic save, input validation
+  - `tests/file_tools_tests.rs` (23 tests) — file I/O tools, security/path policy, path traversal rejection
+  - `tests/subsystem_tests.rs` (20 tests) — long-term memory, Bayesian engine, config defaults, tool registry shape
+  - `tests/cli_smoke_tests.rs` (24 tests) — tool listing, error formatting, arbitration edge cases, CLI settings
+- Added `tests/integration/helpers.rs` with shared `make_security`, `make_ctx`, `write_task_list_a/c`, `write_fixture` helpers
+- Fixed `tool_arbitration::is_known_tool` — added missing entries (`fork_agent`, `join_agents`, `list_agents`, `get_agent_status`, `cancel_agent`, `send_message_in_memory`, `receive_messages`) that were in `get_tool_definitions()` but not in the arbitration allow-list
+- Added `Makefile` with `test-integration`, `test-all`, `test-coverage`, `lint`, `fmt` targets
+- Added `Doc/testing.md` documenting harness structure, suite details, coverage instructions, and how to add new tests
+
 ### Architectural Cleanup (Task 131)
 
 - Added pure formatting helpers in `src/cli/mod.rs`:

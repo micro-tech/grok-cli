@@ -1265,6 +1265,119 @@
       "subtasks": [],
       "testStrategy": "Tool calling decisions correctly respect the real finish_reason from the API.",
       "title": "Propagate finish_reason in RouterResponse"
+    },
+    {
+      "id": 148,
+      "title": "Fully Automated Integration Test Harness",
+      "description": "Build a comprehensive, automated integration test harness that exercises every major feature and code path in grok-cli, runnable with a single cargo test command.",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [],
+      "details": "Create a tests/integration/ directory containing an automated harness that covers all major subsystems:\n\n1. **ACP / Session layer** — session init, tool-loop execution, session persistence (save/load), DNA injection, knowledge pack loading.\n2. **Router / Backend** — GrokBackend request/response round-trip with mock HTTP server; RouterResponse field mapping; tool-call dispatch; max-iteration guard.\n3. **Tool registry** — every registered tool (read_file, write_file, replace, list_directory, glob_search, search_file_content, run_shell_command, web_search, web_fetch, save_memory, task_get, task_create, task_update, execute_task_graph, spawn_agent, fork_agent, mcp_call, lsp_query, notebook_edit, execute_skill, cron_create, etc.) is exercised with valid args, invalid args, and edge-case inputs.\n4. **Security / path policy** — trusted directory enforcement, external-access flag, path traversal rejection.\n5. **Task tools** — task_create → task_get → task_update lifecycle; Format A/B/C normalisation; .bak recovery; atomic save (.tmp rename).\n6. **Memory subsystem** — long-term memory save/recall, episodic memory, tool history, skill memory/affinity.\n7. **Bayesian router** — priors load, route decision, profile persistence.\n8. **Config loading** — config.toml parsing, env-var overrides, missing-file defaults.\n9. **CLI commands** — chat, settings, tools, health commands via process spawn or direct fn call.\n10. **Error paths** — network timeout/retry (mock), corrupt JSON recovery, missing required fields, unknown tool rejection.\n\nUse wiremock or httpmock for HTTP mocking. Use tempfile for isolated file-system state. Every test must be deterministic and run offline. Add a CI-ready Makefile target and document the harness in Doc/testing.md.",
+      "testStrategy": "cargo test --test integration -- --nocapture passes 100% green with no network calls. A dedicated CI step runs the full suite. Coverage report (cargo-tarpaulin or llvm-cov) shows >80% line coverage across src/.",
+      "subtasks": [
+        {
+          "id": 148.1,
+          "title": "Scaffold tests/integration/ directory and shared helpers (TempProject, MockHttp)",
+          "status": "done",
+          "dependencies": []
+        },
+        {
+          "id": 148.2,
+          "title": "Integration tests — ACP session lifecycle (init, tool loop, persist, restore)",
+          "status": "done",
+          "dependencies": [
+            148.1
+          ]
+        },
+        {
+          "id": 148.3,
+          "title": "Integration tests — Router & GrokBackend (mock HTTP, tool dispatch, max-iterations)",
+          "status": "done",
+          "dependencies": [
+            148.1
+          ]
+        },
+        {
+          "id": 148.4,
+          "title": "Integration tests — Tool registry (every tool: happy path, bad args, edge cases)",
+          "status": "done",
+          "dependencies": [
+            148.1
+          ]
+        },
+        {
+          "id": 148.5,
+          "title": "Integration tests — Security/path policy (trusted dirs, traversal, external access)",
+          "status": "done",
+          "dependencies": [
+            148.1
+          ]
+        },
+        {
+          "id": 148.6,
+          "title": "Integration tests — Task tools lifecycle + all three JSON formats + .bak recovery",
+          "status": "done",
+          "dependencies": [
+            148.1
+          ]
+        },
+        {
+          "id": 148.7,
+          "title": "Integration tests — Memory subsystem (long-term, episodic, tool history, skill affinity)",
+          "status": "done",
+          "dependencies": [
+            148.1
+          ]
+        },
+        {
+          "id": 148.8,
+          "title": "Integration tests — Bayesian router and config loading",
+          "status": "done",
+          "dependencies": [
+            148.1
+          ]
+        },
+        {
+          "id": 148.9,
+          "title": "Integration tests — CLI command smoke tests (chat, settings, tools, health)",
+          "status": "done",
+          "dependencies": [
+            148.1
+          ]
+        },
+        {
+          "id": 148.11,
+          "title": "Add error checking",
+          "status": "done",
+          "dependencies": [
+            148.2,
+            148.3,
+            148.4,
+            148.5,
+            148.6,
+            148.7,
+            148.8,
+            148.9
+          ]
+        },
+        {
+          "id": 148.12,
+          "title": "Add cargo test coverage (tarpaulin/llvm-cov, target >80% line coverage)",
+          "status": "done",
+          "dependencies": [
+            148.11
+          ]
+        },
+        {
+          "id": 148.13,
+          "title": "Add documentation (Doc/testing.md + CI Makefile target)",
+          "status": "done",
+          "dependencies": [
+            148.12
+          ]
+        }
+      ]
     }
   ]
 }
