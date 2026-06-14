@@ -141,12 +141,3 @@ impl SessionDna {
         }
     }
 }
-
-    /// Inject into system prompt.
-    pub fn inject_into_prompt(&self, prompt: &mut String) {
-        prompt.push_str(&format!(
-            "\nTone: {}\nVerbosity: {}\n",
-            self.tone, self.verbosity
-        ));
-    }
-}

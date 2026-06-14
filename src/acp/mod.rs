@@ -115,6 +115,10 @@ struct SessionData {
     /// Bayesian inference engine for this session
     bayes_engine: crate::bayes::BayesianEngine,
 
+    /// Session DNA (personality + behavior config) — mutable during the session
+    /// so the feedback loop can adapt risk tolerance and tool preferences.
+    dna: crate::session::dna::SessionDna,
+
     /// Active session goal set via `/goal <text>`.
     /// Injected into every refined prompt as a system note so the model
     /// always interprets messages through the lens of this goal.
@@ -408,6 +412,7 @@ impl GrokAcpAgent {
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
+            dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
         };
 
@@ -439,6 +444,11 @@ impl GrokAcpAgent {
         // its fields to the system prompt so the model adopts the user's preferred
         // persona and style throughout the session.
         let dna = crate::session::dna::SessionDna::load();
+
+        // Apply DNA influence to the Bayesian router (risk tolerance + tool prefs)
+        let mut bayes_engine = crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian);
+        dna.apply_to_bayes_engine(&mut bayes_engine);
+
         if let Some(sys_msg) = session_data
             .messages
             .iter_mut()
@@ -465,6 +475,10 @@ impl GrokAcpAgent {
             dna.tone,
             dna.verbosity
         );
+
+        // Store the mutable DNA instance so the feedback loop can update it
+        session_data.bayes_engine = bayes_engine;
+        session_data.dna = dna;
 
         let mut sessions = self.sessions.write().await;
         sessions.insert(session_id.0.clone(), session_data);
@@ -1325,6 +1339,12 @@ impl GrokAcpAgent {
                             tool_duration,
                             s.len()
                         );
+
+                        // DNA feedback loop (success)
+                        if let Some(s) = sessions.get_mut(&session_id.0) {
+                            s.dna.update_from_tool_result(true, function_name);
+                        }
+
                         (s, crate::acp::protocol::ToolCallStatus::Completed)
                     }
                     Err(e) => {
@@ -1333,6 +1353,11 @@ impl GrokAcpAgent {
 
                         // 4. Update Bayesian Engine for Tool Failure
                         local_bayes.update_from_tool_failure();
+
+                        // DNA feedback loop (failure)
+                        if let Some(s) = sessions.get_mut(&session_id.0) {
+                            s.dna.update_from_tool_result(false, function_name);
+                        }
 
                         let mut error_content =
                             format!("Error executing tool {}: {}", function_name, e);
