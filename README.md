@@ -12,7 +12,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 
 - **Interactive Terminal UI** — Gemini-style rich prompts, adaptive ASCII art, progress indicators, and color output
 - **Session Persistence** — Save, load, list, and fork conversations (`/save`, `/load`, `/list`)
-- **Session DNA** — Persistent personality & behavior config (`session_dna.json`) injected into system prompts ([Doc/SESSION_DNA.md](Doc/SESSION_DNA.md))
+- **Session DNA** — Persistent personality & behavior config (`session_dna.json`) injected into system prompts. Now a **living system**: full LLM injection, Bayesian router influence, and real-time feedback loop after every tool call ([Doc/SESSION_DNA.md](Doc/SESSION_DNA.md))
 - **Skill Auto-Activation** — Skills activate automatically based on project context and keywords
 - **Task Graph Engine** — Run complex multi-step workflows with dependency resolution
 - **Hierarchical Configuration** — Project-local overrides via `.grok/config.toml`

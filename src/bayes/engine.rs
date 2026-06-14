@@ -223,11 +223,13 @@ impl BayesianEngine {
         self.sync_graph();
     }
 
-    /// Boost the prior for the intent that corresponds to a successfully used
-    /// tool, then re-normalise and persist the profile to disk.
-    ///
-    /// The boost magnitude is `self.profile_learning_rate` (e.g. 10 %).
-    pub fn update_profile(&mut self, executed_intent: &str) {
+    /// Apply a multiplicative boost to a specific intent prior (used by Session DNA).
+    /// The caller is responsible for re-normalising afterwards.
+    pub fn boost_prior(&mut self, intent: &str, factor: f32) {
+        if let Some(p) = self.priors.get_mut(intent) {
+            *p *= factor;
+        }
+    }
         let intent_key = match executed_intent {
             "replace" | "write_file" => "intent_edit",
             "run_shell_command" => "intent_shell",

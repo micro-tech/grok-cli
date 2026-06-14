@@ -11,6 +11,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Dynamic Session DNA (Task 149)
+
+- Session DNA is now a **living behavioral system**, not just static prompt text.
+- **LLM-side injection** — all five fields (`tone`, `verbosity`, `risk_tolerance`, `coding_style`, `tool_preferences`) are now injected into the system prompt so the model fully adopts the session fingerprint.
+- **Router influence** — `risk_tolerance` and `tool_preferences` now bias the Bayesian engine priors, making high-risk tools more (or less) likely depending on DNA.
+- **Tool feedback loop** — after every tool execution the DNA is updated with success/failure signals, allowing the agent to learn and adapt the user’s preferred operating style over the course of a session.
+- `SessionData` now owns a mutable `SessionDna` instance that evolves during the conversation.
+
+- `SessionDna::load()` now checks the **project root first** (`./session_dna.json`) before falling back to `~/.grok/session_dna.json`.
+- Project-local DNA files are now automatically loaded and injected into every new ACP session.
+- Your `session_dna.json` in the repo root is now live — tone, verbosity, risk tolerance, coding style, and tool preferences are respected.
+
 ### Task 148 — Fully Automated Integration Test Harness
 
 - Added **85 offline integration tests** across 4 new test suites, all passing with zero network calls:
