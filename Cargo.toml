@@ -39,7 +39,7 @@ clap = { version = "4.6.1", features = ["derive", "env"] }
 # Error handling
 anyhow = "1.0"
 thiserror = "2.0"
-agent-client-protocol = "0.12.1"
+agent-client-protocol = "0.14.0"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Environment variable loading
 dotenvy = "0.15"
@@ -60,7 +60,7 @@ indicatif = "0.18"
 # File I/O and paths
 dirs = "6.0"
 # UUID generation
-uuid = { version = "1.23.1", features = ["v4"] }
+uuid = { version = "1.23.3", features = ["v4"] }
 # TGS-RAG dependencies (gated behind "tgs-rag" feature)
 tree-sitter = { version = "0.26.9", optional = true }
 tree-sitter-rust = { version = "0.24.2", optional = true }
@@ -103,7 +103,7 @@ winreg = "0.56.0"
 tempfile = "3.27.0"
 mockito = "1.7"
 tokio-test = "0.4"
-serial_test = "3.4.0"
+serial_test = "3.5.0"
 
 [profile.release]
 lto = true

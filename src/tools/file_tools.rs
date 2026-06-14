@@ -4,7 +4,7 @@
 //! keep calling them with the same signature it already uses.
 
 use crate::safety::pre_write_hook::{on_before_write_file, SafetyDecision, WriteContext};
-use crate::safety::{DiffValidator, DryRunContext, SuspiciousWriteGuard};
+use crate::safety::{SuspiciousWriteGuard};
 use crate::acp::security::{PathAccessType, SecurityPolicy};
 use crate::cli::approval::{ApprovalDecision, prompt_external_access_approval};
 use crate::security::audit::{AuditLogger, create_access_log};

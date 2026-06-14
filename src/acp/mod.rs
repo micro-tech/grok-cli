@@ -1342,7 +1342,7 @@ impl GrokAcpAgent {
                         );
 
                         // DNA feedback loop (success)
-                        if let Some(s) = sessions.get_mut(&session_id.0) {
+                        if let Some(s) = self.sessions.get_mut(&session_id.0) {
                             s.dna.update_from_tool_result(true, function_name);
                         }
 
@@ -1356,7 +1356,7 @@ impl GrokAcpAgent {
                         local_bayes.update_from_tool_failure();
 
                         // DNA feedback loop (failure)
-                        if let Some(s) = sessions.get_mut(&session_id.0) {
+                        if let Some(s) = self.sessions.get_mut(&session_id.0) {
                             s.dna.update_from_tool_result(false, function_name);
                         }
 

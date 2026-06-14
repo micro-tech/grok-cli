@@ -69,7 +69,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                     let content = args["content"]
                         .as_str()
                         .ok_or_else(|| anyhow!("Missing: content"))?;
-                    file_tools::write_file(path, content, policy).await
+                    file_tools::write_file(path, content, policy, false).await
                 }
                 "replace" => {
                     let path = args["path"]
@@ -82,7 +82,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                         .as_str()
                         .ok_or_else(|| anyhow!("Missing: new_string"))?;
                     let expected = args["expected_replacements"].as_u64().map(|n| n as u32);
-                    file_tools::replace(path, old_string, new_string, expected, policy).await
+                    file_tools::replace(path, old_string, new_string, expected, policy, false).await
                 }
                 "list_directory" => {
                     let path = args["path"]

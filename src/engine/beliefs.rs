@@ -310,7 +310,7 @@ impl EngineBeliefs {
             .iter()
             .map(|step| match &step.action {
                 StepAction::UseTool { tool_name, .. } => {
-                    let base = self.tool_score(tool_name, dna_tool_weight);
+                    let base = self.tool_score(tool_name, None);
                     match dna_tool_weight {
                         Some(w) => (base * w).clamp(0.0, 1.0),
                         None => base,
