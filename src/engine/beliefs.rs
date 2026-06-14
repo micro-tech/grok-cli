@@ -207,14 +207,19 @@ impl EngineBeliefs {
 
     // ── Queries ───────────────────────────────────────────────────────────────
 
-    /// Return the current belief score for a named tool.
+    /// Return the current belief score for a named tool, optionally adjusted by DNA.
     ///
-    /// Returns `0.0` if the tool has not been registered.
-    pub fn tool_score(&self, tool_name: &str) -> f32 {
-        self.tool_beliefs
+    /// If `dna_tool_weight` is provided, the base score is multiplied by it.
+    pub fn tool_score(&self, tool_name: &str, dna: Option<&crate::session::dna::SessionDna>) -> f32 {
+        let base = self.tool_beliefs
             .get(tool_name)
             .map(|b| b.score)
-            .unwrap_or(0.0)
+            .unwrap_or(0.0);
+
+        match dna {
+            Some(d) => (base * d.get_tool_weight(tool_name)).clamp(0.0, 1.0),
+            None => base,
+        }
     }
 
     /// Return the top-ranked [`ToolBelief`], or `None` if no tools are
@@ -299,17 +304,18 @@ impl EngineBeliefs {
 
     /// Score a slice of plan steps using the current tool beliefs.
     ///
-    /// Returns a `Vec<f32>` parallel to `steps` where:
-    /// - [`StepAction::UseTool`] steps receive the belief score of the named
-    ///   tool (or `0.0` if the tool is not registered).
-    /// - All other step kinds receive `0.0`.
-    ///
-    /// The returned vector always has the same length as `steps`.
-    pub fn score_plan(&self, steps: &[PlanStep]) -> Vec<f32> {
+    /// Optionally accepts a DNA tool weight multiplier (from SessionDna).
+    pub fn score_plan(&self, steps: &[PlanStep], dna_tool_weight: Option<f32>) -> Vec<f32> {
         steps
             .iter()
             .map(|step| match &step.action {
-                StepAction::UseTool { tool_name, .. } => self.tool_score(tool_name),
+                StepAction::UseTool { tool_name, .. } => {
+                    let base = self.tool_score(tool_name, dna_tool_weight);
+                    match dna_tool_weight {
+                        Some(w) => (base * w).clamp(0.0, 1.0),
+                        None => base,
+                    }
+                }
                 _ => 0.0,
             })
             .collect()

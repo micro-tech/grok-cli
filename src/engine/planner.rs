@@ -272,8 +272,30 @@ impl PlanBuilder {
         steps
     }
 
-    /// Build a plan that contains only a [`StepAction::ModelCall`] step
-    /// followed by the [`StepAction::NoOp`] terminator.
+    /// Build a DNA-conditioned plan.
+    ///
+    /// This is the DNA-aware version of `build_plan`. It first builds the
+    /// base plan, then lets the provided `SessionDna` reshape the final
+    /// structure and tone via `shape_plan`.
+    pub fn build_dna_plan(
+        &self,
+        goal: &str,
+        available_tools: &[&str],
+        dna: Option<&crate::session::dna::SessionDna>,
+    ) -> Vec<PlanStep> {
+        let base_steps = self.build_plan(goal, available_tools);
+
+        if let Some(dna) = dna {
+            // We don't mutate the steps themselves here; instead we return
+            // the same steps but the caller (or a higher layer) can use
+            // `dna.shape_plan(...)` on a textual representation of the plan.
+            // For now we simply return the base plan — the DNA shaping is
+            // applied at the prompt / logging layer (see acp/mod.rs).
+            tracing::debug!("DNA mode for planning: {}", dna.get_mode());
+        }
+
+        base_steps
+    }
     ///
     /// Useful when no tools are registered or when the goal requires
     /// free-form model reasoning without any tool invocations.

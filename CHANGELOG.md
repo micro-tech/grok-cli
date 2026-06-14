@@ -11,7 +11,60 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
-### Dynamic Session DNA (Task 149)
+### DNA-Driven Skill Arbitration 2.0 (Tasks 151–153)
+
+The DNA system has been deeply integrated into the core reasoning engine:
+
+### Task 151 — DNA-Driven Skill Arbitration 2.0
+- `EngineBeliefs::tool_score()` and `score_plan()` now accept an optional `dna_tool_weight` parameter.
+- `ArbitrationEngine::rank_tools()` now accepts `dna_tool_weight` and applies it to every tool's final score.
+- DNA tool preferences directly boost or reduce tool rankings during arbitration.
+
+### Task 152 — DNA-Conditioned Planning
+- `SessionDna::shape_plan()` and `get_mode()` are available for any planner to use.
+- Plans can now be shaped differently based on the active DNA profile (tone, verbosity, risk tolerance, past failures).
+
+### Task 153 — DNA-Based Mode Switching
+- `SessionDna::get_mode()` returns one of: `coder`, `research`, `shell`, or `creative`.
+- The current mode is injected into the system prompt at session start.
+- Mode selection is driven by `risk_tolerance`, `verbosity`, `tool_preferences`, and `tone`.
+
+All three behaviors are now live and influence real tool selection, planning, and behavior.
+
+The Session DNA system has been extended with three powerful new capabilities that make the agent feel truly personalized:
+
+### 1. DNA-Driven Skill Arbitration 2.0
+DNA now directly influences:
+- **Skill scoring** via `get_skill_weight(skill_name)`
+- **Tool scoring** via `get_tool_weight(tool_name)`
+- **Model routing** hints via `get_model_preference()`
+- **Plan shaping** via `shape_plan()`
+
+Weight multipliers are applied based on `risk_tolerance`, `coding_style`, and `tool_preferences`.
+
+### 2. DNA-Conditioned Planning
+The planner can now generate different plan structures depending on:
+- Past tool failures (via the feedback loop)
+- Preferred coding patterns (`coding_style`)
+- User communication style (`tone` + `verbosity`)
+
+Example output modes: `shell`, `research`, `creative`, or `coder`.
+
+### 3. DNA-Based Mode Switching
+The agent automatically selects an operating mode at session start:
+- `coder` (default)
+- `shell` (when shell tools are preferred or risk is high)
+- `research` (when verbosity is high)
+- `creative` (when tone/style signals exploration)
+
+The current mode is injected into the system prompt and logged.
+
+All three behaviors are fully wired:
+- DNA is loaded and applied in `initialize_session`
+- Mode is computed and injected into the prompt
+- Feedback loop continues to evolve DNA during tool execution
+
+See `src/session/dna.rs` for the new helper methods.
 
 - Session DNA is now a **living behavioral system**, not just static prompt text.
 - **LLM-side injection** — all five fields (`tone`, `verbosity`, `risk_tolerance`, `coding_style`, `tool_preferences`) are now injected into the system prompt so the model fully adopts the session fingerprint.

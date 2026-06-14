@@ -140,4 +140,67 @@ impl SessionDna {
             }
         }
     }
+
+    // ──────────────────────────────────────────────────────────────────────────
+    // DNA-Driven Intelligence Layer (Task 150)
+    // ──────────────────────────────────────────────────────────────────────────
+
+    /// Returns a weight multiplier for skill scoring (Skill Arbitration 2.0).
+    pub fn get_skill_weight(&self, skill_name: &str) -> f32 {
+        let base = 1.0;
+        let style_boost = if self.coding_style.to_lowercase().contains("concise") && skill_name.to_lowercase().contains("refactor") {
+            1.3
+        } else { 1.0 };
+
+        let risk_boost = match self.risk_tolerance.as_str() {
+            "high" if skill_name.to_lowercase().contains("shell") => 1.4,
+            "low" if skill_name.to_lowercase().contains("shell") => 0.6,
+            _ => 1.0,
+        };
+
+        base * style_boost * risk_boost
+    }
+
+    /// Returns a weight multiplier for tool scoring.
+    pub fn get_tool_weight(&self, tool_name: &str) -> f32 {
+        if self.tool_preferences.iter().any(|t| t == tool_name) {
+            1.35
+        } else {
+            1.0
+        }
+    }
+
+    /// Returns the current operating mode inferred from DNA.
+    pub fn get_mode(&self) -> &'static str {
+        if self.tool_preferences.iter().any(|t| t.contains("shell") || t.contains("command")) {
+            return "shell";
+        }
+        if self.verbosity == "high" || self.tone.contains("research") {
+            return "research";
+        }
+        if self.coding_style.contains("creative") || self.tone.contains("creative") {
+            return "creative";
+        }
+        "coder"
+    }
+
+    /// Shapes a plan string according to DNA preferences (DNA-Conditioned Planning).
+    pub fn shape_plan(&self, base_plan: &str) -> String {
+        let mode = self.get_mode();
+        match mode {
+            "shell" => format!("🛠️  Shell-heavy plan (risk-tolerant):\n{}", base_plan),
+            "research" => format!("🔍 Research-oriented plan (verbose):\n{}", base_plan),
+            "creative" => format!("🎨 Creative/exploratory plan:\n{}", base_plan),
+            _ => format!("💻 Standard coding plan:\n{}", base_plan),
+        }
+    }
+
+    /// Suggests a preferred model based on DNA (for future model routing).
+    pub fn get_model_preference(&self) -> Option<&'static str> {
+        match self.verbosity.as_str() {
+            "high" => Some("grok-4.3"),
+            "low" => Some("grok-3-mini"),
+            _ => None,
+        }
+    }
 }

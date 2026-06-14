@@ -439,16 +439,14 @@ impl GrokAcpAgent {
             }
         }
 
-        // --- Task 103: Session DNA ---
-        // Load session_dna.json (tone, verbosity, coding_style, etc.) and append
-        // its fields to the system prompt so the model adopts the user's preferred
-        // persona and style throughout the session.
+        // --- Task 103 + 150: Session DNA + DNA-Driven Intelligence ---
         let dna = crate::session::dna::SessionDna::load();
 
-        // Apply DNA influence to the Bayesian router (risk tolerance + tool prefs)
+        // Apply DNA influence to the Bayesian router
         let mut bayes_engine = crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian);
         dna.apply_to_bayes_engine(&mut bayes_engine);
 
+        // Inject full DNA + current operating mode into system prompt
         if let Some(sys_msg) = session_data
             .messages
             .iter_mut()
@@ -457,12 +455,13 @@ impl GrokAcpAgent {
             if let Some(content) = sys_msg["content"].as_str() {
                 let mut prompt = content.to_string();
                 dna.inject_into_prompt(&mut prompt);
+                prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
                 sys_msg["content"] = serde_json::Value::String(prompt);
             }
         } else {
-            // No system message yet -- create one from DNA alone
             let mut prompt = String::new();
             dna.inject_into_prompt(&mut prompt);
+            prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
             if !prompt.trim().is_empty() {
                 session_data.messages.push(serde_json::json!({
                     "role": "system",
@@ -470,13 +469,15 @@ impl GrokAcpAgent {
                 }));
             }
         }
+
         tracing::debug!(
-            "Session DNA injected: tone={}, verbosity={}",
+            "Session DNA injected (mode={}): tone={}, verbosity={}",
+            dna.get_mode(),
             dna.tone,
             dna.verbosity
         );
 
-        // Store the mutable DNA instance so the feedback loop can update it
+        // Store the mutable DNA instance
         session_data.bayes_engine = bayes_engine;
         session_data.dna = dna;
 

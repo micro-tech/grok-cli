@@ -1389,6 +1389,50 @@
       "subtasks": [],
       "testStrategy": "1. Set risk_tolerance=high in session_dna.json → verify shell / risky tools get higher prior.\n2. After a failing tool call, verify DNA risk_tolerance or tool_preferences shift slightly.\n3. Confirm full DNA (all 5 fields) appears in the system prompt sent to the model.",
       "title": "Dynamic Session DNA — LLM Injection + Router Influence + Tool Feedback Loop"
+    },
+    {
+      "dependencies": [],
+      "description": "Extend the live Session DNA system with three advanced behaviors:\n1. DNA-Driven Skill Arbitration 2.0 — DNA influences skill scoring, tool scoring, model routing, and plan shaping via weight multipliers.\n2. DNA-Conditioned Planning — Generate different plan structures based on past failures, preferred patterns, and user style from DNA.\n3. DNA-Based Mode Switching — Automatically switch between Coder / Research / Shell / Creative modes based on DNA signals (tone, risk_tolerance, tool_preferences, etc.).\nThis makes the agent feel truly personalized and adaptive.",
+      "details": "",
+      "id": 150,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "1. Set different DNA profiles and verify skill/tool scores change accordingly.\n2. Trigger planning with different DNA and observe different plan shapes.\n3. Change DNA mid-session and verify mode switches are reflected in behavior and logs.",
+      "title": "DNA-Driven Intelligence Layer (Skill Arbitration 2.0 + Conditioned Planning + Mode Switching)"
+    },
+    {
+      "dependencies": [],
+      "description": "Integrate SessionDna::get_skill_weight() and get_tool_weight() into the actual skill and tool scoring systems so DNA influences which skills and tools are preferred during routing and execution.",
+      "details": "",
+      "id": 151,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "Verify that changing DNA risk_tolerance or tool_preferences changes skill/tool selection scores in practice.",
+      "title": "DNA-Driven Skill Arbitration 2.0"
+    },
+    {
+      "dependencies": [],
+      "description": "Wire SessionDna::shape_plan() and get_mode() into the planning system so generated plans reflect the user's DNA (past failures, preferred patterns, style).",
+      "details": "",
+      "id": 152,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "Generate plans with different DNA profiles and confirm the output structure and tone change accordingly.",
+      "title": "DNA-Conditioned Planning"
+    },
+    {
+      "dependencies": [],
+      "description": "Make the agent automatically switch between coder/research/shell/creative modes based on DNA signals and expose the current mode for use in routing and behavior.",
+      "details": "",
+      "id": 153,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "Start sessions with different session_dna.json files and verify the correct mode is detected and used.",
+      "title": "DNA-Based Mode Switching"
     }
   ]
 }

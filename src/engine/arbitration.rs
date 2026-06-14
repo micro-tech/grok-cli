@@ -301,30 +301,14 @@ impl ArbitrationEngine {
 
     /// Score and rank all registered capabilities against `plan` and `trace`.
     ///
-    /// # Scoring algorithm
-    ///
-    /// For each registered [`ToolCapability`]:
-    ///
-    /// 1. **`plan_score`** — presence-based:
-    ///    - Count `Pending` [`StepAction::UseTool`] steps whose `tool_name`
-    ///      equals this capability's name; divide the count by
-    ///      `max(1, count)` → `0.0` or `1.0`.
-    ///    - Also check whether any tag appears (case-insensitive) in any step
-    ///      description.  If so, the tag score is `1.0`.
-    ///    - `plan_score = name_score.max(tag_score)`.
-    ///
-    /// 2. **`rpl_score`** — look up this tool in
-    ///    `trace.tool_evaluations`; use `relevance_score` if found, else `0.0`.
-    ///
-    /// 3. **`combined`** =
-    ///    `config.plan_weight × plan_score + config.rpl_weight × rpl_score`.
-    ///
-    /// 4. **`cost_penalty`** = `capability.cost × 0.1`.
-    ///
-    /// 5. **`score`** = `(combined − cost_penalty).clamp(0.0, 1.0)`.
-    ///
-    /// The returned vector is sorted in **descending** order by `score`.
-    pub fn rank_tools(&self, plan: &[PlanStep], trace: &ReasoningTrace) -> Vec<RankedTool> {
+    /// Optionally accepts a DNA-derived tool weight multiplier (from SessionDna)
+    /// that is applied to the final score of every tool.
+    pub fn rank_tools(
+        &self,
+        plan: &[PlanStep],
+        trace: &ReasoningTrace,
+        dna_tool_weight: Option<f32>,
+    ) -> Vec<RankedTool> {
         let mut ranked: Vec<RankedTool> = self
             .capabilities
             .iter()
@@ -334,7 +318,13 @@ impl ArbitrationEngine {
                 let combined =
                     self.config.plan_weight * plan_score + self.config.rpl_weight * rpl_score;
                 let cost_penalty = cap.cost * 0.1;
-                let score = (combined - cost_penalty).clamp(0.0, 1.0);
+                let mut score = (combined - cost_penalty).clamp(0.0, 1.0);
+
+                // Apply DNA weight if provided (Task 151)
+                if let Some(w) = dna_tool_weight {
+                    score = (score * w).clamp(0.0, 1.0);
+                }
+
                 RankedTool {
                     capability: cap.clone(),
                     score,
