@@ -1510,6 +1510,55 @@
       "subtasks": [],
       "testStrategy": "Inject failures into a tool and verify health monitor downgrades/disables it.",
       "title": "Safety Hook 7: Tool Health Check System"
+    },
+    {
+      "dependencies": [],
+      "description": "Add a `/commit` slash command (and optional `generate_commit_message` tool) that uses the current session context + git diff to ask the LLM for a high-quality commit message. Supports Conventional Commits by default and respects Session DNA / custom instructions.",
+      "details": "Create a new slash command `/commit` (and optionally `/commit <extra instructions>`) that:\n- Runs `git diff --cached` (or staged + unstaged) to obtain the changes.\n- Builds a focused prompt containing: current goal, recent conversation summary (if any), the diff, and any user-provided instructions.\n- Calls the model (respecting current `thinking_mode` and `commit_message_model` if configured) to generate a commit message.\n- Returns the message so the user (or Zed) can copy/paste or auto-fill the Git panel.\n\nOptionally expose the same logic as a tool `generate_commit_message` so the agent itself can propose commit messages during a workflow.\n\nAlso add a config field `commit_message_instructions` (string) that is appended to every commit prompt, and document how to use `~/.config/zed/AGENTS.md` or a project-level `AGENTS.md` for persistent style rules.",
+      "id": 161,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [
+        {
+          "dependencies": [],
+          "id": 161.1,
+          "status": "pending",
+          "title": "Add `generate_commit_message` tool implementation (src/acp/tools.rs or src/tools/)"
+        },
+        {
+          "dependencies": [],
+          "id": 161.2,
+          "status": "pending",
+          "title": "Register `/commit` slash command + parser (src/acp/slash_commands.rs)"
+        },
+        {
+          "dependencies": [
+            161.1,
+            161.2
+          ],
+          "id": 161.3,
+          "status": "pending",
+          "title": "Wire commit message prompt builder (include diff, goal, DNA, custom instructions)"
+        },
+        {
+          "dependencies": [
+            161.3
+          ],
+          "id": 161.4,
+          "status": "pending",
+          "title": "Add `commit_message_instructions` to AcpConfig + docs"
+        },
+        {
+          "dependencies": [
+            161.4
+          ],
+          "id": 161.5,
+          "status": "pending",
+          "title": "Tests + CHANGELOG entry"
+        }
+      ],
+      "testStrategy": "1. Run `/commit` in an ACP session with staged changes → verify a sensible commit message is returned.\n2. Set `commit_message_instructions` and confirm it appears in the prompt.\n3. Call the `generate_commit_message` tool directly and verify it works.\n4. Confirm Conventional Commits style is used by default.",
+      "title": "Add /commit slash command + generate_commit_message tool (ACP commit message support)"
     }
   ]
 }

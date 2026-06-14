@@ -11,6 +11,15 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Commit Message Generator (Task 161)
+
+- Added `/commit` slash command that generates high-quality Conventional Commits messages from the current git diff (`git diff --cached` with fallback to `git diff`).
+- Added `generate_commit_message` tool so the agent itself can request commit messages during workflows.
+- Supports optional extra instructions: `/commit fix auth edge case`.
+- Respects the new `acp.commit_message_instructions` config field (appended to every prompt).
+- Works with Session DNA and active goals for context-aware commit messages.
+- Default style follows Conventional Commits (`<type>(<scope>): <description>`).
+
 ### Safety Hooks — 7 Mandatory Layers (Tasks 154–160)
 
 Grok-CLI now ships with a comprehensive, mandatory safety system that protects against the most common classes of AI-induced file damage.

@@ -293,6 +293,12 @@ pub struct AcpConfig {
     /// Default: true
     #[serde(default = "default_true")]
     pub stream_thinking: bool,
+
+    /// Custom instructions appended to every commit-message generation prompt
+    /// (used by `/commit` and the `generate_commit_message` tool).
+    /// Example: "Use Conventional Commits with scope and breaking-change footer."
+    #[serde(default)]
+    pub commit_message_instructions: String,
 }
 
 /// Network configuration optimized for satellite connections
@@ -1134,6 +1140,7 @@ impl Default for AcpConfig {
             thinking_mode: ThinkingMode::Off,
             show_context_usage: true,
             stream_thinking: true,
+            commit_message_instructions: String::new(),
         }
     }
 }

@@ -430,6 +430,15 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                     ai_tools::run(&args, policy).await
                 }
 
+                // ── Commit message generation (Task 161) ─────────────────────
+                "generate_commit_message" => {
+                    // This tool is primarily a convenience for the AI to call itself.
+                    // The heavy lifting (git diff + prompt) is done in slash_commands.
+                    // Here we just return a short instruction so the model knows
+                    // it should use the /commit slash command or call the LLM directly.
+                    Ok("Use the `/commit` slash command (or call the model with a git diff) to generate a commit message.".to_string())
+                }
+
                 // ── Unknown tool (should be rare due to arbitration) ───────
                 unknown => Err(anyhow!("Unknown tool: '{}'", unknown)),
             }
@@ -505,6 +514,7 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
         "remote_trigger",
         "recall_context",
         "ai_tool",
+        "generate_commit_message",
     ]
 }
 
@@ -1129,6 +1139,22 @@ pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
                 "name": "ai_tool",
                 "description": "Generic entrypoint for AI-generated or dynamic tools.",
                 "parameters": {"type": "object", "properties": {}}
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "generate_commit_message",
+                "description": "Generate a Conventional Commits style commit message from the current git diff. Use this when you need to create a commit message programmatically.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "instructions": {
+                            "type": "string",
+                            "description": "Optional extra instructions for the commit message style (e.g. 'use conventional commits with scope')"
+                        }
+                    }
+                }
             }
         }),
     ]

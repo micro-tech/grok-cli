@@ -342,6 +342,45 @@ GROK_ACP_MAX_TOOL_LOOP_ITERATIONS=100
   max_tool_loop_iterations = 50
   ```
 
+### Commit Message Generator (Task 161)
+
+Grok CLI can generate high-quality Conventional Commits messages from your staged (or unstaged) git changes.
+
+**Slash command (recommended):**
+```
+/commit                    # Uses default Conventional Commits style
+/commit fix auth edge case  # Add extra instructions
+```
+
+**Tool for the agent:**
+- `generate_commit_message` — the AI can call this tool when it needs to propose a commit message during a workflow.
+
+**Configuration:**
+```toml
+[acp]
+commit_message_instructions = "Use Conventional Commits with scope and breaking-change footer when appropriate."
+```
+
+This string is appended to every commit prompt (both from `/commit` and the tool).
+
+**How it works:**
+- Runs `git diff --cached` first; falls back to `git diff` if nothing is staged.
+- Builds a prompt containing the diff, current session goal (if any), Session DNA, and any custom instructions.
+- The model returns a properly formatted commit message ready to copy into your Git UI or commit directly.
+
+**Example output style:**
+```
+feat(auth): add JWT refresh token rotation
+
+- Implement secure refresh token rotation with HttpOnly cookies
+- Add rate limiting on refresh endpoint
+- Update tests for new rotation logic
+
+Closes #123
+```
+
+This feature is especially useful inside Zed or other ACP clients when you want the agent to help write commit messages.
+
 ### Telemetry Configuration
 
 ```bash
