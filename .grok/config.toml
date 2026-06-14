@@ -249,7 +249,7 @@ compression_chunk_ratio = 0.40
 # low  = light reasoning, slightly more thorough
 # high = deep reasoning, most thorough but slower and more expensive
 # Change per-session with /think or the --thinking CLI flag.
-thinking_mode = "off"
+thinking_mode = "low"
 
 [mcp.servers.github]
 type = "stdio"

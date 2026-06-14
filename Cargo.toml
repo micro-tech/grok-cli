@@ -24,7 +24,7 @@ grok_api = "0.1.73"
 # HTTP client with timeout support for network drops
 #grok_api = "0.1.7"
 
-reqwest = { version = "0.13.3", features = [
+reqwest = { version = "0.13.4", features = [
     "json",
     "native-tls-vendored",
     "http2",
