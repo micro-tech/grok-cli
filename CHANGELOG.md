@@ -11,6 +11,28 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Safety Hooks — 7 Mandatory Layers (Tasks 154–160)
+
+Grok-CLI now ships with a comprehensive, mandatory safety system that protects against the most common classes of AI-induced file damage.
+
+**Core Safety Modules** (`src/safety/`):
+- `pre_write_hook.rs` — `on_before_write_file()` runs before every write/replace/delete. Blocks binary junk, massive overwrites, invalid JSON, and DNA-flagged failure patterns.
+- `dry_run.rs` — `dry_run: bool` parameter on `write_file` and `replace`. Returns a diff without touching disk; LLM must explicitly confirm.
+- `diff_validator.rs` — Rejects full-file rewrites >200 lines or >40% content removal.
+- `intent_validator.rs` — Rejects ambiguous file-edit requests (“fix the bug”, “make it better”) and forces clarification.
+- `suspicious_write_guard.rs` — Final in-tool checks: empty overwrite, 10× size explosion, binary junk, parse failures.
+- `dna_safety.rs` — `DnaSafetyController` automatically raises thresholds when SessionDNA shows repeated write failures or hallucinated paths.
+- `tool_health_monitor.rs` — Tracks per-tool success/failure/hallucination rates and can disable unhealthy tools.
+
+**Wiring**:
+- `write_file()` and `replace()` now run the full safety pipeline (pre-write hook → suspicious guard → dry-run support).
+- All 7 hooks are exported via `crate::safety::*`.
+
+**Tests**:
+- 6 new unit tests in `src/safety/tests.rs` covering binary blocking, large-rewrite rejection, ambiguous intent, empty overwrite, DNA safe-mode trigger, and tool health degradation.
+
+This change dramatically reduces the chance of the agent destroying user files through over-confident or hallucinated edits.
+
 ### DNA-Driven Skill Arbitration 2.0 (Tasks 151–153)
 
 The DNA system has been deeply integrated into the core reasoning engine:

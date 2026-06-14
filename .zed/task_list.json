@@ -1433,6 +1433,83 @@
       "subtasks": [],
       "testStrategy": "Start sessions with different session_dna.json files and verify the correct mode is detected and used.",
       "title": "DNA-Based Mode Switching"
+    },
+    {
+      "dependencies": [],
+      "description": "Implement mandatory pre-write safety hook that validates diffs, checks dangerous patterns, compares with SessionDNA failure modes, asks for confirmation on high risk, and blocks insane actions. Prevents 80% of wild behavior.",
+      "details": "Create hook system in src/safety/pre_write_hook.rs. Integrate into write_file, replace, apply_patch, delete tools. Use SessionDNA for failure mode comparison.",
+      "id": 154,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "Test with dangerous patterns (full file overwrite, binary junk, invalid JSON) and verify blocking/confirmation.",
+      "title": "Safety Hook 1: Pre-Write Safety Hook (on_before_write_file)"
+    },
+    {
+      "dependencies": [],
+      "description": "Add dry_run: true parameter to write_file, replace_in_file, apply_patch. When enabled, compute and return diff without writing. Require explicit \"Apply this diff.\" confirmation.",
+      "details": "Modify tool signatures in src/tools/file_ops.rs and registry. Wire dry-run logic that returns unified diff.",
+      "id": 155,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "Call tools with dry_run=true, verify no writes occur and diff is returned.",
+      "title": "Safety Hook 2: Dry-Run Mode for All File Tools"
+    },
+    {
+      "dependencies": [],
+      "description": "Reject full file replacements >200 lines, rewrites removing >40% of file, or changing file type. Force unified diffs, patch hunks, or line-range edits only.",
+      "details": "Add validation in write_file and replace tools. Implement diff size and content analysis.",
+      "id": 156,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "Attempt large full-file rewrite and verify rejection with clear error.",
+      "title": "Safety Hook 3: Diff-Based Editing Only (No Full Rewrites)"
+    },
+    {
+      "dependencies": [],
+      "description": "File-editing skill must parse user request, confirm target file, edit type, expected outcome. Reject ambiguous instructions like \"Fix the bug in this file\" by asking clarifying questions.",
+      "details": "Enhance file editing skill in src/skills/file_edit_skill.rs with intent parser and clarification flow.",
+      "id": 157,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "Send ambiguous edit request and verify clarification prompt is returned.",
+      "title": "Safety Hook 4: Skill-Level Safety - File Editing Intent Validation"
+    },
+    {
+      "dependencies": [],
+      "description": "Inside file tools, reject if file becomes empty, 10x larger, contains binary junk, fails to parse (JSON/YAML/TOML/Rust/TS/Python), or diff touches unrelated sections.",
+      "details": "Add post-diff and pre-write validation checks in file tools.",
+      "id": 158,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "Simulate suspicious writes and verify rejections with specific error messages.",
+      "title": "Safety Hook 5: Tool-Level Safety - Reject Suspicious Writes"
+    },
+    {
+      "dependencies": [],
+      "description": "When SessionDNA shows repeated file-write failures, hallucinated paths, or invalid diffs, automatically increase safety thresholds, force dry-run mode, require confirmation, reduce tool confidence, switch to safe mode.",
+      "details": "Extend SessionDna with failure counters and self-correction logic. Wire into safety hooks.",
+      "id": 159,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "Simulate repeated failures in DNA and verify safety mode activation.",
+      "title": "Safety Hook 6: DNA-Aware Safety"
+    },
+    {
+      "dependencies": [],
+      "description": "Track success rate, failure rate, latency, hallucination rate, invalid diff rate, parse error rate per tool. Disable unhealthy tools, reduce arbitration score, warn user, log issues.",
+      "details": "Create src/safety/tool_health_monitor.rs. Integrate with tool registry and arbitration.",
+      "id": 160,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [],
+      "testStrategy": "Inject failures into a tool and verify health monitor downgrades/disables it.",
+      "title": "Safety Hook 7: Tool Health Check System"
     }
   ]
 }
