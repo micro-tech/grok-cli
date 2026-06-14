@@ -46,7 +46,7 @@ fn effective_timeout(security: &SecurityPolicy) -> u64 {
 pub async fn run_shell_command(
     command: &str,
     security: &SecurityPolicy,
-    timeout_secs: u64,
+    _timeout_secs: u64,
 ) -> Result<String> {
     security.validate_shell_command(command)?;
 

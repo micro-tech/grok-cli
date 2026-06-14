@@ -1342,8 +1342,11 @@ impl GrokAcpAgent {
                         );
 
                         // DNA feedback loop (success)
-                        if let Some(s) = self.sessions.get_mut(&session_id.0) {
-                            s.dna.update_from_tool_result(true, function_name);
+                        {
+                            let mut guard = self.sessions.write().await;
+                            if let Some(s) = guard.get_mut(&session_id.0) {
+                                s.dna.update_from_tool_result(true, function_name);
+                            }
                         }
 
                         (s, crate::acp::protocol::ToolCallStatus::Completed)
@@ -1356,8 +1359,11 @@ impl GrokAcpAgent {
                         local_bayes.update_from_tool_failure();
 
                         // DNA feedback loop (failure)
-                        if let Some(s) = self.sessions.get_mut(&session_id.0) {
-                            s.dna.update_from_tool_result(false, function_name);
+                        {
+                            let mut guard = self.sessions.write().await;
+                            if let Some(s) = guard.get_mut(&session_id.0) {
+                                s.dna.update_from_tool_result(false, function_name);
+                            }
                         }
 
                         let mut error_content =
@@ -2105,6 +2111,7 @@ impl GrokAcpAgent {
                 always_allow: source.always_allow.clone(),
                 client_commands: source.client_commands.clone(),
                 bayes_engine: crate::bayes::BayesianEngine::new_with_default_priors(),
+                dna: crate::session::dna::SessionDna::default(),
                 current_goal: source.current_goal.clone(),
             }
         };

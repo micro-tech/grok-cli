@@ -61,7 +61,6 @@ pub mod visualizer;
 
 #[cfg(feature = "tgs-rag")]
 pub mod rag;
-pub mod optimizer;
 pub use grok_api::{
     ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, MessageContent, ToolCall,
     Usage,
