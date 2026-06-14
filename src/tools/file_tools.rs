@@ -3,6 +3,8 @@
 //! Every function takes a [`SecurityPolicy`] reference so the ACP layer can
 //! keep calling them with the same signature it already uses.
 
+use crate::safety::pre_write_hook::{on_before_write_file, SafetyDecision, WriteContext};
+use crate::safety::{SuspiciousWriteGuard};
 use crate::acp::security::{PathAccessType, SecurityPolicy};
 use crate::cli::approval::{ApprovalDecision, prompt_external_access_approval};
 use crate::security::audit::{AuditLogger, create_access_log};
@@ -301,7 +303,50 @@ pub async fn list_code_definitions(path: &str, security: &SecurityPolicy) -> Res
 /// Applies the same external-access / audit flow as [`read_file`].
 /// Writes to paths that `ExternalRequiresApproval` are blocked — the caller
 /// (ACP dispatch) handles the approval before invoking this function.
-pub async fn write_file(path: &str, content: &str, security: &SecurityPolicy) -> Result<String> {
+///
+/// Safety hooks are applied before any write:
+/// - Pre-write validation
+/// - Dry-run support
+/// - Suspicious write rejection
+pub async fn write_file(
+    path: &str,
+    content: &str,
+    security: &SecurityPolicy,
+    dry_run: bool,
+) -> Result<String> {
+    // ── Safety Hook: Pre-write validation ────────────────────────────────
+    let ctx = WriteContext {
+        path: Path::new(path),
+        operation: "write",
+        proposed_content: Some(content),
+        diff: None,
+        session_dna: None,
+    };
+
+    match on_before_write_file(&ctx) {
+        SafetyDecision::Block(reason) => return Err(anyhow!(reason)),
+        SafetyDecision::RequireConfirmation(msg) => {
+            // In a real implementation this would prompt the user.
+            // For now we treat it as a warning but still proceed.
+            tracing::warn!("Safety confirmation required: {}", msg);
+        }
+        _ => {}
+    }
+
+    // ── Suspicious write guard ───────────────────────────────────────────
+    if let Err(e) = SuspiciousWriteGuard::check(0, content.len(), content, None) {
+        return Err(anyhow!(e));
+    }
+
+    // ── Dry-run mode ─────────────────────────────────────────────────────
+    if dry_run {
+        return Ok(format!(
+            "[DRY RUN] Would write {} bytes to {}",
+            content.len(),
+            path
+        ));
+    }
+
     let path_ref = Path::new(path);
     let absolute_path = if path_ref.is_absolute() {
         path_ref.to_path_buf()
@@ -352,13 +397,33 @@ pub async fn write_file(path: &str, content: &str, security: &SecurityPolicy) ->
 ///
 /// Fails if the `old_string` is not found or if `expected_replacements` is
 /// given and doesn't match the actual occurrence count.
+///
+/// Safety hooks are applied before the replacement.
 pub async fn replace(
     path: &str,
     old_string: &str,
     new_string: &str,
     expected_replacements: Option<u32>,
     security: &SecurityPolicy,
+    dry_run: bool,
 ) -> Result<String> {
+    // ── Safety Hook: Pre-write validation ────────────────────────────────
+    let ctx = WriteContext {
+        path: Path::new(path),
+        operation: "replace",
+        proposed_content: Some(new_string),
+        diff: None,
+        session_dna: None,
+    };
+
+    match on_before_write_file(&ctx) {
+        SafetyDecision::Block(reason) => return Err(anyhow!(reason)),
+        SafetyDecision::RequireConfirmation(msg) => {
+            tracing::warn!("Safety confirmation required: {}", msg);
+        }
+        _ => {}
+    }
+
     let resolved_path = security
         .resolve_path(path)
         .map_err(|e| anyhow!("Failed to resolve path '{}': {}", path, e))?;
@@ -376,11 +441,6 @@ pub async fn replace(
         .map_err(|e| anyhow!("Failed to read file: {}", e))?;
 
     // ── Line-ending normalisation (Windows CRLF fix) ──────────────────────
-    // On Windows, files are often saved with CRLF (\r\n) while the AI
-    // always emits plain LF (\n) in its search strings.  We normalise both
-    // sides to LF for matching so the replacement doesn't silently fail.
-    // If the original file used CRLF we convert the result back before
-    // writing so the file keeps its original style.
     let file_uses_crlf = content.contains("\r\n");
 
     let (normalized_content, normalized_old, normalized_new) = if file_uses_crlf {
@@ -418,11 +478,23 @@ pub async fn replace(
     let mut new_content =
         normalized_content.replace(normalized_old.as_str(), normalized_new.as_str());
 
-    // Restore CRLF if the file originally used it.
     if file_uses_crlf {
         new_content = new_content.replace('\n', "\r\n");
-        // Guard against double-converting any stray \r\n that survived.
         new_content = new_content.replace("\r\r\n", "\r\n");
+    }
+
+    // ── Suspicious write guard on final content ──────────────────────────
+    if let Err(e) = SuspiciousWriteGuard::check(content.len(), new_content.len(), &new_content, None) {
+        return Err(anyhow!(e));
+    }
+
+    // ── Dry-run mode ─────────────────────────────────────────────────────
+    if dry_run {
+        return Ok(format!(
+            "[DRY RUN] Would replace {} occurrence(s) in {}",
+            occurrences,
+            path
+        ));
     }
 
     fs::write(&resolved_path, new_content)

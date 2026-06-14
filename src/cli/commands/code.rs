@@ -15,7 +15,7 @@ use std::path::Path;
 
 use crate::CodeAction;
 use crate::cli::{
-    create_spinner, format_code, print_error, print_info, print_success, print_warning,
+    create_spinner, format_code, format_error, format_info, format_success, format_warning,
 };
 use crate::router::AppRouter;
 use crate::utils::client::initialize_router;
@@ -59,7 +59,7 @@ pub async fn handle_code_action(
 /// Utility to read code from input (file or direct string)
 fn read_code_input(input: &str, is_file: bool) -> Result<(String, Option<String>)> {
     if is_file || Path::new(input).exists() {
-        print_info(&format!("Reading code from file: {}", input));
+        println!("{}", format_info(&format!("Reading code from file: {}", input)));
         let code = fs::read_to_string(input)
             .map_err(|e| anyhow!("Failed to read file '{}': {}", input, e))?;
         let language = detect_language_from_path(input);
@@ -81,7 +81,7 @@ async fn handle_code_explain(
         return Err(anyhow!("No code provided to explain"));
     }
 
-    print_info(&format!("Explaining code using model: {}", model));
+    println!("{}", format_info(&format!("Explaining code using model: {}", model)));
 
     let spinner = create_spinner("Analyzing code...");
 
@@ -105,7 +105,7 @@ async fn handle_code_explain(
 
     match response {
         Ok(explanation) => {
-            print_success("Code explanation generated!");
+            println!("{}", format_success("Code explanation generated!"));
             println!();
             println!("{}", "📖 Code Explanation:".cyan().bold());
             println!("{}", "═".repeat(50));
@@ -117,7 +117,7 @@ async fn handle_code_explain(
             }
         }
         Err(e) => {
-            print_error(&format!("Failed to generate explanation: {}", e));
+            println!("{}", format_error(&format!("Failed to generate explanation: {}", e)));
             return Err(e);
         }
     }
@@ -138,10 +138,10 @@ async fn handle_code_review(
         return Err(anyhow!("No code provided to review"));
     }
 
-    print_info(&format!("Reviewing code using model: {}", model));
+    println!("{}", format_info(&format!("Reviewing code using model: {}", model)));
 
     let focus_areas = focus.unwrap_or("security, performance, style, bugs, maintainability");
-    print_info(&format!("Focus areas: {}", focus_areas));
+    println!("{}", format_info(&format!("Focus areas: {}", focus_areas)));
 
     let spinner = create_spinner("Reviewing code...");
 
@@ -178,7 +178,7 @@ async fn handle_code_review(
 
     match response {
         Ok(review) => {
-            print_success("Code review completed!");
+            println!("{}", format_success("Code review completed!"));
             println!();
             println!("{}", "🔍 Code Review:".cyan().bold());
             println!("{}", "═".repeat(50));
@@ -191,7 +191,7 @@ async fn handle_code_review(
             println!("{}", format!("Focus areas: {}", focus_areas).dimmed());
         }
         Err(e) => {
-            print_error(&format!("Failed to generate review: {}", e));
+            println!("{}", format_error(&format!("Failed to generate review: {}", e)));
             return Err(e);
         }
     }
@@ -214,10 +214,10 @@ async fn handle_code_generate(
     }
 
     let target_language = language.unwrap_or("Python");
-    print_info(&format!(
+    println!("{}", format_info(&format!(
         "Generating {} code using model: {}",
         target_language, model
-    ));
+    )));
 
     let spinner = create_spinner("Generating code...");
 
@@ -247,7 +247,7 @@ async fn handle_code_generate(
 
     match response {
         Ok(generated_code) => {
-            print_success("Code generated successfully!");
+            println!("{}", format_success("Code generated successfully!"));
             println!();
             println!(
                 "{}",
@@ -265,11 +265,11 @@ async fn handle_code_generate(
             if let Some(output_path) = output_file {
                 match save_code_to_file(&clean_code, output_path) {
                     Ok(()) => {
-                        print_success(&format!("Code saved to: {}", output_path));
+                        println!("{}", format_success(&format!("Code saved to: {}", output_path)));
                     }
                     Err(e) => {
-                        print_warning(&format!("Failed to save to file: {}", e));
-                        print_info("The generated code is displayed above.");
+                        println!("{}", format_warning(&format!("Failed to save to file: {}", e)));
+                        println!("{}", format_info("The generated code is displayed above."));
                     }
                 }
             }
@@ -282,7 +282,7 @@ async fn handle_code_generate(
             );
         }
         Err(e) => {
-            print_error(&format!("Failed to generate code: {}", e));
+            println!("{}", format_error(&format!("Failed to generate code: {}", e)));
             return Err(e);
         }
     }
@@ -308,10 +308,10 @@ async fn handle_code_fix(
         return Err(anyhow!("File is empty: {}", file_path));
     }
 
-    print_info(&format!("Fixing code using model: {}", model));
+    println!("{}", format_info(&format!("Fixing code using model: {}", model)));
 
     if let Some(ref lang) = language {
-        print_info(&format!("Detected language: {}", lang));
+        println!("{}", format_info(&format!("Detected language: {}", lang)));
     }
 
     let spinner = create_spinner("Analyzing and fixing code...");
@@ -351,7 +351,7 @@ async fn handle_code_fix(
 
     match response {
         Ok(fix_response) => {
-            print_success("Code analysis and fix completed!");
+            println!("{}", format_success("Code analysis and fix completed!"));
             println!();
             println!("{}", "🔧 Code Fix:".cyan().bold());
             println!("{}", "═".repeat(50));
@@ -366,12 +366,12 @@ async fn handle_code_fix(
             }
 
             println!();
-            print_warning(
+            println!("{}", format_warning(
                 "⚠️  Please review the suggested fix carefully before applying it to your code.",
-            );
+            ));
         }
         Err(e) => {
-            print_error(&format!("Failed to fix code: {}", e));
+            println!("{}", format_error(&format!("Failed to fix code: {}", e)));
             return Err(e);
         }
     }

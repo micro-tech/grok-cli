@@ -138,3 +138,93 @@ impl AgentManager {
             .count()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn test_spawn_creates_agent() {
+        let manager = AgentManager::new();
+        let id = manager
+            .spawn("test task", None, Some("grok-4".into()), None)
+            .await;
+
+        let agent = manager.get(&id).await.unwrap();
+        assert_eq!(agent.task, "test task");
+        assert_eq!(agent.status, AgentStatus::Running);
+        assert_eq!(agent.model.as_deref(), Some("grok-4"));
+    }
+
+    #[tokio::test]
+    async fn test_spawn_with_parent() {
+        let manager = AgentManager::new();
+        let parent_id = manager.spawn("parent", None, None, None).await;
+        let child_id = manager
+            .spawn("child", Some(parent_id.clone()), None, None)
+            .await;
+
+        let child = manager.get(&child_id).await.unwrap();
+        assert_eq!(child.parent_id.as_deref(), Some(parent_id.as_str()));
+    }
+
+    #[tokio::test]
+    async fn test_complete_updates_status_and_result() {
+        let manager = AgentManager::new();
+        let id = manager.spawn("task", None, None, None).await;
+
+        manager.complete(&id, "done".into()).await;
+
+        let agent = manager.get(&id).await.unwrap();
+        assert_eq!(agent.status, AgentStatus::Completed);
+        assert_eq!(agent.result.as_deref(), Some("done"));
+        assert!(agent.completed_at.is_some());
+    }
+
+    #[tokio::test]
+    async fn test_fail_updates_status_and_error() {
+        let manager = AgentManager::new();
+        let id = manager.spawn("task", None, None, None).await;
+
+        manager.fail(&id, "boom".into()).await;
+
+        let agent = manager.get(&id).await.unwrap();
+        assert_eq!(agent.status, AgentStatus::Failed);
+        assert_eq!(agent.result.as_deref(), Some("boom"));
+    }
+
+    #[tokio::test]
+    async fn test_cancel_only_affects_running() {
+        let manager = AgentManager::new();
+        let id = manager.spawn("task", None, None, None).await;
+        manager.complete(&id, "ok".into()).await;
+
+        // Should not change a completed agent
+        manager.cancel(&id).await;
+        let agent = manager.get(&id).await.unwrap();
+        assert_eq!(agent.status, AgentStatus::Completed);
+    }
+
+    #[tokio::test]
+    async fn test_list_filters_by_parent() {
+        let manager = AgentManager::new();
+        let p1 = manager.spawn("p1", None, None, None).await;
+        let _c1 = manager.spawn("c1", Some(p1.clone()), None, None).await;
+        let p2 = manager.spawn("p2", None, None, None).await;
+        let _c2 = manager.spawn("c2", Some(p2.clone()), None, None).await;
+
+        let children_of_p1 = manager.list(Some(&p1)).await;
+        assert_eq!(children_of_p1.len(), 1);
+        assert_eq!(children_of_p1[0].task, "c1");
+    }
+
+    #[tokio::test]
+    async fn test_running_count() {
+        let manager = AgentManager::new();
+        let _a1 = manager.spawn("a1", None, None, None).await;
+        let a2 = manager.spawn("a2", None, None, None).await;
+        manager.complete(&a2, "done".into()).await;
+
+        assert_eq!(manager.running_count().await, 1);
+    }
+}

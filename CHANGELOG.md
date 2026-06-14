@@ -9,7 +9,124 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
-## [Unreleased]
+## [0.2.3] — 2025-01-15
+
+### Commit Message Generator (Task 161)
+
+- Added `/commit` slash command that generates high-quality Conventional Commits messages from the current git diff (`git diff --cached` with fallback to `git diff`).
+- Added `generate_commit_message` tool so the agent itself can request commit messages during workflows.
+- Supports optional extra instructions: `/commit fix auth edge case`.
+- Respects the new `acp.commit_message_instructions` config field (appended to every prompt).
+- Works with Session DNA and active goals for context-aware commit messages.
+- Default style follows Conventional Commits (`<type>(<scope>): <description>`).
+
+### Safety Hooks — 7 Mandatory Layers (Tasks 154–160)
+
+Grok-CLI now ships with a comprehensive, mandatory safety system that protects against the most common classes of AI-induced file damage.
+
+**Core Safety Modules** (`src/safety/`):
+- `pre_write_hook.rs` — `on_before_write_file()` runs before every write/replace/delete. Blocks binary junk, massive overwrites, invalid JSON, and DNA-flagged failure patterns.
+- `dry_run.rs` — `dry_run: bool` parameter on `write_file` and `replace`. Returns a diff without touching disk; LLM must explicitly confirm.
+- `diff_validator.rs` — Rejects full-file rewrites >200 lines or >40% content removal.
+- `intent_validator.rs` — Rejects ambiguous file-edit requests (“fix the bug”, “make it better”) and forces clarification.
+- `suspicious_write_guard.rs` — Final in-tool checks: empty overwrite, 10× size explosion, binary junk, parse failures.
+- `dna_safety.rs` — `DnaSafetyController` automatically raises thresholds when SessionDNA shows repeated write failures or hallucinated paths.
+- `tool_health_monitor.rs` — Tracks per-tool success/failure/hallucination rates and can disable unhealthy tools.
+
+**Wiring**:
+- `write_file()` and `replace()` now run the full safety pipeline (pre-write hook → suspicious guard → dry-run support).
+- All 7 hooks are exported via `crate::safety::*`.
+
+**Tests**:
+- 6 new unit tests in `src/safety/tests.rs` covering binary blocking, large-rewrite rejection, ambiguous intent, empty overwrite, DNA safe-mode trigger, and tool health degradation.
+
+This change dramatically reduces the chance of the agent destroying user files through over-confident or hallucinated edits.
+
+### DNA-Driven Skill Arbitration 2.0 (Tasks 151–153)
+
+The DNA system has been deeply integrated into the core reasoning engine:
+
+### Task 151 — DNA-Driven Skill Arbitration 2.0
+- `EngineBeliefs::tool_score()` and `score_plan()` now accept an optional `dna_tool_weight` parameter.
+- `ArbitrationEngine::rank_tools()` now accepts `dna_tool_weight` and applies it to every tool's final score.
+- DNA tool preferences directly boost or reduce tool rankings during arbitration.
+
+### Task 152 — DNA-Conditioned Planning
+- `SessionDna::shape_plan()` and `get_mode()` are available for any planner to use.
+- Plans can now be shaped differently based on the active DNA profile (tone, verbosity, risk tolerance, past failures).
+
+### Task 153 — DNA-Based Mode Switching
+- `SessionDna::get_mode()` returns one of: `coder`, `research`, `shell`, or `creative`.
+- The current mode is injected into the system prompt at session start.
+- Mode selection is driven by `risk_tolerance`, `verbosity`, `tool_preferences`, and `tone`.
+
+All three behaviors are now live and influence real tool selection, planning, and behavior.
+
+The Session DNA system has been extended with three powerful new capabilities that make the agent feel truly personalized:
+
+### 1. DNA-Driven Skill Arbitration 2.0
+DNA now directly influences:
+- **Skill scoring** via `get_skill_weight(skill_name)`
+- **Tool scoring** via `get_tool_weight(tool_name)`
+- **Model routing** hints via `get_model_preference()`
+- **Plan shaping** via `shape_plan()`
+
+Weight multipliers are applied based on `risk_tolerance`, `coding_style`, and `tool_preferences`.
+
+### 2. DNA-Conditioned Planning
+The planner can now generate different plan structures depending on:
+- Past tool failures (via the feedback loop)
+- Preferred coding patterns (`coding_style`)
+- User communication style (`tone` + `verbosity`)
+
+Example output modes: `shell`, `research`, `creative`, or `coder`.
+
+### 3. DNA-Based Mode Switching
+The agent automatically selects an operating mode at session start:
+- `coder` (default)
+- `shell` (when shell tools are preferred or risk is high)
+- `research` (when verbosity is high)
+- `creative` (when tone/style signals exploration)
+
+The current mode is injected into the system prompt and logged.
+
+All three behaviors are fully wired:
+- DNA is loaded and applied in `initialize_session`
+- Mode is computed and injected into the prompt
+- Feedback loop continues to evolve DNA during tool execution
+
+See `src/session/dna.rs` for the new helper methods.
+
+- Session DNA is now a **living behavioral system**, not just static prompt text.
+- **LLM-side injection** — all five fields (`tone`, `verbosity`, `risk_tolerance`, `coding_style`, `tool_preferences`) are now injected into the system prompt so the model fully adopts the session fingerprint.
+- **Router influence** — `risk_tolerance` and `tool_preferences` now bias the Bayesian engine priors, making high-risk tools more (or less) likely depending on DNA.
+- **Tool feedback loop** — after every tool execution the DNA is updated with success/failure signals, allowing the agent to learn and adapt the user’s preferred operating style over the course of a session.
+- `SessionData` now owns a mutable `SessionDna` instance that evolves during the conversation.
+
+- `SessionDna::load()` now checks the **project root first** (`./session_dna.json`) before falling back to `~/.grok/session_dna.json`.
+- Project-local DNA files are now automatically loaded and injected into every new ACP session.
+- Your `session_dna.json` in the repo root is now live — tone, verbosity, risk tolerance, coding style, and tool preferences are respected.
+
+### Task 148 — Fully Automated Integration Test Harness
+
+- Added **85 offline integration tests** across 4 new test suites, all passing with zero network calls:
+  - `tests/task_tools_tests.rs` (18 tests) — task lifecycle, Format A/C normalisation, `.bak` recovery, atomic save, input validation
+  - `tests/file_tools_tests.rs` (23 tests) — file I/O tools, security/path policy, path traversal rejection
+  - `tests/subsystem_tests.rs` (20 tests) — long-term memory, Bayesian engine, config defaults, tool registry shape
+  - `tests/cli_smoke_tests.rs` (24 tests) — tool listing, error formatting, arbitration edge cases, CLI settings
+- Added `tests/integration/helpers.rs` with shared `make_security`, `make_ctx`, `write_task_list_a/c`, `write_fixture` helpers
+- Fixed `tool_arbitration::is_known_tool` — added missing entries (`fork_agent`, `join_agents`, `list_agents`, `get_agent_status`, `cancel_agent`, `send_message_in_memory`, `receive_messages`) that were in `get_tool_definitions()` but not in the arbitration allow-list
+- Added `Makefile` with `test-integration`, `test-all`, `test-coverage`, `lint`, `fmt` targets
+- Added `Doc/testing.md` documenting harness structure, suite details, coverage instructions, and how to add new tests
+
+### Architectural Cleanup (Task 131)
+
+- Added pure formatting helpers in `src/cli/mod.rs`:
+  - `format_success`, `format_error`, `format_warning`, `format_info`
+  - `format_confirm_prompt`
+- These functions return `String` and perform **no I/O**, satisfying the “Pure Display + Library/Binary Separation” requirement.
+- Legacy I/O functions remain deprecated and will be removed after all command handlers are migrated to the pure API.
+- Module documentation updated to clearly state the new library-vs-binary boundary.
 
 ### TGS-RAG Epic (Tasks 112.x)
 

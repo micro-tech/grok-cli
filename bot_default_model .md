@@ -164,7 +164,7 @@ jit_context = false
 enabled = true
 
 # Show the real-time ASCII belief-graph after each message.
-show_belief_graph = true
+show_belief_graph = false
 
 # ── Sensitivity thresholds ────────────────────────────────────────────────────
 # All values are probabilities in [0.0, 1.0].
@@ -185,7 +185,7 @@ vagueness_threshold = 0.80
 
 # Strength of keyword → intent likelihood spikes.
 # Higher = more decisive routing on a keyword match.
-intent_likelihood_weight = 1.6
+intent_likelihood_weight = 1.2
 
 # Fractional boost per successful tool call (0.1 = 10%).
 profile_learning_rate = 0.05
@@ -201,6 +201,8 @@ intent_question     = 0.3
 need_clarification  = 0.1
 low_confidence      = 0.2
 is_vague            = 0.1
+belief_decay_rate = 0.97     # stronger decay (more stable)
+prior_pull_rate   = 0.15     # stronger pull toward priors
 
 [experimental.codebase_investigator_settings]
 enabled = true
@@ -220,36 +222,34 @@ enabled = true
 bind_host = "127.0.0.1"
 protocol_version = "2024-11-05"
 dev_mode = false
-# max_tool_loop_iterations = 25   # set back to 25 had a crash wit it @100
-max_tool_loop_iterations = 25
+max_tool_loop_iterations = 100
 # Disable the session/request_permission gate by default.
 # Zed and most ACP clients do not yet implement the permission-dialog protocol,
 # so leaving this true causes every tool call to be silently blocked.
 # Set to true only when using a client that supports session/request_permission.
 require_permission = false
 permission_timeout_secs = 300
-# Keep 80 turns of conversation history by count.
+# Keep 80 turns of conversation history by count…
 max_history_messages = 80
-# Token budget for grok-3 and older models (256 k window, ~36 k headroom).
+# …but also enforce a hard token budget so large file reads
+# cannot blow past the 256 k token context window.
 max_context_tokens = 220000
-# Token budget for grok-4.x models (1 M window, ~50 k headroom).
-# When the active model starts with "grok-4" this value is used instead of
-# max_context_tokens above.
-grok4_max_context_tokens = 950000
 # Truncate individual tool-result messages larger than this (chars).
-# 0 = no truncation. Raised from 30000 so the AI receives full file contents.
-# Grok-4.3 has a 1M token context window, so large reads are safe.
-max_tool_result_chars = 100000
+max_tool_result_chars = 30000
 # Enable auto-summarization when context fills up.
 auto_compress = true
 compression_threshold = 0.75
 compression_chunk_ratio = 0.40
+# Token budget for grok-4.x models (grok-4.3 = 1 M token context window).
+# Auto-selected when the active model name starts with grok-4.
+# Leaves ~50 k headroom for response + tool definitions.
+grok4_max_context_tokens = 950000
 # Reasoning / thinking mode for grok-4.3 and grok-3-mini.
-# off  = standard response, fastest (default)
-# low  = light reasoning, slightly more thorough
-# high = deep reasoning, most thorough but slower and more expensive
-# Change per-session with /think or the --thinking CLI flag.
-thinking_mode = "off"
+#   off  = standard response, fastest (default -- reasoning_effort not sent)
+#   low  = light reasoning; slightly more thorough
+#   high = deep reasoning; most thorough, slower, higher token cost
+# Override per-session with the /think slash command or --thinking CLI flag.
+thinking_mode = "high"
 
 [mcp.servers.github]
 type = "stdio"

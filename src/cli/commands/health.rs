@@ -13,7 +13,9 @@ use anyhow::{Result, anyhow};
 use colored::*;
 use std::time::{Duration, Instant};
 
-use crate::cli::{create_spinner, print_error, print_info, print_success, print_warning};
+use crate::cli::{
+    create_spinner, format_error, format_info, format_success, format_warning,
+};
 use crate::utils::client::initialize_client;
 use crate::utils::network::{detect_starlink_connection, test_connectivity};
 
@@ -41,11 +43,11 @@ pub async fn handle_health_check(
     let config_file_status = check_config_file().await;
     match config_file_status {
         Ok(()) => {
-            print_success("Configuration file found and readable");
+            println!("{}", format_success("Configuration file found and readable"));
             checks_passed += 1;
         }
         Err(e) => {
-            print_error(&format!("Configuration file issue: {}", e));
+            println!("{}", format_error(&format!("Configuration file issue: {}", e)));
             warnings.push("Configuration file may need to be initialized".to_string());
         }
     }
@@ -55,11 +57,11 @@ pub async fn handle_health_check(
     let env_status = check_environment();
     match env_status {
         Ok(env_info) => {
-            print_success(&format!("Environment: {}", env_info));
+            println!("{}", format_success(&format!("Environment: {}", env_info)));
             checks_passed += 1;
         }
         Err(e) => {
-            print_warning(&format!("Environment check: {}", e));
+            println!("{}", format_warning(&format!("Environment check: {}", e)));
             checks_passed += 1; // Not critical
         }
     }
@@ -75,7 +77,7 @@ pub async fn handle_health_check(
 
     match connectivity_result {
         Ok(latency) => {
-            print_success(&format!("Network connectivity OK (latency: {:?})", latency));
+            println!("{}", format_success(&format!("Network connectivity OK (latency: {:?})", latency)));
             checks_passed += 1;
 
             if latency > Duration::from_millis(1000) {
@@ -85,7 +87,7 @@ pub async fn handle_health_check(
             }
         }
         Err(e) => {
-            print_error(&format!("Network connectivity failed: {}", e));
+            println!("{}", format_error(&format!("Network connectivity failed: {}", e)));
             warnings.push("Network issues may affect API calls".to_string());
         }
     }
@@ -97,16 +99,16 @@ pub async fn handle_health_check(
     starlink_spinner.finish_and_clear();
 
     if is_starlink {
-        print_info("Detected possible Starlink satellite connection");
+        println!("{}", format_info("Detected possible Starlink satellite connection"));
         if config.network.starlink_optimizations {
-            print_success("Starlink optimizations are enabled");
+            println!("{}", format_success("Starlink optimizations are enabled"));
         } else {
-            print_warning("Consider enabling Starlink optimizations");
+            println!("{}", format_warning("Consider enabling Starlink optimizations"));
             warnings.push("Enable Starlink optimizations with: grok config set network.starlink_optimizations true".to_string());
         }
         checks_passed += 1;
     } else {
-        print_info("Standard internet connection detected");
+        println!("{}", format_info("Standard internet connection detected"));
         checks_passed += 1;
     }
 
@@ -118,21 +120,21 @@ pub async fn handle_health_check(
         total_checks += 1;
         match config.validate() {
             Ok(()) => {
-                print_success("Configuration is valid");
+                println!("{}", format_success("Configuration is valid"));
                 checks_passed += 1;
             }
             Err(e) => {
-                print_error(&format!("Configuration validation failed: {}", e));
+                println!("{}", format_error(&format!("Configuration validation failed: {}", e)));
             }
         }
 
         // Check specific configuration values
         total_checks += 1;
         if config.api_key.is_some() {
-            print_success("API key is configured");
+            println!("{}", format_success("API key is configured"));
             checks_passed += 1;
         } else {
-            print_warning("No API key configured");
+            println!("{}", format_warning("No API key configured"));
             warnings.push(
                 "Set API key with: grok config set api_key YOUR_API_KEY (stores in .env)"
                     .to_string(),
@@ -141,10 +143,10 @@ pub async fn handle_health_check(
 
         total_checks += 1;
         if config.acp.enabled {
-            print_info("ACP (Zed integration) is enabled");
+            println!("{}", format_info("ACP (Zed integration) is enabled"));
             checks_passed += 1;
         } else {
-            print_info("ACP is disabled");
+            println!("{}", format_info("ACP is disabled"));
             checks_passed += 1;
         }
     }
@@ -168,11 +170,11 @@ pub async fn handle_health_check(
 
                     match test_result {
                         Ok(()) => {
-                            print_success("Grok API connection successful");
+                            println!("{}", format_success("Grok API connection successful"));
                             checks_passed += 2;
                         }
                         Err(e) => {
-                            print_error(&format!("Grok API connection failed: {}", e));
+                            println!("{}", format_error(&format!("Grok API connection failed: {}", e)));
 
                             // Provide specific error guidance
                             let error_msg = e.to_string().to_lowercase();
@@ -196,7 +198,7 @@ pub async fn handle_health_check(
                 }
                 Err(e) => {
                     api_spinner.finish_and_clear();
-                    print_error(&format!("Failed to create API client: {}", e));
+                    println!("{}", format_error(&format!("Failed to create API client: {}", e)));
                 }
             }
 
@@ -210,14 +212,14 @@ pub async fn handle_health_check(
                     match models_result {
                         Ok(models) => {
                             if models.contains(&model.to_string()) {
-                                print_success(&format!("Model '{}' is available", model));
+                                println!("{}", format_success(&format!("Model '{}' is available", model)));
                             } else {
-                                print_warning(&format!("Model '{}' may not be available", model));
-                                print_info(&format!("Available models: {}", models.join(", ")));
+                                println!("{}", format_warning(&format!("Model '{}' may not be available", model)));
+                                println!("{}", format_info(&format!("Available models: {}", models.join(", "))));
                             }
                         }
                         Err(e) => {
-                            print_warning(&format!("Could not check model availability: {}", e));
+                            println!("{}", format_warning(&format!("Could not check model availability: {}", e)));
                         }
                     }
                 }
@@ -226,7 +228,7 @@ pub async fn handle_health_check(
                 }
             }
         } else {
-            print_warning("No API key provided - skipping API tests");
+            println!("{}", format_warning("No API key provided - skipping API tests"));
             warnings.push("Provide API key to test API connectivity".to_string());
         }
     }
@@ -239,12 +241,12 @@ pub async fn handle_health_check(
     let perf_result = run_performance_diagnostics(config).await;
     match perf_result {
         Ok(diagnostics) => {
-            print_success("Performance diagnostics completed");
+            println!("{}", format_success("Performance diagnostics completed"));
             display_performance_results(&diagnostics);
             checks_passed += 1;
         }
         Err(e) => {
-            print_warning(&format!("Performance diagnostics failed: {}", e));
+            println!("{}", format_warning(&format!("Performance diagnostics failed: {}", e)));
         }
     }
 
@@ -298,11 +300,11 @@ pub async fn handle_health_check(
 
     println!();
     if success_rate >= 90.0 {
-        print_success("System is healthy and ready to use!");
+        println!("{}", format_success("System is healthy and ready to use!"));
     } else if success_rate >= 70.0 {
-        print_warning("System has minor issues but should work");
+        println!("{}", format_warning("System has minor issues but should work"));
     } else {
-        print_error("System has significant issues that need attention");
+        println!("{}", format_error("System has significant issues that need attention"));
         return Err(anyhow!(
             "Health check failed with {:.0}% success rate",
             success_rate
@@ -402,12 +404,12 @@ fn display_performance_results(diagnostics: &PerformanceDiagnostics) {
 
     // Performance warnings
     if diagnostics.config_load_time > Duration::from_millis(100) {
-        print_warning("Configuration loading is slow");
+        println!("{}", format_warning("Configuration loading is slow"));
     }
 
     if diagnostics.memory_usage > 50 * 1024 * 1024 {
         // 50MB
-        print_warning("High memory usage detected");
+        println!("{}", format_warning("High memory usage detected"));
     }
 }
 

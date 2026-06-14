@@ -20,6 +20,8 @@ const STARLINK_ERROR_PATTERNS: &[&str] = &[
     "dns resolution failed",
     "temporary failure in name resolution",
     "network is down",
+    "network error",
+    "error sending request",
     "host is unreachable",
     "service unavailable",
     "service temporarily unavailable",
@@ -281,6 +283,12 @@ mod tests {
         )));
         assert!(detect_network_drop(&anyhow!(
             "The model did not respond to this request"
+        )));
+        assert!(detect_network_drop(&anyhow!(
+            "Network error: error sending request for url (https://api.x.ai/v1/chat/completions)"
+        )));
+        assert!(detect_network_drop(&anyhow!(
+            "error sending request for url"
         )));
         assert!(!detect_network_drop(&anyhow!("Invalid API key")));
         assert!(!detect_network_drop(&anyhow!("JSON parsing error")));

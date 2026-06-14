@@ -47,8 +47,10 @@ pub mod hooks;
 pub mod knowledge;
 pub mod mcp;
 pub mod memory;
+pub mod optimizer;
 pub mod router;
 pub mod rpl;
+pub mod safety;
 pub mod security;
 pub mod session;
 pub mod skills;
@@ -59,9 +61,6 @@ pub mod visualizer;
 
 #[cfg(feature = "tgs-rag")]
 pub mod rag;
-pub mod optimizer;
-
-// Re-export grok_api types for use throughout the crate
 pub use grok_api::{
     ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, MessageContent, ToolCall,
     Usage,

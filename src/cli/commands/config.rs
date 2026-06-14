@@ -12,7 +12,7 @@ use anyhow::{Result, anyhow};
 use colored::*;
 
 use crate::ConfigAction;
-use crate::cli::{confirm, print_error, print_info, print_success, print_warning};
+use crate::cli::{confirm, format_error, format_info, format_success, format_warning};
 use crate::config::Config;
 
 /// Handle configuration-related commands
@@ -162,7 +162,7 @@ async fn set_config_value(key: &str, value: &str) -> Result<()> {
     if key == "api_key" {
         use std::fs;
 
-        print_info("Setting API key in .env file (not config.toml for security)...");
+        println!("{}", format_info("Setting API key in .env file (not config.toml for security)..."));
 
         // Determine the config directory
         let config_dir = if let Some(dir) = dirs::config_dir() {
@@ -220,7 +220,7 @@ async fn set_config_value(key: &str, value: &str) -> Result<()> {
         fs::write(&env_file, env_content)
             .map_err(|e| anyhow!("Failed to write .env file: {}", e))?;
 
-        print_success(&format!("API key saved to: {}", env_file.display()));
+        println!("{}", format_success(&format!("API key saved to: {}", env_file.display())));
         println!(
             "\n{}",
             "Note: The .env file contains sensitive data and is excluded from version control."
@@ -231,11 +231,11 @@ async fn set_config_value(key: &str, value: &str) -> Result<()> {
         return Ok(());
     }
 
-    print_info(&format!(
+    println!("{}", format_info(&format!(
         "Setting configuration: {} = {}",
         key.cyan(),
         value.yellow()
-    ));
+    )));
 
     // Load current config
     let mut config = Config::load(None).await?;
@@ -247,7 +247,7 @@ async fn set_config_value(key: &str, value: &str) -> Result<()> {
 
     // Validate the updated config
     if let Err(e) = config.validate() {
-        print_error(&format!("Invalid configuration value: {}", e));
+        println!("{}", format_error(&format!("Invalid configuration value: {}", e)));
         return Err(e);
     }
 
@@ -257,7 +257,7 @@ async fn set_config_value(key: &str, value: &str) -> Result<()> {
         .await
         .map_err(|e| anyhow!("Failed to save configuration: {}", e))?;
 
-    print_success(&format!("Configuration updated: {} = {}", key, value));
+    println!("{}", format_success(&format!("Configuration updated: {} = {}", key, value)));
 
     // Show a relevant tip based on the key that was set
     show_config_tip(key);
@@ -267,7 +267,10 @@ async fn set_config_value(key: &str, value: &str) -> Result<()> {
 
 /// Get a configuration value
 async fn get_config_value(key: &str) -> Result<()> {
-    print_info(&format!("Getting configuration value for: {}", key.cyan()));
+    println!("{}", format_info(&format!(
+        "Getting configuration value for: {}",
+        key.cyan()
+    )));
 
     // Load current config
     let config = Config::load(None).await?;
@@ -282,7 +285,7 @@ async fn get_config_value(key: &str) -> Result<()> {
             }
         }
         Err(e) => {
-            print_error(&format!("Configuration key not found: {}", e));
+            println!("{}", format_error(&format!("Configuration key not found: {}", e)));
             return Err(e);
         }
     }
@@ -292,16 +295,16 @@ async fn get_config_value(key: &str) -> Result<()> {
 
 /// Initialize configuration with defaults
 async fn init_config(force: bool) -> Result<()> {
-    print_info("Initializing Grok CLI configuration...");
+    println!("{}", format_info("Initializing Grok CLI configuration..."));
 
     if !force {
         let config_path = Config::default_config_path()?;
         if config_path.exists() {
-            print_warning("Configuration file already exists!");
+            println!("{}", format_warning("Configuration file already exists!"));
             println!("  Path: {}", config_path.display());
 
             if !confirm("Do you want to overwrite the existing configuration?")? {
-                print_info("Configuration initialization cancelled.");
+                println!("{}", format_info("Configuration initialization cancelled."));
                 return Ok(());
             }
         }
@@ -309,10 +312,10 @@ async fn init_config(force: bool) -> Result<()> {
 
     match Config::init(force).await {
         Ok(config_path) => {
-            print_success("Configuration initialized successfully!");
+            println!("{}", format_success("Configuration initialized successfully!"));
             println!("  Path: {}", config_path.display());
             println!();
-            print_info("Next steps:");
+            println!("{}", format_info("Next steps:"));
             println!(
                 "  1. Set your X API key: {}",
                 "grok config set api_key YOUR_API_KEY (stores in .env)".yellow()
@@ -321,7 +324,7 @@ async fn init_config(force: bool) -> Result<()> {
             println!("  3. Test connection: {}", "grok health --api".yellow());
         }
         Err(e) => {
-            print_error(&format!("Failed to initialize configuration: {}", e));
+            println!("{}", format_error(&format!("Failed to initialize configuration: {}", e)));
             return Err(e);
         }
     }
@@ -495,13 +498,13 @@ async fn validate_external_access_config(config: &Config) -> Result<()> {
 
 /// Validate current configuration
 async fn validate_config() -> Result<()> {
-    print_info("Validating configuration...");
+    println!("{}", format_info("Validating configuration..."));
 
     let config = Config::load(None).await?;
 
     match config.validate() {
         Ok(()) => {
-            print_success("Configuration is valid!");
+            println!("{}", format_success("Configuration is valid!"));
 
             // Additional checks
             let mut warnings = Vec::new();
@@ -518,7 +521,7 @@ async fn validate_config() -> Result<()> {
 
             // Check network settings for Starlink
             if config.network.starlink_optimizations {
-                print_info("Starlink optimizations are enabled");
+                println!("{}", format_info("Starlink optimizations are enabled"));
                 if config.network.base_retry_delay < 2 {
                     suggestions.push("Consider increasing base_retry_delay to 2+ seconds for satellite connections".to_string());
                 }
@@ -526,7 +529,7 @@ async fn validate_config() -> Result<()> {
 
             // Check ACP settings
             if config.acp.enabled {
-                print_info("ACP (Zed integration) is enabled");
+                println!("{}", format_info("ACP (Zed integration) is enabled"));
                 if let Some(port) = config.acp.default_port
                     && port < 1024
                 {
@@ -552,10 +555,10 @@ async fn validate_config() -> Result<()> {
             }
         }
         Err(e) => {
-            print_error(&format!("Configuration validation failed: {}", e));
+            println!("{}", format_error(&format!("Configuration validation failed: {}", e)));
 
             println!();
-            print_info("To fix configuration issues:");
+            println!("{}", format_info("To fix configuration issues:"));
             println!("  1. Check values with: {}", "grok config show".yellow());
             println!(
                 "  2. Reset to defaults: {}",
@@ -577,19 +580,19 @@ async fn validate_config() -> Result<()> {
 fn show_config_tip(key: &str) {
     match key {
         "api_key" => {
-            print_info("💡 Test your API key with: grok health --api");
+            println!("{}", format_info("💡 Test your API key with: grok health --api"));
         }
         "acp.enabled" => {
-            print_info("💡 Start ACP server for Zed integration with: grok acp server");
+            println!("{}", format_info("💡 Start ACP server for Zed integration with: grok acp server"));
         }
         "network.starlink_optimizations" => {
-            print_info("💡 Starlink optimizations help with satellite network instability");
+            println!("{}", format_info("💡 Starlink optimizations help with satellite network instability"));
         }
         "default_model" => {
-            print_info("💡 Available models: grok-2-latest, grok-2, grok-1");
+            println!("{}", format_info("💡 Available models: grok-2-latest, grok-2, grok-1"));
         }
         "logging.level" => {
-            print_info("💡 Valid log levels: trace, debug, info, warn, error");
+            println!("{}", format_info("💡 Valid log levels: trace, debug, info, warn, error"));
         }
         _ => {}
     }

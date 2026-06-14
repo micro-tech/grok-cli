@@ -19,12 +19,12 @@ path = "src/bin/github_mcp.rs"
 
 
 [dependencies]
-#grok_api = { path = "../grok_crate/grok_api", version = "0.1.71" }
+#  grok_api = { path = "../grok_crate/grok_api", version = "0.1.71" }
 grok_api = "0.1.73"
 # HTTP client with timeout support for network drops
 #grok_api = "0.1.7"
 
-reqwest = { version = "0.13.4", features = [
+reqwest = { version = "0.13.3", features = [
     "json",
     "native-tls-vendored",
     "http2",
@@ -60,7 +60,7 @@ indicatif = "0.18"
 # File I/O and paths
 dirs = "6.0"
 # UUID generation
-uuid = { version = "1.23.2", features = ["v4"] }
+uuid = { version = "1.23.3", features = ["v4"] }
 # TGS-RAG dependencies (gated behind "tgs-rag" feature)
 tree-sitter = { version = "0.26.9", optional = true }
 tree-sitter-rust = { version = "0.24.2", optional = true }

@@ -102,6 +102,11 @@ pub enum SlashCommand {
     /// `/think low` enables light reasoning.
     /// `/think high` enables deep reasoning.
     Think { mode: Option<ThinkingMode> },
+
+    /// `/commit [instructions]` — generate a commit message from the current git diff.
+    /// `/commit` with no argument uses default Conventional Commits style.
+    /// Additional instructions can be provided after the command.
+    Commit { instructions: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -171,6 +176,9 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
                 ThinkingMode::from_str_ci(&args).map(|m| SlashCommand::Think { mode: Some(m) })
             }
         }
+        "/commit" => Some(SlashCommand::Commit {
+            instructions: args,
+        }),
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -248,6 +256,11 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "Set or show the reasoning mode (off / low / high).  \"high\" gives the most thorough answers; \"off\" (default) gives the fastest.",
         )
         .input(input("off | low | high -- omit to show the current mode")),
+        AvailableCommand::new(
+            "commit",
+            "Generate a high-quality commit message from the current git diff (Conventional Commits by default)",
+        )
+        .input(input("optional extra instructions for the commit message style")),
     ]
 }
 
@@ -397,6 +410,75 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
                  6. **Related issues** — flag any similar problems nearby that should also be fixed"
             ))
         }
+
+        SlashCommand::Commit { instructions } => {
+            // Fetch the actual git diff so the model has something to write about.
+            let diff = get_git_diff_for_commit().unwrap_or_else(|e| {
+                format!("[Could not obtain git diff: {}]", e)
+            });
+
+            let extra = if instructions.trim().is_empty() {
+                String::new()
+            } else {
+                format!("\n\nAdditional instructions from user: {}", instructions)
+            };
+
+            Some(format!(
+                "Generate a high-quality git commit message for the following changes.\n\n\
+                 Requirements:\n\
+                 1. Follow the Conventional Commits specification by default:\n\
+                    <type>(<scope>): <description>\n\n\
+                 2. Use the present tense (\"add feature\" not \"added feature\")\n\
+                 3. Keep the subject line under 72 characters\n\
+                 4. Provide a longer body when the change is complex\n\
+                 5. Reference any related issues or PRs if applicable\n\n\
+                 --- BEGIN DIFF ---\n{}\n--- END DIFF ---\n\n\
+                 Recent conversation context and any active goals will also be provided.{extra}",
+                diff
+            ))
+        }
+    }
+}
+
+/// Run `git diff --cached` (staged changes). If nothing is staged, fall back to
+/// `git diff` (unstaged). Returns an error if we are not inside a git repo.
+fn get_git_diff_for_commit() -> Result<String> {
+    use std::process::Command;
+
+    // First try staged changes
+    let output = Command::new("git")
+        .args(["diff", "--cached", "--no-color"])
+        .output();
+
+    match output {
+        Ok(out) if out.status.success() => {
+            let diff = String::from_utf8_lossy(&out.stdout).trim().to_string();
+            if !diff.is_empty() {
+                return Ok(diff);
+            }
+            // Nothing staged — fall back to unstaged diff
+        }
+        _ => {}
+    }
+
+    // Fallback: unstaged changes
+    let output = Command::new("git")
+        .args(["diff", "--no-color"])
+        .output()
+        .map_err(|e| anyhow!("git diff failed: {}", e))?;
+
+    if !output.status.success() {
+        return Err(anyhow!(
+            "git returned non-zero exit code: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
+    }
+
+    let diff = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if diff.is_empty() {
+        Ok("[No changes detected — working tree is clean]".to_string())
+    } else {
+        Ok(diff)
     }
 }
 

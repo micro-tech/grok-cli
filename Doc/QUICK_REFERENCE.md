@@ -327,6 +327,7 @@ grok-cli config set experimental.extensions.enabled true
 | `/clear` | Clear screen |
 | `/history` | Show conversation history |
 | `/version` | Show version info |
+| `/commit [instructions]` | Generate Conventional Commits message from git diff |
 
 ### Context Display
 | Command | Description |

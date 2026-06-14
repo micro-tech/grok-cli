@@ -12,7 +12,11 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 
 - **Interactive Terminal UI** — Gemini-style rich prompts, adaptive ASCII art, progress indicators, and color output
 - **Session Persistence** — Save, load, list, and fork conversations (`/save`, `/load`, `/list`)
-- **Session DNA** — Persistent personality & behavior config (`session_dna.json`) injected into system prompts ([Doc/SESSION_DNA.md](Doc/SESSION_DNA.md))
+- **Session DNA** — Persistent personality & behavior config (`session_dna.json`) injected into system prompts. Now a **living system** with:
+  - Full LLM injection
+  - Bayesian router influence
+  - Real-time feedback loop after every tool call
+  - **DNA-Driven Intelligence Layer** (Task 150): Skill arbitration 2.0, conditioned planning, and automatic mode switching (`coder`/`research`/`shell`/`creative`) based on DNA signals.
 - **Skill Auto-Activation** — Skills activate automatically based on project context and keywords
 - **Task Graph Engine** — Run complex multi-step workflows with dependency resolution
 - **Hierarchical Configuration** — Project-local overrides via `.grok/config.toml`
@@ -30,6 +34,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 - **Starlink Optimizations** — Smart retries and timeout handling for satellite connections
 - **Multi-Agent Orchestration** — `AgentManager`, sub-agent spawning (`spawn_agent`/`fork_agent`), result joining, in-memory messaging, and `DelegateToSubAgent` plan steps (Task 127)
 - **Bayesian Stabilization** — Configurable belief decay (`belief_decay_rate` / `prior_pull_rate`) prevents extreme intent dominance while keeping routing responsive
+- **Commit Message Generator** — `/commit` slash command + `generate_commit_message` tool that produces high-quality Conventional Commits messages from the current git diff (respects `commit_message_instructions` config and Session DNA)
 
 See [Doc/QUICK_REFERENCE.md](Doc/QUICK_REFERENCE.md) for the full command list and [Doc/FEATURES.md](Doc/FEATURES.md) (coming soon) for details.
 
@@ -80,6 +85,7 @@ Full options: [Doc/CONFIGURATION.md](Doc/CONFIGURATION.md)
 | `/load <id>`         | Resume a saved session                   |
 | `/goal <text>`       | Set an active goal for the session       |
 | `/think off\|low\|high` | Control reasoning effort              |
+| `/commit [instructions]` | Generate a Conventional Commits message from git diff |
 | `/visualize`         | Show pipeline diagram                    |
 | `/bayes show`        | Inspect Bayesian priors                  |
 

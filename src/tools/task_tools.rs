@@ -29,8 +29,8 @@ fn load_task_file(security: &SecurityPolicy) -> Result<(std::path::PathBuf, Valu
         .map_err(|e| anyhow!("Failed to read task_list.json: {}", e))?;
 
     // Try strict parse first; fall back to .bak if corrupt.
-    match serde_json::from_str::<Value>(&content) {
-        Ok(data) => Ok((task_file, data)),
+    let data = match serde_json::from_str::<Value>(&content) {
+        Ok(data) => data,
         Err(parse_err) => {
             let bak = task_file.with_file_name("task_list.json.bak");
             tracing::warn!(
@@ -41,22 +41,33 @@ fn load_task_file(security: &SecurityPolicy) -> Result<(std::path::PathBuf, Valu
             if bak.exists() {
                 let bak_content =
                     fs::read_to_string(&bak).map_err(|e| anyhow!("Failed to read .bak: {}", e))?;
-                let data: Value = serde_json::from_str(&bak_content).map_err(|e| {
+                let recovered: Value = serde_json::from_str(&bak_content).map_err(|e| {
                     anyhow!(
                         "task_list.json corrupt ({}) AND .bak invalid ({}). Manual recovery needed.",
                         parse_err, e
                     )
                 })?;
                 tracing::warn!("Recovered task list from task_list.json.bak");
-                Ok((task_file, data))
+                recovered
             } else {
-                Err(anyhow!(
+                return Err(anyhow!(
                     "task_list.json is corrupt ({}). No .bak found. Manual recovery needed.",
                     parse_err
-                ))
+                ));
             }
         }
-    }
+    };
+
+    // Normalise: if the file is a plain JSON array, wrap it in {"tasks": [...]}
+    // so all callers can safely use data["tasks"] without panicking.
+    let normalised = if data.is_array() {
+        tracing::info!("task_list.json is a plain array — wrapping in {{\"tasks\": [...]}}");
+        json!({ "tasks": data })
+    } else {
+        data
+    };
+
+    Ok((task_file, normalised))
 }
 
 /// Write `data` to `path` atomically: write to a `.json.tmp` sibling first,
@@ -362,11 +373,15 @@ pub fn task_get(id: f64, security: &SecurityPolicy) -> Result<String> {
     }
 
     // ── Format A: {"tasks": [...]} ────────────────────────────────────────────
-    let found = if let Some(tasks) = data["tasks"].as_array() {
+    // Use .get() instead of the indexing operator to avoid panicking when data
+    // is not a JSON object (load_task_file already normalises plain arrays, but
+    // this keeps task_get robust against any future callers).
+    let found = if let Some(tasks) = data.get("tasks").and_then(|v| v.as_array()) {
         search_slice(tasks, id)
 
     // ── Format C: [{…}, {…}, …] plain JSON array ──────────────────────────────
-    // Some projects store the task list as a top-level array with no wrapper key.
+    // load_task_file wraps this in {"tasks":[…]}, so this branch is a
+    // belt-and-suspenders fallback.
     } else if let Some(arr) = data.as_array() {
         search_slice(arr, id)
 
@@ -387,8 +402,9 @@ pub fn task_get(id: f64, security: &SecurityPolicy) -> Result<String> {
             anyhow!("Failed to serialise task {}: {}", id, e)
         }),
         None => {
-            let total = data["tasks"]
-                .as_array()
+            let total = data
+                .get("tasks")
+                .and_then(|v| v.as_array())
                 .map(|a| a.len())
                 .or_else(|| data.as_array().map(|a| a.len()))
                 .or_else(|| data.as_object().map(|o| o.len()))

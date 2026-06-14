@@ -223,6 +223,14 @@ impl BayesianEngine {
         self.sync_graph();
     }
 
+    /// Apply a multiplicative boost to a specific intent prior (used by Session DNA).
+    /// The caller is responsible for re-normalising afterwards.
+    pub fn boost_prior(&mut self, intent: &str, factor: f32) {
+        if let Some(p) = self.priors.get_mut(intent) {
+            *p *= factor;
+        }
+    }
+
     /// Boost the prior for the intent that corresponds to a successfully used
     /// tool, then re-normalise and persist the profile to disk.
     ///
@@ -329,6 +337,8 @@ mod tests {
             vagueness_threshold: 0.75,
             intent_likelihood_weight: 8.0,
             profile_learning_rate: 0.05,
+            belief_decay_rate: DEFAULT_BELIEF_DECAY_RATE,
+            prior_pull_rate: DEFAULT_PRIOR_PULL_RATE,
             priors: BayesianPriorsConfig::default(),
             show_belief_graph: false,
         };

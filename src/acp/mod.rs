@@ -115,6 +115,10 @@ struct SessionData {
     /// Bayesian inference engine for this session
     bayes_engine: crate::bayes::BayesianEngine,
 
+    /// Session DNA (personality + behavior config) — mutable during the session
+    /// so the feedback loop can adapt risk tolerance and tool preferences.
+    dna: crate::session::dna::SessionDna,
+
     /// Active session goal set via `/goal <text>`.
     /// Injected into every refined prompt as a system note so the model
     /// always interprets messages through the lens of this goal.
@@ -408,6 +412,7 @@ impl GrokAcpAgent {
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
+            dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
         };
 
@@ -434,11 +439,14 @@ impl GrokAcpAgent {
             }
         }
 
-        // --- Task 103: Session DNA ---
-        // Load session_dna.json (tone, verbosity, coding_style, etc.) and append
-        // its fields to the system prompt so the model adopts the user's preferred
-        // persona and style throughout the session.
+        // --- Task 103 + 150: Session DNA + DNA-Driven Intelligence ---
         let dna = crate::session::dna::SessionDna::load();
+
+        // Apply DNA influence to the Bayesian router
+        let mut bayes_engine = crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian);
+        dna.apply_to_bayes_engine(&mut bayes_engine);
+
+        // Inject full DNA + current operating mode into system prompt
         if let Some(sys_msg) = session_data
             .messages
             .iter_mut()
@@ -447,12 +455,13 @@ impl GrokAcpAgent {
             if let Some(content) = sys_msg["content"].as_str() {
                 let mut prompt = content.to_string();
                 dna.inject_into_prompt(&mut prompt);
+                prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
                 sys_msg["content"] = serde_json::Value::String(prompt);
             }
         } else {
-            // No system message yet -- create one from DNA alone
             let mut prompt = String::new();
             dna.inject_into_prompt(&mut prompt);
+            prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
             if !prompt.trim().is_empty() {
                 session_data.messages.push(serde_json::json!({
                     "role": "system",
@@ -460,11 +469,17 @@ impl GrokAcpAgent {
                 }));
             }
         }
+
         tracing::debug!(
-            "Session DNA injected: tone={}, verbosity={}",
+            "Session DNA injected (mode={}): tone={}, verbosity={}",
+            dna.get_mode(),
             dna.tone,
             dna.verbosity
         );
+
+        // Store the mutable DNA instance
+        session_data.bayes_engine = bayes_engine;
+        session_data.dna = dna;
 
         let mut sessions = self.sessions.write().await;
         sessions.insert(session_id.0.clone(), session_data);
@@ -843,6 +858,15 @@ impl GrokAcpAgent {
                     max_loops
                 ));
             }
+
+            // Warn when approaching the limit (80% threshold)
+            let warn_threshold = (max_loops as f32 * 0.8) as u32;
+            if loop_count == warn_threshold {
+                warn!(
+                    "⚠️  Tool loop iteration count approaching limit: {}/{} (80% of max)",
+                    loop_count, max_loops
+                );
+            }
             loop_count += 1;
 
             let loop_start = std::time::Instant::now();
@@ -969,6 +993,8 @@ impl GrokAcpAgent {
                                     || msg.contains("timed out")
                                     || msg.contains("reset")
                                     || msg.contains("connection")
+                                    || msg.contains("network error")
+                                    || msg.contains("error sending request")
                                     || msg.contains("503")
                                     || msg.contains("502")
                                     || msg.contains("504")
@@ -1059,7 +1085,8 @@ impl GrokAcpAgent {
                         content: tc.clone(),
                         is_final: false,
                     };
-                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
+                    let _ =
+                        sender.send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
                 }
             }
 
@@ -1097,7 +1124,8 @@ impl GrokAcpAgent {
                             content: tc.clone(),
                             is_final: true,
                         };
-                        let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
+                        let _ = sender
+                            .send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
                     }
 
                     format!(
@@ -1138,7 +1166,9 @@ impl GrokAcpAgent {
                 }
 
                 if let (Some(sender), Some(usage)) = (&event_sender, context_usage) {
-                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                        usage,
+                    ));
                 }
 
                 return Ok(final_response);
@@ -1177,7 +1207,9 @@ impl GrokAcpAgent {
                 }
 
                 if let (Some(sender), Some(usage)) = (&event_sender, context_usage) {
-                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                        usage,
+                    ));
                 }
 
                 return Ok(response_text);
@@ -1308,6 +1340,15 @@ impl GrokAcpAgent {
                             tool_duration,
                             s.len()
                         );
+
+                        // DNA feedback loop (success)
+                        {
+                            let mut guard = self.sessions.write().await;
+                            if let Some(s) = guard.get_mut(&session_id.0) {
+                                s.dna.update_from_tool_result(true, function_name);
+                            }
+                        }
+
                         (s, crate::acp::protocol::ToolCallStatus::Completed)
                     }
                     Err(e) => {
@@ -1316,6 +1357,14 @@ impl GrokAcpAgent {
 
                         // 4. Update Bayesian Engine for Tool Failure
                         local_bayes.update_from_tool_failure();
+
+                        // DNA feedback loop (failure)
+                        {
+                            let mut guard = self.sessions.write().await;
+                            if let Some(s) = guard.get_mut(&session_id.0) {
+                                s.dna.update_from_tool_result(false, function_name);
+                            }
+                        }
 
                         let mut error_content =
                             format!("Error executing tool {}: {}", function_name, e);
@@ -1388,7 +1437,9 @@ impl GrokAcpAgent {
                     ),
                     messages.len(),
                 );
-                let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                    usage,
+                ));
             }
 
             // Post-tool-loop guard: if the model signalled "stop" alongside
@@ -1412,7 +1463,9 @@ impl GrokAcpAgent {
                         ),
                         messages.len(),
                     );
-                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage));
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                        usage,
+                    ));
                 }
                 // ── Phase 3: Final sync (brief write lock) ──────────────────────────
                 {
@@ -1628,7 +1681,9 @@ impl GrokAcpAgent {
     /// Emit a sub-agent activity notification to the ACP client (Task 128).
     pub fn emit_agent_activity(
         &self,
-        event_sender: Option<&tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>>,
+        event_sender: Option<
+            &tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
+        >,
         agent_id: impl Into<String>,
         parent_id: Option<String>,
         status: crate::acp::protocol::AgentActivityStatus,
@@ -2056,6 +2111,7 @@ impl GrokAcpAgent {
                 always_allow: source.always_allow.clone(),
                 client_commands: source.client_commands.clone(),
                 bayes_engine: crate::bayes::BayesianEngine::new_with_default_priors(),
+                dna: crate::session::dna::SessionDna::default(),
                 current_goal: source.current_goal.clone(),
             }
         };
