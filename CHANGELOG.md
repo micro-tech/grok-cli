@@ -9,7 +9,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
-## [Unreleased]
+## [0.2.3] — 2025-01-15
 
 ### Commit Message Generator (Task 161)
 
