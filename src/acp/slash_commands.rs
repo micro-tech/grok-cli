@@ -26,6 +26,7 @@
 
 use super::protocol::{AvailableCommand, AvailableCommandInput, UnstructuredCommandInput};
 use crate::config::ThinkingMode;
+use anyhow::anyhow;
 
 // ---------------------------------------------------------------------------
 // Command enum
@@ -442,7 +443,7 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
 
 /// Run `git diff --cached` (staged changes). If nothing is staged, fall back to
 /// `git diff` (unstaged). Returns an error if we are not inside a git repo.
-fn get_git_diff_for_commit() -> Result<String> {
+fn get_git_diff_for_commit() -> anyhow::Result<String> {
     use std::process::Command;
 
     // First try staged changes
