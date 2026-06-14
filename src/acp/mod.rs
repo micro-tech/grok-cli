@@ -843,6 +843,15 @@ impl GrokAcpAgent {
                     max_loops
                 ));
             }
+
+            // Warn when approaching the limit (80% threshold)
+            let warn_threshold = (max_loops as f32 * 0.8) as u32;
+            if loop_count == warn_threshold {
+                warn!(
+                    "⚠️  Tool loop iteration count approaching limit: {}/{} (80% of max)",
+                    loop_count, max_loops
+                );
+            }
             loop_count += 1;
 
             let loop_start = std::time::Instant::now();
