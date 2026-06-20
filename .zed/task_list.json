@@ -1570,6 +1570,78 @@
       "subtasks": [],
       "testStrategy": "1. Run with --explore flag and verify explorer JSON output.\n2. Trigger planner on a repo query and confirm evidence injection into main mode.\n3. Verify no write tools or patch proposals in explorer mode logs.\n4. Measure token reduction in main run context.",
       "title": "Mode-switched FastContext-style explorer using main LLM"
+    },
+    {
+      "dependencies": [],
+      "description": "Implement a dedicated Explorer agent mode that performs fast, read-only repository exploration and returns compact JSON evidence for the main agent.",
+      "details": "This is the parent task for the full Explorer mode implementation. All 10 subtasks below must be completed.",
+      "id": 163,
+      "priority": "high",
+      "status": "done",
+      "subtasks": [
+        {
+          "dependencies": [],
+          "id": 163.1,
+          "status": "pending",
+          "title": "Subtask 1: Add AgentMode::Explorer"
+        },
+        {
+          "dependencies": [],
+          "id": 163.2,
+          "status": "pending",
+          "title": "Subtask 2: Create explorer system prompt"
+        },
+        {
+          "dependencies": [],
+          "id": 163.3,
+          "status": "pending",
+          "title": "Subtask 3: Add RepoEvidence structs"
+        },
+        {
+          "dependencies": [],
+          "id": 163.4,
+          "status": "pending",
+          "title": "Subtask 4: Add ExplorerMode runner"
+        },
+        {
+          "dependencies": [],
+          "id": 163.5,
+          "status": "pending",
+          "title": "Subtask 5: Add JSON parsing"
+        },
+        {
+          "dependencies": [],
+          "id": 163.6,
+          "status": "pending",
+          "title": "Subtask 6: Add tool-restriction layer"
+        },
+        {
+          "dependencies": [],
+          "id": 163.7,
+          "status": "pending",
+          "title": "Subtask 7: Add runtime branch"
+        },
+        {
+          "dependencies": [],
+          "id": 163.8,
+          "status": "pending",
+          "title": "Subtask 8: Add CLI flag"
+        },
+        {
+          "dependencies": [],
+          "id": 163.9,
+          "status": "pending",
+          "title": "Subtask 9: Add planner hook"
+        },
+        {
+          "dependencies": [],
+          "id": 163.1,
+          "status": "pending",
+          "title": "Subtask 10: Add tests"
+        }
+      ],
+      "testStrategy": "All 10 subtasks must pass their individual tests + integration test of the full explorer flow.",
+      "title": "Mode-Switched FastContext-Style Explorer (Task 161)"
     }
   ]
 }

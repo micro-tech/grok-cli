@@ -107,14 +107,14 @@ impl Planner {
 
         debug!(intent = %intent, "Planner: Bayesian intent resolved");
 
-        // ── Optional Explorer run (Task 162) ────────────────────────────────
+        // ── Optional Explorer run (Task 161/162) ─────────────────────────────
         let mut repo_evidence = None;
         if intent.contains("edit") || intent.contains("refactor") || intent.contains("fix") {
             if let Some(client) = client {
                 if let Ok(evidence) =
-                    crate::agent::explorer::run_explorer(client, user_input, model).await
+                    crate::agent::explorer::run_explorer_mode(client, user_input, model).await
                 {
-                    repo_evidence = Some(evidence);
+                    repo_evidence = Some(serde_json::to_value(evidence)?);
                     debug!("Planner: Explorer evidence collected");
                 }
             }
