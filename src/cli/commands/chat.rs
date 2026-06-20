@@ -20,7 +20,7 @@ use crate::acp::slash_commands;
 use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
 use crate::cli::{
-    create_spinner, format_error, format_grok_response, format_info, format_success, format_warning,
+    create_spinner, format_error, format_grok_response, format_info, format_success,
 };
 use crate::config::{BayesianConfig, RateLimitConfig, ThinkingMode};
 use crate::router::AppRouter;
@@ -671,7 +671,7 @@ async fn handle_explorer_mode(
     query: &str,
     model: &str,
 ) -> Result<()> {
-    use crate::agent::Mode;
+    use crate::agent::mode::Mode;
 
     println!("{}", format_info(&format!("Explorer mode: {}", query)));
 
