@@ -1,4 +1,7 @@
-default_model = "grok-4.3"
+
+
+default_model = "grok-build-0.1"
+# default_model = "grok-4.3"
 default_temperature = 0.7
 # Output token budget (not the context window).
 # grok-4.3 supports up to 32 768 output tokens; 16 384 is a safe default.

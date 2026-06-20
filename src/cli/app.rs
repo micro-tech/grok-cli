@@ -61,6 +61,10 @@ pub enum Commands {
         /// \"high\" gives the most thorough answers at higher cost.
         #[arg(long, value_name = "MODE")]
         thinking: Option<String>,
+
+        /// Explorer mode — run a repository exploration query and return compact JSON evidence.
+        #[arg(long, value_name = "QUERY")]
+        explore: Option<String>,
     },
 
     /// Code-related operations
@@ -229,10 +233,9 @@ pub async fn run() -> Result<()> {
             temperature,
             max_tokens,
             thinking,
+            explore,
         }) => {
             let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn);
-            // Parse the --thinking flag; unrecognised values are silently treated
-            // as Off so the CLI never hard-fails on a typo.
             let thinking_mode = thinking
                 .as_deref()
                 .and_then(ThinkingMode::from_str_ci)
@@ -250,6 +253,7 @@ pub async fn run() -> Result<()> {
                 rate_limit_config: config.rate_limits,
                 bayesian: config.bayesian.clone(),
                 thinking_mode,
+                explore: explore.clone(),
             })
             .await?;
         }
@@ -302,6 +306,7 @@ pub async fn run() -> Result<()> {
                 rate_limit_config: config.rate_limits,
                 bayesian: config.bayesian.clone(),
                 thinking_mode: ThinkingMode::Off,
+                explore: None,
             })
             .await?;
         }

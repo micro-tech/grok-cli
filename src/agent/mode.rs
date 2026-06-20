@@ -11,6 +11,7 @@ pub enum Mode {
     Research,
     Shell,
     Creative,
+    Explorer,
 }
 
 impl Mode {
@@ -29,6 +30,9 @@ impl Mode {
             Mode::Creative => {
                 "CREATIVE MODE: Be open-ended, generative, and brainstorming-focused. Explore multiple solutions and out-of-the-box ideas."
             }
+            Mode::Explorer => {
+                "EXPLORER MODE: You are a repository exploration agent. You may only use tools to list files, read files, and search text. Your final answer must be a JSON object with file paths and line ranges relevant to the query. Do not propose code changes."
+            }
         }
     }
 
@@ -39,6 +43,7 @@ impl Mode {
             Mode::Research => "Long-form reasoning, citations",
             Mode::Shell => "Terse, command-first",
             Mode::Creative => "Open-ended, generative",
+            Mode::Explorer => "Repository exploration — returns compact JSON evidence only",
         }
     }
 }
@@ -50,6 +55,7 @@ impl fmt::Display for Mode {
             Mode::Research => write!(f, "Research"),
             Mode::Shell => write!(f, "Shell"),
             Mode::Creative => write!(f, "Creative"),
+            Mode::Explorer => write!(f, "Explorer"),
         }
     }
 }
@@ -63,8 +69,9 @@ impl FromStr for Mode {
             "research" => Ok(Mode::Research),
             "shell" => Ok(Mode::Shell),
             "creative" => Ok(Mode::Creative),
+            "explorer" => Ok(Mode::Explorer),
             _ => Err(format!(
-                "Unknown mode: {}. Valid modes: coder, research, shell, creative",
+                "Unknown mode: {}. Valid modes: coder, research, shell, creative, explorer",
                 s
             )),
         }
