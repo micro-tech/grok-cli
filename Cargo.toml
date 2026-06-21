@@ -1,6 +1,6 @@
 [package]
 name = "grok-cli"
-version = "0.2.4"
+version = "0.2.4-pre"
 edition = "2024"
 authors = ["john mcconnell john.microtech@gmail.com"]
 description = "A CLI tool for interacting with Grok AI via X API"
@@ -10,7 +10,7 @@ keywords = ["cli", "ai", "grok", "x-api"]
 categories = ["command-line-utilities"]
 
 [[bin]]
-name = "grok"
+name = "grok-cli"
 path = "src/main.rs"
 
 [[bin]]
@@ -20,8 +20,8 @@ path = "src/bin/github_mcp.rs"
 
 [dependencies]
 #  grok_api = { path = "../grok_crate/grok_api", version = "0.1.71" }
-grok_api = "0.1.73"
 # HTTP client with timeout support for network drops
+grok_api = "0.1.73"
 #grok_api = "0.1.7"
 
 reqwest = { version = "0.13.4", features = [

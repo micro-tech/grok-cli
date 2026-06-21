@@ -44,7 +44,7 @@ fn get_version(root_dir: &Path) -> String {
 fn main() {
     println!(
         "{}",
-        "Grok CLI Installer v0.2.2-pre for Windows 11"
+        "Grok-CLI Installer v0.2.4-pre for Windows 11"
             .green()
             .bold()
     );
@@ -56,7 +56,7 @@ fn main() {
         let version = get_version(&root_dir);
         println!(
             "{}",
-            format!("Grok CLI Installer v{} for Windows 11", version)
+            format!("grok-cli CLI Installer v{} for Windows 11", version)
                 .green()
                 .bold()
         );
@@ -74,7 +74,7 @@ fn install_windows(root_dir: PathBuf) {
     println!("{}", "Building release binary...".cyan());
     let status = Command::new("cargo")
         .current_dir(&root_dir)
-        .args(["build", "--release", "--bin", "grok"])
+        .args(["build", "--release", "--bin", "grok-cli"])
         .status()
         .expect("Failed to execute cargo build");
 
@@ -86,7 +86,7 @@ fn install_windows(root_dir: PathBuf) {
     // 2. Define paths
     let local_app_data = env::var("LOCALAPPDATA").expect("LOCALAPPDATA not set");
     let install_dir = PathBuf::from(&local_app_data).join("grok-cli").join("bin");
-    let exe_name = "grok.exe";
+    let exe_name = "grok-cli.exe";
     let target_exe = install_dir.join(exe_name);
 
     let source_exe = root_dir.join("target").join("release").join(exe_name);
@@ -113,7 +113,7 @@ fn install_windows(root_dir: PathBuf) {
             eprintln!("{} {}", "Failed to remove old binary:".red(), e);
             eprintln!(
                 "{}",
-                "Please make sure 'grok.exe' is not currently running.".yellow()
+                "Please make sure 'grok-cli.exe' is not currently running.".yellow()
             );
             std::process::exit(1);
         }
@@ -162,7 +162,7 @@ fn install_windows(root_dir: PathBuf) {
     println!("  • Memory-aware reasoning with long-term memory bridge");
     println!("  • Uncertainty-aware skill and tool arbitration");
     println!("  • 227 new tests across RPL and Engine modules");
-    println!("\nPlease restart your terminal to use the 'grok' command.");
+    println!("\nPlease restart your terminal to use the 'grok-cli' command.");
     println!(
         "\nDocumentation installed to: {}",
         install_dir.parent().unwrap().join("docs").display()
@@ -181,14 +181,14 @@ fn install_windows(root_dir: PathBuf) {
 #[cfg(windows)]
 fn check_and_remove_old_cargo_install() {
     if let Some(home_dir) = dirs::home_dir() {
-        let cargo_grok = home_dir.join(".cargo").join("bin").join("grok.exe");
+        let cargo_grok_cli = home_dir.join(".cargo").join("bin").join("grok-cli.exe");
 
-        if cargo_grok.exists() {
+        if cargo_grok_cli.exists() {
             println!("\n{}", "Old Cargo installation detected!".yellow().bold());
-            println!("Found old version at: {}", cargo_grok.display());
+            println!("Found old version at: {}", cargo_grok_cli.display());
 
             // Try to get version
-            if let Ok(output) = Command::new(&cargo_grok).arg("--version").output()
+            if let Ok(output) = Command::new(&cargo_grok_cli).arg("--version").output()
                 && let Ok(version) = String::from_utf8(output.stdout)
             {
                 println!("Old version: {}", version.trim());
@@ -204,7 +204,7 @@ fn check_and_remove_old_cargo_install() {
             io::stdin().read_line(&mut response).unwrap();
 
             if response.trim().eq_ignore_ascii_case("yes") {
-                match fs::remove_file(&cargo_grok) {
+                match fs::remove_file(&cargo_grok_cli) {
                     Ok(_) => {
                         println!(
                             "{}",
@@ -220,10 +220,10 @@ fn check_and_remove_old_cargo_install() {
                         eprintln!("  {}", e);
                         eprintln!(
                             "{}",
-                            "  Please close all running grok instances and try again.".yellow()
+                            "  Please close all running grok-cli instances and try again.".yellow()
                         );
                         eprintln!("{}", "  Or manually delete: ".yellow());
-                        eprintln!("  {}", cargo_grok.display());
+                        eprintln!("  {}", cargo_grok_cli.display());
                     }
                 }
             } else {
@@ -232,7 +232,7 @@ fn check_and_remove_old_cargo_install() {
                     "Skipping removal. You may have version conflicts.".yellow()
                 );
                 println!("{}", "  To remove later, delete: ".cyan());
-                println!("  {}", cargo_grok.display());
+                println!("  {}", cargo_grok_cli.display());
             }
             println!();
         }
@@ -242,16 +242,16 @@ fn check_and_remove_old_cargo_install() {
 #[cfg(windows)]
 fn setup_context(root_dir: &Path) {
     if let Some(home_dir) = dirs::home_dir() {
-        let grok_dir = home_dir.join(".grok");
-        if !grok_dir.exists()
-            && let Err(e) = fs::create_dir_all(&grok_dir)
+        let grok_cli_dir = home_dir.join(".grok-cli");
+        if !grok_cli_dir.exists()
+            && let Err(e) = fs::create_dir_all(&grok_cli_dir)
         {
-            eprintln!("Failed to create .grok directory: {}", e);
+            eprintln!("Failed to create .grok-cli directory: {}", e);
             return;
         }
 
         let source_context = root_dir.join("context.md");
-        let target_context = grok_dir.join("context.md");
+        let target_context = grok_cli_dir.join("context.md");
 
         if source_context.exists() {
             match fs::copy(&source_context, &target_context) {
@@ -269,7 +269,7 @@ fn setup_context(root_dir: &Path) {
 #[cfg(windows)]
 fn setup_memory_directories() {
     if let Some(home_dir) = dirs::home_dir() {
-        let grok_dir = home_dir.join(".grok");
+        let grok_cli_dir = home_dir.join(".grok-cli");
 
         // Directories expected by the memory, episodic, and skill modules
         let subdirs = [
@@ -280,14 +280,14 @@ fn setup_memory_directories() {
         ];
 
         for (name, description) in &subdirs {
-            let dir = grok_dir.join(name);
+            let dir = grok_cli_dir.join(name);
             if !dir.exists() {
                 match fs::create_dir_all(&dir) {
-                    Ok(_) => println!("Created ~/.grok/{name}/ — {description}"),
-                    Err(e) => eprintln!("Failed to create ~/.grok/{name}/: {e}"),
+                    Ok(_) => println!("Created ~/.grok-cli/{name}/ — {description}"),
+                    Err(e) => eprintln!("Failed to create ~/.grok-cli/{name}/: {e}"),
                 }
             } else {
-                println!("~/.grok/{name}/ already exists.");
+                println!("~/.grok-cli/{name}/ already exists.");
             }
         }
     } else {
@@ -298,7 +298,7 @@ fn setup_memory_directories() {
 #[cfg(windows)]
 fn setup_audit_directory() {
     if let Some(home_dir) = dirs::home_dir() {
-        let audit_dir = home_dir.join(".grok").join("audit");
+        let audit_dir = home_dir.join(".grok-cli").join("audit");
 
         if !audit_dir.exists() {
             match fs::create_dir_all(&audit_dir) {
@@ -316,16 +316,16 @@ fn setup_audit_directory() {
 #[cfg(windows)]
 fn setup_session_dna(root_dir: &Path) {
     if let Some(home_dir) = dirs::home_dir() {
-        let grok_dir = home_dir.join(".grok");
-        if !grok_dir.exists()
-            && let Err(e) = fs::create_dir_all(&grok_dir)
+        let grok_cli_dir = home_dir.join(".grok-cli");
+        if !grok_cli_dir.exists()
+            && let Err(e) = fs::create_dir_all(&grok_cli_dir)
         {
-            eprintln!("Failed to create .grok directory: {}", e);
+            eprintln!("Failed to create .grok-cli directory: {}", e);
             return;
         }
 
         let source_dna = root_dir.join("session_dna.json");
-        let target_dna = grok_dir.join("session_dna.json");
+        let target_dna = grok_cli_dir.join("session_dna.json");
 
         if source_dna.exists() {
             match fs::copy(&source_dna, &target_dna) {
