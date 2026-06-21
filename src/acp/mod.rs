@@ -23,6 +23,7 @@ pub mod mcp_bridge;
 pub mod protocol;
 pub mod security;
 pub mod slash_commands;
+pub mod status_bar;
 pub mod tools;
 
 use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams};
@@ -403,6 +404,14 @@ impl GrokAcpAgent {
             session_config.model = model.clone();
         }
 
+        // Capture status-bar fields before session_config is moved into SessionData.
+        let init_model = session_config.model.clone();
+        let init_thinking = session_config
+            .thinking_mode
+            .as_api_str()
+            .unwrap_or("off")
+            .to_string();
+
         let mut session_data = SessionData {
             cwd,
             messages: Vec::new(),
@@ -497,6 +506,23 @@ impl GrokAcpAgent {
             );
             let _ = sender.send(update);
             info!("Sent {} slash commands to ACP client", commands.len());
+
+            // Emit initial beautiful status bar on session start (Task 164)
+            // init_model / init_thinking were captured before session_config moved.
+            let initial_state = crate::acp::status_bar::StatusBarState {
+                model: init_model.clone(),
+                thinking_mode: init_thinking,
+                current_tokens: 0,
+                max_tokens: model_context_budget(
+                    &init_model,
+                    self.config.acp.max_context_tokens,
+                    self.config.acp.grok4_max_context_tokens,
+                ),
+                context_percent: 0.0,
+                is_generating: false,
+            };
+            let line = crate::acp::status_bar::build_status_line(&initial_state);
+            let _ = sender.send(crate::acp::protocol::SessionUpdate::Raw(line));
         }
 
         info!("Initialized new ACP session: {}", session_id.0);
@@ -1072,21 +1098,17 @@ impl GrokAcpAgent {
 
             info!("📋 Finish reason: {:?}", finish_reason);
 
-            // If the model produced a reasoning/thinking trace, log it and
-            // emit a thinking update to the ACP client (Task 129) — only if enabled.
-            if self.config.acp.stream_thinking
-                && let Some(ref tc) = thinking_content
-            {
+            // If the model produced a reasoning/thinking trace, emit it using the
+            // new structured thinking block (Task 164) instead of raw markdown.
+            if let Some(ref tc) = thinking_content {
                 let think_tokens = tc.len() / 4;
                 debug!("🧠 Thinking trace received: ~{} tokens", think_tokens);
 
-                if let Some(sender) = &event_sender {
-                    let update = crate::acp::protocol::ThinkingUpdate {
-                        content: tc.clone(),
-                        is_final: false,
-                    };
-                    let _ =
-                        sender.send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
+                if self.config.acp.stream_thinking
+                    && let Some(sender) = &event_sender
+                {
+                    let block = crate::acp::status_bar::build_thinking_block(tc, false);
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::Raw(block));
                 }
             }
 
@@ -1114,22 +1136,19 @@ impl GrokAcpAgent {
                     loop_count,
                     response_text.len()
                 );
-                // Prepend thinking block if present
+                // Prepend thinking block if present — now using structured format
                 let final_response = if let Some(tc) = thinking_content {
-                    // Emit final thinking update (only if stream_thinking is enabled)
+                    // Emit final structured thinking block
                     if self.config.acp.stream_thinking
                         && let Some(sender) = &event_sender
                     {
-                        let update = crate::acp::protocol::ThinkingUpdate {
-                            content: tc.clone(),
-                            is_final: true,
-                        };
-                        let _ = sender
-                            .send(crate::acp::protocol::SessionUpdate::ThinkingUpdate(update));
+                        let block = crate::acp::status_bar::build_thinking_block(&tc, true);
+                        let _ = sender.send(crate::acp::protocol::SessionUpdate::Raw(block));
                     }
 
+                    // Still return a nice markdown version for non-Zed clients
                     format!(
-                        "<details><summary>\u{1f9e0} Thinking\u{2026}</summary>\n\n{}\n\n</details>\n\n{}",
+                        "<details><summary>🧠 Thinking…</summary>\n\n{}\n\n</details>\n\n{}",
                         tc, response_text
                     )
                 } else {
@@ -1156,7 +1175,7 @@ impl GrokAcpAgent {
                 {
                     let mut sessions = self.sessions.write().await;
                     if let Some(s) = sessions.get_mut(&session_id.0) {
-                        s.messages = messages;
+                        s.messages = messages.clone();
                         s.bayes_engine = local_bayes;
                         for name in &newly_always_allowed {
                             s.always_allow.insert(name.clone());
@@ -1169,6 +1188,26 @@ impl GrokAcpAgent {
                     let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
                         usage,
                     ));
+
+                    // Emit beautiful dynamic status bar (Task 164)
+                    let status_state = crate::acp::status_bar::StatusBarState {
+                        model: model.clone(),
+                        thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
+                        current_tokens: estimate_tokens(&messages),
+                        max_tokens: model_context_budget(
+                            &model,
+                            self.config.acp.max_context_tokens,
+                            self.config.acp.grok4_max_context_tokens,
+                        ),
+                        context_percent: (estimate_tokens(&messages) as f32)
+                            / (model_context_budget(
+                                &model,
+                                self.config.acp.max_context_tokens,
+                                self.config.acp.grok4_max_context_tokens,
+                            ) as f32),
+                        is_generating: false,
+                    };
+                    self.emit_status_bar(Some(sender), &status_state);
                 }
 
                 return Ok(final_response);
@@ -1197,7 +1236,7 @@ impl GrokAcpAgent {
                 {
                     let mut sessions = self.sessions.write().await;
                     if let Some(s) = sessions.get_mut(&session_id.0) {
-                        s.messages = messages;
+                        s.messages = messages.clone();
                         s.bayes_engine = local_bayes;
                         for name in &newly_always_allowed {
                             s.always_allow.insert(name.clone());
@@ -1210,6 +1249,26 @@ impl GrokAcpAgent {
                     let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
                         usage,
                     ));
+
+                    // Emit beautiful dynamic status bar (Task 164)
+                    let status_state = crate::acp::status_bar::StatusBarState {
+                        model: model.clone(),
+                        thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
+                        current_tokens: estimate_tokens(&messages),
+                        max_tokens: model_context_budget(
+                            &model,
+                            self.config.acp.max_context_tokens,
+                            self.config.acp.grok4_max_context_tokens,
+                        ),
+                        context_percent: (estimate_tokens(&messages) as f32)
+                            / (model_context_budget(
+                                &model,
+                                self.config.acp.max_context_tokens,
+                                self.config.acp.grok4_max_context_tokens,
+                            ) as f32),
+                        is_generating: false,
+                    };
+                    self.emit_status_bar(Some(sender), &status_state);
                 }
 
                 return Ok(response_text);
@@ -1440,6 +1499,26 @@ impl GrokAcpAgent {
                 let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
                     usage,
                 ));
+
+                // Live status bar update during generation (Task 164)
+                let status_state = crate::acp::status_bar::StatusBarState {
+                    model: model.clone(),
+                    thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
+                    current_tokens: estimate_tokens(&messages),
+                    max_tokens: model_context_budget(
+                        &model,
+                        self.config.acp.max_context_tokens,
+                        self.config.acp.grok4_max_context_tokens,
+                    ),
+                    context_percent: (estimate_tokens(&messages) as f32)
+                        / (model_context_budget(
+                            &model,
+                            self.config.acp.max_context_tokens,
+                            self.config.acp.grok4_max_context_tokens,
+                        ) as f32),
+                    is_generating: true,
+                };
+                self.emit_status_bar(Some(sender), &status_state);
             }
 
             // Post-tool-loop guard: if the model signalled "stop" alongside
@@ -1678,7 +1757,24 @@ impl GrokAcpAgent {
         &self.capabilities()
     }
 
-    /// Emit a sub-agent activity notification to the ACP client (Task 128).
+    /// Emit the dynamic status bar + token meter (Task 164)
+    fn emit_status_bar(
+        &self,
+        event_sender: Option<
+            &tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
+        >,
+        state: &crate::acp::status_bar::StatusBarState,
+    ) {
+        if let Some(sender) = event_sender {
+            // Compact status line
+            let line = crate::acp::status_bar::build_status_line(state);
+            let _ = sender.send(crate::acp::protocol::SessionUpdate::Raw(line));
+
+            // Expanded action bar (we can send both; Zed can decide rendering)
+            let bar = crate::acp::status_bar::build_action_bar(state);
+            let _ = sender.send(crate::acp::protocol::SessionUpdate::Raw(bar));
+        }
+    }
     pub fn emit_agent_activity(
         &self,
         event_sender: Option<

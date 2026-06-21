@@ -20,7 +20,7 @@ use crate::acp::slash_commands;
 use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
 use crate::cli::{
-    create_spinner, format_error, format_grok_response, format_info, format_success, format_warning,
+    create_spinner, format_error, format_grok_response, format_info, format_success,
 };
 use crate::config::{BayesianConfig, RateLimitConfig, ThinkingMode};
 use crate::router::AppRouter;
@@ -43,6 +43,8 @@ pub struct ChatOptions<'a> {
     pub bayesian: BayesianConfig,
     /// Reasoning / thinking mode (from `--thinking` CLI flag).
     pub thinking_mode: ThinkingMode,
+    /// Explorer mode flag (from `--explore`).
+    pub explore: Option<String>,
 }
 
 pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
@@ -59,6 +61,8 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
             options.thinking_mode,
         )
         .await
+    } else if let Some(query) = options.explore {
+        handle_explorer_mode(client, &query, options.model).await
     } else {
         let combined_message = options.message.join(" ");
         handle_single_chat(
@@ -654,4 +658,61 @@ mod tests {
         // This is a placeholder test - in a real implementation you'd mock the API
         // The test passes as long as the module compiles correctly
     }
+}
+
+// ============================================================================
+// EXPLORER MODE (Task 162)
+// ============================================================================
+
+/// Handle `--explore "query"` mode.
+/// Uses EXPLORER system prompt + restricted tools and returns compact JSON evidence.
+async fn handle_explorer_mode(
+    client: AppRouter,
+    query: &str,
+    model: &str,
+) -> Result<()> {
+    use crate::agent::mode::Mode;
+
+    println!("{}", format_info(&format!("Explorer mode: {}", query)));
+
+    let system_prompt = Mode::Explorer.system_prompt_additions();
+
+    let messages = vec![
+        json!({ "role": "system", "content": system_prompt }),
+        json!({ "role": "user", "content": query }),
+    ];
+
+    // Only allow read/search tools in explorer mode
+    let allowed_tools = vec!["fs_glob", "fs_read", "fs_grep", "list_directory", "search_file_content"];
+
+    let all_tools = tools::get_available_tool_definitions();
+    let filtered_tools: Vec<serde_json::Value> = all_tools
+        .into_iter()
+        .filter(|t| {
+            t.get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+                .map(|name| allowed_tools.contains(&name))
+                .unwrap_or(false)
+        })
+        .map(|t| serde_json::json!(t))
+        .collect();
+
+    let spinner = create_spinner("Exploring repository...");
+    let response = client
+        .chat_completion_with_history(&messages, 0.2, 4096, model, Some(filtered_tools), None)
+        .await?;
+    spinner.finish_and_clear();
+
+    if let Some(content) = response.message.content {
+        let text = extract_text_content(&content);
+        // Try to pretty-print JSON if the model returned valid evidence
+        if let Ok(json_val) = serde_json::from_str::<Value>(&text) {
+            println!("{}", serde_json::to_string_pretty(&json_val)?);
+        } else {
+            println!("{}", text);
+        }
+    }
+
+    Ok(())
 }

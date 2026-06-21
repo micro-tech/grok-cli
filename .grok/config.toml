@@ -1,4 +1,7 @@
-default_model = "grok-4.3"
+
+
+default_model = "grok-build-0.1"
+# default_model = "grok-4.3"
 default_temperature = 0.7
 # Output token budget (not the context window).
 # grok-4.3 supports up to 32 768 output tokens; 16 384 is a safe default.
@@ -221,7 +224,7 @@ bind_host = "127.0.0.1"
 protocol_version = "2024-11-05"
 dev_mode = false
 # max_tool_loop_iterations = 25   # set back to 25 had a crash wit it @100
-max_tool_loop_iterations = 25
+max_tool_loop_iterations = 30
 # Disable the session/request_permission gate by default.
 # Zed and most ACP clients do not yet implement the permission-dialog protocol,
 # so leaving this true causes every tool call to be silently blocked.

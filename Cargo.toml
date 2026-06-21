@@ -1,6 +1,6 @@
 [package]
 name = "grok-cli"
-version = "0.2.5-pre"
+version = "0.2.4"
 edition = "2024"
 authors = ["john mcconnell john.microtech@gmail.com"]
 description = "A CLI tool for interacting with Grok AI via X API"
@@ -39,7 +39,7 @@ clap = { version = "4.6.1", features = ["derive", "env"] }
 # Error handling
 anyhow = "1.0"
 thiserror = "2.0"
-agent-client-protocol = "0.14.0"
+agent-client-protocol = "0.15.0"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Environment variable loading
 dotenvy = "0.15"

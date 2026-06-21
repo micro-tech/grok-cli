@@ -26,7 +26,7 @@
 
 use super::protocol::{AvailableCommand, AvailableCommandInput, UnstructuredCommandInput};
 use crate::config::ThinkingMode;
-use crate::acp::anyhow;
+use anyhow::anyhow;
 
 // ---------------------------------------------------------------------------
 // Command enum

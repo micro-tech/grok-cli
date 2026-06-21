@@ -41,7 +41,7 @@ use serde_json::Value;
 //   PromptRequest — depends on SessionId and ContentBlock. SKIP.
 //   PromptResponse — depends on StopReason. SKIP.
 // ---------------------------------------------------------------------------
-pub use agent_client_protocol::schema::{
+pub use agent_client_protocol::schema::v1::{
     // Group 2 — Slash-command advertisement types
     AvailableCommand,
     AvailableCommandInput,
@@ -649,6 +649,10 @@ pub enum SessionUpdate {
     /// Context / token usage report after each turn.
     #[serde(rename = "context_usage_update")]
     ContextUsageUpdate(ContextUsageUpdate),
+
+    /// Raw/custom status or action-bar payloads (Task 164).
+    #[serde(rename = "raw")]
+    Raw(serde_json::Value),
 }
 
 // `ToolKind` and `ToolCallStatus` are now re-exported from agent_client_protocol::schema

@@ -9,6 +9,7 @@ use tracing::{debug, info, warn};
 
 use crate::bayes::BayesianEngine;
 use crate::engine::state::{EngineState, Hypothesis, ReasoningEngineState, StepAction};
+use crate::router::AppRouter;
 
 // ── Plan ─────────────────────────────────────────────────────────────────────
 
@@ -20,6 +21,8 @@ use crate::engine::state::{EngineState, Hypothesis, ReasoningEngineState, StepAc
 #[derive(Debug)]
 pub struct Plan {
     state: ReasoningEngineState,
+    /// Optional compact repository evidence collected by the Explorer agent.
+    pub repo_evidence: Option<serde_json::Value>,
 }
 
 impl Plan {
@@ -83,6 +86,17 @@ impl Planner {
     /// Returns a [`Plan`] when the engine reaches [`EngineState::CommitPlan`],
     /// or an error if the engine fails or cannot progress past goal analysis.
     pub async fn plan(&mut self, user_input: &str) -> Result<Plan> {
+        self.plan_with_explorer(user_input, None, "grok-4").await
+    }
+
+    /// Same as [`plan`] but optionally runs the Explorer agent first when
+    /// the Bayesian intent suggests a code-edit/refactor task.
+    pub async fn plan_with_explorer(
+        &mut self,
+        user_input: &str,
+        client: Option<&AppRouter>,
+        model: &str,
+    ) -> Result<Plan> {
         // Update Bayesian beliefs from the user's text.
         self.bayes.update_from_text(user_input);
 
@@ -92,6 +106,19 @@ impl Planner {
             .unwrap_or_else(|| "intent_question".to_string());
 
         debug!(intent = %intent, "Planner: Bayesian intent resolved");
+
+        // ── Optional Explorer run (Task 161/162) ─────────────────────────────
+        let mut repo_evidence = None;
+        if intent.contains("edit") || intent.contains("refactor") || intent.contains("fix") {
+            if let Some(client) = client {
+                if let Ok(evidence) =
+                    crate::agent::explorer::run_explorer_mode(client, user_input, model).await
+                {
+                    repo_evidence = Some(serde_json::to_value(evidence)?);
+                    debug!("Planner: Explorer evidence collected");
+                }
+            }
+        }
 
         // Boot the FSM.
         // ReasoningEngineState::new() takes no args; set goal with builder.
@@ -138,7 +165,10 @@ impl Planner {
         }
 
         // Self-correction gate: if confidence is too low, try once more.
-        let plan = Plan { state: engine };
+        let plan = Plan {
+            state: engine,
+            repo_evidence,
+        };
         if plan.heuristic_confidence() < 0.3 {
             warn!(
                 confidence = plan.heuristic_confidence(),

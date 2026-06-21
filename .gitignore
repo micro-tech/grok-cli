@@ -123,3 +123,4 @@ src/bin/home_server.md
 Doc/docs
 Doc/ai-generated-summaries
 nul
+.grok/config.toml
