@@ -41,7 +41,7 @@ User starts session
 │  initialize_session  │
 └──────────────────────┘
         │
-        ├─► Load Hierarchical Config (.grok/config.toml + system)
+        ├─► Load Hierarchical Config (project .grok/config.toml → system ~/.grok-cli/config.toml → defaults)
         │
         ├─► Load Session DNA (session_dna.json)
         │       └── Inject tone, verbosity, risk_tolerance, coding_style

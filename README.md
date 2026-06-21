@@ -11,7 +11,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 ## ✨ Features
 
 - **Interactive Terminal UI** — Gemini-style rich prompts, adaptive ASCII art, progress indicators, and color output
-- **Session Persistence** — Save, load, list, and fork conversations (`/save`, `/load`, `/list`)
+- **Session Persistence** — Save, load, list, and fork conversations (`/save`, `/load`, `/list`). Sessions stored under `~/.grok-cli/sessions/` (system) with project chat logs preferring `.grok/logs/chat_sessions/`
 - **Session DNA** — Persistent personality & behavior config (`session_dna.json`) injected into system prompts. Now a **living system** with:
   - Full LLM injection
   - Bayesian router influence
@@ -19,7 +19,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
   - **DNA-Driven Intelligence Layer** (Task 150): Skill arbitration 2.0, conditioned planning, and automatic mode switching (`coder`/`research`/`shell`/`creative`) based on DNA signals.
 - **Skill Auto-Activation** — Skills activate automatically based on project context and keywords
 - **Task Graph Engine** — Run complex multi-step workflows with dependency resolution
-- **Hierarchical Configuration** — Project-local overrides via `.grok/config.toml`
+- **Hierarchical Configuration** — Full priority: Project `.grok/config.toml` → System `~/.grok-cli/config.toml` → hardcoded defaults. Applies to model, ACP, logging, tools, etc. Chat logs prefer project `.grok/logs/`, error logs stay global.
 - **Context Discovery** — Merges `.zed/rules`, `.claude.md`, `GEMINI.md`, and more
 - **External Access Controls** — Securely read files outside the project with approval + audit logging
 - **Chat Logging & Replay** — Automatic logging with search and history replay

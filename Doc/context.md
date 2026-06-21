@@ -571,7 +571,8 @@ By following these best practices, you can write high-quality Rust code that is 
 - Save conversations with `/save session-name`
 - Load conversations with `/load session-name`
 - List saved sessions with `/list`
-- Sessions saved to `~/.grok/sessions/`
+- System sessions / archives: `~/.grok-cli/sessions/`
+- Project chat logs: `.grok/logs/chat_sessions/` (when `.grok/` exists in project)
 
 ### Configuration Hierarchy
 

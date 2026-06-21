@@ -1,3 +1,13 @@
+## Storage Layout (current)
+
+- System (cross-project): `~/.grok-cli/`
+  - `sessions/<id>/` — persistence, archives, episodes
+  - `memory.json`, `bayes_profile.json`, etc.
+- Project-local (when `.grok/` exists):
+  - `.grok/config.toml`, `.grok/.env`
+  - `.grok/logs/chat_sessions/` — chat transcripts (preferred)
+  - `.grok/hooks/`, `knowledge/`, etc.
+
 ## Safety Hooks Data Flow (Tasks 154–160)
 
 ```

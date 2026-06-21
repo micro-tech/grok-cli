@@ -127,7 +127,7 @@ pub fn generate_pipeline_dot(config: Option<&Config>) -> String {
          \x20 ];\n\
          \n\
          \x20 ContextArchive [\n\
-         \x20   label=\"Context Archive\\n~/.grok/sessions/{{id}}/archives/\\n\
+         \x20   label=\"Context Archive\\n~/.grok-cli/sessions/{{id}}/archives/\\n\
                 -----------------\\n\
                 AI summarises oldest chunk\\n\
                 Raw messages preserved\\n\
@@ -166,8 +166,8 @@ pub fn generate_pipeline_dot(config: Option<&Config>) -> String {
          \x20 MemorySystem [\n\
          \x20   label=\"Memory Subsystem\\n-----------------\\n\
                 Short-term  (session buffer)\\n\
-                Long-term   (~/.grok/memory.json)\\n\
-                Episodic    (~/.grok/sessions/)\\n\
+                Long-term   (~/.grok-cli/memory.json)\\n\
+                Episodic    (~/.grok-cli/sessions/)\\n\
                 Working     (project context)\\n\
                 Knowledge   (knowledge/)\",\n\
          \x20   shape=box,\n\

@@ -9,6 +9,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [0.2.5] — 2025-05-XX
+
+### Storage Layout Clarification & Chat Log Scoping (User Request)
+
+- **Chat session logs** are now project-scoped by default:
+  - Preferred: `<project>/.grok/logs/chat_sessions/`
+  - Fallback: `~/.grok/logs/chat_sessions/` (only if no project `.grok/` exists)
+- **Error / application logs** remain system-only: `~/.grok-cli/logs/`
+- **Memory, session persistence, archives, Bayesian profiles, etc.** remain under `~/.grok-cli/` (cross-project value)
+- Updated `/diagnostics` output to reflect the new canonical paths (`~/.grok-cli/sessions/...`)
+- `resolve_chat_log_dir()` now walks upward from CWD looking for a `.grok/` directory before falling back to home.
+- Documentation (README, QUICK_REFERENCE, dataflow maps, visualizer) updated for the new layout.
+
+This gives users the best of both worlds: project-local chat history when working inside a repo, while keeping global state (memory, long-term sessions) in one place.
+
 ## [0.2.3] — 2025-01-15
 
 ### Commit Message Generator (Task 161)

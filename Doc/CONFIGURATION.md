@@ -17,7 +17,7 @@ Different Grok models expose different context windows.  Grok-CLI automatically 
 
 The "soft budget" trims the oldest conversation messages before each API call so the request never exceeds the model's hard limit.  It leaves headroom for the model response and tool definitions.
 
-To override either budget, edit `~/.grok/config.toml` (or your project's `.grok/config.toml`) under the `[acp]` section:
+To override either budget, edit `~/.grok-cli/config.toml` (system) or your project's `.grok/config.toml` under the `[acp]` section:
 
 ```toml
 [acp]
@@ -161,12 +161,12 @@ your-project/
 - Different timeout settings for specific projects
 - Project-specific logging or debugging
 
-### System Configuration: `~/.grok/.env`
+### System Configuration: `~/.grok-cli/.env`
 
 Place this in your home directory for user-wide defaults:
 
-**Linux/macOS:** `~/.grok/.env`
-**Windows:** `%USERPROFILE%\.grok\.env` (e.g., `C:\Users\YourName\.grok\.env`)
+**Linux/macOS:** `~/.grok-cli/.env`
+**Windows:** `%APPDATA%\grok-cli\.env` (or `%USERPROFILE%\.grok-cli\.env`)
 
 **When to use:**
 - Settings shared across all your projects
@@ -277,7 +277,9 @@ RUST_LOG=grok_cli=debug
 # Enable chat session logging (saves conversations to disk)
 GROK_CHAT_LOGGING_ENABLED=true
 
-# Directory for chat logs (default: ~/.grok/logs/chat_sessions)
+# Directory for chat logs
+# Project-scoped (preferred): <project>/.grok/logs/chat_sessions/
+# System fallback: ~/.grok/logs/chat_sessions/ (only if no project .grok/ exists)
 GROK_CHAT_LOG_DIR=/path/to/chat/logs
 
 # Maximum log file size in MB before rotation
@@ -291,8 +293,8 @@ GROK_CHAT_LOG_INCLUDE_SYSTEM=true
 ```
 
 Chat logs are saved in both JSON and human-readable text formats:
-- **JSON format**: `~/.grok/logs/chat_sessions/<session-id>.json` - Machine-readable, full metadata
-- **Text format**: `~/.grok/logs/chat_sessions/<session-id>.txt` - Human-readable conversation transcript
+- **JSON format**: `<project>/.grok/logs/chat_sessions/<id>.json` (preferred) or `~/.grok/logs/chat_sessions/<id>.json`
+- **Text format**: same locations with `.txt` extension
 
 View chat history with:
 ```bash

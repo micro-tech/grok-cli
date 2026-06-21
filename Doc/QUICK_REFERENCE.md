@@ -157,8 +157,9 @@ Example: `/load debugging-auth`
 ```
 
 ### Session Storage Location
-- **Windows**: `C:\Users\<username>\.grok\sessions\`
-- **Linux/macOS**: `~/.grok/sessions/`
+- **System sessions** (persistence, archives, episodes): `~/.grok-cli/sessions/` (or `%APPDATA%\grok-cli\sessions\` on Windows)
+- **Project chat logs**: prefer `<project>/.grok/logs/chat_sessions/` when a `.grok/` folder exists in the project tree; otherwise falls back to `~/.grok/logs/chat_sessions/`
+- Error and application logs stay in the system directory (`~/.grok-cli/logs/`)
 
 ---
 
@@ -449,7 +450,7 @@ grok-cli interactive
 
 ### Session Won't Save
 - Check disk space
-- Verify `~/.grok/sessions/` directory exists and is writable
+- Verify `~/.grok-cli/sessions/` directory exists and is writable (system sessions)
 - Check for special characters in session name
 
 ### Context File Not Loading

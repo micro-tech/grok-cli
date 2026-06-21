@@ -915,7 +915,7 @@ impl Default for BayesianConfig {
 /// Default prior weights (starting beliefs before any input is seen).
 ///
 /// These are used only when no saved profile exists at
-/// `~/.grok/bayes_profile.json`.  Once the engine learns from the user's
+/// `~/.grok-cli/bayes_profile.json`.  Once the engine learns from the user's
 /// tool usage, the learned values take over.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BayesianPriorsConfig {
@@ -1364,7 +1364,7 @@ pub enum Scope {
 pub enum ConfigSource {
     /// Built-in defaults only
     Default,
-    /// Loaded from system config (~/.grok/config.toml)
+    /// Loaded from system config (~/.grok-cli/config.toml)
     System(PathBuf),
     /// Loaded from project config (.grok/config.toml)
     Project(PathBuf),
