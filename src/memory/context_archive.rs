@@ -100,7 +100,7 @@ impl ContextChunk {
 
 /// Manages the on-disk archive of compressed conversation chunks for a session.
 ///
-/// Chunks are stored under `~/.grok/sessions/{session_id}/archives/`.
+/// Chunks are stored under `~/.grok-cli/sessions/{session_id}/archives/` (system).
 /// All writes are atomic (write to `.tmp`, then `rename`) so a Starlink drop
 /// cannot corrupt an existing chunk or the index.
 #[derive(Debug)]
@@ -115,7 +115,7 @@ impl ContextArchive {
     // ── Constructors ──────────────────────────────────────────────────────────
 
     /// Open (or create) the archive for a session using the default
-    /// `~/.grok/sessions/{session_id}/archives/` location.
+    /// `~/.grok-cli/sessions/{session_id}/archives/` location (system).
     pub fn for_session(session_id: &str) -> Result<Self> {
         let home = dirs::home_dir()
             .ok_or_else(|| anyhow!("Cannot determine home directory for context archive"))?;

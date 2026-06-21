@@ -785,7 +785,7 @@ pub fn format_diagnostics_text() -> String {
     // Context compression
     lines.push("### 📦 Context Compression".to_string());
     lines.push("- Automatically summarises old messages when context grows large".to_string());
-    lines.push("- Archives raw messages to `~/.grok/sessions/<id>/`".to_string());
+    lines.push("- Archives raw messages to `~/.grok-cli/sessions/<id>/archives/`".to_string());
     lines.push("- Commands: `/archives`, `/recall N`".to_string());
     lines.push(String::new());
 
@@ -803,7 +803,7 @@ pub fn format_diagnostics_text() -> String {
 
     // Session persistence
     lines.push("### 💾 Session Persistence".to_string());
-    lines.push("- Sessions saved to `~/.grok/sessions/<id>.json` after each turn".to_string());
+    lines.push("- Sessions saved to `~/.grok-cli/sessions/<id>.json` after each turn (system)".to_string());
     lines.push("- Restored automatically on reconnect (if client re-uses session ID)".to_string());
     lines.push(String::new());
 

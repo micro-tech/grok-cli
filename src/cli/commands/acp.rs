@@ -140,19 +140,10 @@ async fn start_acp_stdio(
     let stdin = tokio::io::stdin();
     let stdout = tokio::io::stdout();
 
-    // Initialise the global chat logger so every session/prompt/response is
-    // persisted to ~/.grok/logs/chat_sessions/.  Without this call every
-    // chat_logger::log_user / log_assistant call silently does nothing because
-    // the global GLOBAL_LOGGER mutex is never populated.
-    // Use the home directory for chat logs — more reliable than CWD which may
-    // point to the Grok binary directory rather than the user's workspace.
-    let chat_log_dir = dirs::home_dir()
-        .unwrap_or_else(|| {
-            std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-        })
-        .join(".grok")
-        .join("logs")
-        .join("chat_sessions");
+    // Initialise the global chat logger.
+    // Chat logs are project-scoped: we prefer .grok/logs/chat_sessions/ in the
+    // current project tree. If none exists we fall back to the global location.
+    let chat_log_dir = resolve_chat_log_dir();
     let chat_config = chat_logger::ChatLoggerConfig {
         enabled: true,
         log_dir: chat_log_dir,
@@ -250,11 +241,8 @@ async fn handle_acp_client(
     // Initialise the global chat logger (TCP server mode).
     // Only the first call takes effect because OnceCell / Mutex prevents
     // double-initialisation; subsequent clients reuse the same logger.
-    let chat_log_dir = dirs::home_dir()
-        .unwrap_or_else(|| std::path::PathBuf::from("."))
-        .join(".grok")
-        .join("logs")
-        .join("chat_sessions");
+    // Chat logs are project-scoped.
+    let chat_log_dir = resolve_chat_log_dir();
     let chat_config = chat_logger::ChatLoggerConfig {
         enabled: true,
         log_dir: chat_log_dir,
@@ -1232,6 +1220,38 @@ fn find_workspace_root_from_path(file_path: &Path) -> PathBuf {
     }
     // Fallback: trust the starting directory (immediate parent of the file)
     start
+}
+
+/// Resolve the directory where chat session logs should be written.
+///
+/// Priority (as per project policy):
+/// 1. Project-local `.grok/logs/chat_sessions/` (walk up from CWD)
+/// 2. System/global `~/.grok-cli/logs/chat_sessions/`
+///
+/// Chat logs are project-scoped. Error logs and cross-project memory use the
+/// system `~/.grok-cli/` location.
+fn resolve_chat_log_dir() -> PathBuf {
+    // Try to find a project-local .grok directory
+    if let Ok(mut dir) = std::env::current_dir() {
+        loop {
+            let candidate = dir.join(".grok").join("logs").join("chat_sessions");
+            if candidate.exists() || dir.join(".grok").exists() {
+                return candidate;
+            }
+            if let Some(parent) = dir.parent() {
+                dir = parent.to_path_buf();
+            } else {
+                break;
+            }
+        }
+    }
+
+    // Fall back to system location (~/.grok-cli)
+    dirs::home_dir()
+        .unwrap_or_else(|| std::path::PathBuf::from("."))
+        .join(".grok-cli")
+        .join("logs")
+        .join("chat_sessions")
 }
 
 /// Extract the workspace root from a resource URI (file:// or plain path) and

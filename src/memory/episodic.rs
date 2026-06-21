@@ -7,7 +7,7 @@
 //! # Design
 //!
 //! ```text
-//!  ~/.grok/
+//!  ~/.grok-cli/ (system) / .grok/ (project)
 //!  └── sessions/
 //!      ├── abc123/
 //!      │   ├── episode.json      ← EpisodeSummary (metadata + key facts)
@@ -45,12 +45,12 @@ const TRANSCRIPT_FILE: &str = "transcript.json";
 
 /// Manages the on-disk archive of completed conversation sessions.
 ///
-/// Each session occupies its own subdirectory under `~/.grok/sessions/`.
+/// Each session occupies its own subdirectory under `~/.grok-cli/sessions/` (system).
 /// [`EpisodicMemory`] keeps a lightweight in-memory index of known episodes
 /// so repeated calls to [`list`] do not re-scan the filesystem every time.
 #[derive(Debug)]
 pub struct EpisodicMemory {
-    /// Root directory: `~/.grok/sessions/`
+    /// Root directory: `~/.grok-cli/sessions/` (system)
     sessions_dir: PathBuf,
     /// Cached episode index — loaded lazily on first access.
     index: Option<Vec<EpisodeSummary>>,
@@ -60,7 +60,7 @@ impl EpisodicMemory {
     // ── Constructors ──────────────────────────────────────────────────────────
 
     /// Open (or create) the episodic memory store backed by the default
-    /// `~/.grok/sessions/` directory.
+    /// `~/.grok-cli/sessions/` directory (system).
     ///
     /// Returns an error only if the home directory cannot be determined;
     /// the sessions directory itself is created on demand.
@@ -68,7 +68,7 @@ impl EpisodicMemory {
         let home = dirs::home_dir()
             .ok_or_else(|| anyhow!("Cannot determine home directory for episodic memory"))?;
         Ok(Self {
-            sessions_dir: home.join(".grok").join("sessions"),
+            sessions_dir: crate::config::grok_config_dir().join("sessions"),
             index: None,
         })
     }

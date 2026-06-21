@@ -10,8 +10,8 @@
 //! |---|---|---|---|
 //! | **Working** | [`working`] | Session-scoped | Project context files |
 //! | **Short-term** | [`short_term`] | In-memory only | — |
-//! | **Long-term** | [`long_term`] | Permanent | `~/.grok/memory.json` |
-//! | **Episodic** | [`episodic`] | Permanent | `~/.grok/sessions/` |
+//! | **Long-term** | [`long_term`] | Permanent | `~/.grok-cli/memory.json` |
+//! | **Episodic** | [`episodic`] | Permanent | `~/.grok-cli/sessions/` |
 //!
 //! ## Quick start
 //!

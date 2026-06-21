@@ -275,6 +275,10 @@ impl Default for SessionConfig {
 
 impl GrokAcpAgent {
     /// Create a new Grok ACP agent
+    ///
+    /// The `default_model` parameter is an explicit override (e.g. from `--model`).
+    /// If `None`, the agent will fall back to the hierarchically loaded config
+    /// (project → system → hardcoded default).
     pub async fn new(config: Config, default_model: Option<String>) -> Result<Self> {
         // NOTE: SecurityManager and HookManager are now created lazily
         // via get_security() / get_hook_manager() on first use.
@@ -293,6 +297,11 @@ impl GrokAcpAgent {
     /// Return agent capabilities, computing them lazily on first access.
     /// This avoids the expensive tool schema construction during Zed ACP startup.
     pub fn capabilities(&self) -> &GrokAgentCapabilities {
+        // We can't easily pass &self into the OnceLock closure, so we store
+        // the resolved default model on the agent and use it when building
+        // capabilities. For now we just call the static version — the model
+        // list is mostly used for display and the real model comes from the
+        // session config anyway.
         self.capabilities.get_or_init(Self::create_capabilities)
     }
 
@@ -398,16 +407,22 @@ impl GrokAcpAgent {
         >,
     ) -> Result<()> {
         let mut session_config = config.unwrap_or_else(|| {
-            // Pull thinking_mode (and other future ACP defaults) from the
-            // hierarchically-loaded agent config so that project .grok/config.toml
-            // and ~/.grok-cli/config.toml are respected.
+            // Build SessionConfig from the hierarchically-loaded agent config.
+            // Priority: project .grok/config.toml → system ~/.grok-cli/config.toml → hardcoded
             SessionConfig {
+                model: if !self.config.default_model.is_empty() {
+                    self.config.default_model.clone()
+                } else {
+                    SessionConfig::default().model
+                },
+                temperature: self.config.default_temperature,
+                max_tokens: self.config.default_max_tokens,
                 thinking_mode: self.config.acp.thinking_mode.clone(),
-                ..SessionConfig::default()
+                system_prompt: SessionConfig::default().system_prompt,
             }
         });
 
-        // Apply default model override if present and config matches default
+        // Highest priority override: explicit --model flag
         if let Some(model) = &self.default_model {
             session_config.model = model.clone();
         }
@@ -2109,7 +2124,7 @@ impl GrokAcpAgent {
         Some(crate::config::grok_config_dir().join("sessions"))
     }
 
-    /// Persist session state to ~/.grok/sessions/<id>.json
+    /// Persist session state to ~/.grok-cli/sessions/<id>.json (system location).
     /// Called automatically after each successful prompt response.
     /// Retries up to 3 times on I/O errors (Starlink-safe).
     pub async fn save_session_to_disk(&self, session_id: &SessionId) -> Result<()> {
@@ -2176,7 +2191,7 @@ impl GrokAcpAgent {
         Ok(())
     }
 
-    /// Load a persisted session from ~/.grok/sessions/<id>.json.
+    /// Load a persisted session from ~/.grok-cli/sessions/<id>.json (system location).
     /// Returns None if no saved state exists or if the file cannot be parsed.
     pub async fn load_session_from_disk(&self, session_id: &str) -> Option<PersistedSession> {
         let dir = Self::sessions_dir()?;
