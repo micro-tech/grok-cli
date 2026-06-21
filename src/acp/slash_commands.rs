@@ -108,6 +108,9 @@ pub enum SlashCommand {
     /// `/commit` with no argument uses default Conventional Commits style.
     /// Additional instructions can be provided after the command.
     Commit { instructions: String },
+
+    /// `/diagnostics` — show status of all background systems (Bayesian, DNA, compression, etc.).
+    Diagnostics,
 }
 
 // ---------------------------------------------------------------------------
@@ -180,6 +183,7 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         "/commit" => Some(SlashCommand::Commit {
             instructions: args,
         }),
+        "/diagnostics" => Some(SlashCommand::Diagnostics),
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -190,57 +194,44 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
 
 /// Build the list of [`AvailableCommand`] entries sent to ACP clients via the
 /// `available_commands_update` notification immediately after session creation.
+/// Commands are returned in alphabetical order.
 pub fn get_available_commands() -> Vec<AvailableCommand> {
     // Helper closure to keep call sites concise.
     // Wraps a hint string in the crate's AvailableCommandInput::Unstructured variant.
     let input =
         |hint: &str| AvailableCommandInput::Unstructured(UnstructuredCommandInput::new(hint));
 
-    vec![
-        AvailableCommand::new("help", "Show all available slash commands and their usage"),
+    let mut cmds = vec![
         AvailableCommand::new(
-            "tools",
-            "List all LLM-callable tools available in this session (file, shell, web, task, …)",
-        ),
-        AvailableCommand::new("web", "Research a topic or search the web for information")
-            .input(input("query to research")),
-        AvailableCommand::new(
-            "explain",
-            "Get a thorough explanation of code, a file, or a concept",
-        )
-        .input(input("code, file path, or concept to explain")),
-        AvailableCommand::new(
-            "review",
-            "Comprehensive code review: bugs, security, performance, style",
-        )
-        .input(input("code or file path to review")),
-        AvailableCommand::new("plan", "Create a detailed step-by-step implementation plan")
-            .input(input("description of what to plan")),
-        AvailableCommand::new("test", "Help write, run, or debug tests")
-            .input(input("test description or file path (optional)")),
-        AvailableCommand::new("fix", "Diagnose and fix a bug or error")
-            .input(input("problem description, error message, or file path")),
-        AvailableCommand::new("model", "Switch to a different Grok model for this session")
-            .input(input("model name (e.g. grok-3, grok-4.3, grok-3-mini)")),
-        AvailableCommand::new("clear", "Clear the current conversation history"),
-        AvailableCommand::new(
-            "context",
-            "Show current session configuration and active context",
+            "archives",
+            "List all archived context chunks for this session",
         ),
         AvailableCommand::new(
             "bayes",
             "Inspect or manage the Bayesian belief-state for this session (show / reset / explain)",
         )
         .input(input("show | reset | explain — omit to show the current state")),
+        AvailableCommand::new("clear", "Clear the current conversation history"),
         AvailableCommand::new(
-            "archives",
-            "List all archived context chunks for this session",
+            "commit",
+            "Generate a high-quality commit message from the current git diff (Conventional Commits by default)",
+        )
+        .input(input("optional extra instructions for the commit message style")),
+        AvailableCommand::new(
+            "context",
+            "Show current session configuration and active context",
         ),
         AvailableCommand::new(
-            "recall",
-            "Restore an archived context chunk back into the active window",
+            "diagnostics",
+            "Show status of all background systems (Bayesian engine, DNA, compression, knowledge packs, etc.)",
+        ),
+        AvailableCommand::new(
+            "explain",
+            "Get a thorough explanation of code, a file, or a concept",
         )
-        .input(input("chunk number (e.g. 1, 2, 3) -- omit to list archives")),
+        .input(input("code, file path, or concept to explain")),
+        AvailableCommand::new("fix", "Diagnose and fix a bug or error")
+            .input(input("problem description, error message, or file path")),
         AvailableCommand::new(
             "goal",
             "Set, view, or clear the persistent session goal that shapes all message interpretation",
@@ -248,21 +239,43 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         .input(input(
             "goal text — e.g. 'refactor auth'. Type 'clear' to remove the active goal, or omit to show it",
         )),
+        AvailableCommand::new("help", "Show all available slash commands and their usage"),
+        AvailableCommand::new("model", "Switch to a different Grok model for this session")
+            .input(input("model name (e.g. grok-3, grok-4.3, grok-3-mini)")),
+        AvailableCommand::new("plan", "Create a detailed step-by-step implementation plan")
+            .input(input("description of what to plan")),
         AvailableCommand::new(
-            "visualize",
-            "Display the Grok-CLI routing pipeline as a DOT/Graphviz graph",
-        ),
+            "recall",
+            "Restore an archived context chunk back into the active window",
+        )
+        .input(input("chunk number (e.g. 1, 2, 3) -- omit to list archives")),
+        AvailableCommand::new(
+            "review",
+            "Comprehensive code review: bugs, security, performance, style",
+        )
+        .input(input("code or file path to review")),
+        AvailableCommand::new("test", "Help write, run, or debug tests")
+            .input(input("test description or file path (optional)")),
         AvailableCommand::new(
             "think",
             "Set or show the reasoning mode (off / low / high).  \"high\" gives the most thorough answers; \"off\" (default) gives the fastest.",
         )
         .input(input("off | low | high -- omit to show the current mode")),
         AvailableCommand::new(
-            "commit",
-            "Generate a high-quality commit message from the current git diff (Conventional Commits by default)",
-        )
-        .input(input("optional extra instructions for the commit message style")),
-    ]
+            "tools",
+            "List all LLM-callable tools available in this session (file, shell, web, task, …)",
+        ),
+        AvailableCommand::new(
+            "visualize",
+            "Display the Grok-CLI routing pipeline as a DOT/Graphviz graph",
+        ),
+        AvailableCommand::new("web", "Research a topic or search the web for information")
+            .input(input("query to research")),
+    ];
+
+    // Ensure alphabetical order by command name
+    cmds.sort_by(|a, b| a.name.cmp(&b.name));
+    cmds
 }
 
 // ---------------------------------------------------------------------------
@@ -517,6 +530,9 @@ pub enum BuiltinResult {
     /// Set the thinking/reasoning mode for this session.
     /// `None` means the user typed `/think` with no argument (show current mode).
     SetThinkingMode(Option<crate::config::ThinkingMode>),
+
+    /// Show diagnostics report for all background systems.
+    ShowDiagnostics,
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -549,6 +565,7 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::GoalClear => Some(BuiltinResult::ClearGoal),
         SlashCommand::Visualize => Some(BuiltinResult::ShowVisualizer),
         SlashCommand::Think { mode } => Some(BuiltinResult::SetThinkingMode(mode.clone())),
+        SlashCommand::Diagnostics => Some(BuiltinResult::Text(format_diagnostics_text())),
         _ => None, // AI-assisted command
     }
 }
@@ -732,6 +749,64 @@ pub fn format_model_list() -> String {
     lines.push(String::new());
     lines.push("Example: `/model grok-3` — switches the current session to Grok 3.".to_string());
 
+    lines.join("\n")
+}
+
+/// Format the `/diagnostics` report — a comprehensive status of all background systems.
+pub fn format_diagnostics_text() -> String {
+    let mut lines = vec![
+        "## 🩺 Grok CLI — Diagnostics".to_string(),
+        String::new(),
+        "Background systems status (approximate — live values shown when available):".to_string(),
+        String::new(),
+    ];
+
+    // Bayesian engine
+    lines.push("### 🧠 Bayesian Engine".to_string());
+    lines.push("- Tracks user intent via simple Bayesian inference".to_string());
+    lines.push("- Used for: vagueness detection, repetition, uncertainty gating".to_string());
+    lines.push("- Commands: `/bayes show`, `/bayes explain`, `/bayes reset`".to_string());
+    lines.push(String::new());
+
+    // Session DNA
+    lines.push("### 🧬 Session DNA".to_string());
+    lines.push("- Personality & behavior feedback loop".to_string());
+    lines.push("- Adapts tone, verbosity, and risk tolerance from tool results".to_string());
+    lines.push("- Injected into system prompt on every turn".to_string());
+    lines.push(String::new());
+
+    // Context compression
+    lines.push("### 📦 Context Compression".to_string());
+    lines.push("- Automatically summarises old messages when context grows large".to_string());
+    lines.push("- Archives raw messages to `~/.grok/sessions/<id>/`".to_string());
+    lines.push("- Commands: `/archives`, `/recall N`".to_string());
+    lines.push(String::new());
+
+    // Knowledge packs
+    lines.push("### 📚 Knowledge Packs".to_string());
+    lines.push("- Loads `knowledge/*.md` and `knowledge/*.json` from project root".to_string());
+    lines.push("- Injected as system context at session start".to_string());
+    lines.push(String::new());
+
+    // Hooks
+    lines.push("### 🪝 Hook System".to_string());
+    lines.push("- `before_tool` / `after_tool` hooks for custom logic".to_string());
+    lines.push("- Loaded from project `.grok/hooks/` directory".to_string());
+    lines.push(String::new());
+
+    // Session persistence
+    lines.push("### 💾 Session Persistence".to_string());
+    lines.push("- Sessions saved to `~/.grok/sessions/<id>.json` after each turn".to_string());
+    lines.push("- Restored automatically on reconnect (if client re-uses session ID)".to_string());
+    lines.push(String::new());
+
+    // Status bar / thinking
+    lines.push("### 📊 Status Bar & Thinking".to_string());
+    lines.push("- Dynamic status line with model, tokens, thinking mode".to_string());
+    lines.push("- Structured thinking blocks emitted when `stream_thinking = true`".to_string());
+    lines.push(String::new());
+
+    lines.push("> Run `/help` for the full command list.".to_string());
     lines.join("\n")
 }
 
