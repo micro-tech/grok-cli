@@ -158,6 +158,16 @@ impl Backend for GrokBackend {
         let temperature = req.temperature.unwrap_or(DEFAULT_TEMPERATURE);
         let max_tokens = req.max_tokens.unwrap_or(DEFAULT_MAX_TOKENS);
 
+        // Only pass reasoning_effort for models that actually support it
+        let reasoning_effort: Option<&str> = if req.model.contains("reasoning")
+            || req.model.starts_with("grok-4.20")
+            || req.model.starts_with("grok-4.3")
+        {
+            req.reasoning_effort.as_deref()
+        } else {
+            None
+        };
+
         // ── Retry loop ───────────────────────────────────────────────────────
         let mut last_err = RouterError::Unknown;
 
@@ -182,7 +192,7 @@ impl Backend for GrokBackend {
                     max_tokens,
                     &req.model,
                     tools.clone(),
-                    req.reasoning_effort.as_deref(),
+                    reasoning_effort,
                 )
                 .await;
 

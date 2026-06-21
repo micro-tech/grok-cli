@@ -5,7 +5,7 @@
 //! configuration files, and default values.
 
 use anyhow::{Result, anyhow};
-use dirs::config_dir;
+
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;

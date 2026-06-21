@@ -531,6 +531,11 @@ fn handle_interactive_command(
                         slash_commands::BuiltinResult::ShowDiagnostics => {
                             println!("{}", slash_commands::format_diagnostics_text());
                         }
+                        slash_commands::BuiltinResult::ShowCurrentModel => {
+                            // In pure CLI mode we don't have a persistent session model,
+                            // so we just note that the user can pass --model on the command line.
+                            println!("🧠 Current model: (use `--model <name>` when starting the CLI session)");
+                        }
                     }
                     return Ok(Some(CommandResult::Continue));
                 }
