@@ -507,8 +507,7 @@ impl GrokAcpAgent {
             let _ = sender.send(update);
             info!("Sent {} slash commands to ACP client", commands.len());
 
-            // Emit initial beautiful status bar on session start (Task 164)
-            // init_model / init_thinking were captured before session_config moved.
+            // Emit initial status bar on session start (Task 164)
             let initial_state = crate::acp::status_bar::StatusBarState {
                 model: init_model.clone(),
                 thinking_mode: init_thinking,
@@ -521,8 +520,7 @@ impl GrokAcpAgent {
                 context_percent: 0.0,
                 is_generating: false,
             };
-            let line = crate::acp::status_bar::build_status_line(&initial_state);
-            let _ = sender.send(crate::acp::protocol::SessionUpdate::Raw(line));
+            self.emit_status_bar(Some(&sender), &initial_state);
         }
 
         info!("Initialized new ACP session: {}", session_id.0);
@@ -1107,8 +1105,8 @@ impl GrokAcpAgent {
                 if self.config.acp.stream_thinking
                     && let Some(sender) = &event_sender
                 {
-                    let block = crate::acp::status_bar::build_thinking_block(tc, false);
-                    let _ = sender.send(crate::acp::protocol::SessionUpdate::Raw(block));
+                    let blk = crate::acp::protocol::ThinkingBlockUpdate::new(tc, false);
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk));
                 }
             }
 
@@ -1142,8 +1140,8 @@ impl GrokAcpAgent {
                     if self.config.acp.stream_thinking
                         && let Some(sender) = &event_sender
                     {
-                        let block = crate::acp::status_bar::build_thinking_block(&tc, true);
-                        let _ = sender.send(crate::acp::protocol::SessionUpdate::Raw(block));
+                        let blk = crate::acp::protocol::ThinkingBlockUpdate::new(&tc, true);
+                        let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk));
                     }
 
                     // Still return a nice markdown version for non-Zed clients
@@ -1766,13 +1764,34 @@ impl GrokAcpAgent {
         state: &crate::acp::status_bar::StatusBarState,
     ) {
         if let Some(sender) = event_sender {
-            // Compact status line
-            let line = crate::acp::status_bar::build_status_line(state);
-            let _ = sender.send(crate::acp::protocol::SessionUpdate::Raw(line));
+            // Structured status bar (for future native support)
+            let update = crate::acp::protocol::StatusBarUpdate::new(
+                &state.model,
+                &state.thinking_mode,
+                state.current_tokens,
+                state.max_tokens,
+                state.context_percent,
+                state.is_generating,
+            );
+            let _ = sender.send(crate::acp::protocol::SessionUpdate::StatusBarUpdate(update));
 
-            // Expanded action bar (we can send both; Zed can decide rendering)
-            let bar = crate::acp::status_bar::build_action_bar(state);
-            let _ = sender.send(crate::acp::protocol::SessionUpdate::Raw(bar));
+            // Fallback visible line (temporary until Zed supports StatusBarUpdate)
+            let status_line = format!(
+                "┌─ Grok ─ {} ─ {} ─ {}/{} tokens ({:.0}%) {}",
+                state.model,
+                state.thinking_mode,
+                state.current_tokens,
+                state.max_tokens,
+                state.context_percent * 100.0,
+                if state.is_generating { "⏳ generating..." } else { "✓ ready" }
+            );
+            // Send as a normal message chunk so it appears in the transcript
+            let chunk = crate::acp::protocol::ContentChunk::new(
+                crate::acp::protocol::ContentBlock::Text(
+                    crate::acp::protocol::TextContent::new(status_line),
+                ),
+            );
+            let _ = sender.send(crate::acp::protocol::SessionUpdate::AgentMessageChunk(chunk));
         }
     }
     pub fn emit_agent_activity(

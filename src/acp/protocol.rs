@@ -650,7 +650,15 @@ pub enum SessionUpdate {
     #[serde(rename = "context_usage_update")]
     ContextUsageUpdate(ContextUsageUpdate),
 
-    /// Raw/custom status or action-bar payloads (Task 164).
+    /// Dynamic status bar + action bar (Task 164 — ACP v0.15 UI parity).
+    #[serde(rename = "status_bar_update")]
+    StatusBarUpdate(StatusBarUpdate),
+
+    /// Structured thinking block (native collapsible trace).
+    #[serde(rename = "thinking_block_update")]
+    ThinkingBlockUpdate(ThinkingBlockUpdate),
+
+    /// Raw/custom status or action-bar payloads (fallback).
     #[serde(rename = "raw")]
     Raw(serde_json::Value),
 }
@@ -789,6 +797,61 @@ impl ContextUsageUpdate {
             max_tokens: max,
             message_count: messages,
             percent_used: pct,
+        }
+    }
+}
+
+/// Dynamic status bar state (Task 164).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StatusBarUpdate {
+    pub model: String,
+    pub thinking_mode: String,
+    pub current_tokens: usize,
+    pub max_tokens: usize,
+    pub context_percent: f32,
+    pub is_generating: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub action_items: Option<Vec<String>>,
+}
+
+impl StatusBarUpdate {
+    pub fn new(
+        model: impl Into<String>,
+        thinking_mode: impl Into<String>,
+        current: usize,
+        max: usize,
+        percent: f32,
+        generating: bool,
+    ) -> Self {
+        Self {
+            model: model.into(),
+            thinking_mode: thinking_mode.into(),
+            current_tokens: current,
+            max_tokens: max,
+            context_percent: percent,
+            is_generating: generating,
+            action_items: None,
+        }
+    }
+}
+
+/// Structured thinking block for native collapsible rendering (Task 164).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ThinkingBlockUpdate {
+    pub content: String,
+    pub is_final: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub token_count: Option<usize>,
+}
+
+impl ThinkingBlockUpdate {
+    pub fn new(content: impl Into<String>, is_final: bool) -> Self {
+        Self {
+            content: content.into(),
+            is_final,
+            token_count: None,
         }
     }
 }
