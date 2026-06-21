@@ -6,7 +6,7 @@
 //! ## Storage layout
 //!
 //! ```text
-//! ~/.grok/
+//! ~/.grok-cli/
 //!   memory.json   ← structured store  (machine-readable, primary source)
 //!   memory.md     ← human-readable mirror (regenerated on every save)
 //! ```
@@ -353,9 +353,7 @@ fn grok_dir() -> Result<PathBuf> {
         std::fs::create_dir_all(&path)?;
         return Ok(path);
     }
-    dirs::home_dir()
-        .map(|h| h.join(".grok"))
-        .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
+    Ok(crate::config::grok_config_dir())
 }
 
 /// Deserialise `Vec<MemoryEntry>` from a JSON file.

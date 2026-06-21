@@ -261,14 +261,6 @@ args = []
 
 [mcp.servers.github.env]
 
-[network]
-starlink_optimizations = true
-base_retry_delay = 5
-max_retry_delay = 60
-health_monitoring = true
-connect_timeout = 10
-read_timeout = 300
-
 [logging]
 level = "info"
 file_logging = false

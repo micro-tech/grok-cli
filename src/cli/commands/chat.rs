@@ -528,6 +528,9 @@ fn handle_interactive_command(
                         slash_commands::BuiltinResult::RecallArchive(_) => {
                             println!("{}", slash_commands::format_archives_text(None));
                         }
+                        slash_commands::BuiltinResult::ShowDiagnostics => {
+                            println!("{}", slash_commands::format_diagnostics_text());
+                        }
                     }
                     return Ok(Some(CommandResult::Continue));
                 }

@@ -1137,7 +1137,7 @@ impl Default for AcpConfig {
             auto_compress: default_auto_compress(),
             compression_threshold: default_compression_threshold(),
             compression_chunk_ratio: default_compression_chunk_ratio(),
-            thinking_mode: ThinkingMode::Off,
+            thinking_mode: ThinkingMode::default(),
             show_context_usage: true,
             stream_thinking: true,
             commit_message_instructions: String::new(),
@@ -1341,6 +1341,15 @@ impl Default for LoggingConfig {
 }
 
 use std::env;
+
+/// Returns the root configuration directory for grok-cli.
+/// All persistent state (config, logs, sessions, memory, etc.) lives under
+/// `~/.grok-cli` (or `%APPDATA%\grok-cli` on Windows).
+pub fn grok_config_dir() -> PathBuf {
+    dirs::home_dir()
+        .unwrap_or_else(|| PathBuf::from("."))
+        .join(".grok-cli")
+}
 
 /// Configuration scope
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -1644,9 +1653,7 @@ impl Config {
 
     /// Get system-level .env path
     fn get_system_env_path() -> Result<PathBuf> {
-        let home_dir =
-            dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-        Ok(home_dir.join(".grok").join(".env"))
+        Ok(grok_config_dir().join(".env"))
     }
 
     /// Find project-local .env file by walking up directory tree
@@ -1801,10 +1808,8 @@ impl Config {
 
     /// Get the default configuration file path
     pub fn default_config_path() -> Result<PathBuf> {
-        let config_dir =
-            config_dir().ok_or_else(|| anyhow!("Could not determine config directory"))?;
-
-        Ok(config_dir.join("grok-cli").join("config.toml"))
+        let dir = grok_config_dir();
+        Ok(dir.join("config.toml"))
     }
 
     /// Apply environment variable overrides
@@ -2249,6 +2254,8 @@ impl Config {
             "acp.permission_timeout_secs" => Ok(self.acp.permission_timeout_secs.to_string()),
             "acp.max_tool_loop_iterations" => Ok(self.acp.max_tool_loop_iterations.to_string()),
             "acp.max_history_messages" => Ok(self.acp.max_history_messages.to_string()),
+            "acp.thinking_mode" => Ok(format!("{:?}", self.acp.thinking_mode).to_lowercase()),
+            "acp.stream_thinking" => Ok(self.acp.stream_thinking.to_string()),
 
             // Network settings
             "network.starlink_optimizations" => Ok(self.network.starlink_optimizations.to_string()),

@@ -307,7 +307,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Goal { .. }
         | SlashCommand::GoalClear
         | SlashCommand::Visualize
-        | SlashCommand::Think { .. } => None,
+        | SlashCommand::Think { .. }
+        | SlashCommand::Diagnostics => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {

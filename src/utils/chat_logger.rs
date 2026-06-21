@@ -39,7 +39,7 @@ impl Default for ChatLoggerConfig {
     fn default() -> Self {
         let log_dir = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
-            .join(".grok")
+            .join(".grok-cli")
             .join("logs")
             .join("chat_sessions");
 

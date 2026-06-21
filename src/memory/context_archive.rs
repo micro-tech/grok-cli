@@ -3,7 +3,7 @@
 //!
 //! ## Storage layout
 //! ```text
-//! ~/.grok/sessions/{session_id}/
+//! ~/.grok-cli/sessions/{session_id}/
 //!   archives/
 //!     index.json        ← lightweight chunk registry
 //!     chunk_001.json    ← raw messages + AI summary
@@ -119,7 +119,7 @@ impl ContextArchive {
     pub fn for_session(session_id: &str) -> Result<Self> {
         let home = dirs::home_dir()
             .ok_or_else(|| anyhow!("Cannot determine home directory for context archive"))?;
-        let sessions_dir = home.join(".grok").join("sessions");
+        let sessions_dir = crate::config::grok_config_dir().join("sessions");
         Self::with_sessions_dir(session_id, &sessions_dir)
     }
 

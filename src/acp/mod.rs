@@ -268,7 +268,7 @@ impl Default for SessionConfig {
                 6. Suggest tests to verify your code when appropriate."
                     .to_string(),
             ),
-            thinking_mode: ThinkingMode::Off,
+            thinking_mode: ThinkingMode::default(),
         }
     }
 }
@@ -397,7 +397,15 @@ impl GrokAcpAgent {
             tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
         >,
     ) -> Result<()> {
-        let mut session_config = config.unwrap_or_default();
+        let mut session_config = config.unwrap_or_else(|| {
+            // Pull thinking_mode (and other future ACP defaults) from the
+            // hierarchically-loaded agent config so that project .grok/config.toml
+            // and ~/.grok-cli/config.toml are respected.
+            SessionConfig {
+                thinking_mode: self.config.acp.thinking_mode.clone(),
+                ..SessionConfig::default()
+            }
+        });
 
         // Apply default model override if present and config matches default
         if let Some(model) = &self.default_model {
@@ -2096,9 +2104,9 @@ impl GrokAcpAgent {
         Ok(cleaned)
     }
 
-    /// Returns the path to the sessions persistence directory: ~/.grok/sessions/
+    /// Returns the path to the sessions persistence directory: ~/.grok-cli/sessions/
     fn sessions_dir() -> Option<std::path::PathBuf> {
-        dirs::home_dir().map(|h| h.join(".grok").join("sessions"))
+        Some(crate::config::grok_config_dir().join("sessions"))
     }
 
     /// Persist session state to ~/.grok/sessions/<id>.json

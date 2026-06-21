@@ -1,7 +1,7 @@
 //! Episodic memory — a record of past conversation sessions.
 //!
 //! [`EpisodicMemory`] stores one [`EpisodeSummary`] per completed session in
-//! `~/.grok/sessions/<session_id>/episode.json`.  Full conversation transcripts
+//! `~/.grok-cli/sessions/<session_id>/episode.json`.  Full conversation transcripts
 //! are stored alongside as `transcript.json` when available.
 //!
 //! # Design

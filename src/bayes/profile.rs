@@ -4,7 +4,7 @@ use std::fs;
 use std::path::PathBuf;
 
 pub fn get_profile_path() -> Option<PathBuf> {
-    dirs::home_dir().map(|h| h.join(".grok").join("bayes_profile.json"))
+    Some(crate::config::grok_config_dir().join("bayes_profile.json"))
 }
 
 pub fn load_profile() -> Option<HashMap<String, f32>> {

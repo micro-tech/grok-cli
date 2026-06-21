@@ -1,13 +1,16 @@
 # Grok CLI Configuration Example
-# Copy this to ~/.grok/config.toml (project) or %APPDATA%\grok-cli\config.toml (system)
+# Copy this to .grok/config.toml (project root) or ~/.grok/config.toml (user)
 # and customize as needed.
+#
+# Priority order (highest → lowest):
+#   Environment variables → project .grok/config.toml → user ~/.grok/config.toml → built-in defaults
 #
 # Priority order (highest → lowest):
 #   Environment variables → project .grok/config.toml → system config → built-in defaults
 
 # ── API ──────────────────────────────────────────────────────────────────────
 # NOTE: Do NOT store your API key in this file!
-# Instead, create a .env file in ~/.config/grok-cli/ with:
+# Instead, create a .env file in the project root or ~/.grok/ with:
 #   GROK_API_KEY=xai-your-api-key-here
 # Or set the environment variable GROK_API_KEY or X_API_KEY
 api_key = "xai-your-api-key-here"
@@ -218,18 +221,11 @@ max_history_messages = 80
 
 [mcp.servers.github]
 type = "stdio"
-command = 'H:\GitHub\grok-cli\target\debug\github_mcp.exe'
+# Update this path to point to your built MCP server binary
+command = "./target/debug/github_mcp.exe"
 args = []
 
 [mcp.servers.github.env]
-
-[network]
-starlink_optimizations = true
-base_retry_delay = 5
-max_retry_delay = 60
-health_monitoring = true
-connect_timeout = 10
-read_timeout = 300
 
 [logging]
 level = "info"

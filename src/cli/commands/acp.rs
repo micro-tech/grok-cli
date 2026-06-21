@@ -967,6 +967,7 @@ async fn handle_builtin_result(
                 None => base,
             }
         }
+        BuiltinResult::ShowDiagnostics => slash_commands::format_diagnostics_text(),
     }
 }
 
