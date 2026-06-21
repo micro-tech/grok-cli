@@ -224,7 +224,7 @@ bind_host = "127.0.0.1"
 protocol_version = "2024-11-05"
 dev_mode = false
 # max_tool_loop_iterations = 25   # set back to 25 had a crash wit it @100
-max_tool_loop_iterations = 25
+max_tool_loop_iterations = 30
 # Disable the session/request_permission gate by default.
 # Zed and most ACP clients do not yet implement the permission-dialog protocol,
 # so leaving this true causes every tool call to be silently blocked.
@@ -252,7 +252,7 @@ compression_chunk_ratio = 0.40
 # low  = light reasoning, slightly more thorough
 # high = deep reasoning, most thorough but slower and more expensive
 # Change per-session with /think or the --thinking CLI flag.
-thinking_mode = "off"
+thinking_mode = "low"
 
 [mcp.servers.github]
 type = "stdio"

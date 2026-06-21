@@ -64,17 +64,26 @@ async fn start_acp_server(port: Option<u16>, host: &str, config: &Config) -> Res
     let bind_port = port.or(config.acp.default_port).unwrap_or(0);
     let bind_addr = format!("{}:{}", host, bind_port);
 
-    println!("{}", format_info(&format!("Starting ACP server on {}", bind_addr)));
+    println!(
+        "{}",
+        format_info(&format!("Starting ACP server on {}", bind_addr))
+    );
 
     let listener = TcpListener::bind(&bind_addr)
         .await
         .map_err(|e| anyhow!("Failed to bind ACP server to {}: {}", bind_addr, e))?;
 
     let actual_addr = listener.local_addr()?;
-    println!("{}", format_success(&format!("ACP server listening on {}", actual_addr)));
+    println!(
+        "{}",
+        format_success(&format!("ACP server listening on {}", actual_addr))
+    );
 
     if config.acp.dev_mode {
-        println!("{}", format_info("Development mode enabled - additional debugging features available"));
+        println!(
+            "{}",
+            format_info("Development mode enabled - additional debugging features available")
+        );
     }
 
     println!();
@@ -307,7 +316,7 @@ where
     R: tokio::io::AsyncRead + Unpin + Send + 'static,
     W: tokio::io::AsyncWrite + Unpin + Send + 'static,
 {
-    use agent_client_protocol::schema::{
+    use agent_client_protocol::schema::v1::{
         ClientNotification, ClientRequest, InitializeRequest as AcpInitReq,
         InitializeResponse as AcpInitResp, ListSessionsRequest as AcpListReq,
         ListSessionsResponse as AcpListResp, LoadSessionRequest as AcpLoadReq,
@@ -552,7 +561,7 @@ fn send_available_commands_update_cx(
     cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
     session_id: &str,
 ) -> Result<()> {
-    use agent_client_protocol::schema::{
+    use agent_client_protocol::schema::v1::{
         SessionId as CrateSessionId, SessionNotification as CrateNotif,
         SessionUpdate as CrateUpdate,
     };
@@ -586,7 +595,7 @@ fn send_available_commands_update_cx(
 
 fn local_notif_to_crate(
     local: &SessionNotification,
-) -> Result<agent_client_protocol::schema::SessionNotification> {
+) -> Result<agent_client_protocol::schema::v1::SessionNotification> {
     let json = serde_json::to_value(local).map_err(|e| anyhow!("serialize local notif: {e}"))?;
     serde_json::from_value(json).map_err(|e| anyhow!("deserialize crate notif: {e}"))
 }
@@ -614,8 +623,8 @@ fn send_session_notif(
 // ---------------------------------------------------------------------------
 
 async fn handle_session_prompt_v2(
-    req: agent_client_protocol::schema::PromptRequest,
-    responder: agent_client_protocol::Responder<agent_client_protocol::schema::PromptResponse>,
+    req: agent_client_protocol::schema::v1::PromptRequest,
+    responder: agent_client_protocol::Responder<agent_client_protocol::schema::v1::PromptResponse>,
     cx: agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
     agent: Arc<GrokAcpAgent>,
 ) -> std::result::Result<(), agent_client_protocol::Error> {
@@ -657,8 +666,8 @@ async fn handle_session_prompt_v2(
 
     if message_text.is_empty() {
         responder
-            .respond(agent_client_protocol::schema::PromptResponse::new(
-                agent_client_protocol::schema::StopReason::EndTurn,
+            .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                agent_client_protocol::schema::v1::StopReason::EndTurn,
             ))
             .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
         return Ok(());
@@ -686,8 +695,8 @@ async fn handle_session_prompt_v2(
             // can block on a read-lock if another request holds the write lock, and we
             // must not delay the PromptResponse while that resolves.
             let r = responder
-                .respond(agent_client_protocol::schema::PromptResponse::new(
-                    agent_client_protocol::schema::StopReason::EndTurn,
+                .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                    agent_client_protocol::schema::v1::StopReason::EndTurn,
                 ))
                 .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
             agent.save_session_to_disk(&session_id).await.ok();
@@ -713,8 +722,8 @@ async fn handle_session_prompt_v2(
             send_session_notif(&notif, &cx);
             // Same rationale: send PromptResponse before the potentially-blocked disk save.
             let r = responder
-                .respond(agent_client_protocol::schema::PromptResponse::new(
-                    agent_client_protocol::schema::StopReason::EndTurn,
+                .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                    agent_client_protocol::schema::v1::StopReason::EndTurn,
                 ))
                 .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
             agent.save_session_to_disk(&session_id).await.ok();
@@ -724,6 +733,56 @@ async fn handle_session_prompt_v2(
             "Slash command {:?} was parsed but had no handler (falling through to normal chat)",
             cmd
         );
+    }
+
+    // ── Action bar click handling (Task 164.7) ────────────────────────────────
+    // When the user clicks on the dynamic status bar actions (think_high, think_low, etc.)
+    // Zed sends them as a prompt. We intercept them here before normal chat processing.
+    let action = message_text.trim();
+    if action == "think_high" || action == "think_low" || action == "think_off" {
+        let mode = match action {
+            "think_high" => crate::config::ThinkingMode::High,
+            "think_low" => crate::config::ThinkingMode::Low,
+            "think_off" => crate::config::ThinkingMode::Off,
+            _ => unreachable!(),
+        };
+
+        match agent.set_thinking_mode(&session_id, mode.clone()).await {
+            Ok(()) => {
+                let label = mode
+                    .as_api_str()
+                    .map(|s| s.to_string())
+                    .unwrap_or_else(|| "off".to_string());
+                let text = format!("🧠 Thinking mode updated to **{}**", label);
+                let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                    ContentBlock::Text(TextContent::new(&text)),
+                ));
+                let notif = SessionNotification::new(session_id.clone(), update);
+                send_session_notif(&notif, &cx);
+
+                let r = responder
+                    .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                        agent_client_protocol::schema::v1::StopReason::EndTurn,
+                    ))
+                    .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+                return r;
+            }
+            Err(e) => {
+                let text = format!("❌ Failed to change thinking mode: {}", e);
+                let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                    ContentBlock::Text(TextContent::new(&text)),
+                ));
+                let notif = SessionNotification::new(session_id.clone(), update);
+                send_session_notif(&notif, &cx);
+
+                let r = responder
+                    .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                        agent_client_protocol::schema::v1::StopReason::EndTurn,
+                    ))
+                    .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+                return r;
+            }
+        }
     }
 
     // ── Normal AI chat ────────────────────────────────────────────────────────
@@ -744,8 +803,8 @@ async fn handle_session_prompt_v2(
     // sessions read-lock (if another request holds the write lock), and we must
     // not delay the PromptResponse while that resolves.
     let r = responder
-        .respond(agent_client_protocol::schema::PromptResponse::new(
-            agent_client_protocol::schema::StopReason::EndTurn,
+        .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+            agent_client_protocol::schema::v1::StopReason::EndTurn,
         ))
         .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
     agent.save_session_to_disk(&session_id).await.ok();
@@ -916,7 +975,7 @@ async fn handle_builtin_result(
 // ---------------------------------------------------------------------------
 
 async fn handle_client_notification_v2(
-    notif: agent_client_protocol::schema::ClientNotification,
+    notif: agent_client_protocol::schema::v1::ClientNotification,
     agent: &GrokAcpAgent,
 ) {
     // Serialize to Value so we can inspect method-agnostic fields
@@ -964,8 +1023,8 @@ async fn handle_client_notification_v2(
 /// unrecognised standard-looking method was sent — return method-not-found.
 async fn handle_extension_dispatch(
     msg: agent_client_protocol::Dispatch<
-        agent_client_protocol::schema::ClientRequest,
-        agent_client_protocol::schema::ClientNotification,
+        agent_client_protocol::schema::v1::ClientRequest,
+        agent_client_protocol::schema::v1::ClientNotification,
     >,
     _cx: agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
     _agent: Arc<GrokAcpAgent>,
@@ -1608,7 +1667,10 @@ async fn handle_session_fork(params: &Value, agent: &GrokAcpAgent) -> Result<Val
 }
 
 async fn test_acp_connection(address: &str, config: &Config) -> Result<()> {
-    println!("{}", format_info(&format!("Testing ACP connection to {}", address)));
+    println!(
+        "{}",
+        format_info(&format!("Testing ACP connection to {}", address))
+    );
 
     let spinner = create_spinner("Connecting...");
 
@@ -1626,7 +1688,10 @@ async fn test_acp_connection(address: &str, config: &Config) -> Result<()> {
             Ok(())
         }
         Ok(Err(e)) => {
-            println!("{}", format_error(&format!("ACP connection test failed: {}", e)));
+            println!(
+                "{}",
+                format_error(&format!("ACP connection test failed: {}", e))
+            );
             Err(e)
         }
         Err(_) => {

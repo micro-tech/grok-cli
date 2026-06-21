@@ -24,7 +24,7 @@ grok_api = "0.1.73"
 # HTTP client with timeout support for network drops
 #grok_api = "0.1.7"
 
-reqwest = { version = "0.13.3", features = [
+reqwest = { version = "0.13.4", features = [
     "json",
     "native-tls-vendored",
     "http2",
@@ -39,7 +39,7 @@ clap = { version = "4.6.1", features = ["derive", "env"] }
 # Error handling
 anyhow = "1.0"
 thiserror = "2.0"
-agent-client-protocol = "0.14.0"
+agent-client-protocol = "0.15.0"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Environment variable loading
 dotenvy = "0.15"
