@@ -879,6 +879,10 @@ async fn handle_builtin_result(
                 Err(e) => format!("❌ Could not switch model: {e}"),
             }
         }
+        BuiltinResult::ShowCurrentModel => match agent.get_session_config(session_id).await {
+            Ok(cfg) => format!("🧠 Current model: **`{}`**", cfg.model),
+            Err(e) => format!("❌ Could not retrieve current model: {e}"),
+        },
         BuiltinResult::ShowContext => match agent.get_session_config(session_id).await {
             Ok(cfg) => {
                 let msg_count = agent
@@ -1422,14 +1426,12 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
         .map(|s| s.to_string())
         .unwrap_or(fallback_cwd);
 
-    // Initialize session in GrokAcpAgent
+    // Initialize session in GrokAcpAgent.
+    // Pass None so initialize_session pulls thinking_mode (and future
+    // ACP defaults) from the hierarchically-loaded agent config
+    // (project .grok/config.toml → ~/.grok-cli/config.toml → built-in).
     agent
-        .initialize_session(
-            session_id,
-            initial_cwd,
-            Some(SessionConfig::default()),
-            None,
-        )
+        .initialize_session(session_id, initial_cwd, None, None)
         .await?;
 
     // Start chat logging for this session

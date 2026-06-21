@@ -59,7 +59,9 @@ pub enum SlashCommand {
     /// `/fix [description]` — ask the model to diagnose and fix a problem.
     Fix { description: String },
 
-    /// `/model <name>` — switch the active model for this session.
+    /// `/model [name|show]` — show current model or switch to a different one.
+    /// `/model` or `/model show` displays the active model.
+    /// `/model <name>` switches the session to that model.
     Model { name: String },
 
     /// `/clear` — wipe the current conversation history.
@@ -510,6 +512,9 @@ pub enum BuiltinResult {
     ClearHistory,
     /// Switch to the given model name, then return a confirmation text.
     SwitchModel(String),
+
+    /// Show the currently active model for the session.
+    ShowCurrentModel,
     /// Display session context/config info — the caller supplies the text.
     ShowContext,
     /// Recall an archived context chunk. `None` = list all archives.
@@ -543,10 +548,11 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::Help => Some(BuiltinResult::Text(format_help_text())),
         SlashCommand::Clear => Some(BuiltinResult::ClearHistory),
         SlashCommand::Model { name } => {
-            if name.trim().is_empty() {
-                Some(BuiltinResult::Text(format_model_list()))
+            let arg = name.trim().to_lowercase();
+            if arg.is_empty() || arg == "show" {
+                Some(BuiltinResult::ShowCurrentModel)
             } else {
-                Some(BuiltinResult::SwitchModel(name.trim().to_string()))
+                Some(BuiltinResult::SwitchModel(arg))
             }
         }
         SlashCommand::Context => Some(BuiltinResult::ShowContext),
