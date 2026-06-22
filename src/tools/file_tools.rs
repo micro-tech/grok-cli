@@ -672,7 +672,7 @@ mod tests {
         let path = dir.path().join("hello.txt");
         let path_str = path.to_str().unwrap();
 
-        write_file(path_str, "Hello, world!", &security)
+        write_file(path_str, "Hello, world!", &security, false)
             .await
             .unwrap();
         let content = read_file(path_str, &security).await.unwrap();
@@ -693,7 +693,7 @@ mod tests {
         let security = make_security(&dir);
         let path = dir.path().join("a.txt");
         let path_str = path.to_str().unwrap().to_string();
-        write_file(path_str.as_str(), "content", &security)
+        write_file(path_str.as_str(), "content", &security, false)
             .await
             .unwrap();
 
@@ -733,10 +733,10 @@ mod tests {
         let path = dir.path().join("r.txt");
         let path_str = path.to_str().unwrap();
 
-        write_file(path_str, "foo bar foo", &security)
+        write_file(path_str, "foo bar foo", &security, false)
             .await
             .unwrap();
-        replace(path_str, "foo", "baz", None, &security)
+        replace(path_str, "foo", "baz", None, &security, false)
             .await
             .unwrap();
         let content = read_file(path_str, &security).await.unwrap();
@@ -758,7 +758,7 @@ mod tests {
             .unwrap();
 
         // Search string uses LF only — this was previously failing.
-        replace(path_str, "line one\nline two", "replaced", None, &security)
+        replace(path_str, "line one\nline two", "replaced", None, &security, false)
             .await
             .unwrap();
 
@@ -782,10 +782,10 @@ mod tests {
         let path = dir.path().join("r2.txt");
         let path_str = path.to_str().unwrap();
 
-        write_file(path_str, "hello world", &security)
+        write_file(path_str, "hello world", &security, false)
             .await
             .unwrap();
-        let result = replace(path_str, "notfound", "x", None, &security).await;
+        let result = replace(path_str, "notfound", "x", None, &security, false).await;
         assert!(result.is_err());
     }
 
@@ -795,7 +795,7 @@ mod tests {
         let security = make_security(&dir);
         let path = dir.path().join("code.rs");
         let path_str = path.to_str().unwrap();
-        write_file(path_str, "fn main() {}\nfn helper() {}", &security)
+        write_file(path_str, "fn main() {}\nfn helper() {}", &security, false)
             .await
             .unwrap();
 
@@ -809,7 +809,7 @@ mod tests {
         let security = make_security(&dir);
         let path = dir.path().join("src.rs");
         let path_str = path.to_str().unwrap();
-        write_file(path_str, "pub fn foo() {}\nstruct Bar {}", &security)
+        write_file(path_str, "pub fn foo() {}\nstruct Bar {}", &security, false)
             .await
             .unwrap();
 

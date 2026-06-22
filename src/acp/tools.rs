@@ -38,7 +38,7 @@ mod tests {
         security.add_trusted_directory(temp_dir.path());
 
         // Test write_file
-        let write_result = write_file(path_str, "Hello, world!", &security).await;
+        let write_result = write_file(path_str, "Hello, world!", &security, false).await;
         assert!(write_result.is_ok());
 
         // Test read_file
@@ -158,24 +158,24 @@ mod tests {
         fs::write(&file_path, "Hello world, hello universe").unwrap();
 
         // Test successful replace
-        let result = replace(path_str, "hello", "hi", None, &security).await;
+        let result = replace(path_str, "hello", "hi", None, &security, false).await;
         assert!(result.is_ok());
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Hello world, hi universe");
 
         // Test replace with expected count
-        let result = replace(path_str, "universe", "cosmos", Some(1), &security).await;
+        let result = replace(path_str, "universe", "cosmos", Some(1), &security, false).await;
         assert!(result.is_ok());
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Hello world, hi cosmos");
 
         // Test replace not found
-        let result = replace(path_str, "missing", "nothing", None, &security).await;
+        let result = replace(path_str, "missing", "nothing", None, &security, false).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
 
         // Test replace count mismatch
-        let result = replace(path_str, "hi", "hey", Some(5), &security).await;
+        let result = replace(path_str, "hi", "hey", Some(5), &security, false).await;
         assert!(result.is_err());
         assert!(
             result
