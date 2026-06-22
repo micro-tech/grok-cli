@@ -165,7 +165,7 @@ async fn replace_updates_file_content() {
     let policy = helpers::make_policy(&dir);
     let file = helpers::write_fixture(&dir, "greet.txt", "Hello World");
 
-    replace(file.to_str().unwrap(), "World", "Grok", None, &policy)
+    replace(file.to_str().unwrap(), "World", "Grok", None, &policy, false)
         .await
         .unwrap();
 
@@ -186,6 +186,7 @@ async fn replace_old_string_not_found_returns_err() {
         "replacement",
         None,
         &policy,
+        false,
     )
     .await;
 
@@ -204,7 +205,7 @@ async fn replace_nonexistent_file_returns_err() {
     let policy = helpers::make_policy(&dir);
     let missing = dir.path().join("ghost.txt");
 
-    let result = replace(missing.to_str().unwrap(), "old", "new", None, &policy).await;
+    let result = replace(missing.to_str().unwrap(), "old", "new", None, &policy, false).await;
 
     assert!(result.is_err(), "replace on missing file must return Err");
     let msg = result.unwrap_err().to_string().to_lowercase();
@@ -459,6 +460,7 @@ async fn replace_preserves_crlf_line_endings() {
         "replaced",
         None,
         &policy,
+        false,
     )
     .await
     .unwrap();

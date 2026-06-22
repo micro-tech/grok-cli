@@ -154,7 +154,7 @@ jobs:
 
           1. Download the ZIP file for your platform
           2. Extract the archive
-          3. Run the `grok` (or `grok.exe` on Windows) binary
+          3. Run the `grok` (or `grok-cli.exe` on Windows) binary
 
           ### ✨ What's New
 

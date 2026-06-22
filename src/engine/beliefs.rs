@@ -379,7 +379,7 @@ mod tests {
         let mut beliefs = EngineBeliefs::new();
         beliefs.register_tool("edit_file", 0.75);
         assert!(
-            (beliefs.tool_score("edit_file") - 0.75).abs() < f32::EPSILON,
+            (beliefs.tool_score("edit_file", None) - 0.75).abs() < f32::EPSILON,
             "initial score should be 0.75"
         );
     }
@@ -392,7 +392,7 @@ mod tests {
         beliefs.register_tool("edit_file", 0.75);
         beliefs.register_tool("edit_file", 0.10); // should be ignored
         assert!(
-            (beliefs.tool_score("edit_file") - 0.75).abs() < f32::EPSILON,
+            (beliefs.tool_score("edit_file", None) - 0.75).abs() < f32::EPSILON,
             "second register_tool call must not overwrite the score"
         );
     }
@@ -407,7 +407,7 @@ mod tests {
         beliefs.update_from_evidence(&Evidence::ToolSuccess {
             tool_name: "search".to_string(),
         });
-        let score = beliefs.tool_score("search");
+        let score = beliefs.tool_score("search", None);
         assert!(
             (score - 0.6).abs() < 1e-5,
             "expected score 0.6, got {score}"
@@ -422,7 +422,7 @@ mod tests {
         beliefs.update_from_evidence(&Evidence::ToolSuccess {
             tool_name: "search".to_string(),
         });
-        let score = beliefs.tool_score("search");
+        let score = beliefs.tool_score("search", None);
         assert!(score <= 1.0, "score must not exceed 1.0, got {score}");
     }
 
@@ -436,7 +436,7 @@ mod tests {
         beliefs.update_from_evidence(&Evidence::ToolFailure {
             tool_name: "search".to_string(),
         });
-        let score = beliefs.tool_score("search");
+        let score = beliefs.tool_score("search", None);
         assert!(
             (score - 0.3).abs() < 1e-5,
             "expected score 0.3, got {score}"
@@ -451,7 +451,7 @@ mod tests {
         beliefs.update_from_evidence(&Evidence::ToolFailure {
             tool_name: "search".to_string(),
         });
-        let score = beliefs.tool_score("search");
+        let score = beliefs.tool_score("search", None);
         assert!(score >= 0.0, "score must not go below 0.0, got {score}");
     }
 
@@ -462,7 +462,7 @@ mod tests {
     fn tool_score_returns_zero_for_unknown() {
         let beliefs = EngineBeliefs::new();
         assert_eq!(
-            beliefs.tool_score("unknown_tool"),
+            beliefs.tool_score("unknown_tool", None),
             0.0,
             "unregistered tool must have score 0.0"
         );
@@ -564,7 +564,7 @@ mod tests {
     fn score_plan_returns_zero_for_noop() {
         let beliefs = EngineBeliefs::new();
         let steps = vec![PlanStep::new("no-op step", StepAction::NoOp)];
-        let scores = beliefs.score_plan(&steps);
+        let scores = beliefs.score_plan(&steps, None);
         assert_eq!(scores.len(), 1, "score vec length must match step count");
         assert_eq!(scores[0], 0.0, "NoOp step must score 0.0");
     }
@@ -586,7 +586,7 @@ mod tests {
             PlanStep::new("no-op", StepAction::NoOp),
         ];
 
-        let scores = beliefs.score_plan(&steps);
+        let scores = beliefs.score_plan(&steps, None);
         assert_eq!(scores.len(), 2, "score vec length must match step count");
         assert!(
             (scores[0] - 0.8).abs() < f32::EPSILON,
@@ -607,7 +607,7 @@ mod tests {
                 args: serde_json::Value::Null,
             },
         )];
-        let scores = beliefs.score_plan(&steps);
+        let scores = beliefs.score_plan(&steps, None);
         assert_eq!(scores.len(), 1);
         assert_eq!(scores[0], 0.0, "unregistered tool must score 0.0");
     }
@@ -616,7 +616,7 @@ mod tests {
     #[test]
     fn score_plan_returns_empty_for_empty_plan() {
         let beliefs = EngineBeliefs::new();
-        let scores = beliefs.score_plan(&[]);
+        let scores = beliefs.score_plan(&[], None);
         assert!(scores.is_empty(), "empty plan must yield empty score vec");
     }
 
