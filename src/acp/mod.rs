@@ -2483,7 +2483,7 @@ mod tests {
         // Build a minimal sessions map with one session entry.
         let session_id = SessionId::new("sess-perm-test");
         let session_data = SessionData {
-            dna: SessionDna::default(),
+            dna: crate::session::dna::SessionDna::default(),
             cwd: String::new(),
             messages: Vec::new(),
             config: SessionConfig::default(),

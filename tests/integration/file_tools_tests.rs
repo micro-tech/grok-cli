@@ -106,7 +106,7 @@ async fn write_file_creates_file_with_content() {
     let policy = helpers::make_policy(&dir);
     let path = dir.path().join("output.txt");
 
-    write_file(path.to_str().unwrap(), "written content", &policy)
+    write_file(path.to_str().unwrap(), "written content", &policy, false)
         .await
         .unwrap();
 
@@ -122,7 +122,7 @@ async fn write_file_creates_parent_directories() {
     // `deep/nested/` does not exist yet — write_file must create it.
     let path = dir.path().join("deep").join("nested").join("new.txt");
 
-    write_file(path.to_str().unwrap(), "deep content", &policy)
+    write_file(path.to_str().unwrap(), "deep content", &policy, false)
         .await
         .unwrap();
 
@@ -139,7 +139,7 @@ async fn write_file_outside_trust_is_denied() {
     let policy = helpers::make_policy(&trusted);
     let path = other.path().join("intruder.txt");
 
-    let result = write_file(path.to_str().unwrap(), "should not land", &policy).await;
+    let result = write_file(path.to_str().unwrap(), "should not land", &policy, false).await;
 
     assert!(result.is_err(), "write outside trust must return Err");
     let msg = result.unwrap_err().to_string().to_lowercase();
@@ -485,7 +485,7 @@ async fn write_then_read_round_trip() {
     let path = dir.path().join("roundtrip.txt");
     let content = "The quick brown fox jumps over the lazy dog.\n";
 
-    write_file(path.to_str().unwrap(), content, &policy)
+    write_file(path.to_str().unwrap(), content, &policy, false)
         .await
         .unwrap();
 
