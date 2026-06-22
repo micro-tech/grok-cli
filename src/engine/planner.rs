@@ -15,8 +15,8 @@
 //!
 //! ## Typical usage
 //!
-//! ```rust,ignore
-//! use grok_cli::engine::planner::{PlanBuilder, PlanBuilderConfig};
+//! ```rust
+//! use grok_cli::engine::planner::PlanBuilder;
 //!
 //! let builder = PlanBuilder::default();
 //! let steps = builder.build_plan("read the config file", &["read_file"]);

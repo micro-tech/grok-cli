@@ -199,7 +199,9 @@ impl PlanStep {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// use grok_cli::engine::state::{PlanStep, StepAction, StepStatus};
+    ///
     /// let step = PlanStep::new("List files in /tmp", StepAction::UseTool {
     ///     tool_name: "list_directory".to_owned(),
     ///     args: serde_json::json!({ "path": "/tmp" }),
@@ -249,7 +251,9 @@ impl Hypothesis {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// use grok_cli::engine::state::Hypothesis;
+    ///
     /// let h = Hypothesis::new("User wants to list files", 0.85);
     /// assert!((h.confidence - 0.85).abs() < f32::EPSILON);
     ///
@@ -431,7 +435,9 @@ impl ReasoningEngineState {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// use grok_cli::engine::state::ReasoningEngineState;
+    ///
     /// let state = ReasoningEngineState::new()
     ///     .with_goal("list all Rust files in the workspace");
     /// assert_eq!(state.goal.as_deref(), Some("list all Rust files in the workspace"));
@@ -445,7 +451,9 @@ impl ReasoningEngineState {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// use grok_cli::engine::state::ReasoningEngineState;
+    ///
     /// let state = ReasoningEngineState::new().with_max_revisions(5);
     /// assert_eq!(state.max_revisions, 5);
     /// ```
@@ -648,9 +656,12 @@ fn engine_state_name(state: &EngineState) -> &'static str {
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// let state: ReasoningEngineState = serde_json::from_str(&raw_json)?;
-/// validate_version(&state).map_err(|e| anyhow::anyhow!(e))?;
+/// ```rust
+/// use grok_cli::engine::state::{ReasoningEngineState, validate_version};
+///
+/// // Example (in real code you would have the JSON string):
+/// // let state: ReasoningEngineState = serde_json::from_str(&raw_json)?;
+/// // validate_version(&state).map_err(|e| anyhow::anyhow!(e))?;
 /// ```
 pub fn validate_version(state: &ReasoningEngineState) -> Result<(), String> {
     if state.schema_version == ENGINE_SCHEMA_VERSION {

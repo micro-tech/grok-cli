@@ -21,7 +21,7 @@
 //!
 //! # Quick start
 //!
-//! ```rust,ignore
+//! ```rust
 //! use grok_cli::engine::observability::{EngineObserver, ObserverConfig};
 //! use grok_cli::engine::state::EngineState;
 //!
@@ -121,7 +121,7 @@ impl ObserverConfig {
 ///
 /// # Usage
 ///
-/// ```rust,ignore
+/// ```rust
 /// use grok_cli::engine::observability::EngineObserver;
 /// use grok_cli::engine::state::EngineState;
 ///
@@ -421,7 +421,7 @@ pub fn is_safe_to_log(state: &ReasoningEngineState) -> bool {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust
 /// use grok_cli::engine::observability::redact_state;
 /// use grok_cli::engine::state::ReasoningEngineState;
 /// use grok_cli::rpl::RedactionConfig;
