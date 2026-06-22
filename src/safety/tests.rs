@@ -47,10 +47,13 @@ mod tests {
     #[test]
     fn tool_health_monitor_tracks_failures() {
         let monitor = ToolHealthMonitor::new();
+        // is_healthy only evaluates failure rate once total >= 5
         monitor.record_failure("write_file");
         monitor.record_failure("write_file");
         monitor.record_failure("write_file");
-        // After 3 failures with 0 successes, should be unhealthy
+        monitor.record_failure("write_file");
+        monitor.record_failure("write_file");
+        // 5 failures, 0 successes → failure rate = 1.0 > 0.35 → unhealthy
         assert!(!monitor.is_healthy("write_file"));
     }
 }
