@@ -616,7 +616,7 @@ mod tests {
     #[test]
     fn score_plan_returns_empty_for_empty_plan() {
         let beliefs = EngineBeliefs::new();
-        let scores = beliefs.score_plan(&[]);
+        let scores = beliefs.score_plan(&[], None);
         assert!(scores.is_empty(), "empty plan must yield empty score vec");
     }
 

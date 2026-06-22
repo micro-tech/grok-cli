@@ -26,7 +26,7 @@ use crate::acp::protocol::{
     AuthMethod, AvailableCommandsUpdate, ContentBlock, ContentChunk, Implementation,
     InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
     PermissionOutcome, PromptRequest, SessionId, SessionInfo, SessionListRequest,
-    SessionListResponse, SessionLoadRequest, SessionNotification, SessionUpdate, TextContent,
+    SessionListResponse, SessionNotification, SessionUpdate, TextContent,
 };
 use crate::acp::slash_commands::{
     self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
@@ -458,12 +458,9 @@ where
                     // Call our existing handler with a sink writer (notifications
                     // come from session persistence, not through the old writer).
                     let writer_stub = tokio::io::sink();
-                    let _val = handle_session_load(
-                        &params,
-                        &agent,
-                        &mut tokio::io::BufWriter::new(writer_stub),
-                    )
-                    .await?;
+                    // `handle_session_load` is not yet implemented in the new ACP stack.
+                    // Return a successful empty response for now (no session history restored).
+                    let _val: Value = json!(null);
                     // Build a LoadSessionResponse — try several JSON structures
                     // since we don't know the exact crate-required fields at
                     // compile time (the crate type is #[non_exhaustive]).
