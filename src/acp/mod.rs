@@ -732,49 +732,56 @@ impl GrokAcpAgent {
             // We re-acquire a short lock only at the very end to insert the notice.
             //
             // This fixes the known deadlock risk (Task 186).
-            let mut compression_work: Option<(Vec<Value>, usize, String, usize)> = None;
+            // Smart compression decision (lock-free later)
+            let compression_work: Option<(Vec<Value>, usize, String, usize)> = {
+                if self.config.acp.auto_compress {
+                    let active_ctx_budget = model_context_budget(
+                        &session.config.model,
+                        self.config.acp.max_context_tokens,
+                        self.config.acp.grok4_max_context_tokens,
+                    );
+                    let threshold = (active_ctx_budget as f64
+                        * self.config.acp.compression_threshold as f64)
+                        as usize;
+                    let estimated = estimate_tokens(&session.messages);
 
-            if self.config.acp.auto_compress {
-                let active_ctx_budget = model_context_budget(
-                    &session.config.model,
-                    self.config.acp.max_context_tokens,
-                    self.config.acp.grok4_max_context_tokens,
-                );
-                let threshold = (active_ctx_budget as f64
-                    * self.config.acp.compression_threshold as f64)
-                    as usize;
-                let estimated = estimate_tokens(&session.messages);
+                    if estimated > threshold {
+                        let non_system_indices: Vec<usize> = session
+                            .messages
+                            .iter()
+                            .enumerate()
+                            .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+                            .map(|(i, _)| i)
+                            .collect();
 
-                if estimated > threshold {
-                    let non_system_indices: Vec<usize> = session
-                        .messages
-                        .iter()
-                        .enumerate()
-                        .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
-                        .map(|(i, _)| i)
-                        .collect();
+                        let compress_count = ((non_system_indices.len() as f64
+                            * self.config.acp.compression_chunk_ratio as f64)
+                            as usize)
+                            .max(4)
+                            .min(non_system_indices.len());
 
-                    let compress_count = ((non_system_indices.len() as f64
-                        * self.config.acp.compression_chunk_ratio as f64)
-                        as usize)
-                        .max(4)
-                        .min(non_system_indices.len());
+                        if compress_count > 0 {
+                            let start = non_system_indices[0];
+                            let end = non_system_indices
+                                .get(compress_count - 1)
+                                .copied()
+                                .unwrap_or(start);
+                            let to_compress: Vec<Value> = session.messages.drain(start..=end).collect();
 
-                    if compress_count > 0 {
-                        let start = non_system_indices[0];
-                        let end = non_system_indices
-                            .get(compress_count - 1)
-                            .copied()
-                            .unwrap_or(start);
-                        let to_compress: Vec<Value> = session.messages.drain(start..=end).collect();
+                            let tokens_saved = estimate_tokens(&to_compress);
+                            let model = session.config.model.clone();
 
-                        let tokens_saved = estimate_tokens(&to_compress);
-                        let model = session.config.model.clone();
-
-                        compression_work = Some((to_compress, start, model, tokens_saved));
+                            Some((to_compress, start, model, tokens_saved))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
                     }
+                } else {
+                    None
                 }
-            }
+            };
 
             // Extract options
             let temperature = options
@@ -797,13 +804,13 @@ impl GrokAcpAgent {
             let thk = session.config.thinking_mode.clone();
             let bayes = session.bayes_engine.clone();
             let aall = session.always_allow.clone();
-            (msgs, temperature, max_tokens, mdl, thk, bayes, aall)
+            (msgs, temperature, max_tokens, mdl, thk, bayes, aall, compression_work)
         }; // ← write lock released here
 
         // ── Execute compression work (lock-free) ─────────────────────────────────
         // This was prepared inside the brief write lock above.
         // We now perform the expensive async call without holding any session lock.
-        if let Some((to_compress, start_idx, model_for_compression, tokens_saved)) = compression_work {
+        if let Some((to_compress, start_idx, model_for_compression, tokens_saved)) = compression_work.clone() {
             match self.get_router() {
                 Ok(router) => {
                     match crate::memory::context_compressor::compress(
@@ -826,7 +833,7 @@ impl GrokAcpAgent {
                                         estimated_tokens_saved: tokens_saved,
                                         summary,
                                         key_facts,
-                                        raw_messages: to_compress,
+                                        raw_messages: to_compress.to_vec(),
                                     };
                                     if let Err(e) = archive.save_chunk(&chunk) {
                                         warn!("⚠️  Failed to save context archive chunk: {}", e);
@@ -844,7 +851,7 @@ impl GrokAcpAgent {
                                             0
                                         };
                                         let notice = build_archive_notice(&chunk);
-                                        s.messages.insert(insert_at, notice);
+                                        s.messages.insert(insert_at, notice.clone());
                                         warn!(
                                             "📦 Archived {} messages → chunk #{} (~{} tokens saved). Active context: {} messages.",
                                             chunk.message_count, chunk_id, tokens_saved, s.messages.len()
@@ -865,7 +872,7 @@ impl GrokAcpAgent {
                             let mut sessions = self.sessions.write().await;
                             if let Some(s) = sessions.get_mut(&session_id.0) {
                                 for (offset, msg) in to_compress.into_iter().enumerate() {
-                                    s.messages.insert(start_idx + offset, msg);
+                                    s.messages.insert(start_idx + offset, msg.clone());
                                 }
                             }
                         }
@@ -877,7 +884,7 @@ impl GrokAcpAgent {
                     let mut sessions = self.sessions.write().await;
                     if let Some(s) = sessions.get_mut(&session_id.0) {
                         for (offset, msg) in to_compress.into_iter().enumerate() {
-                            s.messages.insert(start_idx + offset, msg);
+                            s.messages.insert(start_idx + offset, msg.clone());
                         }
                     }
                 }
@@ -1421,7 +1428,7 @@ impl GrokAcpAgent {
 
                     let diff = augmented_args.get("old_string")
                         .and_then(|old| augmented_args.get("new_string"))
-                        .map(|new| format!("{} → {}", old, new));
+                        .map(|new| format!("old → {}", new));
 
                     let dna_val = {
                         let guard = self.sessions.read().await;

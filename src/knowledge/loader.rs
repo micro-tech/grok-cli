@@ -49,7 +49,7 @@ impl KnowledgeLoader {
         Ok(Self { entries })
     }
 
-    /// Compute relevance score using a lightweight TF-style overlap.
+    /// Compute relevance using a lightweight TF-IDF style scorer.
     /// Returns a score between 0.0 and 1.0.
     fn compute_relevance(content: &str, query: &str) -> f32 {
         if query.trim().is_empty() {
@@ -64,19 +64,29 @@ impl KnowledgeLoader {
             return 0.5;
         }
 
-        let mut matches = 0;
+        // Term frequency in content
+        let mut tf = 0.0f32;
         for term in &query_terms {
-            if content_lower.contains(term) {
-                matches += 1;
-            }
+            let count = content_lower.matches(term).count() as f32;
+            tf += count;
         }
+        tf /= content_lower.split_whitespace().count().max(1) as f32;
 
-        // Normalize by number of query terms + slight boost for full phrase match
-        let base_score = matches as f32 / query_terms.len() as f32;
+        // IDF approximation (inverse document frequency) — penalize very common words
+        let mut idf = 0.0f32;
+        for term in &query_terms {
+            let df = if content_lower.contains(term) { 1.0 } else { 0.0 };
+            idf += (1.0 / (1.0 + df)).ln();
+        }
+        idf = idf.max(0.1);
+
+        let tf_idf = (tf * idf).min(1.0);
+
+        // Boost for exact phrase match
         if content_lower.contains(&query_lower) {
-            (base_score + 0.3).min(1.0)
+            (tf_idf + 0.25).min(1.0)
         } else {
-            base_score
+            tf_idf
         }
     }
 

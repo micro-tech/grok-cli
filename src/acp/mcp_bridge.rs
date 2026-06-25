@@ -34,7 +34,11 @@ pub async fn handle_mcp_tool_call(name: &str, arguments: Value) -> Result<Value,
     };
 
     // Attempt to execute the tool via the registry.
-    match crate::tools::registry::execute_tool(name, args).await {
+    // We create a minimal policy context (no external access by default for MCP).
+    let policy = crate::acp::security::SecurityManager::new().get_policy();
+    let ctx = crate::tools::ToolContext::new(policy);
+
+    match crate::tools::registry::execute_tool(name, &args, &ctx).await {
         Ok(result) => Ok(json!({
             "result": result,
             "tool": name,
