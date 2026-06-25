@@ -1,48 +1,29 @@
-//! Grok CLI entry point (legacy thin wrapper)
+//! Binary entry point for grok-cli (Task 137).
 //!
-//! NOTE (Task 137): The real binary entry point has been moved to
-//! `src/bin/grok.rs`. This file remains for backwards compatibility during
-//! the transition. All new development should use the binary crate.
+//! This file lives in src/bin/ so it becomes a separate binary crate.
+//! All heavy lifting is done by the library (`grok_cli::cli::app::run`).
+//! The library itself contains only pure functions (no terminal I/O).
 
 use std::sync::Mutex;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};
 
-/// Set up the global `tracing` subscriber.
-///
-/// Returns `()` — any failure to open the log file is handled gracefully
-/// (stderr-only logging is used as the fallback).
 fn setup_logging() {
-    // ── Log file path: ~/.grok/logs/grok-errors.log ──────────────────────────
     let log_file_path = dirs::home_dir()
-        .map(|h| h.join(".grok").join("logs").join("grok-errors.log"))
+        .map(|h| h.join(".grok-cli").join("logs").join("grok-errors.log"))
         .unwrap_or_else(|| std::path::PathBuf::from("grok-errors.log"));
 
     if let Some(parent) = log_file_path.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
 
-    // ── Single global filter ──────────────────────────────────────────────────
-    //
-    // Respects RUST_LOG; falls back to "warn" so users aren't flooded with
-    // noise by default.  Both the stderr and file sinks share this filter.
-    //
-    // Examples:
-    //   RUST_LOG=warn          (default)
-    //   RUST_LOG=grok_cli=debug
-    //   RUST_LOG=info
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn"));
 
-    // ── Stderr layer (coloured, compact) ─────────────────────────────────────
     let stderr_layer = fmt::layer()
         .compact()
         .with_target(false)
         .with_thread_ids(false)
         .with_writer(std::io::stderr);
 
-    // ── File layer (JSON, no ANSI) ────────────────────────────────────────────
-    //
-    // Open the log file for appending.  If this fails (e.g. read-only FS) we
-    // fall back to stderr-only logging — the CLI must still work.
     match std::fs::OpenOptions::new()
         .create(true)
         .append(true)
@@ -65,13 +46,11 @@ fn setup_logging() {
                 .init();
         }
         Err(err) => {
-            // Can't open the log file — stderr only.
             tracing_subscriber::registry()
                 .with(env_filter)
                 .with(stderr_layer)
                 .init();
 
-            // Emit a warning now that the subscriber IS initialised.
             tracing::warn!(
                 log_path = %log_file_path.display(),
                 error = %err,

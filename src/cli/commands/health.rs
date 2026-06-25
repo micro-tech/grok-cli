@@ -13,6 +13,7 @@ use anyhow::{Result, anyhow};
 use colored::*;
 use std::time::{Duration, Instant};
 
+use crate::cli::display_data::DisplayData;
 use crate::cli::{
     create_spinner, format_error, format_info, format_success, format_warning,
 };
@@ -20,6 +21,7 @@ use crate::utils::client::initialize_client;
 use crate::utils::network::{detect_starlink_connection, test_connectivity};
 
 /// Handle health check commands
+/// Returns structured DisplayData instead of printing directly (Task 131).
 pub async fn handle_health_check(
     check_api: bool,
     check_config: bool,
@@ -27,7 +29,7 @@ pub async fn handle_health_check(
     config: &Config,
     model: &str,
     timeout_secs: u64,
-) -> Result<()> {
+) -> Result<DisplayData> {
     println!("{}", "🏥 Grok CLI Health Check".cyan().bold());
     println!();
 
@@ -298,20 +300,19 @@ pub async fn handle_health_check(
         }
     }
 
-    println!();
-    if success_rate >= 90.0 {
-        println!("{}", format_success("System is healthy and ready to use!"));
+    let final_message = if success_rate >= 90.0 {
+        "System is healthy and ready to use!".to_string()
     } else if success_rate >= 70.0 {
-        println!("{}", format_warning("System has minor issues but should work"));
+        "System has minor issues but should work".to_string()
     } else {
-        println!("{}", format_error("System has significant issues that need attention"));
         return Err(anyhow!(
             "Health check failed with {:.0}% success rate",
             success_rate
         ));
-    }
+    };
 
-    Ok(())
+    // Return structured data instead of printing (Task 131)
+    Ok(DisplayData::success(final_message))
 }
 
 /// Check if configuration file exists and is readable

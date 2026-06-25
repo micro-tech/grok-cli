@@ -1,12 +1,13 @@
 //! Semantic Compression Layer.
 //!
-//! Uses embeddings + deduplication to reduce long-term context size.
+//! Uses embeddings + deduplication to reduce long-term context size
+//! while preserving meaning.
 
 use std::collections::HashSet;
 
 #[derive(Debug, Default)]
 pub struct SemanticCompressor {
-    seen: HashSet<u64>,
+    seen_hashes: HashSet<u64>,
 }
 
 impl SemanticCompressor {
@@ -14,19 +15,36 @@ impl SemanticCompressor {
         Self::default()
     }
 
-    /// Simple hash-based semantic deduplication.
-    pub fn is_duplicate(&mut self, text: &str) -> bool {
-        let hash = text.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
-        !self.seen.insert(hash)
+    fn hash(text: &str) -> u64 {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let mut hasher = DefaultHasher::new();
+        text.hash(&mut hasher);
+        hasher.finish()
     }
 
-    /// Produces a very lightweight summary (first N chars + length note).
-    pub fn summarize(&self, text: &str, max_len: usize) -> String {
-        if text.len() <= max_len {
-            text.to_string()
+    /// 117.2 — Semantic deduplication
+    pub fn is_duplicate(&mut self, text: &str) -> bool {
+        let h = Self::hash(text);
+        if self.seen_hashes.contains(&h) {
+            true
         } else {
-            format!("{}… [{} chars]", &text[..max_len.saturating_sub(10)], text.len())
+            self.seen_hashes.insert(h);
+            false
         }
+    }
+
+    /// 117.3 — Simple summarization stub (real implementation would call LLM)
+    pub fn summarize(&self, text: &str) -> String {
+        if text.len() > 200 {
+            format!("{}...", &text[..200])
+        } else {
+            text.to_string()
+        }
+    }
+
+    pub fn clear(&mut self) {
+        self.seen_hashes.clear();
     }
 }
 
@@ -35,16 +53,16 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_deduplication() {
-        let mut compressor = SemanticCompressor::new();
-        assert!(!compressor.is_duplicate("hello world"));
-        assert!(compressor.is_duplicate("hello world"));
+    fn test_dedupe() {
+        let mut c = SemanticCompressor::new();
+        assert!(!c.is_duplicate("hello world"));
+        assert!(c.is_duplicate("hello world"));
     }
 
     #[test]
     fn test_summarize() {
-        let compressor = SemanticCompressor::new();
-        let summary = compressor.summarize(&"x".repeat(300), 50);
-        assert!(summary.ends_with("chars]"));
+        let c = SemanticCompressor::new();
+        let long = "a".repeat(300);
+        assert!(c.summarize(&long).ends_with("..."));
     }
 }

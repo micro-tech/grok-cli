@@ -1138,6 +1138,42 @@ pub struct SessionLoadRequest {
     pub mcp_servers: Vec<Value>,
 }
 
+// ---------------------------------------------------------------------------
+// Task 140 — strongly-typed JsonRpcRequest enum
+// Replaces generic `Value` handling for fork/set_model (and standard methods).
+// ---------------------------------------------------------------------------
+/// Strongly-typed representation of ACP JSON-RPC requests.
+/// This enum allows the ACP layer to pattern-match on method names instead of
+/// inspecting raw `serde_json::Value` objects (Task 140 / 111.3 follow-up).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "method", content = "params")]
+pub enum JsonRpcRequest {
+    #[serde(rename = "initialize")]
+    Initialize(Value),
+
+    #[serde(rename = "session/new")]
+    SessionNew(Value),
+
+    #[serde(rename = "session/prompt")]
+    SessionPrompt(Value),
+
+    #[serde(rename = "session/list")]
+    SessionList(Value),
+
+    #[serde(rename = "session/load")]
+    SessionLoad(Value),
+
+    #[serde(rename = "session/fork")]
+    SessionFork(Value),
+
+    #[serde(rename = "session/set_model")]
+    SessionSetModel(Value),
+
+    // Unknown / future methods fall through here
+    #[serde(other)]
+    Unknown,
+}
+
 #[cfg(test)]
 mod serialization_tests {
     use super::*;

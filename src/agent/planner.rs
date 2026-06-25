@@ -108,8 +108,14 @@ impl Planner {
         debug!(intent = %intent, "Planner: Bayesian intent resolved");
 
         // ── Optional Explorer run (Task 161/162) ─────────────────────────────
+        // Fixed: Use proper Bayesian intent names instead of fragile substring checks.
         let mut repo_evidence = None;
-        if intent.contains("edit") || intent.contains("refactor") || intent.contains("fix") {
+        let should_explore = matches!(
+            intent.as_str(),
+            "intent_edit" | "intent_refactor" | "intent_fix" | "intent_code_change"
+        ) || intent.contains("edit"); // keep a loose fallback for future intent names
+
+        if should_explore {
             if let Some(client) = client {
                 if let Ok(evidence) =
                     crate::agent::explorer::run_explorer_mode(client, user_input, model).await

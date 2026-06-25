@@ -21,6 +21,10 @@
 pub mod app;
 pub mod approval;
 pub mod commands;
+pub mod display_data;
+
+// Re-exports for library consumers (supports Task 131/132 library/binary separation)
+pub use display_data::DisplayData;
 
 use anyhow::Result;
 use colored::*;

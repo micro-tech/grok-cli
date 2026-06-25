@@ -19,6 +19,7 @@ use crate::acp::security::SecurityPolicy;
 use crate::acp::slash_commands;
 use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
+use crate::cli::display_data::DisplayData;
 use crate::cli::{
     create_spinner, format_error, format_grok_response, format_info, format_success,
 };
@@ -47,7 +48,8 @@ pub struct ChatOptions<'a> {
     pub explore: Option<String>,
 }
 
-pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
+/// Main chat handler — returns DisplayData for library/binary separation (Task 131/136).
+pub async fn handle_chat(options: ChatOptions<'_>) -> Result<DisplayData> {
     let client = initialize_router(options.api_key, options.timeout_secs)?;
 
     if options.interactive {
@@ -152,7 +154,8 @@ async fn handle_single_chat(
         }
     }
 
-    Ok(())
+    // Return structured result for library/binary separation (Task 131/136)
+    Ok(DisplayData::success("Chat session completed"))
 }
 
 /// Execute a tool call from the AI using the full tool registry (all 31 tools).
@@ -179,7 +182,8 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
             println!("{}", format_error(&format!("Tool '{}' failed: {}", name, e)));
         }
     }
-    Ok(())
+    // Return structured result for library/binary separation (Task 131/136)
+    Ok(DisplayData::success("Chat session completed"))
 }
 
 async fn handle_interactive_chat(
@@ -392,7 +396,8 @@ async fn handle_interactive_chat(
         }
     }
 
-    Ok(())
+    // Return structured result for library/binary separation (Task 131/136)
+    Ok(DisplayData::success("Chat session completed"))
 }
 
 /// Enum to represent the result of processing a command
@@ -722,5 +727,6 @@ async fn handle_explorer_mode(
         }
     }
 
-    Ok(())
+    // Return structured result for library/binary separation (Task 131/136)
+    Ok(DisplayData::success("Chat session completed"))
 }

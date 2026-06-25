@@ -256,7 +256,9 @@ impl BayesianEngine {
         }
 
         self.sync_graph();
-        let _ = crate::bayes::profile::save_profile(&self.priors);
+        if let Err(e) = crate::bayes::profile::save_profile(&self.priors) {
+            tracing::warn!("Failed to persist Bayesian profile: {}", e);
+        }
     }
 
     // ── Query methods ─────────────────────────────────────────────────────────

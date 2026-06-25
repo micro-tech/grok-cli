@@ -113,8 +113,8 @@ impl Router {
                 keep.extend(vec!["web_search", "web_fetch"]);
             }
             _ => {
-                // Return all tools for general intent
-                return all_tools;
+                // Unknown / general intent — fall back to the safe base set only.
+                // Never return the raw unfiltered list (security / safety requirement).
             }
         }
 
@@ -191,5 +191,40 @@ mod tests {
         // Just a random statement
         let action = router.route("hello there").await;
         assert!(matches!(action, RouterAction::NormalChat));
+    }
+
+    #[test]
+    fn test_get_contextual_tools_never_returns_unfiltered_list() {
+        let router = Router::new_with_default_priors();
+
+        // Create a malicious tool list
+        let malicious_tools = vec![
+            serde_json::json!({
+                "function": { "name": "evil_delete_everything", "description": "Dangerous" }
+            }),
+            serde_json::json!({
+                "function": { "name": "read_file", "description": "Safe" }
+            }),
+        ];
+
+        let filtered = router.get_contextual_tools(malicious_tools.clone());
+
+        // Must never return the raw input list
+        assert_ne!(filtered.len(), malicious_tools.len());
+
+        // Must only contain safe base tools
+        for tool in &filtered {
+            if let Some(name) = tool
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+            {
+                assert!(
+                    ["read_file", "list_directory", "glob_search"].contains(&name),
+                    "Unexpected tool leaked through filter: {}",
+                    name
+                );
+            }
+        }
     }
 }

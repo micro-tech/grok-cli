@@ -370,7 +370,25 @@ pub async fn run() -> Result<()> {
             crate::cli::commands::skills::handle_skills_command(action.clone()).await?;
         }
         Some(Commands::Tools { action }) => {
-            crate::cli::commands::tools::handle_tools_command(action.clone()).await?;
+            let data = crate::cli::commands::tools::handle_tools_command(action.clone()).await?;
+            // Simple renderer for the new DisplayData (Task 131)
+            match data {
+                crate::cli::display_data::DisplayData::Text(t) => println!("{}", t),
+                crate::cli::display_data::DisplayData::Success(s) => println!("{}", s),
+                crate::cli::display_data::DisplayData::Error(e) => eprintln!("{}", e),
+                crate::cli::display_data::DisplayData::Info(i) => println!("{}", i),
+                crate::cli::display_data::DisplayData::Table { .. } => {
+                    println!("[Table output not yet rendered in CLI]")
+                }
+                crate::cli::display_data::DisplayData::Multiple(items) => {
+                    for item in items {
+                        if let crate::cli::display_data::DisplayData::Text(t) = item {
+                            println!("{}", t);
+                        }
+                    }
+                }
+                crate::cli::display_data::DisplayData::None => {}
+            }
         }
         Some(Commands::Setup) => {
             crate::cli::commands::setup::handle_setup().await?;

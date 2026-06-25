@@ -279,15 +279,13 @@ pub fn print_error_banner(title: &str, error: &str) {
     print!("{}", format_error_banner(title, error));
 }
 
-/// Print a simple status line (like the bottom status bar in Gemini CLI)
-pub fn print_status_line(
+/// Return a simple status line string (pure function, Task 138).
+pub fn format_status_line(
     mode: &str,
     model: &str,
     context_used: Option<&str>,
     directory: Option<&str>,
-) {
-    let (width, _) = crate::display::get_terminal_size();
-
+) -> String {
     let mut status_parts = vec![mode.to_string()];
 
     if let Some(dir) = directory {
@@ -300,28 +298,22 @@ pub fn print_status_line(
         status_parts.push(format!("📊 {}", context));
     }
 
-    let status_line = status_parts.join(" | ");
-    let padding = if width as usize > status_line.len() {
-        width as usize - status_line.len()
-    } else {
-        0
-    };
-
-    print!("{}", " ".repeat(padding));
-    println!("{}", status_line.dimmed());
+    status_parts.join(" | ")
 }
 
-/// Clear the current line and move cursor to beginning
+/// Clear the current line and move cursor to beginning (still performs I/O — move to binary later)
+#[deprecated(note = "Move to binary crate - performs I/O")]
 pub fn clear_current_line() {
     print!("\r\x1b[K");
-    io::stdout().flush().unwrap_or(());
+    let _ = io::stdout().flush();
 }
 
-/// Print a simple progress indicator
+/// Print a simple progress indicator (still performs I/O)
+#[deprecated(note = "Move to binary crate - performs I/O")]
 pub fn print_progress_dots(count: usize) {
     clear_current_line();
     print!("Thinking{}", ".".repeat((count % 4) + 1));
-    io::stdout().flush().unwrap_or(());
+    let _ = io::stdout().flush();
 }
 
 #[cfg(test)]

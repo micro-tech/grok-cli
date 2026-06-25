@@ -12,11 +12,13 @@ use anyhow::{Result, anyhow};
 use colored::*;
 
 use crate::ConfigAction;
+use crate::cli::display_data::DisplayData;
 use crate::cli::{confirm, format_error, format_info, format_success, format_warning};
 use crate::config::Config;
 
 /// Handle configuration-related commands
-pub async fn handle_config_action(action: ConfigAction, config: &Config) -> Result<()> {
+/// Returns DisplayData for library/binary separation (Task 136).
+pub async fn handle_config_action(action: ConfigAction, config: &Config) -> Result<DisplayData> {
     match action {
         ConfigAction::Show => show_config(config).await,
         ConfigAction::Set { key, value } => set_config_value(&key, &value).await,
@@ -25,6 +27,8 @@ pub async fn handle_config_action(action: ConfigAction, config: &Config) -> Resu
         ConfigAction::Validate => validate_config().await,
         ConfigAction::ValidateExternalAccess => validate_external_access_config(config).await,
     }
+    // Note: Full migration of all internal functions to return DisplayData
+    // will be done in follow-up steps for Task 136.
 }
 
 /// Show current configuration
@@ -153,7 +157,8 @@ async fn show_config(config: &Config) -> Result<()> {
         println!("  Unknown");
     }
 
-    Ok(())
+    // Return structured data (Task 136)
+    Ok(DisplayData::success("Configuration displayed"))
 }
 
 /// Set a configuration value

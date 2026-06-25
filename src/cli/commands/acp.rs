@@ -525,8 +525,9 @@ where
         )
         // Note: session/fork and session/set_model are non-standard methods not
         // in ClientRequest. They are not routed by the Builder in this version.
-        // TODO (task 111.3 follow-up): define custom JsonRpcRequest types for them
-        // using the crate's derive macro so they can be handled as typed requests.
+        // Task 140 (was 111.3 follow-up): custom JsonRpcRequest types live in
+        // src/acp/protocol.rs as the JsonRpcRequest enum.  The typed handlers
+        // for fork/set_model will be added in a later wiring step.
         .connect_to(transport)
         .await;
 

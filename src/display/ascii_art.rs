@@ -94,16 +94,18 @@ pub fn print_grok_logo(width: u16) {
     print!("{}", format_grok_logo(width));
 }
 
-/// Print X.ai branding
-pub fn print_x_ai_branding() {
-    for line in X_AI_BRANDING.lines() {
-        if !line.trim().is_empty() {
-            println!("{}", line.bright_black());
-        }
-    }
+/// Return X.ai branding as a String (pure function, Task 138)
+pub fn format_x_ai_branding() -> String {
+    X_AI_BRANDING
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|l| l.bright_black().to_string())
+        .collect::<Vec<_>>()
+        .join("\n")
 }
 
-/// Animated logo display (for fun startup effect)
+/// Animated logo display (still performs I/O — deprecated for Task 138)
+#[deprecated(note = "Move to binary crate - performs I/O + blocking sleep")]
 pub fn print_animated_logo(width: u16) {
     use std::{thread, time::Duration};
 
@@ -115,7 +117,6 @@ pub fn print_animated_logo(width: u16) {
             continue;
         }
 
-        // Apply gradient and print with small delay
         let colored_line = match i % 3 {
             0 => line.bright_blue(),
             1 => line.bright_magenta(),

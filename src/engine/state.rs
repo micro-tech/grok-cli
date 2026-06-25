@@ -587,12 +587,17 @@ impl ReasoningEngineState {
     /// `revision_count >= max_revisions` before the revision is applied.
     /// The plan is **not** modified in that case.
     pub fn revise_plan(&mut self, new_steps: Vec<PlanStep>) -> Result<(), PlanError> {
-        if self.revision_count >= self.max_revisions {
+        // Fix: increment first, then check (correct check order).
+        // This ensures we never exceed max_revisions and makes the
+        // "you get exactly N revisions" semantics explicit.
+        self.revision_count += 1;
+        if self.revision_count > self.max_revisions {
+            self.revision_count -= 1; // rollback the increment
             return Err(PlanError::MaxRevisionsExceeded(self.max_revisions));
         }
+
         self.plan = new_steps;
         self.current_step_index = 0;
-        self.revision_count += 1;
         self.touch();
         Ok(())
     }
@@ -841,7 +846,8 @@ mod tests {
             .expect("first revision should succeed");
         assert_eq!(s.revision_count, 1);
 
-        // Second revision must fail because revision_count (1) >= max_revisions (1).
+        // Second revision must fail because we now allow exactly `max_revisions`
+        // successful revisions (the count is incremented *before* the check).
         let result = s.revise_plan(vec![PlanStep::new("s2", StepAction::NoOp)]);
         assert!(
             matches!(result, Err(PlanError::MaxRevisionsExceeded(1))),
@@ -850,6 +856,22 @@ mod tests {
         // The plan must NOT have been modified.
         assert_eq!(s.plan.len(), 1);
         assert_eq!(s.plan[0].description, "s1");
+    }
+
+    #[test]
+    fn revise_plan_allows_exactly_max_revisions() {
+        let mut s = ReasoningEngineState::new().with_max_revisions(2);
+
+        s.revise_plan(vec![PlanStep::new("r1", StepAction::NoOp)]).unwrap();
+        assert_eq!(s.revision_count, 1);
+
+        s.revise_plan(vec![PlanStep::new("r2", StepAction::NoOp)]).unwrap();
+        assert_eq!(s.revision_count, 2);
+
+        // Third attempt must fail
+        let result = s.revise_plan(vec![PlanStep::new("r3", StepAction::NoOp)]);
+        assert!(matches!(result, Err(PlanError::MaxRevisionsExceeded(2))));
+        assert_eq!(s.revision_count, 2); // count must not have been left incremented
     }
 
     // -----------------------------------------------------------------------
