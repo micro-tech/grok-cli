@@ -3,6 +3,8 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{error, info};
 
+use crate::cli::display_data::DisplayData;
+
 use crate::config::{Config, ConfigSource, ThinkingMode};
 use crate::display::banner::{BannerConfig, format_welcome_banner};
 use crate::display::interactive::{InteractiveConfig, PromptStyle, start_interactive_mode};
@@ -385,7 +387,6 @@ pub async fn run() -> Result<()> {
                     }
                 }
                 DisplayData::None         => {}
-                _ => {}
             }
         }
         Some(Commands::Setup) => {

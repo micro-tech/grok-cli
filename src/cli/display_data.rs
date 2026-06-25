@@ -22,6 +22,9 @@ pub enum DisplayData {
 
     /// No output needed.
     None,
+
+    /// Multiple DisplayData items.
+    Multiple(Vec<DisplayData>),
 }
 
 impl DisplayData {

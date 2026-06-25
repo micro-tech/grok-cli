@@ -88,7 +88,7 @@ async fn handle_single_chat(
     max_tokens: u32,
     model: &str,
     thinking_mode: ThinkingMode,
-) -> Result<()> {
+) -> Result<DisplayData> {
     println!("{}", format_info(&format!("Sending message to Grok (model: {})...", model)));
 
     let spinner = create_spinner("Thinking...");
@@ -137,7 +137,7 @@ async fn handle_single_chat(
                     execute_tool_call(tool_call, &security).await?;
                 }
                 println!("{}", format_success("All operations completed!"));
-                return Ok(());
+                return Ok(DisplayData::success("Chat session completed"));
             }
 
             // Regular text response
@@ -155,13 +155,13 @@ async fn handle_single_chat(
     }
 
     // Return structured result for library/binary separation (Task 131/136)
-    Ok(DisplayData::success("Chat session completed"))
+    Ok(DisplayData::success("Tool executed"))
 }
 
 /// Execute a tool call from the AI using the full tool registry (all 31 tools).
 /// Previously only ~9 tools were handled here; now every tool defined in
 /// `tools::registry::get_tool_definitions` is dispatched correctly.
-async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<()> {
+async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<DisplayData> {
     let name = &tool_call.function.name;
     let args: Value = serde_json::from_str(&tool_call.function.arguments)?;
     let ctx = ToolContext::new(security.clone());
@@ -183,7 +183,7 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
         }
     }
     // Return structured result for library/binary separation (Task 131/136)
-    Ok(DisplayData::success("Chat session completed"))
+    Ok(DisplayData::success("Tool executed"))
 }
 
 async fn handle_interactive_chat(
@@ -194,7 +194,7 @@ async fn handle_interactive_chat(
     model: &str,
     bayesian_config: BayesianConfig,
     thinking_mode: ThinkingMode,
-) -> Result<()> {
+) -> Result<DisplayData> {
     println!("{}", "🤖 Interactive Grok Chat Session".cyan().bold());
     println!("{}", format!("Model: {}", model).dimmed());
 
@@ -397,7 +397,7 @@ async fn handle_interactive_chat(
     }
 
     // Return structured result for library/binary separation (Task 131/136)
-    Ok(DisplayData::success("Chat session completed"))
+    Ok(DisplayData::success("Tool executed"))
 }
 
 /// Enum to represent the result of processing a command
@@ -683,7 +683,7 @@ async fn handle_explorer_mode(
     client: AppRouter,
     query: &str,
     model: &str,
-) -> Result<()> {
+) -> Result<DisplayData> {
     use crate::agent::mode::Mode;
 
     println!("{}", format_info(&format!("Explorer mode: {}", query)));
@@ -728,5 +728,5 @@ async fn handle_explorer_mode(
     }
 
     // Return structured result for library/binary separation (Task 131/136)
-    Ok(DisplayData::success("Chat session completed"))
+    Ok(DisplayData::success("Tool executed"))
 }

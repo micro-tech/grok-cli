@@ -32,7 +32,7 @@ pub async fn handle_config_action(action: ConfigAction, config: &Config) -> Resu
 }
 
 /// Show current configuration
-async fn show_config(config: &Config) -> Result<()> {
+async fn show_config(config: &Config) -> Result<DisplayData> {
     println!("{}", "⚙️  Grok CLI Configuration".cyan().bold());
     println!();
 
@@ -162,7 +162,7 @@ async fn show_config(config: &Config) -> Result<()> {
 }
 
 /// Set a configuration value
-async fn set_config_value(key: &str, value: &str) -> Result<()> {
+async fn set_config_value(key: &str, value: &str) -> Result<DisplayData> {
     // Special handling for API key - store in .env file, not config.toml
     if key == "api_key" {
         use std::fs;
@@ -233,7 +233,7 @@ async fn set_config_value(key: &str, value: &str) -> Result<()> {
         );
         println!("The API key will be loaded automatically when you run grok commands.");
 
-        return Ok(());
+        return Ok(DisplayData::success("External access disabled"));
     }
 
     println!("{}", format_info(&format!(
@@ -267,11 +267,11 @@ async fn set_config_value(key: &str, value: &str) -> Result<()> {
     // Show a relevant tip based on the key that was set
     show_config_tip(key);
 
-    Ok(())
+    Ok(DisplayData::success("Configuration updated"))
 }
 
 /// Get a configuration value
-async fn get_config_value(key: &str) -> Result<()> {
+async fn get_config_value(key: &str) -> Result<DisplayData> {
     println!("{}", format_info(&format!(
         "Getting configuration value for: {}",
         key.cyan()
@@ -295,11 +295,11 @@ async fn get_config_value(key: &str) -> Result<()> {
         }
     }
 
-    Ok(())
+    Ok(DisplayData::success("Configuration value retrieved"))
 }
 
 /// Initialize configuration with defaults
-async fn init_config(force: bool) -> Result<()> {
+async fn init_config(force: bool) -> Result<DisplayData> {
     println!("{}", format_info("Initializing Grok CLI configuration..."));
 
     if !force {
@@ -310,7 +310,7 @@ async fn init_config(force: bool) -> Result<()> {
 
             if !confirm("Do you want to overwrite the existing configuration?")? {
                 println!("{}", format_info("Configuration initialization cancelled."));
-                return Ok(());
+                return Ok(DisplayData::success("Cancelled"));
             }
         }
     }
@@ -334,11 +334,11 @@ async fn init_config(force: bool) -> Result<()> {
         }
     }
 
-    Ok(())
+    Ok(DisplayData::success("Configuration validated"))
 }
 
 /// Validate external access configuration
-async fn validate_external_access_config(config: &Config) -> Result<()> {
+async fn validate_external_access_config(config: &Config) -> Result<DisplayData> {
     use glob::Pattern;
     use std::fs;
 
@@ -364,7 +364,7 @@ async fn validate_external_access_config(config: &Config) -> Result<()> {
         println!("  2. Or add to config.toml:");
         println!("     [security.external_access]");
         println!("     enabled = true");
-        return Ok(());
+        return Ok(DisplayData::success("External access disabled"));
     }
 
     println!("{}", "✓ External access is enabled".green());
@@ -498,17 +498,17 @@ async fn validate_external_access_config(config: &Config) -> Result<()> {
     println!();
     println!("{}", "Validation complete".green().bold());
 
-    Ok(())
+    Ok(DisplayData::success("Configuration validated"))
 }
 
 /// Validate current configuration
-async fn validate_config() -> Result<()> {
+async fn validate_config() -> Result<DisplayData> {
     println!("{}", format_info("Validating configuration..."));
 
     let config = Config::load(None).await?;
 
     match config.validate() {
-        Ok(()) => {
+        Ok(_) => {
             println!("{}", format_success("Configuration is valid!"));
 
             // Additional checks
@@ -578,7 +578,7 @@ async fn validate_config() -> Result<()> {
         }
     }
 
-    Ok(())
+    Ok(DisplayData::success("Configuration validated"))
 }
 
 /// Show a helpful tip based on the configuration key that was set

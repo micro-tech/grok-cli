@@ -76,7 +76,7 @@ impl KnowledgeLoader {
         let mut idf = 0.0f32;
         for term in &query_terms {
             let df = if content_lower.contains(term) { 1.0 } else { 0.0 };
-            idf += (1.0 / (1.0 + df)).ln();
+            idf += ((1.0_f32) / (1.0_f32 + df)).ln();
         }
         idf = idf.max(0.1);
 

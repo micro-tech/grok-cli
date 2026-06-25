@@ -658,6 +658,7 @@ impl GrokAcpAgent {
             thinking_mode,
             mut local_bayes,
             local_always_allow,
+            compression_work,
         ) = {
             let mut sessions = self.sessions.write().await;
             let session = sessions
@@ -1427,7 +1428,7 @@ impl GrokAcpAgent {
                         .and_then(|v| v.as_str());
 
                     let diff = augmented_args.get("old_string")
-                        .and_then(|old| augmented_args.get("new_string"))
+                        .and_then(|_old| augmented_args.get("new_string"))
                         .map(|new| format!("old → {}", new));
 
                     let dna_val = {
