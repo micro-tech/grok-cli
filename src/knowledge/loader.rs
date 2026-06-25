@@ -49,9 +49,35 @@ impl KnowledgeLoader {
         Ok(Self { entries })
     }
 
-    /// Compute relevance score (placeholder: simple keyword match).
+    /// Compute relevance score using a lightweight TF-style overlap.
+    /// Returns a score between 0.0 and 1.0.
     fn compute_relevance(content: &str, query: &str) -> f32 {
-        if content.contains(query) { 1.0 } else { 0.5 }
+        if query.trim().is_empty() {
+            return 0.5;
+        }
+
+        let content_lower = content.to_lowercase();
+        let query_lower = query.to_lowercase();
+        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+
+        if query_terms.is_empty() {
+            return 0.5;
+        }
+
+        let mut matches = 0;
+        for term in &query_terms {
+            if content_lower.contains(term) {
+                matches += 1;
+            }
+        }
+
+        // Normalize by number of query terms + slight boost for full phrase match
+        let base_score = matches as f32 / query_terms.len() as f32;
+        if content_lower.contains(&query_lower) {
+            (base_score + 0.3).min(1.0)
+        } else {
+            base_score
+        }
     }
 
     /// Get all loaded knowledge entries.

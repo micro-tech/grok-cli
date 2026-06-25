@@ -61,6 +61,9 @@ pub struct InteractiveSession {
     /// Toggled at runtime with `/simulate on|off`.
     #[serde(default)]
     pub simulate_mode: bool,
+    /// Shell command permissions for this session.
+    #[serde(default)]
+    pub shell_permissions: ShellPermissions,
 }
 
 fn default_auto_skills_enabled() -> bool {
@@ -122,6 +125,7 @@ impl InteractiveSession {
             active_skills: Vec::new(),
             auto_skills_enabled: true,
             simulate_mode: false,
+            shell_permissions: ShellPermissions::new(ApprovalMode::Default),
             system_prompt,
             conversation_history: Vec::new(),
             current_directory,

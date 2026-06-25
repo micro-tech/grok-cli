@@ -97,8 +97,28 @@ impl McpClient {
         self.send_message(connection, &init_msg).await?;
         let response = self.read_response(connection).await?;
 
-        // TODO: Validate response?
-        debug!("Initialize response: {:?}", response);
+        // Validate initialize response
+        if let Some(error) = response.get("error") {
+            return Err(anyhow!("MCP initialize failed: {:?}", error));
+        }
+
+        let result = response
+            .get("result")
+            .ok_or_else(|| anyhow!("Missing result in initialize response"))?;
+
+        let protocol_version = result
+            .get("protocolVersion")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("Missing protocolVersion in initialize response"))?;
+
+        if protocol_version != "0.1.0" {
+            return Err(anyhow!(
+                "Unsupported MCP protocol version: {}",
+                protocol_version
+            ));
+        }
+
+        debug!("Initialize response validated successfully");
 
         // Send initialized notification
         let initialized_msg = json!({
