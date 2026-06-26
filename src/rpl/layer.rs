@@ -14,8 +14,8 @@
 //! let mut trace = layer.on_pre_evaluate(Some("list /tmp"), None);
 //!
 //! // 2. For each tool considered during the loop
-//! layer.on_tool_selection(&mut trace, "list_directory", true, Some("path arg"));
-//! layer.on_tool_selection(&mut trace, "read_file", false, None);
+//! layer.on_tool_selection(&mut trace, "list_directory", true, Some(0.92), Some("path arg"));
+//! layer.on_tool_selection(&mut trace, "read_file", false, None, None);
 //!
 //! // 3. When the loop finishes (success or max-iterations)
 //! layer.on_complete(&mut trace);
@@ -147,15 +147,18 @@ impl RplLayer {
     ///
     /// # Arguments
     ///
-    /// * `trace`     – The active reasoning trace for this routing call.
-    /// * `tool_name` – The registered name of the tool being evaluated.
-    /// * `selected`  – Whether this tool was chosen for execution.
-    /// * `reason`    – Optional explanation for the selection decision.
+    /// * `trace`            – The active reasoning trace for this routing call.
+    /// * `tool_name`        – The registered name of the tool being evaluated.
+    /// * `selected`         – Whether this tool was chosen for execution.
+    /// * `relevance_score`  – Optional score (0.0–1.0). If `None`, defaults to
+    ///                        1.0 when `selected`, else 0.0.
+    /// * `reason`           – Optional explanation for the selection decision.
     pub fn on_tool_selection(
         &self,
         trace: &mut ReasoningTrace,
         tool_name: &str,
         selected: bool,
+        relevance_score: Option<f32>,
         reason: Option<&str>,
     ) {
         // Advance phase if we're still in pre-evaluation.
@@ -163,11 +166,11 @@ impl RplLayer {
             trace.phase = ReasoningPhase::ToolSelection;
         }
 
-        // Assign a default relevance score based on selection outcome.
-        // Callers that have a real score should set it directly on the
-        // ToolEvaluation before calling this helper; this default keeps the
-        // API simple for callers that only know selected/not-selected.
-        let relevance_score = if selected { 1.0_f32 } else { 0.0_f32 };
+        // Preserve caller-provided score when meaningful; otherwise fall back
+        // to the simple selected/not-selected default.
+        let relevance_score = relevance_score.unwrap_or_else(|| {
+            if selected { 1.0_f32 } else { 0.0_f32 }
+        });
 
         let eval = ToolEvaluation {
             tool_name: tool_name.to_string(),
@@ -180,6 +183,7 @@ impl RplLayer {
             trace_id  = %trace.trace_id,
             tool_name = %tool_name,
             selected  = selected,
+            relevance = relevance_score,
             reason    = ?reason,
             "rpl: tool evaluated"
         );
@@ -346,8 +350,8 @@ mod tests {
         let layer = RplLayer::with_default_config();
         let mut trace = layer.on_pre_evaluate(None, None);
 
-        layer.on_tool_selection(&mut trace, "read_file", true, Some("file path in goal"));
-        layer.on_tool_selection(&mut trace, "list_directory", false, None);
+        layer.on_tool_selection(&mut trace, "read_file", true, None, Some("file path in goal"));
+        layer.on_tool_selection(&mut trace, "list_directory", false, None, None);
 
         assert_eq!(trace.tool_evaluations.len(), 2);
         assert_eq!(trace.tool_evaluations[0].tool_name, "read_file");
@@ -364,7 +368,7 @@ mod tests {
         let mut trace = layer.on_pre_evaluate(None, None);
 
         assert_eq!(trace.phase, ReasoningPhase::PreEvaluation);
-        layer.on_tool_selection(&mut trace, "any_tool", false, None);
+        layer.on_tool_selection(&mut trace, "any_tool", false, None, None);
         assert_eq!(trace.phase, ReasoningPhase::ToolSelection);
     }
 
@@ -374,11 +378,11 @@ mod tests {
         let layer = RplLayer::with_default_config();
         let mut trace = layer.on_pre_evaluate(None, None);
 
-        layer.on_tool_selection(&mut trace, "tool_a", false, None);
+        layer.on_tool_selection(&mut trace, "tool_a", false, None, None);
         // Manually advance phase past ToolSelection.
         trace.phase = ReasoningPhase::ActionPlanning;
 
-        layer.on_tool_selection(&mut trace, "tool_b", true, None);
+        layer.on_tool_selection(&mut trace, "tool_b", true, None, None);
         // Phase must remain at ActionPlanning, not regress to ToolSelection.
         assert_eq!(trace.phase, ReasoningPhase::ActionPlanning);
     }
@@ -389,7 +393,7 @@ mod tests {
         let layer = RplLayer::with_default_config();
         let mut trace = layer.on_pre_evaluate(None, None);
 
-        layer.on_tool_selection(&mut trace, "chosen_tool", true, None);
+        layer.on_tool_selection(&mut trace, "chosen_tool", true, None, None);
         let score = trace.tool_evaluations[0].relevance_score;
         assert!(
             (score - 1.0).abs() < f32::EPSILON,
@@ -403,7 +407,7 @@ mod tests {
         let layer = RplLayer::with_default_config();
         let mut trace = layer.on_pre_evaluate(None, None);
 
-        layer.on_tool_selection(&mut trace, "skipped_tool", false, None);
+        layer.on_tool_selection(&mut trace, "skipped_tool", false, None, None);
         let score = trace.tool_evaluations[0].relevance_score;
         assert!(
             score.abs() < f32::EPSILON,
@@ -480,9 +484,9 @@ mod tests {
         let layer = RplLayer::with_default_config();
 
         let mut trace = layer.on_pre_evaluate(Some("find large files"), Some("home dir"));
-        layer.on_tool_selection(&mut trace, "list_directory", true, Some("dir arg"));
-        layer.on_tool_selection(&mut trace, "read_file", false, None);
-        layer.on_tool_selection(&mut trace, "shell_exec", false, Some("blocked by policy"));
+        layer.on_tool_selection(&mut trace, "list_directory", true, None, Some("dir arg"));
+        layer.on_tool_selection(&mut trace, "read_file", false, None, None);
+        layer.on_tool_selection(&mut trace, "shell_exec", false, None, Some("blocked by policy"));
         layer.on_complete(&mut trace);
 
         assert_eq!(trace.phase, ReasoningPhase::Complete);

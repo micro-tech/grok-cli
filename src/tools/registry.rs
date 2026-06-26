@@ -1165,3 +1165,31 @@ pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
 pub fn get_available_tool_definitions() -> Vec<serde_json::Value> {
     get_full_tool_definitions()
 }
+
+// ── Dynamic tool registration (Task 143) ─────────────────────────────────────
+
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+/// Registry of dynamically loaded custom tools.
+static DYNAMIC_TOOLS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+/// Register a tool that was loaded from a custom dylib (Task 143).
+pub fn register_dynamic_tool(name: &str, description: &str, _lib_path: &std::path::Path) {
+    let mut map = DYNAMIC_TOOLS.lock().unwrap();
+    if map.is_none() {
+        *map = Some(HashMap::new());
+    }
+    if let Some(ref mut m) = *map {
+        m.insert(name.to_string(), description.to_string());
+    }
+    tracing::info!("Dynamic tool registered: {}", name);
+}
+
+/// Returns the list of all dynamically loaded tool names.
+pub fn list_dynamic_tools() -> Vec<String> {
+    let map = DYNAMIC_TOOLS.lock().unwrap();
+    map.as_ref()
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default()
+}

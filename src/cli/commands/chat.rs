@@ -707,9 +707,18 @@ async fn handle_explorer_mode(
         .collect();
 
     let spinner = create_spinner("Exploring repository...");
-    let response = client
+    let response = match client
         .chat_completion_with_history(&messages, 0.2, 4096, model, Some(filtered_tools), None)
-        .await?;
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            spinner.finish_and_clear();
+            tracing::error!("Explorer mode API call failed: {}", e);
+            println!("{}", format_error(&format!("Explorer request failed: {}", e)));
+            return Err(e);
+        }
+    };
     spinner.finish_and_clear();
 
     if let Some(content) = response.message.content {

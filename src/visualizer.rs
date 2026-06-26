@@ -265,4 +265,40 @@ mod tests {
         assert!(md.contains("```dot"), "must have dot code fence");
         assert!(md.contains("Render with"), "must have usage hint");
     }
+
+    /// Task 221 — End-to-end structural validity test for DOT output.
+    /// Checks that the generated DOT has balanced braces and quotes
+    /// so it is at least syntactically plausible for Graphviz.
+    #[test]
+    fn dot_output_is_structurally_valid() {
+        let dot = generate_pipeline_dot(None);
+
+        // 1. Must be a valid digraph
+        assert!(dot.starts_with("digraph GrokCLI {"), "must be a digraph");
+
+        // 2. Brace balance check
+        let open_braces = dot.matches('{').count();
+        let close_braces = dot.matches('}').count();
+        assert_eq!(
+            open_braces, close_braces,
+            "unbalanced braces in DOT output ({} vs {})",
+            open_braces, close_braces
+        );
+
+        // 3. Quote balance check (simple heuristic)
+        let double_quotes = dot.matches('"').count();
+        assert!(
+            double_quotes % 2 == 0,
+            "unbalanced double quotes in DOT output"
+        );
+
+        // 4. Must contain the closing brace of the whole graph
+        assert!(
+            dot.trim_end().ends_with("}"),
+            "DOT must end with closing brace"
+        );
+
+        // 5. Sanity: at least one edge exists
+        assert!(dot.contains("->"), "must contain at least one edge");
+    }
 }

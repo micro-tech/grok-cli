@@ -39,7 +39,7 @@ pub enum PermissionDecision {
 }
 
 /// Shell command permissions manager
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellPermissions {
     /// Approval mode
     approval_mode: ApprovalMode,

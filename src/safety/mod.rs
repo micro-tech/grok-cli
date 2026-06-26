@@ -11,6 +11,7 @@ pub mod intent_validator;
 pub mod suspicious_write_guard;
 pub mod dna_safety;
 pub mod tool_health_monitor;
+pub mod error;
 #[cfg(test)]
 pub mod tests;
 
@@ -21,3 +22,4 @@ pub use intent_validator::IntentValidator;
 pub use suspicious_write_guard::SuspiciousWriteGuard;
 pub use dna_safety::DnaSafetyController;
 pub use tool_health_monitor::ToolHealthMonitor;
+pub use error::SafetyError;

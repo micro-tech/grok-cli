@@ -49,9 +49,49 @@ impl KnowledgeLoader {
         Ok(Self { entries })
     }
 
-    /// Compute relevance score (placeholder: simple keyword match).
+    /// Compute relevance score using TF-IDF style scoring + length normalization.
+    /// Returns a score in [0.0, 1.0] where higher = more relevant.
     fn compute_relevance(content: &str, query: &str) -> f32 {
-        if content.contains(query) { 1.0 } else { 0.5 }
+        if query.trim().is_empty() {
+            return 0.5; // neutral when no query
+        }
+
+        let content_lower = content.to_lowercase();
+        let query_lower = query.to_lowercase();
+        let query_terms: Vec<&str> = query_lower.split_whitespace().collect();
+
+        if query_terms.is_empty() {
+            return 0.5;
+        }
+
+        let content_words: Vec<&str> = content_lower.split_whitespace().collect();
+        let content_len = content_words.len() as f32;
+
+        if content_len == 0.0 {
+            return 0.0;
+        }
+
+        // Term frequency scoring with length normalization
+        let mut score = 0.0f32;
+        for term in &query_terms {
+            let term_count = content_words.iter().filter(|w| w.contains(term)).count() as f32;
+            if term_count > 0.0 {
+                // TF with log dampening + length normalization
+                let tf = (1.0 + term_count.ln()).min(3.0);
+                let norm = (tf / (content_len.ln() + 1.0)).min(1.0);
+                score += norm;
+            }
+        }
+
+        // Average over query terms, cap at 1.0
+        let avg = (score / query_terms.len() as f32).min(1.0);
+
+        // Boost exact phrase matches
+        if content_lower.contains(&query_lower) {
+            (avg * 1.3).min(1.0)
+        } else {
+            avg
+        }
     }
 
     /// Get all loaded knowledge entries.

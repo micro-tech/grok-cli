@@ -97,8 +97,10 @@ impl McpClient {
         self.send_message(connection, &init_msg).await?;
         let response = self.read_response(connection).await?;
 
-        // TODO: Validate response?
-        debug!("Initialize response: {:?}", response);
+        // ── Proper MCP response validation (Task 146) ─────────────────────
+        self.validate_initialize_response(&response)?;
+
+        debug!("Initialize response validated successfully: {:?}", response);
 
         // Send initialized notification
         let initialized_msg = json!({
@@ -106,6 +108,47 @@ impl McpClient {
             "method": "notifications/initialized"
         });
         self.send_message(connection, &initialized_msg).await?;
+
+        Ok(())
+    }
+
+    /// Validate an MCP `initialize` response.
+    fn validate_initialize_response(&self, response: &Value) -> Result<()> {
+        // 1. Must be a valid JSON-RPC response
+        if response.get("jsonrpc").and_then(|v| v.as_str()) != Some("2.0") {
+            return Err(anyhow!("Invalid JSON-RPC version in initialize response"));
+        }
+
+        // 2. Check for JSON-RPC level error
+        if let Some(err) = response.get("error") {
+            return Err(anyhow!("MCP server returned error during initialize: {}", err));
+        }
+
+        // 3. Must contain a "result" object
+        let result = response
+            .get("result")
+            .ok_or_else(|| anyhow!("Initialize response missing 'result' field"))?;
+
+        // 4. Result must contain protocolVersion
+        let server_version = result
+            .get("protocolVersion")
+            .and_then(|v| v.as_str())
+            .ok_or_else(|| anyhow!("Initialize result missing 'protocolVersion'"))?;
+
+        // 5. Basic protocol version compatibility check
+        if server_version != "0.1.0" {
+            tracing::warn!(
+                "MCP server protocol version {} may not be fully compatible with client 0.1.0",
+                server_version
+            );
+        }
+
+        // 6. Optional but recommended: check serverInfo
+        if let Some(server_info) = result.get("serverInfo") {
+            if let Some(name) = server_info.get("name").and_then(|v| v.as_str()) {
+                debug!("Connected to MCP server: {}", name);
+            }
+        }
 
         Ok(())
     }
