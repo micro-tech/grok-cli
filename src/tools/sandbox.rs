@@ -6,7 +6,6 @@
 // When re-enabled, add `libloading` to Cargo.toml and uncomment the import.
 // use libloading::{Library, Symbol};
 
-use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::Mutex;
@@ -19,15 +18,15 @@ pub struct CustomTool {
 }
 
 /// Sandbox for loading custom tools.
+/// NOTE: Dynamic loading via libloading is currently disabled (feature placeholder).
 pub struct PluginSandbox {
-    loaded_libraries: Mutex<HashMap<String, Library>>,
+    // loaded_libraries disabled until libloading crate is added
     registered_tools: Mutex<Vec<CustomTool>>,
 }
 
 impl PluginSandbox {
     pub fn new() -> Self {
         Self {
-            loaded_libraries: Mutex::new(HashMap::new()),
             registered_tools: Mutex::new(Vec::new()),
         }
     }
@@ -88,51 +87,23 @@ impl PluginSandbox {
         }
 
         tracing::info!("Compiled → {}", out_path.display());
-        self.load_library(&out_path, &file_stem)
+        // Dynamic loading disabled (libloading not present).
+        // In a future build with the crate enabled, call:
+        // self.load_library(&out_path, &file_stem)
+        tracing::warn!(
+            "Dynamic tool loading is currently disabled. Compiled library at {} was not loaded.",
+            out_path.display()
+        );
+        Ok(())
     }
 
-    /// dlopen the compiled library and register any exported tools.
+    /// Stub: dynamic loading requires the `libloading` crate (currently disabled).
+    #[allow(dead_code)]
     fn load_library(
         &self,
-        lib_path: &Path,
-        base_name: &str,
+        _lib_path: &Path,
+        _base_name: &str,
     ) -> Result<(), Box<dyn std::error::Error>> {
-        unsafe {
-            let lib = Library::new(lib_path)?;
-
-            // Try to find the conventional entry point: `grok_tool_init`
-            if let Ok(init_fn) = lib.get::<Symbol<fn() -> *mut CustomToolEntry>>(b"grok_tool_init")
-            {
-                let entry = &*init_fn();
-                let tool = CustomTool {
-                    name: entry.name.to_string(),
-                    description: entry.description.to_string(),
-                    library_path: lib_path.to_path_buf(),
-                };
-
-                // Register with the global registry
-                crate::tools::registry::register_dynamic_tool(
-                    &tool.name,
-                    &tool.description,
-                    lib_path,
-                );
-
-                let mut tools = self.registered_tools.lock().unwrap();
-                tools.push(tool);
-
-                tracing::info!("Registered dynamic tool: {}", entry.name);
-            } else {
-                tracing::warn!(
-                    "Library {} has no grok_tool_init symbol — skipping registration",
-                    base_name
-                );
-            }
-
-            // Keep the library alive for the lifetime of the process
-            let mut libs = self.loaded_libraries.lock().unwrap();
-            libs.insert(base_name.to_string(), lib);
-        }
-
         Ok(())
     }
 
