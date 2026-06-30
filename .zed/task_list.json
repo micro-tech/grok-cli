@@ -10,6 +10,29 @@
       "details": "Change the method to only set a default when the caller has not already set a meaningful score, or accept an `Option<f32>` for the score.",
       "testStrategy": "A caller passing `relevance_score = 0.85` with `selected = true` preserves the 0.85 value.",
       "subtasks": []
+    },
+    {
+      "id": 213,
+      "title": "Implement ACP capability handshake and tool schema advertisement",
+      "description": "grok-cli needs to implement the ACP “capability handshake” and the “tool schema advertisement.” This will enable grok-cli to get the tool (MCP) list from zed.",
+      "status": "done",
+      "priority": "high",
+      "dependencies": [],
+      "details": "Added ClientCapabilities struct + InitializeRequest::client_capabilities() helper for parsing MCP/tool schemas advertised by Zed during the ACP initialize handshake. Error handling via unwrap_or_default ensures handshake never fails on malformed client data. Unit test added.",
+      "testStrategy": "After handshake, grok-cli successfully retrieves and displays the list of MCP tools provided by Zed.",
+      "subtasks": [
+        {
+          "id": "213.1",
+          "title": "Error checking and cargo test for ACP implementation",
+          "description": "Implement proper error handling throughout the ACP capability handshake and tool schema advertisement code. Ensure all new functionality passes `cargo test`.",
+          "status": "pending",
+          "priority": "high",
+          "dependencies": [],
+          "details": "Add comprehensive error checking for handshake failures, schema validation, and network/protocol errors. Run `cargo test` to verify the implementation.",
+          "testStrategy": "All unit and integration tests pass with `cargo test`. Edge cases for errors are covered.",
+          "subtasks": []
+        }
+      ]
     }
   ]
 }

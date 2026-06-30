@@ -124,3 +124,4 @@ Doc/docs
 Doc/ai-generated-summaries
 nul
 .grok/config.toml
+.doc/markmap/

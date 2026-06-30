@@ -432,7 +432,7 @@ mod tests {
     fn on_complete_does_not_panic_on_valid_trace() {
         let layer = RplLayer::with_default_config();
         let mut trace = layer.on_pre_evaluate(Some("goal"), Some("ctx"));
-        layer.on_tool_selection(&mut trace, "list_directory", true, None);
+        layer.on_tool_selection(&mut trace, "list_directory", true, None, None);
         layer.on_complete(&mut trace);
         // If we reach here without panic the test passes.
     }

@@ -1138,6 +1138,48 @@ pub struct SessionLoadRequest {
     pub mcp_servers: Vec<Value>,
 }
 
+/// Client-provided capabilities received during the `initialize` handshake.
+/// This is the mechanism by which Zed (and other ACP clients) can advertise
+/// their own MCP servers / tools so the agent can discover and use them.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ClientCapabilities {
+    /// List of MCP servers the client (Zed) has configured and is willing to
+    /// expose to the agent.  Each entry is kept as a raw `Value` because the
+    /// exact schema varies between clients.
+    #[serde(default, rename = "mcpServers")]
+    pub mcp_servers: Vec<Value>,
+
+    /// Optional list of tools the client advertises (some clients send this
+    /// instead of / in addition to mcpServers).
+    #[serde(default)]
+    pub tools: Vec<Value>,
+
+    /// Any other capability flags the client may send.
+    #[serde(flatten)]
+    pub extra: std::collections::HashMap<String, Value>,
+}
+
+impl ClientCapabilities {
+    /// Returns `true` if the client advertised any MCP servers or tools.
+    pub fn has_tools(&self) -> bool {
+        !self.mcp_servers.is_empty() || !self.tools.is_empty()
+    }
+
+    /// Total number of advertised tools / MCP servers.
+    pub fn tool_count(&self) -> usize {
+        self.mcp_servers.len() + self.tools.len()
+    }
+}
+
+impl InitializeRequest {
+    /// Parse the raw `capabilities` field into a typed `ClientCapabilities`.
+    /// Returns a default (empty) struct on parse failure so the handshake never
+    /// breaks because of a malformed client payload.
+    pub fn client_capabilities(&self) -> ClientCapabilities {
+        serde_json::from_value(self.capabilities.clone()).unwrap_or_default()
+    }
+}
+
 #[cfg(test)]
 mod serialization_tests {
     use super::*;
@@ -1263,5 +1305,37 @@ mod serialization_tests {
         });
 
         assert_eq!(serde_json::to_value(&notification).unwrap(), expected);
+    }
+
+    #[test]
+    fn test_client_capabilities_parsing() {
+        // Test empty capabilities
+        let req = InitializeRequest {
+            protocol_version: "1".to_string(),
+            capabilities: json!({}),
+            client_info: json!({}),
+            workspace_root: None,
+            working_directory: None,
+        };
+        let caps = req.client_capabilities();
+        assert!(!caps.has_tools());
+        assert_eq!(caps.tool_count(), 0);
+
+        // Test with mcpServers
+        let req_with_mcp = InitializeRequest {
+            protocol_version: "1".to_string(),
+            capabilities: json!({
+                "mcpServers": [
+                    {"name": "filesystem", "command": "mcp-filesystem"}
+                ]
+            }),
+            client_info: json!({}),
+            workspace_root: None,
+            working_directory: None,
+        };
+        let caps = req_with_mcp.client_capabilities();
+        assert!(caps.has_tools());
+        assert_eq!(caps.tool_count(), 1);
+        assert_eq!(caps.mcp_servers.len(), 1);
     }
 }
