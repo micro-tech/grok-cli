@@ -83,6 +83,14 @@ pub struct GrokAcpAgent {
 
     /// Default model override
     default_model: Option<String>,
+
+    /// MCP client for connected Model Context Protocol servers.
+    /// Populated when `session/new` receives an `mcpServers` array.
+    mcp_client: Arc<RwLock<crate::mcp::client::McpClient>>,
+
+    /// Tools discovered from connected MCP servers.
+    /// Key = server name, Value = list of tools returned by `tools/list`.
+    discovered_mcp_tools: Arc<RwLock<HashMap<String, Vec<crate::mcp::protocol::Tool>>>>,
 }
 
 /// Session data for tracking conversation state
@@ -291,6 +299,8 @@ impl GrokAcpAgent {
             security: std::sync::OnceLock::new(),
             hook_manager: std::sync::OnceLock::new(),
             default_model,
+            mcp_client: Arc::new(RwLock::new(crate::mcp::client::McpClient::new())),
+            discovered_mcp_tools: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -349,6 +359,32 @@ impl GrokAcpAgent {
     /// code in the ACP command handler). Lazily initializes SecurityManager.
     pub fn add_trusted_directory(&self, path: std::path::PathBuf) {
         self.get_security().add_trusted_directory(path);
+    }
+
+    /// Returns a clone of the shared MCP client so callers (especially
+    /// `handle_session_new`) can connect servers received from the client.
+    pub fn get_mcp_client(&self) -> Arc<RwLock<crate::mcp::client::McpClient>> {
+        Arc::clone(&self.mcp_client)
+    }
+
+    /// Returns the map of tools discovered from connected MCP servers.
+    pub fn get_discovered_mcp_tools(
+        &self,
+    ) -> Arc<RwLock<HashMap<String, Vec<crate::mcp::protocol::Tool>>>> {
+        Arc::clone(&self.discovered_mcp_tools)
+    }
+
+    /// Returns a flattened list of all discovered MCP tools with their server name
+    /// prepended (e.g. "markmap:generate"). Useful for merging into the main tool list.
+    pub async fn get_all_mcp_tools(&self) -> Vec<(String, crate::mcp::protocol::Tool)> {
+        let map = self.discovered_mcp_tools.read().await;
+        let mut out = Vec::new();
+        for (server, tools) in map.iter() {
+            for t in tools {
+                out.push((server.clone(), (*t).clone()));
+            }
+        }
+        out
     }
 
     /// Create agent capabilities

@@ -457,7 +457,7 @@ where
                     let sid = params["sessionId"].as_str().unwrap_or("").to_string();
                     // Call our existing handler with a sink writer (notifications
                     // come from session persistence, not through the old writer).
-                    let writer_stub = tokio::io::sink();
+                    let _writer_stub = tokio::io::sink();
                     // `handle_session_load` is not yet implemented in the new ACP stack.
                     // Return a successful empty response for now (no session history restored).
                     let _val: Value = json!(null);
@@ -1384,12 +1384,80 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
     let req: NewSessionRequest = serde_json::from_value(params.clone())
         .map_err(|e| anyhow!("Invalid session/new parameters: {}", e))?;
 
-    // Log MCP servers forwarded by the client (Gemini CLI sends mcpServers: [])
+    // ── MCP server connection (Phase 1 of MCP bridge) ────────────────────────
     if !req.mcp_servers.is_empty() {
         info!(
-            "session/new: client forwarded {} MCP server(s) — stored for future bridging",
+            "session/new: client forwarded {} MCP server(s) — attempting connection",
             req.mcp_servers.len()
         );
+
+        for server_val in &req.mcp_servers {
+            // Expect shape: { "name": "...", "command": "...", "args": [...], "env": {...} }
+            let name = server_val
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unnamed");
+
+            let command = match server_val.get("command").and_then(|v| v.as_str()) {
+                Some(c) => c.to_string(),
+                None => {
+                    warn!("MCP server '{}' missing 'command' field — skipping", name);
+                    continue;
+                }
+            };
+
+            let args: Vec<String> = server_val
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let env: std::collections::HashMap<String, String> = server_val
+                .get("env")
+                .and_then(|v| v.as_object())
+                .map(|obj| {
+                    obj.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let cfg = crate::mcp::config::McpServerConfig::Stdio { command, args, env };
+
+            // Acquire the lock for this server only
+            let mcp_client = agent.get_mcp_client();
+            let mut client_guard = mcp_client.write().await;
+
+            match client_guard.connect(name, &cfg).await {
+                Ok(()) => {
+                    info!("Successfully connected to MCP server '{}'", name);
+
+                    // Discover tools from the newly connected server
+                    match client_guard.list_tools(name).await {
+                        Ok(tools) => {
+                            info!(
+                                "Discovered {} tool(s) from MCP server '{}'",
+                                tools.len(),
+                                name
+                            );
+                            // Release client lock before acquiring discovered_tools lock
+                            drop(client_guard);
+                            let discovered = agent.get_discovered_mcp_tools();
+                            let mut map = discovered.write().await;
+                            map.insert(name.to_string(), tools);
+                        }
+                        Err(e) => {
+                            warn!("Failed to list tools from MCP server '{}': {}", name, e);
+                        }
+                    }
+                }
+                Err(e) => warn!("Failed to connect to MCP server '{}': {}", name, e),
+            }
+        }
     }
 
     // Extract workspace context from request or environment.

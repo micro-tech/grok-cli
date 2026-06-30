@@ -1166,6 +1166,35 @@ pub fn get_available_tool_definitions() -> Vec<serde_json::Value> {
     get_full_tool_definitions()
 }
 
+/// Returns the built-in tools plus any tools discovered from connected MCP servers.
+/// MCP tools are exposed with the server name as a prefix (e.g. "markmap:generate").
+/// This is the function that should be used when building the tool list for a session
+/// that has MCP servers attached.
+pub async fn get_available_tool_definitions_with_mcp(
+    mcp_tools: &[(String, crate::mcp::protocol::Tool)],
+) -> Vec<serde_json::Value> {
+    let mut defs = get_full_tool_definitions();
+
+    for (server, tool) in mcp_tools {
+        let full_name = format!("{}:{}", server, tool.name);
+        let desc = tool
+            .description
+            .clone()
+            .unwrap_or_else(|| format!("MCP tool from {}", server));
+
+        defs.push(json!({
+            "type": "function",
+            "function": {
+                "name": full_name,
+                "description": desc,
+                "parameters": tool.input_schema
+            }
+        }));
+    }
+
+    defs
+}
+
 // ── Dynamic tool registration (Task 143) ─────────────────────────────────────
 
 use std::collections::HashMap;

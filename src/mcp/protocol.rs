@@ -32,7 +32,7 @@ pub struct ClientInfo {
     pub version: String,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Tool {
     pub name: String,
     pub description: Option<String>,

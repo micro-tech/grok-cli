@@ -84,7 +84,7 @@ fn install_windows(root_dir: PathBuf) {
     // 2. Define paths
     let local_app_data = env::var("LOCALAPPDATA").expect("LOCALAPPDATA not set");
     let install_dir = PathBuf::from(&local_app_data).join("grok-cli").join("bin");
-    let exe_name = "grok.exe"; // Use grok.exe to match Zed ACP configuration
+    let exe_name = "grok-cli.exe";
     let target_exe = install_dir.join(exe_name);
 
     let source_exe = root_dir.join("target").join("release").join(exe_name);
@@ -162,6 +162,17 @@ fn install_windows(root_dir: PathBuf) {
     println!("  • 227 new tests across RPL and Engine modules");
     println!("\nPlease restart your terminal to use the 'grok-cli' command.");
     println!(
+        "{}",
+        "IMPORTANT: The installed command is 'grok-cli' (not 'grok')."
+            .yellow()
+            .bold()
+    );
+    println!(
+        "{}",
+        "This avoids conflict with the official XAI Grok BUILD that also installs as 'grok'."
+            .yellow()
+    );
+    println!(
         "\nDocumentation installed to: {}",
         install_dir.parent().unwrap().join("docs").display()
     );
@@ -196,11 +207,7 @@ fn migrate_from_old_grok_directory() {
                     );
                 }
                 Err(e) => {
-                    eprintln!(
-                        "{} {}",
-                        "Failed to rename old directory:".red(),
-                        e
-                    );
+                    eprintln!("{} {}", "Failed to rename old directory:".red(), e);
                     println!(
                         "  Please manually move contents from {} to {}",
                         old_dir.display(),

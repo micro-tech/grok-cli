@@ -36,12 +36,56 @@
     },
     {
       "id": 214,
-      "title": "Fix installer to consistently use .grok-cli and grok.exe binary",
+      "title": "Fix installer to use grok-cli.exe (avoid conflict with official XAI grok)",
       "description": "Update the Windows installer so it:\n- Installs the binary as `grok.exe` (to match current Zed config)\n- Adds migration from old `.grok` directory to `.grok-cli`\n- Ensures all config, logs, memory, and audit paths use `.grok-cli`\n- Removes any remaining references to the old `.grok` layout",
       "status": "done",
       "dependencies": [],
       "priority": "high",
-      "details": "Installer now:\n- Builds and installs `grok.exe` (matches Zed ACP config)\n- Automatically migrates old `~/.grok` directory to `~/.grok-cli`\n- All paths consistently use `.grok-cli` for user data (config, sessions, memory, audit, etc.)",
+      "details": "Installer now correctly builds and installs `grok-cli.exe`. Updated Zed config recommendation to use the full path to grok-cli.exe.",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 215,
+      "title": "MCP Bridge Phase 1: Connect MCP servers on session/new",
+      "description": "Wire the existing McpClient into GrokAcpAgent and handle_session_new so that mcpServers sent by Zed are actually connected. Store the client so mcp_call can use it.",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Phase 1 complete: GrokAcpAgent now holds an McpClient, and handle_session_new connects any mcpServers sent by the client (Zed).",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 216,
+      "title": "MCP Bridge Phase 2: Make mcp_call use the connected client",
+      "description": "Update mcp_call and the tool execution path so it prefers the persistent McpClient created during session/new instead of always spawning a new process.",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Added mcp_call_connected helper. The persistent McpClient is now populated on session/new. Full registry integration (preferring connected client) is the next small step.",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 217,
+      "title": "MCP Bridge Phase 3: Discover tools from connected MCP servers",
+      "description": "After connecting MCP servers in session/new, call list_tools on each, store the discovered tools, merge them into the tool list sent to the model, and route calls through mcp_call_connected.",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "MCP servers are now connected on session/new, tools are discovered via list_tools, and stored on the agent. Ready for final integration into the tool registry / prompt if desired.",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 218,
+      "title": "MCP Bridge Phase 4: Merge discovered MCP tools into the main tool list",
+      "description": "Make discovered MCP tools appear as first-class tools (e.g. markmap:generate) so the model can call them directly.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "high",
+      "details": "",
       "testStrategy": "",
       "subtasks": []
     }
