@@ -82,10 +82,10 @@
       "id": 218,
       "title": "MCP Bridge Phase 4: Merge discovered MCP tools into the main tool list",
       "description": "Make discovered MCP tools appear as first-class tools (e.g. markmap:generate) so the model can call them directly.",
-      "status": "pending",
+      "status": "done",
       "dependencies": [],
       "priority": "high",
-      "details": "",
+      "details": "MCP tools are now merged into the main tool list via get_available_tool_definitions_with_mcp. Full MCP bridge (Phases 1-4) is complete and builds cleanly.",
       "testStrategy": "",
       "subtasks": []
     }

@@ -1448,7 +1448,12 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
                             drop(client_guard);
                             let discovered = agent.get_discovered_mcp_tools();
                             let mut map = discovered.write().await;
-                            map.insert(name.to_string(), tools);
+                            map.insert(name.to_string(), tools.clone());
+
+                            // Also update the global registry so mcp_list tool can see it
+                            let mut global_map = crate::tools::registry::get_discovered_mcp_tools();
+                            global_map.insert(name.to_string(), tools);
+                            crate::tools::registry::set_discovered_mcp_tools(global_map);
                         }
                         Err(e) => {
                             warn!("Failed to list tools from MCP server '{}': {}", name, e);

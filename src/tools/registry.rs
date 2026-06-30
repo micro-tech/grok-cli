@@ -339,6 +339,33 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                     mcp_tools::mcp_call(server_command, tool_name, arguments, policy).await
                 }
 
+                // List currently connected MCP servers and their discovered tools
+                "mcp_list" => {
+                    let discovered = get_discovered_mcp_tools();
+                    if discovered.is_empty() {
+                        Ok(serde_json::json!({
+                            "connected_servers": 0,
+                            "message": "No MCP servers are currently connected."
+                        }).to_string())
+                    } else {
+                        let servers: Vec<_> = discovered
+                            .iter()
+                            .map(|(name, tools)| {
+                                serde_json::json!({
+                                    "server": name,
+                                    "tool_count": tools.len(),
+                                    "tools": tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+                                })
+                            })
+                            .collect();
+
+                        Ok(serde_json::json!({
+                            "connected_servers": discovered.len(),
+                            "servers": servers
+                        }).to_string())
+                    }
+                }
+
                 // ── LSP ─────────────────────────────────────────────────────
                 "lsp_query" => {
                     let file = args["file"]
@@ -508,6 +535,7 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
         "fork_agent",
         "join_agents",
         "mcp_call",
+        "mcp_list",
         "lsp_query",
         "tool_search",
         "cron_create",
@@ -1059,6 +1087,14 @@ pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
         json!({
             "type": "function",
             "function": {
+                "name": "mcp_list",
+                "description": "List all connected MCP servers and the tools discovered from them.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
                 "name": "lsp_query",
                 "description": "Query the Language Server Protocol for diagnostics, hover info, or definitions.",
                 "parameters": {
@@ -1199,6 +1235,28 @@ pub async fn get_available_tool_definitions_with_mcp(
 
 use std::collections::HashMap;
 use std::sync::Mutex;
+
+// ── MCP discovered tools (populated during ACP session/new) ──────────────────
+
+use std::sync::RwLock as StdRwLock;
+use tokio::sync::RwLock as TokioRwLock;
+
+/// Global store of tools discovered from connected MCP servers.
+/// Key = server name, Value = list of tools.
+static DISCOVERED_MCP_TOOLS: StdRwLock<Option<HashMap<String, Vec<crate::mcp::protocol::Tool>>>> =
+    StdRwLock::new(None);
+
+/// Update the global MCP tools map (called from ACP session handler).
+pub fn set_discovered_mcp_tools(map: HashMap<String, Vec<crate::mcp::protocol::Tool>>) {
+    let mut guard = DISCOVERED_MCP_TOOLS.write().unwrap();
+    *guard = Some(map);
+}
+
+/// Returns a snapshot of all discovered MCP tools.
+pub fn get_discovered_mcp_tools() -> HashMap<String, Vec<crate::mcp::protocol::Tool>> {
+    let guard = DISCOVERED_MCP_TOOLS.read().unwrap();
+    guard.clone().unwrap_or_default()
+}
 
 /// Registry of dynamically loaded custom tools.
 static DYNAMIC_TOOLS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
