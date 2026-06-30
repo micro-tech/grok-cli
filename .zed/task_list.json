@@ -33,6 +33,17 @@
           "subtasks": []
         }
       ]
+    },
+    {
+      "id": 214,
+      "title": "Fix installer to consistently use .grok-cli and grok.exe binary",
+      "description": "Update the Windows installer so it:\n- Installs the binary as `grok.exe` (to match current Zed config)\n- Adds migration from old `.grok` directory to `.grok-cli`\n- Ensures all config, logs, memory, and audit paths use `.grok-cli`\n- Removes any remaining references to the old `.grok` layout",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Installer now:\n- Builds and installs `grok.exe` (matches Zed ACP config)\n- Automatically migrates old `~/.grok` directory to `~/.grok-cli`\n- All paths consistently use `.grok-cli` for user data (config, sessions, memory, audit, etc.)",
+      "testStrategy": "",
+      "subtasks": []
     }
   ]
 }

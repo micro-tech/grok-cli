@@ -42,21 +42,17 @@ fn get_version(root_dir: &Path) -> String {
 }
 
 fn main() {
-    println!(
-        "{}",
-        "Grok-CLI Installer v0.2.4-pre for Windows 11"
-            .green()
-            .bold()
-    );
+    println!("{}", "Grok-CLI Installer for Windows 11".green().bold());
     println!("=============================================");
 
     #[cfg(windows)]
     {
-        let root_dir = find_project_root().expect("Failed to find project root (Cargo.toml not found)");
+        let root_dir =
+            find_project_root().expect("Failed to find project root (Cargo.toml not found)");
         let version = get_version(&root_dir);
         println!(
             "{}",
-            format!("grok-cli CLI Installer v{} for Windows 11", version)
+            format!("Installing v{} for Windows 11", version)
                 .green()
                 .bold()
         );
@@ -66,8 +62,10 @@ fn main() {
 
 #[cfg(windows)]
 fn install_windows(root_dir: PathBuf) {
+    // 0. Migrate from old .grok directory (if user previously used the old grok project)
+    migrate_from_old_grok_directory();
 
-    // 0. Check for old Cargo installation
+    // 1. Check for old Cargo installation
     check_and_remove_old_cargo_install();
 
     // 1. Build the release binary
@@ -86,7 +84,7 @@ fn install_windows(root_dir: PathBuf) {
     // 2. Define paths
     let local_app_data = env::var("LOCALAPPDATA").expect("LOCALAPPDATA not set");
     let install_dir = PathBuf::from(&local_app_data).join("grok-cli").join("bin");
-    let exe_name = "grok-cli.exe";
+    let exe_name = "grok.exe"; // Use grok.exe to match Zed ACP configuration
     let target_exe = install_dir.join(exe_name);
 
     let source_exe = root_dir.join("target").join("release").join(exe_name);
@@ -176,6 +174,50 @@ fn install_windows(root_dir: PathBuf) {
             .join("README.md")
             .display()
     );
+}
+
+#[cfg(windows)]
+fn migrate_from_old_grok_directory() {
+    if let Some(home_dir) = dirs::home_dir() {
+        let old_dir = home_dir.join(".grok");
+        let new_dir = home_dir.join(".grok-cli");
+
+        if old_dir.exists() && !new_dir.exists() {
+            println!(
+                "{}",
+                "Old ~/.grok directory detected. Migrating to ~/.grok-cli...".yellow()
+            );
+
+            match fs::rename(&old_dir, &new_dir) {
+                Ok(_) => {
+                    println!(
+                        "{}",
+                        "✓ Successfully migrated ~/.grok → ~/.grok-cli".green()
+                    );
+                }
+                Err(e) => {
+                    eprintln!(
+                        "{} {}",
+                        "Failed to rename old directory:".red(),
+                        e
+                    );
+                    println!(
+                        "  Please manually move contents from {} to {}",
+                        old_dir.display(),
+                        new_dir.display()
+                    );
+                }
+            }
+            println!();
+        } else if old_dir.exists() && new_dir.exists() {
+            println!(
+                "{}",
+                "Both ~/.grok and ~/.grok-cli exist. Keeping both for now.".yellow()
+            );
+            println!("  You may want to manually merge them later.");
+            println!();
+        }
+    }
 }
 
 #[cfg(windows)]
