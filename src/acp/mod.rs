@@ -2215,7 +2215,7 @@ impl GrokAcpAgent {
         {
             let mut sessions = self.sessions.write().await;
             if let Some(s) = sessions.get_mut(&session_id.0) {
-                if let Some(t) = title {
+                if let Some(ref t) = title {
                     s.current_goal = Some(format!("Title: {}", t)); // lightweight reuse
                 }
                 // status & metadata are kept only for the notification (future expansion)

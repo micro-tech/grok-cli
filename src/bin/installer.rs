@@ -217,11 +217,7 @@ fn migrate_from_old_grok_directory() {
             }
             println!();
         } else if old_dir.exists() && new_dir.exists() {
-            println!(
-                "{}",
-                "Both ~/.grok and ~/.grok-cli exist. Keeping both for now.".yellow()
-            );
-            println!("  You may want to manually merge them later.");
+            println!("{}", "Both ~/.grok and ~/.grok-cli exist..".yellow());
             println!();
         }
     }

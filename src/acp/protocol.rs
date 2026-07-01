@@ -1101,10 +1101,6 @@ pub struct MethodNames {
     pub session_info_update: &'static str,
     /// Model configuration options category (stable).
     pub model_config_options: &'static str,
-    /// Cancel an in-flight prompt (stable).
-    pub cancel: &'static str,
-    /// Logout / end authenticated session (stable).
-    pub logout: &'static str,
 }
 
 pub const AGENT_METHOD_NAMES: MethodNames = MethodNames {
