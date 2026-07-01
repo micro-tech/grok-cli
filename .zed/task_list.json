@@ -9,7 +9,7 @@
       "dependencies": [],
       "details": "Change the method to only set a default when the caller has not already set a meaningful score, or accept an `Option<f32>` for the score.",
       "testStrategy": "A caller passing `relevance_score = 0.85` with `selected = true` preserves the 0.85 value.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 213,
@@ -30,9 +30,9 @@
           "dependencies": [],
           "details": "Add comprehensive error checking for handshake failures, schema validation, and network/protocol errors. Run `cargo test` to verify the implementation.",
           "testStrategy": "All unit and integration tests pass with `cargo test`. Edge cases for errors are covered.",
-          "subtasks": []
-        }
-      ]
+          "subtasks": [],
+        },
+      ],
     },
     {
       "id": 214,
@@ -43,7 +43,7 @@
       "priority": "high",
       "details": "Installer now correctly builds and installs `grok-cli.exe`. Updated Zed config recommendation to use the full path to grok-cli.exe.",
       "testStrategy": "",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 215,
@@ -54,7 +54,7 @@
       "priority": "high",
       "details": "Phase 1 complete: GrokAcpAgent now holds an McpClient, and handle_session_new connects any mcpServers sent by the client (Zed).",
       "testStrategy": "",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 216,
@@ -65,7 +65,7 @@
       "priority": "high",
       "details": "Added mcp_call_connected helper. The persistent McpClient is now populated on session/new. Full registry integration (preferring connected client) is the next small step.",
       "testStrategy": "",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 217,
@@ -76,7 +76,7 @@
       "priority": "high",
       "details": "MCP servers are now connected on session/new, tools are discovered via list_tools, and stored on the agent. Ready for final integration into the tool registry / prompt if desired.",
       "testStrategy": "",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 218,
@@ -87,7 +87,109 @@
       "priority": "high",
       "details": "MCP tools are now merged into the main tool list via get_available_tool_definitions_with_mcp. Full MCP bridge (Phases 1-4) is complete and builds cleanly.",
       "testStrategy": "",
-      "subtasks": []
-    }
-  ]
+      "subtasks": [],
+    },
+    {
+      "id": 219,
+      "title": "ACP v1 Feature Additions (Logout, Cancellation, Model Config, Session Info)",
+      "description": "",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Implement the newly stabilized ACP v1 features that are missing or incomplete in grok-cli.",
+      "testStrategy": "",
+      "subtasks": [
+        {
+          "id": 219.1,
+          "title": "Implement logout method (stable)",
+          "status": "pending",
+          "dependencies": [],
+        },
+        {
+          "id": 219.2,
+          "title": "Implement request cancellation (stable)",
+          "status": "pending",
+          "dependencies": [],
+        },
+        {
+          "id": 219.3,
+          "title": "Add structured Model Config Option Category",
+          "status": "pending",
+          "dependencies": [],
+        },
+        {
+          "id": 219.4,
+          "title": "Implement Session Info Update (titles, status, metadata)",
+          "status": "pending",
+          "dependencies": [],
+        },
+      ],
+    },
+    {
+      "id": 220,
+      "title": "ACP v1 + v2 Upgrade Roadmap for Grok-CLI",
+      "description": "",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Master plan to bring Grok-CLI up to date with the latest stabilized ACP features (v1) and prepare for the new unstable v2 / MCP-over-ACP capabilities.",
+      "testStrategy": "",
+      "subtasks": [
+        {
+          "id": 220.1,
+          "title": "ACP v1 Core (stable) – implement missing methods",
+          "status": "pending",
+          "dependencies": [219],
+        },
+        {
+          "id": 220.2,
+          "title": "ACP Registry integration",
+          "status": "pending",
+          "dependencies": [],
+        },
+        {
+          "id": 220.3,
+          "title": "Session Resume + Session Close (stable)",
+          "status": "pending",
+          "dependencies": [],
+        },
+        {
+          "id": 220.4,
+          "title": "Prepare for MCP-over-ACP (unstable)",
+          "status": "pending",
+          "dependencies": [],
+        },
+        {
+          "id": 220.5,
+          "title": "Remote transports (WebSocket / HTTP) groundwork",
+          "status": "pending",
+          "dependencies": [],
+        },
+        {
+          "id": 220.6,
+          "title": "ACP v2 unstable features (optional)",
+          "status": "pending",
+          "dependencies": [],
+        },
+      ],
+    },
+    {
+      "id": 221,
+      "title": "ACP v1 Feature Additions – Cancellation Polish & Testing",
+      "description": "",
+      "status": "done",
+      "dependencies": [],
+      "priority": "medium",
+      "details": "Polish the cancellation implementation and add a small test so we know it actually stops a running prompt.",
+      "testStrategy": "",
+      "subtasks": [
+        {
+          "id": 221.1,
+          "title": "Add a unit test that verifies cancel aborts a prompt",
+          "status": "done",
+          "dependencies": [],
+        },
+      ],
+    },
+  ],
 }

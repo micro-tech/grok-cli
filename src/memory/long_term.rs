@@ -62,7 +62,7 @@ pub struct LongTermMemory {
 impl LongTermMemory {
     // ── Constructors ─────────────────────────────────────────────────────────
 
-    /// Load from the default location (`~/.grok/memory.json`), creating an
+    /// Load from the default location (`~/.grok-cli/memory.json`), creating an
     /// empty store if the file does not yet exist.
     pub fn load_or_create() -> Result<Self> {
         let dir = grok_dir()?;

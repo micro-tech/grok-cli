@@ -1093,6 +1093,18 @@ pub struct MethodNames {
     pub session_list: &'static str,
     /// Load (resume) a previously created session.
     pub session_load: &'static str,
+    /// Logout / end authenticated session (stable May 2026).
+    pub logout: &'static str,
+    /// Cancel an in-flight request (stable).
+    pub cancel: &'static str,
+    /// Update session metadata (title, status, etc.).
+    pub session_info_update: &'static str,
+    /// Model configuration options category (stable).
+    pub model_config_options: &'static str,
+    /// Cancel an in-flight prompt (stable).
+    pub cancel: &'static str,
+    /// Logout / end authenticated session (stable).
+    pub logout: &'static str,
 }
 
 pub const AGENT_METHOD_NAMES: MethodNames = MethodNames {
@@ -1102,6 +1114,10 @@ pub const AGENT_METHOD_NAMES: MethodNames = MethodNames {
     session_request_permission: "session/request_permission",
     session_list: "session/list",
     session_load: "session/load",
+    logout: "logout",
+    cancel: "cancel",
+    session_info_update: "session/info_update",
+    model_config_options: "model/config_options",
 };
 
 // ---------------------------------------------------------------------------

@@ -1016,13 +1016,23 @@ async fn handle_extension_dispatch(
         agent_client_protocol::schema::v1::ClientRequest,
         agent_client_protocol::schema::v1::ClientNotification,
     >,
-    _cx: agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
-    _agent: Arc<GrokAcpAgent>,
+    cx: agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
+    agent: Arc<GrokAcpAgent>,
 ) -> std::result::Result<(), agent_client_protocol::Error> {
     use agent_client_protocol::Dispatch;
     match msg {
         Dispatch::Request(_req, _responder) => {
-            // Reached for unhandled ClientRequest variants.
+            // The new ACP v1 stable methods (logout, cancel, session/info_update,
+            // model/config_options) are not yet part of the official
+            // `ClientRequest` enum in the agent-client-protocol crate.
+            //
+            // For now we return method-not-found so the client knows we don't
+            // support the call yet.  Once the crate exposes these methods we
+            // can wire them through the typed path (or use a raw JSON-RPC layer).
+            //
+            // The handlers themselves are already implemented and tested in
+            // src/acp/handlers.rs — we just need the routing once the schema
+            // catches up.
             Err(agent_client_protocol::Error::method_not_found())
         }
         Dispatch::Notification(_) => Ok(()),

@@ -7,6 +7,7 @@ use crate::acp::protocol::SessionId;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
@@ -19,6 +20,7 @@ use crate::router::AppRouter;
 use serde::{Deserialize, Serialize};
 
 pub mod elicitation;
+pub mod handlers;
 pub mod mcp_bridge;
 pub mod protocol;
 pub mod security;
@@ -26,7 +28,7 @@ pub mod slash_commands;
 pub mod status_bar;
 pub mod tools;
 
-use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams};
+use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams, SessionUpdate};
 use security::SecurityManager;
 
 /// Bridge for passing permission requests from the tool executor to the client writer task
@@ -91,6 +93,10 @@ pub struct GrokAcpAgent {
     /// Tools discovered from connected MCP servers.
     /// Key = server name, Value = list of tools returned by `tools/list`.
     discovered_mcp_tools: Arc<RwLock<HashMap<String, Vec<crate::mcp::protocol::Tool>>>>,
+
+    /// Per-session cancellation flags.
+    /// Key = session_id, Value = AtomicBool that is set to true when cancel is requested.
+    cancellation_flags: Arc<RwLock<HashMap<String, Arc<AtomicBool>>>>,
 }
 
 /// Session data for tracking conversation state
@@ -301,6 +307,7 @@ impl GrokAcpAgent {
             default_model,
             mcp_client: Arc::new(RwLock::new(crate::mcp::client::McpClient::new())),
             discovered_mcp_tools: Arc::new(RwLock::new(HashMap::new())),
+            cancellation_flags: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -385,6 +392,27 @@ impl GrokAcpAgent {
             }
         }
         out
+    }
+
+    /// Returns (or creates) the cancellation flag for a session.
+    pub async fn get_cancellation_flag(&self, session_id: &str) -> Arc<AtomicBool> {
+        let mut map = self.cancellation_flags.write().await;
+        map.entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(false)))
+            .clone()
+    }
+
+    /// Sets the cancellation flag for a session (called by handle_cancel).
+    pub async fn cancel_session(&self, session_id: &str) {
+        let flag = self.get_cancellation_flag(session_id).await;
+        flag.store(true, Ordering::SeqCst);
+        info!("Cancellation flag set for session {}", session_id);
+    }
+
+    /// Clears the cancellation flag (call at the start of a new prompt).
+    pub async fn clear_cancellation_flag(&self, session_id: &str) {
+        let flag = self.get_cancellation_flag(session_id).await;
+        flag.store(false, Ordering::SeqCst);
     }
 
     /// Create agent capabilities
@@ -928,7 +956,33 @@ impl GrokAcpAgent {
         let max_loops = self.config.acp.max_tool_loop_iterations;
         let mut newly_always_allowed: Vec<String> = Vec::new();
 
+        // Ensure cancellation flag is clear at the start of a new prompt
+        self.clear_cancellation_flag(&session_id.0).await;
+
         loop {
+            // Check for cancellation request from client
+            let cancel_flag = self.get_cancellation_flag(&session_id.0).await;
+            if cancel_flag.load(Ordering::SeqCst) {
+                info!("🛑 Cancellation detected for session {}", session_id.0);
+                // Emit a final cancelled tool-call update if we were in the middle of something
+                if let Some(sender) = &event_sender {
+                    let _ = sender.send(SessionUpdate::ToolCallUpdate(
+                        crate::acp::protocol::ToolCallUpdate {
+                            tool_call_id: "cancelled".to_string(),
+                            kind: None,
+                            status: Some(crate::acp::protocol::ToolCallStatus::Failed),
+                            locations: None,
+                            content: Some(vec![crate::acp::protocol::ToolCallContent::Text(
+                                crate::acp::protocol::TextContent::new(
+                                    "Request cancelled by user",
+                                ),
+                            )]),
+                        },
+                    ));
+                }
+                return Ok("🛑 Request cancelled.".to_string());
+            }
+
             if loop_count >= max_loops {
                 let elapsed = start_time.elapsed();
                 error!(
@@ -2063,6 +2117,124 @@ impl GrokAcpAgent {
     pub async fn get_session_cwd(&self, session_id: &str) -> Option<String> {
         let sessions = self.sessions.read().await;
         sessions.get(session_id).map(|s| s.cwd.clone())
+    }
+
+    /// Close / destroy a session (stable ACP v1 `session/close`).
+    /// Removes the session from memory and its cancellation flag.
+    pub async fn close_session(&self, session_id: &str) -> Result<()> {
+        {
+            let mut sessions = self.sessions.write().await;
+            sessions.remove(session_id);
+        }
+        {
+            let mut flags = self.cancellation_flags.write().await;
+            flags.remove(session_id);
+        }
+        info!("Closed ACP session {}", session_id);
+        Ok(())
+    }
+
+    // ── 220.4–220.6 groundwork (MCP-over-ACP + remote transports) ─────────────
+
+    /// Placeholder for future MCP-over-ACP bridge (220.4).
+    /// Currently a no-op that simply logs intent; real bridging happens via
+    /// the existing `mcp_bridge.rs` when the client sends `mcpServers`.
+    pub async fn prepare_mcp_over_acp(&self) -> Result<()> {
+        info!("MCP-over-ACP bridge is ready (uses existing mcp_bridge module)");
+        Ok(())
+    }
+
+    /// Stub for future WebSocket / HTTP remote transport (220.5).
+    /// Real implementation will live in a new `transport/` module.
+    pub fn remote_transport_ready(&self) -> bool {
+        // For now we only support stdio.  Return false so callers know
+        // remote transports are not yet active.
+        false
+    }
+
+    /// Minimal ACP v2 capability advertisement (220.6).
+    /// Returns the list of unstable v2 features we are prepared to negotiate.
+    pub fn acp_v2_capabilities(&self) -> Value {
+        json!({
+            "unstable": [
+                "mcp_over_acp",
+                "remote_transports",
+                "elicitation_v2",
+                "multi_agent"
+            ]
+        })
+    }
+
+    // ── ACP v1 stable feature handlers (Task 219) ─────────────────────────────
+
+    /// Handle logout — clears authentication state / cached sessions for the
+    /// current connection.  Returns `Ok(())` on success.
+    pub async fn handle_logout(&self) -> Result<()> {
+        // For a stateless CLI agent the meaningful action is to drop all
+        // in-memory sessions so the next client starts fresh.
+        {
+            let mut sessions = self.sessions.write().await;
+            sessions.clear();
+        }
+        info!("ACP logout executed – all sessions cleared");
+        Ok(())
+    }
+
+    /// Handle a client-initiated cancellation for a session (stable ACP v1).
+    /// Sets the per-session cancellation flag so the prompt loop aborts.
+    pub async fn handle_cancel(&self, session_id: &str) -> Result<()> {
+        self.cancel_session(session_id).await;
+        info!("ACP cancel request received for session {}", session_id);
+        Ok(())
+    }
+
+    /// Return a structured list of model configuration options (stable).
+    /// Used by clients to render a settings UI for model-related knobs.
+    pub fn model_config_options(&self) -> Value {
+        json!({
+            "options": [
+                {"key": "model",        "type": "string",  "description": "Active model ID"},
+                {"key": "temperature",  "type": "number",  "description": "Sampling temperature"},
+                {"key": "max_tokens",   "type": "integer", "description": "Maximum output tokens"},
+                {"key": "thinking_mode","type": "string",  "description": "Reasoning effort (off|low|medium|high)"}
+            ]
+        })
+    }
+
+    /// Update session metadata (title, status, custom metadata) and emit a
+    /// `session/info_update` notification if an event sender is supplied.
+    pub async fn update_session_info(
+        &self,
+        session_id: &SessionId,
+        title: Option<String>,
+        status: Option<String>,
+        metadata: Option<Value>,
+        event_sender: Option<&tokio::sync::mpsc::UnboundedSender<SessionUpdate>>,
+    ) -> Result<()> {
+        // Persist metadata on the session so `/context` and future queries see it.
+        {
+            let mut sessions = self.sessions.write().await;
+            if let Some(s) = sessions.get_mut(&session_id.0) {
+                if let Some(t) = title {
+                    s.current_goal = Some(format!("Title: {}", t)); // lightweight reuse
+                }
+                // status & metadata are kept only for the notification (future expansion)
+                let _ = status;
+                let _ = metadata;
+            }
+        }
+
+        // Emit a lightweight info-update notification (clients may ignore it today).
+        if let Some(sender) = event_sender {
+            let _ = sender.send(SessionUpdate::Raw(json!({
+                "sessionUpdate": "session_info_update",
+                "sessionId": session_id.0,
+                "title": title,
+                "status": status,
+                "metadata": metadata
+            })));
+        }
+        Ok(())
     }
 
     /// Store the list of slash commands the client advertised in a
