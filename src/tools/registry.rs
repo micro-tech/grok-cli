@@ -1239,7 +1239,7 @@ use std::sync::Mutex;
 // ── MCP discovered tools (populated during ACP session/new) ──────────────────
 
 use std::sync::RwLock as StdRwLock;
-use tokio::sync::RwLock as TokioRwLock;
+
 
 /// Global store of tools discovered from connected MCP servers.
 /// Key = server name, Value = list of tools.

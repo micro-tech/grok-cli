@@ -9,6 +9,7 @@
 //! - Skill Context: Used skills with confidence and arbitration scores
 //! - Belief State: Bayesian reasoning probabilities and uncertainty
 //! - TokenCache: Stable hashing for prompt components (system prompt, tools, context)
+//! - Agent Rules: Global + project rules loaded from ~/.grok-cli/agents/rules/ and .agents/rules/
 
 pub mod belief_state;
 pub mod context_budget;
@@ -299,5 +300,22 @@ impl ContextEngine {
             self.skill_context.recent_skills.len(),
             self.belief_state.probabilities.len()
         )
+    }
+
+    /// Load and inject global + project agent rules into the context.
+    /// This should be called once when a new project/session starts.
+    ///
+    /// Rules are loaded from:
+    /// - Global: `~/.grok-cli/agents/rules/`
+    /// - Project: `<project>/.agents/rules/`
+    ///
+    /// Project rules override global rules with the same filename.
+    pub fn load_agent_rules(&mut self, project_root: &std::path::Path) -> String {
+        let rules_text = crate::skills::load_and_format_rules(project_root);
+        if !rules_text.is_empty() {
+            // Store the rules as a fact so they are visible in summaries
+            self.add_fact("Agent rules loaded from global + project directories".to_string(), 1.0);
+        }
+        rules_text
     }
 }
