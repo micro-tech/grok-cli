@@ -716,6 +716,88 @@ impl GrokAcpAgent {
             let loop_start = std::time::Instant::now();
             info!("🔄 Tool loop iteration {}/{}", loop_count, max_loops);
 
+            // ── Pre-call payload guard (runs every iteration) ────────────────────
+            // Step 1: Re-apply max_tool_result_chars to all tool messages already
+            // in history.  Each iteration appends new tool results; without this
+            // guard a series of large read_file calls blows the payload budget.
+            {
+                let max_chars = self.config.acp.max_tool_result_chars;
+                if max_chars > 0 {
+                    let mut trimmed_count = 0usize;
+                    for msg in session.messages.iter_mut() {
+                        if msg.get("role").and_then(|r| r.as_str()) == Some("tool") {
+                            // Compute the replacement outside the borrow so we can
+                            // mutably index `msg` afterwards.
+                            let replacement: Option<String> = msg
+                                .get("content")
+                                .and_then(|c| c.as_str())
+                                .and_then(|s| {
+                                    if s.len() > max_chars {
+                                        Some(format!(
+                                            "{}\u{2026} [truncated: {} chars \u{2192} {} chars limit]",
+                                            &s[..max_chars],
+                                            s.len(),
+                                            max_chars
+                                        ))
+                                    } else {
+                                        None
+                                    }
+                                });
+                            if let Some(r) = replacement {
+                                msg["content"] = serde_json::Value::String(r);
+                                trimmed_count += 1;
+                            }
+                        }
+                    }
+                    if trimmed_count > 0 {
+                        warn!(
+                            "⚠️  Pre-call trim: re-truncated {} tool messages to {} chars each",
+                            trimmed_count, max_chars
+                        );
+                    }
+                }
+            }
+            // Step 2: Token-budget trim — drop oldest non-system messages if the
+            // estimated payload token count exceeds the model's context budget.
+            {
+                let token_budget = if session.config.model.starts_with("grok-4") {
+                    self.config.acp.grok4_max_context_tokens
+                } else {
+                    self.config.acp.max_context_tokens
+                };
+                let total_bytes: usize = session
+                    .messages
+                    .iter()
+                    .map(|m| serde_json::to_string(m).map(|s| s.len()).unwrap_or(0))
+                    .sum();
+                // Rough estimate: 1 token ≈ 4 UTF-8 bytes.
+                let estimated_tokens = total_bytes / 4;
+                if estimated_tokens > token_budget {
+                    let has_system = session
+                        .messages
+                        .first()
+                        .and_then(|m| m.get("role"))
+                        .and_then(|r| r.as_str())
+                        == Some("system");
+                    let trim_from = usize::from(has_system);
+                    let available = session.messages.len().saturating_sub(trim_from);
+                    // Drop 25 % at a time to avoid over-trimming.
+                    let to_drop = ((available / 4).max(1)).min(available.saturating_sub(2));
+                    if to_drop > 0 {
+                        session.messages.drain(trim_from..trim_from + to_drop);
+                        warn!(
+                            "⚠️  Token-budget trim: dropped {} messages \
+                             (estimated {} tokens > budget {}; {} remain)",
+                            to_drop,
+                            estimated_tokens,
+                            token_budget,
+                            session.messages.len()
+                        );
+                    }
+                }
+            }
+            // ─────────────────────────────────────────────────────────────────────
+
             // Make request to Grok — with per-call retry/backoff for Starlink drops.
             // Starlink handovers can take 20-60 s; we need enough retries + delays
             // to outlast a satellite dropout before giving up on this iteration.
@@ -805,6 +887,9 @@ impl GrokAcpAgent {
 
             let response_with_finish = {
                 let mut attempt = 0u32;
+                // Ensures the emergency 413 trim fires at most once per outer loop
+                // iteration; a second 413 after the trim is a hard failure.
+                let mut emergency_trim_done = false;
                 loop {
                     attempt += 1;
                     match self
@@ -821,16 +906,54 @@ impl GrokAcpAgent {
                     {
                         Ok(resp) => break resp,
                         Err(e) => {
-                            let is_retriable = crate::utils::network::detect_network_drop(&e) || {
-                                let msg = e.to_string().to_lowercase();
-                                msg.contains("timeout")
-                                    || msg.contains("timed out")
-                                    || msg.contains("reset")
-                                    || msg.contains("connection")
-                                    || msg.contains("503")
-                                    || msg.contains("502")
-                                    || msg.contains("504")
+                            // ── 413 Payload Too Large ─────────────────────────────
+                            // The payload is too big for the API.  Normal network
+                            // retries would just resend the same oversized request.
+                            // Instead: aggressively trim half the non-system history
+                            // and retry once.  If the trimmed payload still produces
+                            // a 413, give up — the caller must shorten the session.
+                            let is_413 = {
+                                let em = e.to_string().to_lowercase();
+                                em.contains("413") || em.contains("payload too large")
                             };
+                            if is_413 && !emergency_trim_done {
+                                emergency_trim_done = true;
+                                let has_system = session
+                                    .messages
+                                    .first()
+                                    .and_then(|m| m.get("role"))
+                                    .and_then(|r| r.as_str())
+                                    == Some("system");
+                                let trim_from = usize::from(has_system);
+                                let available = session.messages.len().saturating_sub(trim_from);
+                                let to_drop =
+                                    (available / 2).max(1).min(available.saturating_sub(2));
+                                if to_drop > 0 {
+                                    session.messages.drain(trim_from..trim_from + to_drop);
+                                    warn!(
+                                        "⚠️  413 Payload Too Large — emergency trim: dropped \
+                                         {} messages ({} remain). Retrying…",
+                                        to_drop,
+                                        session.messages.len()
+                                    );
+                                    // Don't count the emergency trim as a retry attempt.
+                                    attempt = attempt.saturating_sub(1);
+                                    continue;
+                                }
+                            }
+                            // ─────────────────────────────────────────────────────
+
+                            let is_retriable = !is_413
+                                && (crate::utils::network::detect_network_drop(&e) || {
+                                    let msg = e.to_string().to_lowercase();
+                                    msg.contains("timeout")
+                                        || msg.contains("timed out")
+                                        || msg.contains("reset")
+                                        || msg.contains("connection")
+                                        || msg.contains("503")
+                                        || msg.contains("502")
+                                        || msg.contains("504")
+                                });
 
                             if attempt <= MAX_API_RETRIES && is_retriable {
                                 // Exponential backoff capped at MAX_RETRY_DELAY_SECS.
@@ -1259,11 +1382,32 @@ impl GrokAcpAgent {
                     let hooks = self.hook_manager.read().await;
                     hooks.execute_after_tool(function_name, &args, &content)?;
                 }
-                // Push tool result into LLM message history so the model can see it
+                // Push tool result — enforce max_tool_result_chars before committing
+                // to history.  Large file reads are the most common cause of 413s.
+                let stored_content = {
+                    let max_chars = self.config.acp.max_tool_result_chars;
+                    if max_chars > 0 && content.len() > max_chars {
+                        warn!(
+                            "⚠️  Tool '{}' result too large ({} chars), truncating to {} chars \
+                             before history push",
+                            function_name,
+                            content.len(),
+                            max_chars
+                        );
+                        format!(
+                            "{}\u{2026} [truncated: {} chars \u{2192} {} chars limit]",
+                            &content[..max_chars],
+                            content.len(),
+                            max_chars
+                        )
+                    } else {
+                        content.clone()
+                    }
+                };
                 session.messages.push(serde_json::json!({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": content,
+                    "content": stored_content,
                 }));
 
                 // ── DATA-TRACE: confirm exactly what is being pushed as tool result ──
