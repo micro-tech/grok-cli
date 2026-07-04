@@ -896,17 +896,18 @@ async fn handle_builtin_result(
             Ok(t) => t,
             Err(e) => format!("Bayesian explanation unavailable: {e}"),
         },
+        BuiltinResult::ShowGoal => match agent.get_session_goal(session_id).await {
+            Ok(Some(g)) => g,
+            Ok(None) => "No goal set for this session.".to_string(),
+            Err(e) => format!("Could not retrieve goal: {e}"),
+        },
         BuiltinResult::SetGoal(goal) => match agent.set_session_goal(session_id, goal).await {
-            Ok(t) => t,
+            Ok(()) => "✅ Goal set.".to_string(),
             Err(e) => format!("Could not set goal: {e}"),
         },
         BuiltinResult::ClearGoal => match agent.clear_session_goal(session_id).await {
-            Ok(t) => t,
+            Ok(()) => "✅ Goal cleared.".to_string(),
             Err(e) => format!("Could not clear goal: {e}"),
-        },
-        BuiltinResult::ShowGoal => match agent.get_session_goal(session_id).await {
-            Ok(t) => t,
-            Err(e) => format!("Could not retrieve goal: {e}"),
         },
         BuiltinResult::ShowVisualizer => crate::visualizer::generate_pipeline_markdown(None),
         BuiltinResult::SetThinkingMode(opt_mode) => match opt_mode {
@@ -1458,7 +1459,13 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
                             drop(client_guard);
                             let discovered = agent.get_discovered_mcp_tools();
                             let mut map = discovered.write().await;
-                            map.insert(name.to_string(), tools.clone());
+                            // Convert Tool list to raw JSON values for the map
+                            let tool_values: Vec<serde_json::Value> = tools
+                                .clone()
+                                .into_iter()
+                                .map(|t| serde_json::to_value(t).unwrap_or_default())
+                                .collect();
+                            map.insert(name.to_string(), tool_values);
 
                             // Also update the global registry so mcp_list tool can see it
                             let mut global_map = crate::tools::registry::get_discovered_mcp_tools();

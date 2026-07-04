@@ -454,7 +454,7 @@ impl GrokAcpAgent {
             tools: crate::tools::registry::get_available_tool_definitions()
                 .iter()
                 .filter_map(|t| {
-                    let v: serde_json::Value = serde_json::from_str(t).ok()?;
+                    let v: serde_json::Value = t.clone();
                     let func = v.get("function")?;
                     Some(ToolDefinition {
                         name: func.get("name")?.as_str()?.to_string(),
@@ -1072,23 +1072,14 @@ impl GrokAcpAgent {
                 let policy = self.security.get_policy();
 
                 let result = match function_name.as_str() {
-                    "read_file" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::read_file(path, &policy)
-                    }
+                    "read_file" => tools::read_file(args["path"].as_str().ok_or(anyhow!("Missing path"))?, &policy).await,
                     "write_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
                         tools::write_file(path, content, &policy, false).await
                     }
-                    "list_directory" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_directory(path, &policy)
-                    }
-                    "glob_search" => {
-                        let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                        tools::glob_search(pattern, &policy)
-                    }
+                    "list_directory" => tools::list_directory(args["path"].as_str().ok_or(anyhow!("Missing path"))?, &policy),
+                    "glob_search" => tools::glob_search(args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?, &policy),
                     "search_file_content" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
@@ -1100,14 +1091,9 @@ impl GrokAcpAgent {
                     }
                     "replace" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let old_string = args["old_string"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing old_string"))?;
-                        let new_string = args["new_string"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing new_string"))?;
-                        let expected_replacements =
-                            args["expected_replacements"].as_u64().map(|n| n as u32);
+                        let old_string = args["old_string"].as_str().ok_or(anyhow!("Missing old_string"))?;
+                        let new_string = args["new_string"].as_str().ok_or(anyhow!("Missing new_string"))?;
+                        let expected_replacements = args["expected_replacements"].as_u64().map(|n| n as u32);
                         tools::replace(path, old_string, new_string, expected_replacements, &policy, false).await
                     }
                     "save_memory" => {
@@ -1133,11 +1119,11 @@ impl GrokAcpAgent {
                                     .map(|s| s.to_string())
                             })
                             .collect();
-                        tools::read_multiple_files(paths?, &policy)
+                        tools::read_multiple_files(paths?, &policy).await
                     }
                     "list_code_definitions" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_code_definitions(path, &policy)
+                        tools::list_code_definitions(path, &policy).await
                     }
                     _ => {
                         // Fall back to the full tool registry for any tool that is
@@ -1623,7 +1609,8 @@ impl GrokAcpAgent {
         self.ensure_session_exists(&session_id.0).await;
         let sessions = self.sessions.read().await;
         if let Some(s) = sessions.get(&session_id.0) {
-            Ok(s.bayes_engine.explain())
+            // `explain` not implemented yet — fall back to visualize
+            Ok(s.bayes_engine.visualize())
         } else {
             Err(anyhow!("Session not found: {}", session_id.0))
         }
