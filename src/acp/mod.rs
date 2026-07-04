@@ -354,6 +354,61 @@ impl GrokAcpAgent {
         self.ensure_session(session_id).await;
     }
 
+    // ── MCP / Security / Thinking helpers (wired for acp.rs) ─────────────────
+
+    /// Return a reference to the MCP client (placeholder until full MCP impl).
+    pub fn get_mcp_client(&self) -> Arc<RwLock<crate::mcp::client::McpClient>> {
+        // Create a lazy static or return a new empty one for now.
+        use std::sync::OnceLock;
+        static MCP_CLIENT: OnceLock<Arc<RwLock<crate::mcp::client::McpClient>>> = OnceLock::new();
+        MCP_CLIENT
+            .get_or_init(|| Arc::new(RwLock::new(crate::mcp::client::McpClient::new())))
+            .clone()
+    }
+
+    /// Return a reference to the discovered MCP tools map.
+    pub fn get_discovered_mcp_tools(
+        &self,
+    ) -> Arc<RwLock<std::collections::HashMap<String, Vec<serde_json::Value>>>> {
+        use std::sync::OnceLock;
+        static DISCOVERED: OnceLock<
+            Arc<RwLock<std::collections::HashMap<String, Vec<serde_json::Value>>>>,
+        > = OnceLock::new();
+        DISCOVERED
+            .get_or_init(|| Arc::new(RwLock::new(std::collections::HashMap::new())))
+            .clone()
+    }
+
+    /// Delegate to the security manager (public for acp.rs call sites).
+    pub fn add_trusted_directory(&self, path: std::path::PathBuf) {
+        self.security.add_trusted_directory(path);
+    }
+
+    /// Stub: persist session to disk (no-op for now).
+    pub async fn save_session_to_disk(&self, _session_id: &SessionId) -> Result<()> {
+        Ok(())
+    }
+
+    /// Stub: set thinking mode on the session (stored in SessionData later).
+    pub async fn set_thinking_mode(
+        &self,
+        session_id: &SessionId,
+        _mode: crate::config::ThinkingMode,
+    ) -> Result<()> {
+        self.ensure_session_exists(&session_id.0).await;
+        // For now we just ensure the session exists; real storage can be added later.
+        Ok(())
+    }
+
+    /// Stub: get thinking mode (returns None until we store it).
+    pub async fn get_thinking_mode(
+        &self,
+        session_id: &SessionId,
+    ) -> Option<crate::config::ThinkingMode> {
+        self.ensure_session_exists(&session_id.0).await;
+        None
+    }
+
     /// Return a reference to the underlying [`AppRouter`], or a descriptive
     /// error if no API key was configured when the agent was created.
     ///
@@ -399,11 +454,11 @@ impl GrokAcpAgent {
             tools: crate::tools::registry::get_available_tool_definitions()
                 .iter()
                 .filter_map(|t| {
-                    let v: serde_json::Value = serde_json::from_str(t)?;
-                    let func = v.get("function").ok_or("missing function field")?;
+                    let v: serde_json::Value = serde_json::from_str(t).ok()?;
+                    let func = v.get("function")?;
                     Some(ToolDefinition {
-                        name: func["name"].as_str()?.to_string(),
-                        description: func["description"].as_str()?.to_string(),
+                        name: func.get("name")?.as_str()?.to_string(),
+                        description: func.get("description")?.as_str()?.to_string(),
                         parameters: func.get("parameters").cloned().unwrap_or(json!({})),
                     })
                 })
@@ -417,6 +472,7 @@ impl GrokAcpAgent {
         session_id: SessionId,
         cwd: String,
         config: Option<SessionConfig>,
+        _thinking_mode: Option<crate::config::ThinkingMode>,
     ) -> Result<()> {
         // ── Update security policy working directory ─────────────────────────────
         // Zed passes the actual workspace root as `cwd` in `session/new`.  Without
@@ -756,6 +812,7 @@ impl GrokAcpAgent {
                             max_tokens,
                             &session.config.model,
                             Some(tool_defs.clone()),
+                            None,
                         )
                         .await
                     {
@@ -1022,7 +1079,7 @@ impl GrokAcpAgent {
                     "write_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
-                        tools::write_file(path, content, &policy)
+                        tools::write_file(path, content, &policy, false).await
                     }
                     "list_directory" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
@@ -1039,7 +1096,7 @@ impl GrokAcpAgent {
                     }
                     "run_shell_command" => {
                         let command = args["command"].as_str().ok_or(anyhow!("Missing command"))?;
-                        tools::run_shell_command(command, &policy).await
+                        tools::run_shell_command(command, &policy, 0).await
                     }
                     "replace" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
@@ -1051,7 +1108,7 @@ impl GrokAcpAgent {
                             .ok_or(anyhow!("Missing new_string"))?;
                         let expected_replacements =
                             args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(path, old_string, new_string, expected_replacements, &policy)
+                        tools::replace(path, old_string, new_string, expected_replacements, &policy, false).await
                     }
                     "save_memory" => {
                         let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
@@ -1395,6 +1452,7 @@ impl GrokAcpAgent {
                 session.config.max_tokens,
                 &session.config.model,
                 None,
+                None,
             )
             .await?;
 
@@ -1533,6 +1591,76 @@ impl GrokAcpAgent {
             return Err(anyhow!("Session not found: {}", session_id.0));
         }
         Ok(())
+    }
+
+    // ── Bayes helpers (used by /bayes slash commands) ────────────────────────
+
+    /// Return a human-readable visualization of the current Bayesian state
+    /// (counts, probabilities, uncertainty, etc.).
+    pub async fn get_bayes_visualize(&self, session_id: &SessionId) -> Result<String> {
+        self.ensure_session_exists(&session_id.0).await;
+        let sessions = self.sessions.read().await;
+        if let Some(s) = sessions.get(&session_id.0) {
+            Ok(s.bayes_engine.visualize())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
+    }
+
+    /// Reset the Bayesian engine for the given session.
+    pub async fn reset_bayes(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(s) = sessions.get_mut(&session_id.0) {
+            s.bayes_engine = crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian);
+            Ok("Bayesian engine has been reset for this session.".to_string())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
+    }
+
+    /// Return a textual explanation of the current Bayesian state.
+    pub async fn get_bayes_explain(&self, session_id: &SessionId) -> Result<String> {
+        self.ensure_session_exists(&session_id.0).await;
+        let sessions = self.sessions.read().await;
+        if let Some(s) = sessions.get(&session_id.0) {
+            Ok(s.bayes_engine.explain())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
+    }
+
+    // ── Goal helpers (used by /goal slash commands) ──────────────────────────
+
+    /// Set (or replace) the current goal for the session.
+    pub async fn set_session_goal(&self, session_id: &SessionId, goal: String) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(s) = sessions.get_mut(&session_id.0) {
+            s.current_goal = Some(goal);
+            Ok(())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
+    }
+
+    /// Clear the current goal for the session.
+    pub async fn clear_session_goal(&self, session_id: &SessionId) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(s) = sessions.get_mut(&session_id.0) {
+            s.current_goal = None;
+            Ok(())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
+    }
+
+    /// Return the current goal (if any) for the session.
+    pub async fn get_session_goal(&self, session_id: &SessionId) -> Result<Option<String>> {
+        let sessions = self.sessions.read().await;
+        if let Some(s) = sessions.get(&session_id.0) {
+            Ok(s.current_goal.clone())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
     }
 
     /// Clean up expired sessions
