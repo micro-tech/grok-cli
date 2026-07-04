@@ -1795,6 +1795,8 @@ mod tests {
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new(),
+            dna: crate::session::dna::SessionDna::default(),
+            current_goal: None,
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);
@@ -1866,7 +1868,7 @@ mod tests {
         let agent = GrokAcpAgent::new(config, None).await.unwrap();
         let session_id = SessionId::new("test-session-perm");
         agent
-            .initialize_session(session_id.clone(), ".".to_string(), None)
+            .initialize_session(session_id.clone(), ".".to_string(), None, None)
             .await
             .unwrap();
 
