@@ -575,20 +575,58 @@ fn send_available_commands_update_cx(
 
 // ---------------------------------------------------------------------------
 // 111.3 helper: convert a local SessionNotification to the crate's type.
-// Both types serialize to the same ACP wire JSON, so a serde round-trip works.
+//
+// Most variants share the same wire JSON, so a serde round-trip works for
+// them.  A handful of our local variants have been renamed or restructured
+// in agent-client-protocol-schema 1.1.0 and need explicit mapping:
+//
+//  • ContextUsageUpdate → UsageUpdate  (fields: current_tokens→used, max_tokens→size)
+//  • ThinkingBlockUpdate → AgentThoughtChunk  (wraps a ContentChunk)
+//  • StatusBarUpdate     → no crate equivalent, dropped silently
 // ---------------------------------------------------------------------------
 
 fn local_notif_to_crate(
     local: &SessionNotification,
 ) -> Result<agent_client_protocol::schema::v1::SessionNotification> {
+    use agent_client_protocol::schema::v1;
+
+    let crate_sid = v1::SessionId::new(local.session_id.0.clone());
+
+    // Handle variants whose names or layouts differ from the crate schema.
+    match &local.update {
+        SessionUpdate::ContextUsageUpdate(ctx) => {
+            // Crate renamed this variant to "usage_update" and uses { used, size }.
+            let usage = v1::UsageUpdate::new(ctx.current_tokens as u64, ctx.max_tokens as u64);
+            return Ok(v1::SessionNotification::new(
+                crate_sid,
+                v1::SessionUpdate::UsageUpdate(usage),
+            ));
+        }
+        SessionUpdate::ThinkingBlockUpdate(tb) => {
+            // Map to the crate's agent_thought_chunk variant.
+            let content = v1::ContentBlock::Text(v1::TextContent::new(tb.content.clone()));
+            let chunk = v1::ContentChunk::new(content);
+            return Ok(v1::SessionNotification::new(
+                crate_sid,
+                v1::SessionUpdate::AgentThoughtChunk(chunk),
+            ));
+        }
+        SessionUpdate::StatusBarUpdate(_) => {
+            // No equivalent in the crate's SessionUpdate; drop silently.
+            return Err(anyhow!("StatusBarUpdate: no crate equivalent"));
+        }
+        _ => {}
+    }
+
+    // For all other variants the names and field layouts match the crate schema,
+    // so the JSON round-trip is safe.
     let json = serde_json::to_value(local).map_err(|e| anyhow!("serialize local notif: {e}"))?;
     serde_json::from_value(json).map_err(|e| anyhow!("deserialize crate notif: {e}"))
 }
 
 /// Convert a local `SessionNotification` to the crate's type and send it via
-/// `cx`. Logs a warning if either step fails so callers don't need to handle
-/// the error themselves (notifications are best-effort — a failure must not
-/// abort the session).
+/// `cx`. Logs a warning if a conversion fails, except for variants that are
+/// intentionally skipped (e.g. StatusBarUpdate has no crate equivalent).
 fn send_session_notif(
     notif: &SessionNotification,
     cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
@@ -599,7 +637,12 @@ fn send_session_notif(
                 warn!("cx.send_notification failed: {e}");
             }
         }
-        Err(e) => warn!("local_notif_to_crate failed (notification dropped): {e}"),
+        Err(e) => {
+            // Suppress expected "no crate equivalent" messages to avoid log noise.
+            if !e.to_string().contains("no crate equivalent") {
+                warn!("local_notif_to_crate failed (notification dropped): {e}");
+            }
+        }
     }
 }
 

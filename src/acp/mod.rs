@@ -344,7 +344,10 @@ impl GrokAcpAgent {
 
         let mut sessions = self.sessions.write().await;
         sessions.insert(session_id.to_string(), session_data.clone());
-        info!("Auto-created minimal session for missing ID: {}", session_id);
+        info!(
+            "Auto-created minimal session for missing ID: {}",
+            session_id
+        );
         session_data
     }
 
@@ -1072,14 +1075,26 @@ impl GrokAcpAgent {
                 let policy = self.security.get_policy();
 
                 let result = match function_name.as_str() {
-                    "read_file" => tools::read_file(args["path"].as_str().ok_or(anyhow!("Missing path"))?, &policy).await,
+                    "read_file" => {
+                        tools::read_file(
+                            args["path"].as_str().ok_or(anyhow!("Missing path"))?,
+                            &policy,
+                        )
+                        .await
+                    }
                     "write_file" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
                         tools::write_file(path, content, &policy, false).await
                     }
-                    "list_directory" => tools::list_directory(args["path"].as_str().ok_or(anyhow!("Missing path"))?, &policy),
-                    "glob_search" => tools::glob_search(args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?, &policy),
+                    "list_directory" => tools::list_directory(
+                        args["path"].as_str().ok_or(anyhow!("Missing path"))?,
+                        &policy,
+                    ),
+                    "glob_search" => tools::glob_search(
+                        args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?,
+                        &policy,
+                    ),
                     "search_file_content" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
                         let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
@@ -1091,10 +1106,23 @@ impl GrokAcpAgent {
                     }
                     "replace" => {
                         let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let old_string = args["old_string"].as_str().ok_or(anyhow!("Missing old_string"))?;
-                        let new_string = args["new_string"].as_str().ok_or(anyhow!("Missing new_string"))?;
-                        let expected_replacements = args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(path, old_string, new_string, expected_replacements, &policy, false).await
+                        let old_string = args["old_string"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing old_string"))?;
+                        let new_string = args["new_string"]
+                            .as_str()
+                            .ok_or(anyhow!("Missing new_string"))?;
+                        let expected_replacements =
+                            args["expected_replacements"].as_u64().map(|n| n as u32);
+                        tools::replace(
+                            path,
+                            old_string,
+                            new_string,
+                            expected_replacements,
+                            &policy,
+                            false,
+                        )
+                        .await
                     }
                     "save_memory" => {
                         let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
@@ -1213,8 +1241,12 @@ impl GrokAcpAgent {
                         kind: None,
                         status: Some(status),
                         locations: None,
-                        content: Some(vec![crate::acp::protocol::ToolCallContent::Text(
-                            crate::acp::protocol::TextContent::new(content.clone()),
+                        content: Some(vec![crate::acp::protocol::ToolCallContent::Content(
+                            crate::acp::protocol::ToolCallContentInner {
+                                content: crate::acp::protocol::ContentBlock::Text(
+                                    crate::acp::protocol::TextContent::new(content.clone()),
+                                ),
+                            },
                         )]),
                     };
                     let _ = sender.send(crate::acp::protocol::SessionUpdate::ToolCallUpdate(

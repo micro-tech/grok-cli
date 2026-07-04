@@ -702,13 +702,22 @@ pub struct ToolCallUpdate {
     pub content: Option<Vec<ToolCallContent>>,
 }
 
+/// Matches the wire format of `agent-client-protocol-schema` 1.1.0:
+/// `{"type": "content", "content": {"type": "text", "text": "..."}}`
+///
+/// The crate's `ToolCallContent::Content(Content { content: ContentBlock })`
+/// wraps a `ContentBlock` under the key `"content"`.  We mirror that
+/// structure so the JSON round-trip in `local_notif_to_crate` succeeds.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(tag = "type")]
+#[serde(tag = "type", rename_all = "snake_case")]
 pub enum ToolCallContent {
-    /// Serialised as `"content"` to match agent-client-protocol-schema ≥ 0.12.
-    /// (Older schema versions used `"text"`, which Zed 0.12+ no longer accepts.)
-    #[serde(rename = "content")]
-    Text(TextContent),
+    Content(ToolCallContentInner),
+}
+
+/// Inner wrapper for `ToolCallContent::Content`; holds a single `ContentBlock`.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ToolCallContentInner {
+    pub content: ContentBlock,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
