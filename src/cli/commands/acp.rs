@@ -26,7 +26,7 @@ use crate::acp::protocol::{
     AuthMethod, AvailableCommandsUpdate, ContentBlock, ContentChunk, Implementation,
     InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
     PermissionOutcome, PromptRequest, SessionId, SessionInfo, SessionListRequest,
-    SessionListResponse, SessionNotification, SessionUpdate, TextContent,
+    SessionListResponse, SessionLoadRequest, SessionNotification, SessionUpdate, TextContent,
 };
 use crate::acp::slash_commands::{
     self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
@@ -452,25 +452,27 @@ where
                 let agent = Arc::clone(&a_load);
                 async move {
                     // Convert crate's LoadSessionRequest → Value for our handler.
-                    // The crate requires cwd and mcpServers in the incoming JSON.
                     let params = serde_json::to_value(&req).unwrap_or_else(|_| json!({}));
                     let sid = params["sessionId"].as_str().unwrap_or("").to_string();
-                    // Call our existing handler with a sink writer (notifications
-                    // come from session persistence, not through the old writer).
-                    let _writer_stub = tokio::io::sink();
-                    // `handle_session_load` is not yet implemented in the new ACP stack.
-                    // Return a successful empty response for now (no session history restored).
-                    let _val: Value = json!(null);
-                    // Build a LoadSessionResponse — try several JSON structures
-                    // since we don't know the exact crate-required fields at
-                    // compile time (the crate type is #[non_exhaustive]).
-                    // Our handler returns null (no history); the spec allows null.
+
+                    // Initialize (or restore) the session so that subsequent
+                    // session/prompt calls have a valid session in the agent's
+                    // sessions map and a live chat-logger session.
+                    if !sid.is_empty() {
+                        if let Err(e) = handle_session_load(&params, &agent).await {
+                            warn!("session/load: session setup failed for '{}': {}", sid, e);
+                        }
+                    }
+
+                    // Build a LoadSessionResponse — try several JSON shapes
+                    // since the crate type may be #[non_exhaustive].
                     let resp: AcpLoadResp =
                         [json!({"content": []}), json!({"messages": []}), json!({})]
                             .into_iter()
                             .find_map(|j| serde_json::from_value(j).ok())
                             .ok_or_else(|| anyhow!("Cannot construct LoadSessionResponse"))?;
                     responder.respond(resp)?;
+
                     // Re-advertise commands after load with the same retry
                     // strategy used by session/new.
                     if !sid.is_empty() {
@@ -1585,6 +1587,161 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
         .with_modes(modes)
         .with_models(models);
     Ok(serde_json::to_value(response)?)
+}
+
+/// Handle `session/load` — resume (or recreate) a session that the client
+/// already holds a session ID for.
+///
+/// Zed sends `session/load` instead of `session/new` when it has a persisted
+/// session ID from a previous run.  The old stub returned an empty response
+/// without ever calling `initialize_session`, which left the sessions map
+/// empty and the chat-logger without an active session.  Any subsequent
+/// `session/prompt` would then fire "Attempted to log message without an
+/// active session" and fail to find the session in the agent's map.
+///
+/// This handler now:
+/// 1. Connects any MCP servers forwarded by the client.
+/// 2. Registers the workspace root so file-system tools are trusted.
+/// 3. Restores the session from disk if a snapshot exists; otherwise
+///    creates a fresh session under the supplied session ID.
+/// 4. Starts the chat logger for the session.
+async fn handle_session_load(params: &Value, agent: &GrokAcpAgent) -> Result<()> {
+    let req: SessionLoadRequest = serde_json::from_value(params.clone())
+        .map_err(|e| anyhow!("Invalid session/load parameters: {}", e))?;
+
+    let sid = req.session_id.0.clone();
+
+    // ── 1. MCP server connection ────────────────────────────────────────────
+    if !req.mcp_servers.is_empty() {
+        info!(
+            "session/load: client forwarded {} MCP server(s) — attempting connection",
+            req.mcp_servers.len()
+        );
+        for server_val in &req.mcp_servers {
+            let name = server_val
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unnamed");
+
+            let command = match server_val.get("command").and_then(|v| v.as_str()) {
+                Some(c) => c.to_string(),
+                None => {
+                    warn!(
+                        "session/load: MCP server '{}' missing 'command' — skipping",
+                        name
+                    );
+                    continue;
+                }
+            };
+
+            let args: Vec<String> = server_val
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let env: std::collections::HashMap<String, String> = server_val
+                .get("env")
+                .and_then(|v| v.as_object())
+                .map(|obj| {
+                    obj.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let cfg = crate::mcp::config::McpServerConfig::Stdio { command, args, env };
+            let mcp_client = agent.get_mcp_client();
+            let mut client_guard = mcp_client.write().await;
+
+            match client_guard.connect(name, &cfg).await {
+                Ok(()) => {
+                    info!("session/load: connected to MCP server '{}'", name);
+                    match client_guard.list_tools(name).await {
+                        Ok(tools) => {
+                            info!(
+                                "session/load: discovered {} tool(s) from '{}'",
+                                tools.len(),
+                                name
+                            );
+                            drop(client_guard);
+                            let discovered = agent.get_discovered_mcp_tools();
+                            let mut map = discovered.write().await;
+                            map.insert(name.to_string(), tools.clone());
+                            let mut global_map = crate::tools::registry::get_discovered_mcp_tools();
+                            global_map.insert(name.to_string(), tools);
+                            crate::tools::registry::set_discovered_mcp_tools(global_map);
+                        }
+                        Err(e) => {
+                            warn!("session/load: failed to list tools from '{}': {}", name, e)
+                        }
+                    }
+                }
+                Err(e) => warn!(
+                    "session/load: failed to connect to MCP server '{}': {}",
+                    name, e
+                ),
+            }
+        }
+    }
+
+    // ── 2. Workspace registration ───────────────────────────────────────────
+    let cwd = req.cwd.clone().unwrap_or_else(|| {
+        std::env::current_dir()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string()
+    });
+    register_workspace_root(agent, &cwd);
+
+    // ── 3. Session initialization ───────────────────────────────────────────
+    // Prefer restoring a persisted snapshot; fall back to a fresh session.
+    let session_id_obj = SessionId::new(sid.clone());
+    match agent.load_session_from_disk(&sid).await {
+        Some(state) => {
+            let msg_count = state.messages.len();
+            info!(
+                "session/load: restoring '{}' from disk ({} messages)",
+                sid, msg_count
+            );
+            if let Err(e) = agent.restore_session_from_disk(state).await {
+                warn!(
+                    "session/load: restore from disk failed for '{}': {} — \
+                     creating fresh session",
+                    sid, e
+                );
+                agent
+                    .initialize_session(session_id_obj, cwd, None, None)
+                    .await?;
+            }
+        }
+        None => {
+            info!(
+                "session/load: no saved state for '{}' — creating fresh session",
+                sid
+            );
+            agent
+                .initialize_session(session_id_obj, cwd, None, None)
+                .await?;
+        }
+    }
+
+    // ── 4. Chat logging ─────────────────────────────────────────────────────
+    if let Err(e) = chat_logger::start_session(&sid) {
+        warn!(
+            "session/load: failed to start chat logging for '{}': {}",
+            sid, e
+        );
+    } else {
+        let _ = chat_logger::log_system(format!("Session '{}' loaded via session/load", sid));
+        info!("Chat logging started for session: {}", sid);
+    }
+
+    Ok(())
 }
 
 /// Task 29: Apply safe initialization defaults when a client skips the
