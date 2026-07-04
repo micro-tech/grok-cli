@@ -245,7 +245,7 @@ impl ChatLogger {
                 warn!("chat_logger: failed to flush session to disk: {}", e);
             }
         } else {
-            warn!("Attempted to log message without an active session");
+            debug!("Attempted to log message without an active session");
         }
 
         Ok(())
