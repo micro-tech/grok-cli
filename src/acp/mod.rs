@@ -12,14 +12,18 @@ use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
 
-use crate::config::Config;
+use crate::config::{Config, ThinkingMode};
 use crate::content_to_string;
 use crate::hooks::HookManager;
 use crate::router::AppRouter;
+use serde::{Deserialize, Serialize};
 
+pub mod elicitation;
+pub mod mcp_bridge;
 pub mod protocol;
 pub mod security;
 pub mod slash_commands;
+pub mod status_bar;
 pub mod tools;
 
 use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams};
@@ -56,10 +60,10 @@ impl PermissionBridge {
 
 /// Grok AI agent implementation for ACP
 pub struct GrokAcpAgent {
-    /// AppRouter — `None` when no API key is configured at startup.
-    /// The key is only required when making actual API calls; the agent can
-    /// still respond to `initialize` and declare its auth requirements.
-    router: Option<AppRouter>,
+    /// Application-level AI router — created lazily on first actual
+    /// chat-completion request so that `grok acp stdio` starts instantly
+    /// even when an API key is present.
+    router: std::sync::OnceLock<AppRouter>,
 
     /// Agent configuration
     config: Config,
@@ -67,17 +71,26 @@ pub struct GrokAcpAgent {
     /// Active sessions
     sessions: Arc<RwLock<HashMap<String, SessionData>>>,
 
-    /// Agent capabilities
-    capabilities: GrokAgentCapabilities,
+    /// Agent capabilities (computed lazily on first access to avoid
+    /// expensive tool schema construction during Zed ACP startup)
+    capabilities: std::sync::OnceLock<GrokAgentCapabilities>,
 
-    /// Security manager
-    pub security: SecurityManager,
+    /// Security manager (lazy — created on first use)
+    security: std::sync::OnceLock<SecurityManager>,
 
-    /// Hook manager
-    hook_manager: Arc<RwLock<HookManager>>,
+    /// Hook manager (lazy — created on first use)
+    hook_manager: std::sync::OnceLock<Arc<RwLock<HookManager>>>,
 
     /// Default model override
     default_model: Option<String>,
+
+    /// MCP client for connected Model Context Protocol servers.
+    /// Populated when `session/new` receives an `mcpServers` array.
+    mcp_client: Arc<RwLock<crate::mcp::client::McpClient>>,
+
+    /// Tools discovered from connected MCP servers.
+    /// Key = server name, Value = list of tools returned by `tools/list`.
+    discovered_mcp_tools: Arc<RwLock<HashMap<String, Vec<crate::mcp::protocol::Tool>>>>,
 }
 
 /// Session data for tracking conversation state
@@ -111,11 +124,18 @@ struct SessionData {
     /// Bayesian inference engine for this session
     bayes_engine: crate::bayes::BayesianEngine,
 
-    /// Session DNA
+    /// Session DNA (personality + behavior config) — mutable during the session
+    /// so the feedback loop can adapt risk tolerance and tool preferences.
     dna: crate::session::dna::SessionDna,
 
-    /// Current goal for the session
+    /// Active session goal set via `/goal <text>`.
+    /// Injected into every refined prompt as a system note so the model
+    /// always interprets messages through the lens of this goal.
     current_goal: Option<String>,
+
+    /// Temporary rules added via `/rule add <text>` for this session.
+    /// Injected into every refined prompt so the model respects them throughout.
+    session_rules: crate::context::session_rules::SessionRules,
 }
 
 impl SessionData {
@@ -165,12 +185,26 @@ impl SessionData {
             );
         }
 
+        // 4. Active Goal injection
+        if let Some(ref goal) = self.current_goal {
+            refined_message = format!(
+                "{}\n\n[Active Goal: {}  — interpret this message in the context of achieving this goal.]",
+                refined_message, goal
+            );
+        }
+
+        // 5. Session-only rules injection
+        let rules_text = self.session_rules.format_for_prompt();
+        if !rules_text.is_empty() {
+            refined_message = format!("{}{}", refined_message, rules_text);
+        }
+
         refined_message
     }
 }
 
 /// Session-specific configuration
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct SessionConfig {
     /// Model to use for this session
     pub model: String,
@@ -183,6 +217,22 @@ pub struct SessionConfig {
 
     /// System prompt for this session
     pub system_prompt: Option<String>,
+
+    /// Reasoning / thinking mode for this session.
+    /// Passed as `reasoning_effort` to the API for models that support it.
+    pub thinking_mode: ThinkingMode,
+}
+
+/// Snapshot of a session that can be written to disk and reloaded.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct PersistedSession {
+    pub(crate) session_id: String,
+    pub(crate) cwd: String,
+    pub(crate) messages: Vec<serde_json::Value>,
+    pub(crate) config: SessionConfig,
+    pub(crate) current_goal: Option<String>,
+    pub(crate) always_allow: Vec<String>,
+    pub(crate) saved_at_unix: u64,
 }
 
 /// Agent capabilities for ACP
@@ -217,9 +267,11 @@ pub struct ToolDefinition {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            model: "grok-code-fast-1".to_string(),
+            model: "grok-4.3".to_string(),
             temperature: 0.5, // Lower temperature for more deterministic coding output
-            max_tokens: 4096,
+            // grok-4.3 supports higher output token limits; 16 384 balances
+            // detailed responses with reasonable response times.
+            max_tokens: 16_384,
             system_prompt: Some(
                 "You are an expert software engineer and coding assistant. \
                 Your primary goal is to write high-quality, efficient, and maintainable code. \
@@ -231,218 +283,134 @@ impl Default for SessionConfig {
                 3. Provide clear explanations for your design choices.\n\
                 4. When modifying existing code, respect the existing style and structure.\n\
                 5. Always consider edge cases and error handling.\n\
-                6. Suggest tests to verify your code when appropriate.\n\
-                \n\
-                Project task management rules (follow exactly):\n\
-                7. ALWAYS call the 'task_get' tool when the user asks about a specific \
-                task by number. Example: 'what is task 60' → call task_get(id=60). \
-                Never skip the tool call and never answer from memory.\n\
-                8. When task_get SUCCEEDS: reply in plain English using the title, \
-                status, priority, and description from the tool result. \
-                Do not invent or change any field values.\n\
-                9. When task_get FAILS (tool returns TOOL ERROR): reply ONLY with \
-                'I could not retrieve task N. Error: <exact error text>'. \
-                Do NOT return any JSON. Do NOT guess the task title or any other field. \
-                Do NOT make up a task object.\n\
-                10. To list ALL tasks use read_file with path '.zed/task_list.json'."
+                6. Suggest tests to verify your code when appropriate."
                     .to_string(),
             ),
+            thinking_mode: ThinkingMode::default(),
         }
     }
 }
 
 impl GrokAcpAgent {
     /// Create a new Grok ACP agent
+    ///
+    /// The `default_model` parameter is an explicit override (e.g. from `--model`).
+    /// If `None`, the agent will fall back to the hierarchically loaded config
+    /// (project → system → hardcoded default).
     pub async fn new(config: Config, default_model: Option<String>) -> Result<Self> {
-        // Build the API client only when an API key is available.
-        // In ACP stdio mode the agent MUST be able to start up and respond to
-        // `initialize` (declaring its auth requirements) even before the user
-        // has supplied a key, so we defer the hard error to the first actual
-        // API call rather than failing here.
-        let router = if let Some(ref api_key) = config.api_key {
-            match AppRouter::new(api_key, config.timeout_secs) {
-                Ok(router) => {
-                    info!("✓ AppRouter initialised");
-                    Some(router)
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to create Grok client (will retry on first API call): {}",
-                        e
-                    );
-                    None
-                }
-            }
-        } else {
-            info!("No API key configured at startup — set GROK_API_KEY to enable API calls");
-            None
-        };
-
-        let capabilities = Self::create_capabilities();
-
-        let security = SecurityManager::new();
-        // Trust current directory by default, canonicalizing to resolve symlinks
-        if let Ok(cwd) = std::env::current_dir() {
-            let canonical_cwd = cwd.canonicalize().unwrap_or(cwd);
-            security.add_trusted_directory(canonical_cwd);
-        }
-        // Apply the shell-command timeout from config so `tools.shell.command_timeout_secs`
-        // in config.toml is honoured. The GROK_SHELL_TIMEOUT_SECS env var still
-        // takes precedence (checked at call time in shell_tools::run_shell_command).
-        security.set_shell_timeout_secs(config.tools.shell.command_timeout_secs);
-
+        // NOTE: SecurityManager and HookManager are now created lazily
+        // via get_security() / get_hook_manager() on first use.
+        // This keeps `grok acp stdio` startup extremely fast (task 126).
         Ok(Self {
-            router,
+            router: std::sync::OnceLock::new(),
             config,
             sessions: Arc::new(RwLock::new(HashMap::new())),
-            capabilities,
-            security,
-            hook_manager: Arc::new(RwLock::new(HookManager::new())),
+            capabilities: std::sync::OnceLock::new(),
+            security: std::sync::OnceLock::new(),
+            hook_manager: std::sync::OnceLock::new(),
             default_model,
+            mcp_client: Arc::new(RwLock::new(crate::mcp::client::McpClient::new())),
+            discovered_mcp_tools: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
-    /// Ensure a session exists. If it does not, create a minimal default one.
-    /// This prevents “Session not found” errors on first-use or when the client
-    /// sends a slash command before the normal session/new handshake.
-    async fn ensure_session(&self, session_id: &str) -> SessionData {
-        {
-            let sessions = self.sessions.read().await;
-            if let Some(s) = sessions.get(session_id) {
-                return s.clone();
+    /// Return agent capabilities, computing them lazily on first access.
+    /// This avoids the expensive tool schema construction during Zed ACP startup.
+    pub fn capabilities(&self) -> &GrokAgentCapabilities {
+        // We can't easily pass &self into the OnceLock closure, so we store
+        // the resolved default model on the agent and use it when building
+        // capabilities. For now we just call the static version — the model
+        // list is mostly used for display and the real model comes from the
+        // session config anyway.
+        self.capabilities.get_or_init(Self::create_capabilities)
+    }
+
+    /// Return a clone of the underlying [`AppRouter`], lazily creating it
+    /// on first use if an API key is configured.  This keeps `new()` fast
+    /// for ACP stdio startup.
+    fn get_router(&self) -> Result<AppRouter> {
+        if self.router.get().is_none() {
+            if let Some(ref api_key) = self.config.api_key {
+                if let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs) {
+                    let _ = self.router.set(r);
+                }
             }
         }
 
-        // Create a minimal default session
-        let mut session_data = SessionData {
-            cwd: std::env::current_dir()
-                .map(|p| p.to_string_lossy().to_string())
-                .unwrap_or_else(|_| ".".to_string()),
-            messages: Vec::new(),
-            config: SessionConfig::default(),
-            created_at: std::time::Instant::now(),
-            last_activity: std::time::Instant::now(),
-            always_allow: std::collections::HashSet::new(),
-            client_commands: Vec::new(),
-            bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
-            dna: crate::session::dna::SessionDna::default(),
-            current_goal: None,
-        };
-
-        // Inject DNA into the (empty) system prompt so the session is usable
-        let dna = crate::session::dna::SessionDna::load();
-        let mut prompt = String::new();
-        dna.inject_into_prompt(&mut prompt);
-        prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
-        if !prompt.trim().is_empty() {
-            session_data.messages.push(serde_json::json!({
-                "role": "system",
-                "content": prompt.trim().to_string(),
-            }));
-        }
-        session_data.dna = dna;
-
-        let mut sessions = self.sessions.write().await;
-        sessions.insert(session_id.to_string(), session_data.clone());
-        info!(
-            "Auto-created minimal session for missing ID: {}",
-            session_id
-        );
-        session_data
-    }
-
-    /// Public helper used by all slash-command handlers that need a session.
-    /// Guarantees the session exists (creating a minimal one if necessary).
-    pub async fn ensure_session_exists(&self, session_id: &str) {
-        self.ensure_session(session_id).await;
-    }
-
-    // ── MCP / Security / Thinking helpers (wired for acp.rs) ─────────────────
-
-    /// Return a reference to the MCP client (placeholder until full MCP impl).
-    pub fn get_mcp_client(&self) -> Arc<RwLock<crate::mcp::client::McpClient>> {
-        // Create a lazy static or return a new empty one for now.
-        use std::sync::OnceLock;
-        static MCP_CLIENT: OnceLock<Arc<RwLock<crate::mcp::client::McpClient>>> = OnceLock::new();
-        MCP_CLIENT
-            .get_or_init(|| Arc::new(RwLock::new(crate::mcp::client::McpClient::new())))
-            .clone()
-    }
-
-    /// Return a reference to the discovered MCP tools map.
-    pub fn get_discovered_mcp_tools(
-        &self,
-    ) -> Arc<RwLock<std::collections::HashMap<String, Vec<serde_json::Value>>>> {
-        use std::sync::OnceLock;
-        static DISCOVERED: OnceLock<
-            Arc<RwLock<std::collections::HashMap<String, Vec<serde_json::Value>>>>,
-        > = OnceLock::new();
-        DISCOVERED
-            .get_or_init(|| Arc::new(RwLock::new(std::collections::HashMap::new())))
-            .clone()
-    }
-
-    /// Delegate to the security manager (public for acp.rs call sites).
-    pub fn add_trusted_directory(&self, path: std::path::PathBuf) {
-        self.security.add_trusted_directory(path);
-    }
-
-    /// Stub: persist session to disk (no-op for now).
-    pub async fn save_session_to_disk(&self, _session_id: &SessionId) -> Result<()> {
-        Ok(())
-    }
-
-    /// Stub: set thinking mode on the session (stored in SessionData later).
-    pub async fn set_thinking_mode(
-        &self,
-        session_id: &SessionId,
-        _mode: crate::config::ThinkingMode,
-    ) -> Result<()> {
-        self.ensure_session_exists(&session_id.0).await;
-        // For now we just ensure the session exists; real storage can be added later.
-        Ok(())
-    }
-
-    /// Stub: get thinking mode (returns None until we store it).
-    pub async fn get_thinking_mode(
-        &self,
-        session_id: &SessionId,
-    ) -> Option<crate::config::ThinkingMode> {
-        self.ensure_session_exists(&session_id.0).await;
-        None
-    }
-
-    /// Return a reference to the underlying [`AppRouter`], or a descriptive
-    /// error if no API key was configured when the agent was created.
-    ///
-    /// Call this inside any method that needs to reach the xAI API instead of
-    /// accessing `self.grok_client` directly.
-    fn get_router(&self) -> Result<AppRouter> {
-        self.router.clone().ok_or_else(|| {
+        self.router.get().cloned().ok_or_else(|| {
             anyhow!(
                 "API key not configured. \
-                 Set the GROK_API_KEY environment variable and restart the agent, \
-                 or use 'grok config set api_key <key>'."
+                     Set the GROK_API_KEY environment variable and restart the agent, \
+                     or use 'grok config set api_key <key>'."
             )
         })
+    }
+
+    /// Return a reference to the SecurityManager, lazily initializing it
+    /// (and trusting the current directory) on first use.
+    pub fn get_security(&self) -> &SecurityManager {
+        self.security.get_or_init(|| {
+            let sm = SecurityManager::new();
+            if let Ok(cwd) = std::env::current_dir() {
+                let canonical_cwd = cwd.canonicalize().unwrap_or(cwd);
+                sm.add_trusted_directory(canonical_cwd);
+            }
+            sm
+        })
+    }
+
+    /// Return a reference to the HookManager, lazily initializing it on first use.
+    fn get_hook_manager(&self) -> &Arc<RwLock<HookManager>> {
+        self.hook_manager
+            .get_or_init(|| Arc::new(RwLock::new(HookManager::new())))
+    }
+
+    /// Public helper to add a trusted directory (used by workspace registration
+    /// code in the ACP command handler). Lazily initializes SecurityManager.
+    pub fn add_trusted_directory(&self, path: std::path::PathBuf) {
+        self.get_security().add_trusted_directory(path);
+    }
+
+    /// Returns a clone of the shared MCP client so callers (especially
+    /// `handle_session_new`) can connect servers received from the client.
+    pub fn get_mcp_client(&self) -> Arc<RwLock<crate::mcp::client::McpClient>> {
+        Arc::clone(&self.mcp_client)
+    }
+
+    /// Returns the map of tools discovered from connected MCP servers.
+    pub fn get_discovered_mcp_tools(
+        &self,
+    ) -> Arc<RwLock<HashMap<String, Vec<crate::mcp::protocol::Tool>>>> {
+        Arc::clone(&self.discovered_mcp_tools)
+    }
+
+    /// Returns a flattened list of all discovered MCP tools with their server name
+    /// prepended (e.g. "markmap:generate"). Useful for merging into the main tool list.
+    pub async fn get_all_mcp_tools(&self) -> Vec<(String, crate::mcp::protocol::Tool)> {
+        let map = self.discovered_mcp_tools.read().await;
+        let mut out = Vec::new();
+        for (server, tools) in map.iter() {
+            for t in tools {
+                out.push((server.clone(), (*t).clone()));
+            }
+        }
+        out
     }
 
     /// Create agent capabilities
     fn create_capabilities() -> GrokAgentCapabilities {
         GrokAgentCapabilities {
             models: vec![
-                "grok-4-1-fast-reasoning".to_string(),
-                "grok-4-1-fast-non-reasoning".to_string(),
-                "grok-code-fast-1".to_string(),
-                "grok-4-fast-reasoning".to_string(),
-                "grok-4-fast-non-reasoning".to_string(),
-                "grok-4-0709".to_string(),
+                "grok-4.3".to_string(), // Default — 1 M token context
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
                 "grok-2-vision-1212".to_string(),
                 "grok-2".to_string(), // Fallback
             ],
-            max_context_length: 131072,
+            // grok-4.3 exposes a 1,048,576-token context window.
+            // This is reported here so ACP clients (e.g. Zed) can make
+            // informed decisions about context insertion.
+            max_context_length: 1_048_576,
             features: vec![
                 "chat_completion".to_string(),
                 "code_generation".to_string(),
@@ -450,18 +418,23 @@ impl GrokAcpAgent {
                 "code_explanation".to_string(),
                 "streaming".to_string(),
                 "function_calling".to_string(),
+                "1m_context".to_string(),
+                "vision".to_string(),
             ],
             // Build the tool list live from the registry so this list
             // automatically reflects any newly added tools without requiring
             // manual updates here.
             tools: crate::tools::registry::get_available_tool_definitions()
-                .iter()
-                .filter_map(|t| {
-                    let v: serde_json::Value = t.clone();
+                .into_iter()
+                .filter_map(|v| {
                     let func = v.get("function")?;
                     Some(ToolDefinition {
                         name: func.get("name")?.as_str()?.to_string(),
-                        description: func.get("description")?.as_str()?.to_string(),
+                        description: func
+                            .get("description")
+                            .and_then(|d| d.as_str())
+                            .unwrap_or("")
+                            .to_string(),
                         parameters: func.get("parameters").cloned().unwrap_or(json!({})),
                     })
                 })
@@ -475,48 +448,42 @@ impl GrokAcpAgent {
         session_id: SessionId,
         cwd: String,
         config: Option<SessionConfig>,
-        _thinking_mode: Option<crate::config::ThinkingMode>,
+        event_sender: Option<
+            tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
+        >,
     ) -> Result<()> {
-        // ── Update security policy working directory ─────────────────────────────
-        // Zed passes the actual workspace root as `cwd` in `session/new`.  Without
-        // updating the security policy here, relative paths like
-        // `.zed/task_list.json` would resolve against the process launch directory
-        // rather than the workspace root, causing silent file-not-found errors that
-        // make the LLM hallucinate the file contents.
-        let cwd_path = std::path::PathBuf::from(&cwd);
-        self.security.set_working_directory(&cwd_path);
-        tracing::info!(
-            session = %session_id.0,
-            workspace = %cwd_path.display(),
-            "initialize_session: security policy workspace root updated"
-        );
+        let mut session_config = config.unwrap_or_else(|| {
+            // Build SessionConfig from the hierarchically-loaded agent config.
+            // Priority: project .grok/config.toml → system ~/.grok-cli/config.toml → hardcoded
+            SessionConfig {
+                model: if !self.config.default_model.is_empty() {
+                    self.config.default_model.clone()
+                } else {
+                    SessionConfig::default().model
+                },
+                temperature: self.config.default_temperature,
+                max_tokens: self.config.default_max_tokens,
+                thinking_mode: self.config.acp.thinking_mode.clone(),
+                system_prompt: SessionConfig::default().system_prompt,
+            }
+        });
 
-        let mut session_config = config.unwrap_or_default();
-
-        // Apply default model override if present and config matches default
+        // Highest priority override: explicit --model flag
         if let Some(model) = &self.default_model {
             session_config.model = model.clone();
         }
 
-        // Capture values for logging before they are moved into SessionData.
-        let log_cwd = std::path::PathBuf::from(&cwd);
-        let log_model = session_config.model.clone();
-        let log_session_id = session_id.0.clone();
+        // Capture status-bar fields before session_config is moved into SessionData.
+        let init_model = session_config.model.clone();
+        let init_thinking = session_config
+            .thinking_mode
+            .as_api_str()
+            .unwrap_or("off")
+            .to_string();
 
-        // Seed the message history with the system prompt so the LLM has
-        // context from the very first API call.  Without this the system
-        // prompt field in SessionConfig is stored but never forwarded to the
-        // model — leaving it with no instructions and causing hallucination.
-        let initial_messages: Vec<serde_json::Value> =
-            if let Some(ref sys) = session_config.system_prompt {
-                vec![serde_json::json!({ "role": "system", "content": sys })]
-            } else {
-                Vec::new()
-            };
-
-        let session_data = SessionData {
+        let mut session_data = SessionData {
             cwd,
-            messages: initial_messages,
+            messages: Vec::new(),
             config: session_config,
             created_at: std::time::Instant::now(),
             last_activity: std::time::Instant::now(),
@@ -525,17 +492,108 @@ impl GrokAcpAgent {
             bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
             dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
+            session_rules: Default::default(),
         };
+
+        // --- Task 102: Knowledge Pack Loader ---
+        // Load project-local knowledge files (knowledge/*.md, knowledge/*.json) and
+        // inject them as a system message so the model has project-specific context.
+        if let Ok(knowledge) = crate::knowledge::loader::KnowledgeLoader::load() {
+            let entries = knowledge.get_all();
+            if !entries.is_empty() {
+                let combined: String = entries
+                    .iter()
+                    .map(|e| format!("## {}\n{}", e.source, e.content))
+                    .collect::<Vec<_>>()
+                    .join("\n\n---\n\n");
+                session_data.messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": format!("## Project Knowledge\n\nThe following project-specific knowledge has been loaded from the `knowledge/` directory:\n\n{}", combined),
+                }));
+                tracing::info!(
+                    "Injected {} knowledge pack(s) into session {}",
+                    entries.len(),
+                    session_id.0
+                );
+            }
+        }
+
+        // --- Task 103 + 150: Session DNA + DNA-Driven Intelligence ---
+        let dna = crate::session::dna::SessionDna::load();
+
+        // Apply DNA influence to the Bayesian router
+        let mut bayes_engine = crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian);
+        dna.apply_to_bayes_engine(&mut bayes_engine);
+
+        // Inject full DNA + current operating mode into system prompt
+        if let Some(sys_msg) = session_data
+            .messages
+            .iter_mut()
+            .find(|m| m["role"] == "system")
+        {
+            if let Some(content) = sys_msg["content"].as_str() {
+                let mut prompt = content.to_string();
+                dna.inject_into_prompt(&mut prompt);
+                prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
+                sys_msg["content"] = serde_json::Value::String(prompt);
+            }
+        } else {
+            let mut prompt = String::new();
+            dna.inject_into_prompt(&mut prompt);
+            prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
+            if !prompt.trim().is_empty() {
+                session_data.messages.push(serde_json::json!({
+                    "role": "system",
+                    "content": prompt.trim().to_string(),
+                }));
+            }
+        }
+
+        tracing::debug!(
+            "Session DNA injected (mode={}): tone={}, verbosity={}",
+            dna.get_mode(),
+            dna.tone,
+            dna.verbosity
+        );
+
+        // Store the mutable DNA instance
+        session_data.bayes_engine = bayes_engine;
+        session_data.dna = dna;
 
         let mut sessions = self.sessions.write().await;
         sessions.insert(session_id.0.clone(), session_data);
 
+        // ── Advertise slash commands to the client ─────────────────────────────
+        // This is the critical fix: ACP clients (Zed, etc.) only show /commands
+        // if the agent sends an `available_commands_update` notification.
+        if let Some(sender) = event_sender {
+            // Task 128 — register activity sender so spawn/fork/join emit updates
+            crate::agent::activity::set_activity_sender(sender.clone());
+
+            let commands = crate::acp::slash_commands::get_available_commands();
+            let update = crate::acp::protocol::SessionUpdate::AvailableCommandsUpdate(
+                crate::acp::protocol::AvailableCommandsUpdate::new(commands.clone()),
+            );
+            let _ = sender.send(update);
+            info!("Sent {} slash commands to ACP client", commands.len());
+
+            // Emit initial status bar on session start (Task 164)
+            let initial_state = crate::acp::status_bar::StatusBarState {
+                model: init_model.clone(),
+                thinking_mode: init_thinking,
+                current_tokens: 0,
+                max_tokens: model_context_budget(
+                    &init_model,
+                    self.config.acp.max_context_tokens,
+                    self.config.acp.grok4_max_context_tokens,
+                ),
+                context_percent: 0.0,
+                is_generating: false,
+            };
+            self.emit_status_bar(Some(&sender), &initial_state);
+        }
+
         info!("Initialized new ACP session: {}", session_id.0);
-
-        // Write a session-start banner to the dedicated tool log so each
-        // session is clearly delimited when tailing the log file.
-        crate::utils::tool_logger::log_session_start(&log_session_id, &log_cwd, &log_model);
-
         Ok(())
     }
 
@@ -629,74 +687,257 @@ impl GrokAcpAgent {
         info!("🚀 Starting chat completion for session: {}", session_id.0);
         info!("📝 User message: {} chars", message.len());
 
-        let mut sessions = self.sessions.write().await;
-        let session = sessions
-            .get_mut(&session_id.0)
-            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+        // ── Phase 1: Session setup (brief write lock) ─────────────────────────────
+        // All trimming, compression, and option extraction happen here.  After this
+        // block the write lock is released so slash commands and context queries are
+        // not blocked during the potentially-long API call loop.
+        //
+        // TODO: make compression lock-free (currently makes an async API call
+        //       while holding the write lock — known limitation).
+        let (
+            mut messages,
+            temperature,
+            max_tokens,
+            model,
+            thinking_mode,
+            mut local_bayes,
+            local_always_allow,
+        ) = {
+            let mut sessions = self.sessions.write().await;
+            let session = sessions
+                .get_mut(&session_id.0)
+                .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
 
-        // Update last activity
-        session.last_activity = std::time::Instant::now();
+            // Update last activity
+            session.last_activity = std::time::Instant::now();
 
-        let refined_message = session.refine_prompt(message);
+            let refined_message = session.refine_prompt(message);
 
-        // Add user message to history
-        session.messages.push(json!({
-            "role": "user",
-            "content": refined_message
-        }));
+            // Add user message to history
+            session.messages.push(json!({
+                "role": "user",
+                "content": refined_message
+            }));
 
-        info!("📚 Session history: {} messages", session.messages.len());
+            info!("📚 Session history: {} messages", session.messages.len());
 
-        // Trim history to prevent unbounded context growth.
-        // Keep the most recent max_history_messages entries so the model always
-        // has fresh context without exceeding the API context window.
-        // We trim here (after adding the user turn) so we never split a
-        // tool-call sequence that was already committed to history.
-        let max_history = self.config.acp.max_history_messages;
-        if session.messages.len() > max_history {
-            // Never evict the system-prompt message (role="system" at index 0).
-            // Losing it removes all task-management instructions and causes
-            // the LLM to ignore tools and hallucinate answers.
-            let has_system = session
-                .messages
-                .first()
-                .and_then(|m| m.get("role"))
-                .and_then(|r| r.as_str())
-                == Some("system");
-            let trim_from = usize::from(has_system); // 1 if system present, else 0
-
-            let available = session.messages.len().saturating_sub(trim_from);
-            let need = session.messages.len() - max_history;
-            let actual = need.min(available.saturating_sub(1));
-            if actual > 0 {
-                session.messages.drain(trim_from..trim_from + actual);
+            // ── 1. Per-message truncation ────────────────────────────────────────
+            // Cap individual tool-result messages so a single large file read
+            // cannot consume the whole context window.
+            let max_tool_chars = self.config.acp.max_tool_result_chars;
+            if max_tool_chars > 0 {
+                truncate_tool_results(&mut session.messages, max_tool_chars);
             }
-            debug!(
-                "Trimmed {} messages (system prompt preserved: {}; keeping ≤{})",
-                actual, has_system, max_history
+
+            // ── 2. Count-based trim ──────────────────────────────────────────────
+            // Keep the most recent max_history_messages entries so the model always
+            // has fresh context without exceeding the API context window.
+            // We trim here (after adding the user turn) so we never split a
+            // tool-call sequence that was already committed to history.
+            let max_history = self.config.acp.max_history_messages;
+            if session.messages.len() > max_history {
+                let trim_count = session.messages.len() - max_history;
+                session.messages.drain(0..trim_count);
+                debug!(
+                    "Trimmed {} old messages from session history (keeping last {})",
+                    trim_count, max_history
+                );
+            }
+
+            // ── 3. Token-budget trim ─────────────────────────────────────────────
+            // Even within the message-count limit, rich tool outputs can bloat
+            // the context beyond the model's token window.  Estimate tokens
+            // (4 chars ≈ 1 token) and drop oldest messages until we fit.
+            // Use a model-aware budget: grok-4.x gets the 1 M-token budget;
+            // grok-3 and older use the legacy 220 k budget.
+            let max_ctx_tokens = model_context_budget(
+                &session.config.model,
+                self.config.acp.max_context_tokens,
+                self.config.acp.grok4_max_context_tokens,
             );
-        }
+            let estimated = estimate_tokens(&session.messages);
+            if estimated > max_ctx_tokens {
+                let before = session.messages.len();
+                trim_to_token_budget(&mut session.messages, max_ctx_tokens);
+                warn!(
+                    "⚠️  Context trimmed by token budget: ~{} estimated tokens > {} limit. \
+                     Dropped {} old messages (kept {}).",
+                    estimated,
+                    max_ctx_tokens,
+                    before - session.messages.len(),
+                    session.messages.len()
+                );
+            }
 
-        // Extract options
-        let temperature = options
-            .as_ref()
-            .and_then(|o| o.get("temperature"))
-            .and_then(|t| t.as_f64())
-            .map(|t| t as f32)
-            .unwrap_or(session.config.temperature);
+            // ── 4. Smart compression (summarise-and-archive instead of drop) ──────
+            // When the context exceeds the compression threshold we call the AI to
+            // summarise the oldest chunk of messages, archive the raw messages to
+            // disk, and replace them with a compact notice.  If the API call fails
+            // (Starlink drop) we restore the drained messages and fall through.
+            if self.config.acp.auto_compress {
+                // Use the same model-aware budget for the compression threshold.
+                let active_ctx_budget = model_context_budget(
+                    &session.config.model,
+                    self.config.acp.max_context_tokens,
+                    self.config.acp.grok4_max_context_tokens,
+                );
+                let threshold = (active_ctx_budget as f64
+                    * self.config.acp.compression_threshold as f64)
+                    as usize;
+                let estimated = estimate_tokens(&session.messages);
 
-        let max_tokens = options
-            .as_ref()
-            .and_then(|o| o.get("max_tokens"))
-            .and_then(|t| t.as_u64())
-            .map(|t| t as u32)
-            .unwrap_or(session.config.max_tokens);
+                if estimated > threshold {
+                    // Collect indices of non-system messages (preserve system at index 0).
+                    let non_system_indices: Vec<usize> = session
+                        .messages
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+                        .map(|(i, _)| i)
+                        .collect();
 
+                    let compress_count = ((non_system_indices.len() as f64
+                        * self.config.acp.compression_chunk_ratio as f64)
+                        as usize)
+                        .max(4)
+                        .min(non_system_indices.len());
+
+                    if compress_count > 0 {
+                        // Drain the oldest `compress_count` non-system messages.
+                        // They start at the first non-system index; because messages
+                        // are ordered and non_system_indices[0] is the lowest index,
+                        // we can drain a contiguous slice.
+                        let start = non_system_indices[0];
+                        let end = non_system_indices
+                            .get(compress_count - 1)
+                            .copied()
+                            .unwrap_or(start);
+                        let to_compress: Vec<Value> = session.messages.drain(start..=end).collect();
+
+                        let tokens_saved = estimate_tokens(&to_compress);
+                        let model = session.config.model.clone();
+
+                        match self.get_router() {
+                            Ok(router) => {
+                                match crate::memory::context_compressor::compress(
+                                    &to_compress,
+                                    &router,
+                                    &model,
+                                )
+                                .await
+                                {
+                                    Ok((summary, key_facts)) => {
+                                        use crate::memory::context_archive::{
+                                            ContextArchive, ContextChunk,
+                                        };
+                                        match ContextArchive::for_session(&session_id.0) {
+                                            Ok(mut archive) => {
+                                                let chunk_id = archive.next_chunk_id();
+                                                let chunk = ContextChunk {
+                                                    chunk_id,
+                                                    session_id: session_id.0.clone(),
+                                                    created_at: chrono::Utc::now(),
+                                                    message_count: to_compress.len(),
+                                                    estimated_tokens_saved: tokens_saved,
+                                                    summary,
+                                                    key_facts,
+                                                    raw_messages: to_compress,
+                                                };
+                                                if let Err(e) = archive.save_chunk(&chunk) {
+                                                    warn!(
+                                                        "⚠️  Failed to save context archive chunk: {}",
+                                                        e
+                                                    );
+                                                }
+                                                let insert_at = if session
+                                                    .messages
+                                                    .first()
+                                                    .and_then(|m| m.get("role"))
+                                                    .and_then(|r| r.as_str())
+                                                    == Some("system")
+                                                {
+                                                    1
+                                                } else {
+                                                    0
+                                                };
+                                                let notice = build_archive_notice(&chunk);
+                                                session.messages.insert(insert_at, notice);
+                                                warn!(
+                                                    "📦 Archived {} messages → chunk #{} \
+                                                     (~{} tokens saved). \
+                                                     Active context: {} messages.",
+                                                    chunk.message_count,
+                                                    chunk_id,
+                                                    tokens_saved,
+                                                    session.messages.len()
+                                                );
+                                            }
+                                            Err(e) => {
+                                                warn!(
+                                                    "⚠️  Could not open context archive, \
+                                                     messages dropped: {}",
+                                                    e
+                                                );
+                                            }
+                                        }
+                                    }
+                                    Err(e) => {
+                                        // Compression failed — restore drained messages so
+                                        // we don't silently lose history.
+                                        warn!(
+                                            "⚠️  Context compression failed (network drop?): {}. \
+                                             Restoring {} messages.",
+                                            e,
+                                            to_compress.len()
+                                        );
+                                        for (offset, msg) in to_compress.into_iter().enumerate() {
+                                            session.messages.insert(start + offset, msg);
+                                        }
+                                    }
+                                }
+                            }
+                            Err(e) => {
+                                warn!("⚠️  No router available for compression: {}", e);
+                                // Restore messages
+                                for (offset, msg) in to_compress.into_iter().enumerate() {
+                                    session.messages.insert(start + offset, msg);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            // Extract options
+            let temperature = options
+                .as_ref()
+                .and_then(|o| o.get("temperature"))
+                .and_then(|t| t.as_f64())
+                .map(|t| t as f32)
+                .unwrap_or(session.config.temperature);
+
+            let max_tokens = options
+                .as_ref()
+                .and_then(|o| o.get("max_tokens"))
+                .and_then(|t| t.as_u64())
+                .map(|t| t as u32)
+                .unwrap_or(session.config.max_tokens);
+
+            // Clone everything needed for the lock-free loop.
+            let msgs = session.messages.clone();
+            let mdl = session.config.model.clone();
+            let thk = session.config.thinking_mode.clone();
+            let bayes = session.bayes_engine.clone();
+            let aall = session.always_allow.clone();
+            (msgs, temperature, max_tokens, mdl, thk, bayes, aall)
+        }; // ← write lock released here
+
+        // ── Phase 2: Tool loop (NO write lock during API calls) ────────────────────
         let tool_defs = tools::get_available_tool_definitions();
         info!("🔧 Available tools: {}", tool_defs.len());
-
         let mut loop_count = 0;
         let max_loops = self.config.acp.max_tool_loop_iterations;
+        let mut newly_always_allowed: Vec<String> = Vec::new();
 
         loop {
             if loop_count >= max_loops {
@@ -711,92 +952,58 @@ impl GrokAcpAgent {
                     max_loops
                 ));
             }
+
+            // Warn when approaching the limit (80% threshold)
+            let warn_threshold = (max_loops as f32 * 0.8) as u32;
+            if loop_count == warn_threshold {
+                warn!(
+                    "⚠️  Tool loop iteration count approaching limit: {}/{} (80% of max)",
+                    loop_count, max_loops
+                );
+            }
             loop_count += 1;
 
             let loop_start = std::time::Instant::now();
             info!("🔄 Tool loop iteration {}/{}", loop_count, max_loops);
 
-            // ── Pre-call payload guard (runs every iteration) ────────────────────
-            // Step 1: Re-apply max_tool_result_chars to all tool messages already
-            // in history.  Each iteration appends new tool results; without this
-            // guard a series of large read_file calls blows the payload budget.
+            // ── Re-trim before every API call ────────────────────────────────────
+            // The initial trim (steps 1-4 above) happens once before the loop, but
+            // each iteration appends an assistant message plus one or more tool-result
+            // messages.  Without re-trimming here, a session with many large file reads
+            // can grow to 10× the context limit and hit a 400 from the API.
             {
-                let max_chars = self.config.acp.max_tool_result_chars;
-                if max_chars > 0 {
-                    let mut trimmed_count = 0usize;
-                    for msg in session.messages.iter_mut() {
-                        if msg.get("role").and_then(|r| r.as_str()) == Some("tool") {
-                            // Compute the replacement outside the borrow so we can
-                            // mutably index `msg` afterwards.
-                            let replacement: Option<String> = msg
-                                .get("content")
-                                .and_then(|c| c.as_str())
-                                .and_then(|s| {
-                                    if s.len() > max_chars {
-                                        Some(format!(
-                                            "{}\u{2026} [truncated: {} chars \u{2192} {} chars limit]",
-                                            &s[..max_chars],
-                                            s.len(),
-                                            max_chars
-                                        ))
-                                    } else {
-                                        None
-                                    }
-                                });
-                            if let Some(r) = replacement {
-                                msg["content"] = serde_json::Value::String(r);
-                                trimmed_count += 1;
-                            }
-                        }
-                    }
-                    if trimmed_count > 0 {
-                        warn!(
-                            "⚠️  Pre-call trim: re-truncated {} tool messages to {} chars each",
-                            trimmed_count, max_chars
-                        );
-                    }
+                // 1. Truncate oversized tool-result messages first (cheapest).
+                let max_tc = self.config.acp.max_tool_result_chars;
+                if max_tc > 0 {
+                    truncate_tool_results(&mut messages, max_tc);
+                }
+                // 2. Count-based guard: never exceed max_history_messages.
+                let max_hist = self.config.acp.max_history_messages;
+                if messages.len() > max_hist {
+                    let drop = messages.len() - max_hist;
+                    messages.drain(0..drop);
+                }
+                // 3. Token-budget guard: drop oldest messages until we fit.
+                let iter_limit = model_context_budget(
+                    &model,
+                    self.config.acp.max_context_tokens,
+                    self.config.acp.grok4_max_context_tokens,
+                );
+                let iter_est = estimate_tokens(&messages);
+                if iter_est > iter_limit {
+                    let before = messages.len();
+                    trim_to_token_budget(&mut messages, iter_limit);
+                    warn!(
+                        "⚠️  Mid-loop context trim (iter {}): ~{} est. tokens > {} limit. \
+                         Dropped {} old messages (kept {}).",
+                        loop_count,
+                        iter_est,
+                        iter_limit,
+                        before - messages.len(),
+                        messages.len()
+                    );
                 }
             }
-            // Step 2: Token-budget trim — drop oldest non-system messages if the
-            // estimated payload token count exceeds the model's context budget.
-            {
-                let token_budget = if session.config.model.starts_with("grok-4") {
-                    self.config.acp.grok4_max_context_tokens
-                } else {
-                    self.config.acp.max_context_tokens
-                };
-                let total_bytes: usize = session
-                    .messages
-                    .iter()
-                    .map(|m| serde_json::to_string(m).map(|s| s.len()).unwrap_or(0))
-                    .sum();
-                // Rough estimate: 1 token ≈ 4 UTF-8 bytes.
-                let estimated_tokens = total_bytes / 4;
-                if estimated_tokens > token_budget {
-                    let has_system = session
-                        .messages
-                        .first()
-                        .and_then(|m| m.get("role"))
-                        .and_then(|r| r.as_str())
-                        == Some("system");
-                    let trim_from = usize::from(has_system);
-                    let available = session.messages.len().saturating_sub(trim_from);
-                    // Drop 25 % at a time to avoid over-trimming.
-                    let to_drop = ((available / 4).max(1)).min(available.saturating_sub(2));
-                    if to_drop > 0 {
-                        session.messages.drain(trim_from..trim_from + to_drop);
-                        warn!(
-                            "⚠️  Token-budget trim: dropped {} messages \
-                             (estimated {} tokens > budget {}; {} remain)",
-                            to_drop,
-                            estimated_tokens,
-                            token_budget,
-                            session.messages.len()
-                        );
-                    }
-                }
-            }
-            // ─────────────────────────────────────────────────────────────────────
 
             // Make request to Grok — with per-call retry/backoff for Starlink drops.
             // Starlink handovers can take 20-60 s; we need enough retries + delays
@@ -815,145 +1022,77 @@ impl GrokAcpAgent {
             info!(
                 "📡 Calling Grok API (model: {}, temp: {}, max_tokens: {}, \
                  real_timeout: {}s)…",
-                session.config.model, temperature, max_tokens, self.config.timeout_secs,
+                model, temperature, max_tokens, self.config.timeout_secs,
             );
             // NOTE: if you see "Request timeout after 30 seconds" the "30" is a
             // hardcoded value in the grok_api crate error formatter — the actual
             // HTTP timeout driving the request is the real_timeout printed above.
-            // ── DATA-TRACE: snapshot what we are about to send to the LLM ───────
-            // Written to BOTH tracing (visible in Zed's log panel with
-            // RUST_LOG=grok_cli::acp=debug) AND to the persistent tool log file
-            // so every iteration is preserved on disk even on a Starlink drop.
-            {
-                let roles: Vec<&str> = session
-                    .messages
-                    .iter()
-                    .filter_map(|m| m.get("role")?.as_str())
-                    .collect();
-                let sizes: Vec<usize> = session
-                    .messages
-                    .iter()
-                    .map(|m| {
-                        m.get("content")
-                            .and_then(|c| c.as_str())
-                            .map(|s| s.len())
-                            .unwrap_or(0)
-                    })
-                    .collect();
-                let summary = roles
-                    .iter()
-                    .zip(sizes.iter())
-                    .enumerate()
-                    .map(|(i, (r, s))| format!("[{i}]{r}:{s}B"))
-                    .collect::<Vec<_>>()
-                    .join(" ");
-
-                info!(
-                    "📨 DATA-TRACE iter={} total_msgs={} layout={}",
-                    loop_count,
-                    session.messages.len(),
-                    summary
-                );
-
-                crate::utils::tool_logger::log_note(&format!(
-                    "DATA-TRACE iter={} total_msgs={} layout={}",
-                    loop_count,
-                    session.messages.len(),
-                    summary
-                ));
-
-                // At DEBUG level log a 150-char preview of every message body.
-                for (i, msg) in session.messages.iter().enumerate() {
-                    let role = msg.get("role").and_then(|r| r.as_str()).unwrap_or("?");
-                    let body = msg.get("content").and_then(|c| c.as_str()).unwrap_or("");
-                    let preview = body[..body.len().min(150)]
-                        .replace('\n', "↵")
-                        .replace('\r', "");
-                    let has_tc = msg.get("tool_calls").is_some();
-                    let tcid = msg
-                        .get("tool_call_id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("");
-                    tracing::debug!(
-                        "[msg {i}] role={role} bytes={bytes} has_tool_calls={has_tc} \
-                         tool_call_id='{tcid}' | {preview}",
-                        bytes = body.len(),
-                    );
-                }
-            }
-            // ────────────────────────────────────────────────────────────────────
-
             let api_call_start = std::time::Instant::now();
 
             let response_with_finish = {
                 let mut attempt = 0u32;
-                // Ensures the emergency 413 trim fires at most once per outer loop
-                // iteration; a second 413 after the trim is a hard failure.
-                let mut emergency_trim_done = false;
                 loop {
                     attempt += 1;
                     match self
                         .get_router()?
                         .chat_completion_with_history(
-                            &session.messages,
+                            &messages,
                             temperature,
                             max_tokens,
-                            &session.config.model,
+                            &model,
                             Some(tool_defs.clone()),
-                            None,
+                            thinking_mode.as_api_str(),
                         )
                         .await
                     {
                         Ok(resp) => break resp,
                         Err(e) => {
-                            // ── 413 Payload Too Large ─────────────────────────────
-                            // The payload is too big for the API.  Normal network
-                            // retries would just resend the same oversized request.
-                            // Instead: aggressively trim half the non-system history
-                            // and retry once.  If the trimmed payload still produces
-                            // a 413, give up — the caller must shorten the session.
-                            let is_413 = {
-                                let em = e.to_string().to_lowercase();
-                                em.contains("413") || em.contains("payload too large")
-                            };
-                            if is_413 && !emergency_trim_done {
-                                emergency_trim_done = true;
-                                let has_system = session
-                                    .messages
-                                    .first()
-                                    .and_then(|m| m.get("role"))
-                                    .and_then(|r| r.as_str())
-                                    == Some("system");
-                                let trim_from = usize::from(has_system);
-                                let available = session.messages.len().saturating_sub(trim_from);
-                                let to_drop =
-                                    (available / 2).max(1).min(available.saturating_sub(2));
-                                if to_drop > 0 {
-                                    session.messages.drain(trim_from..trim_from + to_drop);
-                                    warn!(
-                                        "⚠️  413 Payload Too Large — emergency trim: dropped \
-                                         {} messages ({} remain). Retrying…",
-                                        to_drop,
-                                        session.messages.len()
-                                    );
-                                    // Don't count the emergency trim as a retry attempt.
-                                    attempt = attempt.saturating_sub(1);
-                                    continue;
+                            // ── Detect "prompt too long" before anything else ─────────
+                            // This is not a network error; retrying will not help.
+                            // Give the user clear guidance instead.
+                            {
+                                let raw = e.to_string();
+                                let lower = raw.to_lowercase();
+                                if lower.contains("maximum prompt length")
+                                    || lower.contains("prompt length")
+                                    || (lower.contains("invalid argument")
+                                        && lower.contains("token"))
+                                {
+                                    let current_est = estimate_tokens(&messages);
+                                    error!("❌ Context-window overflow: {}", raw);
+                                    return Err(anyhow!(
+                                        "Context window overflow — the request was too large \
+                                         for the model.\n\
+                                         Estimated tokens in history: ~{}\n\
+                                         \n\
+                                         💡 Quick fixes:\n\
+                                         • Type `/clear` to reset the conversation history.\n\
+                                         • Lower `max_history_messages` in .grok/config.toml \
+                                           (currently {}).\n\
+                                         • Lower `max_context_tokens` in .grok/config.toml \
+                                           (currently {}).\n\
+                                         • Lower `max_tool_result_chars` in .grok/config.toml \
+                                           (currently {}) to truncate large file reads earlier.",
+                                        current_est,
+                                        self.config.acp.max_history_messages,
+                                        self.config.acp.max_context_tokens,
+                                        self.config.acp.max_tool_result_chars,
+                                    ));
                                 }
                             }
-                            // ─────────────────────────────────────────────────────
 
-                            let is_retriable = !is_413
-                                && (crate::utils::network::detect_network_drop(&e) || {
-                                    let msg = e.to_string().to_lowercase();
-                                    msg.contains("timeout")
-                                        || msg.contains("timed out")
-                                        || msg.contains("reset")
-                                        || msg.contains("connection")
-                                        || msg.contains("503")
-                                        || msg.contains("502")
-                                        || msg.contains("504")
-                                });
+                            let is_retriable = crate::utils::network::detect_network_drop(&e) || {
+                                let msg = e.to_string().to_lowercase();
+                                msg.contains("timeout")
+                                    || msg.contains("timed out")
+                                    || msg.contains("reset")
+                                    || msg.contains("connection")
+                                    || msg.contains("network error")
+                                    || msg.contains("error sending request")
+                                    || msg.contains("503")
+                                    || msg.contains("502")
+                                    || msg.contains("504")
+                            };
 
                             if attempt <= MAX_API_RETRIES && is_retriable {
                                 // Exponential backoff capped at MAX_RETRY_DELAY_SECS.
@@ -1023,45 +1162,32 @@ impl GrokAcpAgent {
 
             let response_msg = response_with_finish.message;
             let finish_reason = response_with_finish.finish_reason.as_deref();
+            let thinking_content = response_with_finish.thinking_content;
 
             info!("📋 Finish reason: {:?}", finish_reason);
 
-            // ── DATA-TRACE: what did the LLM just return? ────────────────────
-            {
-                let tc_count = response_msg
-                    .tool_calls
-                    .as_ref()
-                    .map(|tc| tc.len())
-                    .unwrap_or(0);
-                let resp_text = content_to_string(response_msg.content.as_ref());
-                let preview = resp_text[..resp_text.len().min(200)]
-                    .replace('\n', "↵")
-                    .replace('\r', "");
-                info!(
-                    "🤖 DATA-TRACE LLM response: finish={:?} tool_calls={} \
-                     text_bytes={} preview='{}'",
-                    finish_reason,
-                    tc_count,
-                    resp_text.len(),
-                    preview
-                );
-                crate::utils::tool_logger::log_note(&format!(
-                    "DATA-TRACE LLM response: finish={:?} tool_calls={} text_bytes={} \
-                     preview='{}'",
-                    finish_reason,
-                    tc_count,
-                    resp_text.len(),
-                    preview
-                ));
+            // If the model produced a reasoning/thinking trace, emit it using the
+            // new structured thinking block (Task 164) instead of raw markdown.
+            if let Some(ref tc) = thinking_content {
+                let think_tokens = tc.len() / 4;
+                debug!("🧠 Thinking trace received: ~{} tokens", think_tokens);
+
+                if self.config.acp.stream_thinking
+                    && let Some(sender) = &event_sender
+                {
+                    let blk = crate::acp::protocol::ThinkingBlockUpdate::new(tc, false);
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(
+                        blk,
+                    ));
+                }
             }
-            // ────────────────────────────────────────────────────────────────
 
             // Add assistant response to history
-            session.messages.push(serde_json::to_value(&response_msg)?);
+            messages.push(serde_json::to_value(&response_msg)?);
 
-            // Check tool calls BEFORE finish_reason: some models (e.g. Grok) can
-            // return finish_reason "stop" in the same response as tool_calls.
-            // If we honour finish_reason first we silently drop pending tool calls.
+            // Check if we have tool calls to process FIRST.
+            // finish_reason is checked AFTER the tool loop so that Grok's
+            // "stop" signal never short-circuits pending tool calls mid-flight.
             let has_tool_calls = response_msg
                 .tool_calls
                 .as_ref()
@@ -1072,29 +1198,151 @@ impl GrokAcpAgent {
             let response_text = content_to_string(response_msg.content.as_ref());
 
             if !has_tool_calls {
-                // No tool calls – safe to honour finish_reason now.
-                if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
-                    info!(
-                        "✅ Model signaled completion (finish_reason: {:?}) in {:?} ({} loops, {} chars)",
-                        finish_reason,
-                        elapsed,
-                        loop_count,
-                        response_text.len()
-                    );
+                // No tool calls — return whatever the model said (including "stop").
+                info!(
+                    "✨ Chat completion finished in {:?} (finish_reason: {:?}, {} loops, {} chars)",
+                    elapsed,
+                    finish_reason,
+                    loop_count,
+                    response_text.len()
+                );
+                // Prepend thinking block if present — now using structured format
+                let final_response = if let Some(tc) = thinking_content {
+                    // Emit final structured thinking block
+                    if self.config.acp.stream_thinking
+                        && let Some(sender) = &event_sender
+                    {
+                        let blk = crate::acp::protocol::ThinkingBlockUpdate::new(&tc, true);
+                        let _ = sender.send(
+                            crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk),
+                        );
+                    }
+
+                    // Still return a nice markdown version for non-Zed clients
+                    format!(
+                        "<details><summary>🧠 Thinking…</summary>\n\n{}\n\n</details>\n\n{}",
+                        tc, response_text
+                    )
                 } else {
-                    info!(
-                        "✨ Chat completion finished in {:?} ({} loops, {} chars)",
-                        elapsed,
-                        loop_count,
-                        response_text.len()
-                    );
+                    response_text
+                };
+                // Emit context usage update (Task 130) — compute BEFORE moving messages
+                let context_usage = if self.config.acp.show_context_usage {
+                    event_sender.as_ref().map(|_sender| {
+                        crate::acp::protocol::ContextUsageUpdate::new(
+                            estimate_tokens(&messages),
+                            model_context_budget(
+                                &model,
+                                self.config.acp.max_context_tokens,
+                                self.config.acp.grok4_max_context_tokens,
+                            ),
+                            messages.len(),
+                        )
+                    })
+                } else {
+                    None
+                };
+
+                // ── Phase 3: Final sync (brief write lock) ─────────────────────────────
+                {
+                    let mut sessions = self.sessions.write().await;
+                    if let Some(s) = sessions.get_mut(&session_id.0) {
+                        s.messages = messages.clone();
+                        s.bayes_engine = local_bayes;
+                        for name in &newly_always_allowed {
+                            s.always_allow.insert(name.clone());
+                        }
+                        s.last_activity = std::time::Instant::now();
+                    }
                 }
 
-                return Ok(response_text);
+                if let (Some(sender), Some(usage)) = (&event_sender, context_usage) {
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                        usage,
+                    ));
+
+                    // Emit beautiful dynamic status bar (Task 164)
+                    let status_state = crate::acp::status_bar::StatusBarState {
+                        model: model.clone(),
+                        thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
+                        current_tokens: estimate_tokens(&messages),
+                        max_tokens: model_context_budget(
+                            &model,
+                            self.config.acp.max_context_tokens,
+                            self.config.acp.grok4_max_context_tokens,
+                        ),
+                        context_percent: (estimate_tokens(&messages) as f32)
+                            / (model_context_budget(
+                                &model,
+                                self.config.acp.max_context_tokens,
+                                self.config.acp.grok4_max_context_tokens,
+                            ) as f32),
+                        is_generating: false,
+                    };
+                    self.emit_status_bar(Some(sender), &status_state);
+                }
+
+                return Ok(final_response);
             }
 
             // We have tool calls to process
             let Some(tool_calls) = response_msg.tool_calls.as_ref() else {
+                // Emit context usage before moving messages
+                let context_usage = if self.config.acp.show_context_usage {
+                    event_sender.as_ref().map(|_sender| {
+                        crate::acp::protocol::ContextUsageUpdate::new(
+                            estimate_tokens(&messages),
+                            model_context_budget(
+                                &model,
+                                self.config.acp.max_context_tokens,
+                                self.config.acp.grok4_max_context_tokens,
+                            ),
+                            messages.len(),
+                        )
+                    })
+                } else {
+                    None
+                };
+
+                // ── Phase 3: Final sync (brief write lock) ─────────────────────────────
+                {
+                    let mut sessions = self.sessions.write().await;
+                    if let Some(s) = sessions.get_mut(&session_id.0) {
+                        s.messages = messages.clone();
+                        s.bayes_engine = local_bayes;
+                        for name in &newly_always_allowed {
+                            s.always_allow.insert(name.clone());
+                        }
+                        s.last_activity = std::time::Instant::now();
+                    }
+                }
+
+                if let (Some(sender), Some(usage)) = (&event_sender, context_usage) {
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                        usage,
+                    ));
+
+                    // Emit beautiful dynamic status bar (Task 164)
+                    let status_state = crate::acp::status_bar::StatusBarState {
+                        model: model.clone(),
+                        thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
+                        current_tokens: estimate_tokens(&messages),
+                        max_tokens: model_context_budget(
+                            &model,
+                            self.config.acp.max_context_tokens,
+                            self.config.acp.grok4_max_context_tokens,
+                        ),
+                        context_percent: (estimate_tokens(&messages) as f32)
+                            / (model_context_budget(
+                                &model,
+                                self.config.acp.max_context_tokens,
+                                self.config.acp.grok4_max_context_tokens,
+                            ) as f32),
+                        is_generating: false,
+                    };
+                    self.emit_status_bar(Some(sender), &status_state);
+                }
+
                 return Ok(response_text);
             };
             info!("🛠️  Processing {} tool calls", tool_calls.len());
@@ -1135,9 +1383,9 @@ impl GrokAcpAgent {
 
                 // Execute before_tool hooks
                 {
-                    let hooks = self.hook_manager.read().await;
+                    let hooks = self.get_hook_manager().read().await;
                     if !hooks.execute_before_tool(function_name, &args)? {
-                        session.messages.push(json!({
+                        messages.push(json!({
                             "role": "tool",
                             "tool_call_id": tool_call.id,
                             "content": "Tool execution blocked by hook."
@@ -1148,7 +1396,8 @@ impl GrokAcpAgent {
 
                 // --- PERMISSION GATE ---
                 if self.config.acp.require_permission
-                    && !session.always_allow.contains(function_name.as_str())
+                    && !local_always_allow.contains(function_name.as_str())
+                    && !newly_always_allowed.contains(function_name)
                     && let Some(bridge) = &permission_bridge
                 {
                     let req_id = uuid::Uuid::new_v4().to_string();
@@ -1168,7 +1417,7 @@ impl GrokAcpAgent {
                         {
                             Ok(Ok(outcome)) => {
                                 if outcome.is_cancelled() {
-                                    session.messages.push(json!({
+                                    messages.push(json!({
                                         "role": "tool",
                                         "tool_call_id": tool_call.id,
                                         "content": "User rejected the tool execution."
@@ -1177,7 +1426,7 @@ impl GrokAcpAgent {
                                 }
                                 // Any `selected` outcome is approval; record if always-allow.
                                 if outcome.is_always_allow() {
-                                    session.always_allow.insert(function_name.clone());
+                                    newly_always_allowed.push(function_name.clone());
                                 }
                             }
                             Ok(Err(_)) => {
@@ -1194,104 +1443,25 @@ impl GrokAcpAgent {
                 }
                 // --- END PERMISSION GATE ---
 
-                // Acquire the policy once so we don't clone it for every arm.
-                let policy = self.security.get_policy();
+                // Route ALL tool calls through the unified registry + arbitration layer.
+                // This ensures every tool defined in get_tool_definitions() is reachable
+                // from the ACP path without maintaining a duplicate match block here.
+                let policy = self.get_security().get_policy();
+                let tool_ctx = tools::ToolContext::new(policy);
 
-                let result = match function_name.as_str() {
-                    "read_file" => {
-                        tools::read_file(
-                            args["path"].as_str().ok_or(anyhow!("Missing path"))?,
-                            &policy,
-                        )
-                        .await
-                    }
-                    "write_file" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let content = args["content"].as_str().ok_or(anyhow!("Missing content"))?;
-                        tools::write_file(path, content, &policy, false).await
-                    }
-                    "list_directory" => tools::list_directory(
-                        args["path"].as_str().ok_or(anyhow!("Missing path"))?,
-                        &policy,
-                    ),
-                    "glob_search" => tools::glob_search(
-                        args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?,
-                        &policy,
-                    ),
-                    "search_file_content" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let pattern = args["pattern"].as_str().ok_or(anyhow!("Missing pattern"))?;
-                        tools::search_file_content(path, pattern, &policy)
-                    }
-                    "run_shell_command" => {
-                        let command = args["command"].as_str().ok_or(anyhow!("Missing command"))?;
-                        tools::run_shell_command(command, &policy, 0).await
-                    }
-                    "replace" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        let old_string = args["old_string"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing old_string"))?;
-                        let new_string = args["new_string"]
-                            .as_str()
-                            .ok_or(anyhow!("Missing new_string"))?;
-                        let expected_replacements =
-                            args["expected_replacements"].as_u64().map(|n| n as u32);
-                        tools::replace(
-                            path,
-                            old_string,
-                            new_string,
-                            expected_replacements,
-                            &policy,
-                            false,
-                        )
-                        .await
-                    }
-                    "save_memory" => {
-                        let fact = args["fact"].as_str().ok_or(anyhow!("Missing fact"))?;
-                        tools::save_memory(fact)
-                    }
-                    "web_search" => {
-                        let query = args["query"].as_str().ok_or(anyhow!("Missing query"))?;
-                        tools::web_search(query).await
-                    }
-                    "web_fetch" => {
-                        let url = args["url"].as_str().ok_or(anyhow!("Missing url"))?;
-                        tools::web_fetch(url).await
-                    }
-                    "read_multiple_files" => {
-                        let paths_value =
-                            args["paths"].as_array().ok_or(anyhow!("Missing paths"))?;
-                        let paths: Result<Vec<String>> = paths_value
-                            .iter()
-                            .map(|v| {
-                                v.as_str()
-                                    .ok_or(anyhow!("Invalid path"))
-                                    .map(|s| s.to_string())
-                            })
-                            .collect();
-                        tools::read_multiple_files(paths?, &policy).await
-                    }
-                    "list_code_definitions" => {
-                        let path = args["path"].as_str().ok_or(anyhow!("Missing path"))?;
-                        tools::list_code_definitions(path, &policy).await
-                    }
-                    _ => {
-                        // Fall back to the full tool registry for any tool that is
-                        // not in the built-in ACP dispatch above.  This covers:
-                        //   task_create, task_update, enter_plan_mode, exit_plan_mode,
-                        //   enter_worktree, exit_worktree, notebook_edit, execute_skill,
-                        //   list_skills, spawn_agent, send_message, team_create,
-                        //   team_delete, mcp_call, lsp_query, tool_search, cron_create,
-                        //   remote_trigger, sleep, synthetic_output, …
-                        //
-                        // The registry is the single source of truth for all tool
-                        // implementations; keeping the ACP dispatch in sync manually
-                        // was what caused the "Unknown tool: task_update" errors.
-                        let ctx = tools::ToolContext::new(policy.clone());
-                        tools::execute_tool(function_name, &args, &ctx).await
-                    }
-                };
+                // run_shell_command honours the per-project shell timeout; pass it
+                // via the args so the registry shim can pick it up.
+                let shell_timeout = self.config.tools.shell.command_timeout_secs;
+                let mut augmented_args = args.clone();
+                if function_name == "run_shell_command"
+                    && augmented_args.get("timeout_secs").is_none()
+                    && shell_timeout > 0
+                {
+                    augmented_args["timeout_secs"] =
+                        serde_json::Value::Number(shell_timeout.into());
+                }
+
+                let result = tools::execute_tool(function_name, &augmented_args, &tool_ctx).await;
 
                 let (content, status) = match result {
                     Ok(s) => {
@@ -1302,13 +1472,13 @@ impl GrokAcpAgent {
                             s.len()
                         );
 
-                        // ── Tool success: write a compact entry to the tool log ──
-                        crate::utils::tool_logger::log_tool_success(
-                            function_name,
-                            &args,
-                            s.len(),
-                            tool_duration.as_micros(),
-                        );
+                        // DNA feedback loop (success)
+                        {
+                            let mut guard = self.sessions.write().await;
+                            if let Some(s) = guard.get_mut(&session_id.0) {
+                                s.dna.update_from_tool_result(true, function_name);
+                            }
+                        }
 
                         (s, crate::acp::protocol::ToolCallStatus::Completed)
                     }
@@ -1317,39 +1487,24 @@ impl GrokAcpAgent {
                         warn!("⚠️ Tool failed in {:?}: {}", tool_duration, e);
 
                         // 4. Update Bayesian Engine for Tool Failure
-                        session.bayes_engine.update_from_tool_failure();
+                        local_bayes.update_from_tool_failure();
 
-                        // Build a structured, actionable error message so the LLM knows
-                        // exactly what went wrong and what to try instead of retrying blindly.
-                        let error_str = e.to_string();
+                        // DNA feedback loop (failure)
+                        {
+                            let mut guard = self.sessions.write().await;
+                            if let Some(s) = guard.get_mut(&session_id.0) {
+                                s.dna.update_from_tool_result(false, function_name);
+                            }
+                        }
 
-                        // ── Tool failure: write a detailed diagnostic entry to the tool log ──
-                        // This records the working directory, trusted directories, and a
-                        // human-readable hint so you can immediately see WHY the tool failed
-                        // (e.g. "Access denied" because Grok was not launched from the project
-                        // root, or a path typo causing "os error 3").
-                        crate::utils::tool_logger::log_tool_error(
-                            function_name,
-                            &args,
-                            &error_str,
-                            tool_duration.as_micros(),
-                            policy.working_directory(),
-                            policy.trusted_directories(),
-                        );
+                        let mut error_content =
+                            format!("Error executing tool {}: {}", function_name, e);
 
-                        let mut error_content = crate::tools::tool_error::format_tool_error_for_llm(
-                            function_name,
-                            &args,
-                            &error_str,
-                        );
-
-                        // If Bayesian confidence is also low, append an additional note
-                        // encouraging the model to change strategy rather than looping.
-                        if session.bayes_engine.is_low_confidence() {
-                            error_content.push_str(
-                                "\n\n[System Note: Bayesian confidence is low after this failure. \
-                                Do NOT retry the same action. Re-evaluate your plan, verify your \
-                                assumptions, or ask the user for clarification.]",
+                        // If confidence drops significantly due to failure, add a recovery system prompt
+                        if local_bayes.is_low_confidence() {
+                            error_content = format!(
+                                "{}\n\n[System Note: This tool failed and Bayesian confidence is low. Please rewrite your approach, verify your assumptions, or ask the user for clarification instead of repeating the same action.]",
+                                error_content
                             );
                         }
 
@@ -1364,12 +1519,8 @@ impl GrokAcpAgent {
                         kind: None,
                         status: Some(status),
                         locations: None,
-                        content: Some(vec![crate::acp::protocol::ToolCallContent::Content(
-                            crate::acp::protocol::ToolCallContentInner {
-                                content: crate::acp::protocol::ContentBlock::Text(
-                                    crate::acp::protocol::TextContent::new(content.clone()),
-                                ),
-                            },
+                        content: Some(vec![crate::acp::protocol::ToolCallContent::Text(
+                            crate::acp::protocol::TextContent::new(content.clone()),
                         )]),
                     };
                     let _ = sender.send(crate::acp::protocol::SessionUpdate::ToolCallUpdate(
@@ -1379,108 +1530,108 @@ impl GrokAcpAgent {
 
                 // Execute after_tool hooks
                 {
-                    let hooks = self.hook_manager.read().await;
+                    let hooks = self.get_hook_manager().read().await;
                     hooks.execute_after_tool(function_name, &args, &content)?;
                 }
-                // Push tool result — enforce max_tool_result_chars before committing
-                // to history.  Large file reads are the most common cause of 413s.
-                let stored_content = {
-                    let max_chars = self.config.acp.max_tool_result_chars;
-                    if max_chars > 0 && content.len() > max_chars {
-                        warn!(
-                            "⚠️  Tool '{}' result too large ({} chars), truncating to {} chars \
-                             before history push",
-                            function_name,
-                            content.len(),
-                            max_chars
-                        );
-                        format!(
-                            "{}\u{2026} [truncated: {} chars \u{2192} {} chars limit]",
-                            &content[..max_chars],
-                            content.len(),
-                            max_chars
-                        )
-                    } else {
-                        content.clone()
-                    }
-                };
-                session.messages.push(serde_json::json!({
+
+                // Add tool result to history
+                messages.push(json!({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
-                    "content": stored_content,
+                    "content": content
                 }));
-
-                // ── DATA-TRACE: confirm exactly what is being pushed as tool result ──
-                {
-                    let preview = content[..content.len().min(300)]
-                        .replace('\n', "↵")
-                        .replace('\r', "");
-                    info!(
-                        "📦 DATA-TRACE tool_result_push: tool='{}' tcid='{}' \
-                         bytes={} preview='{}'",
-                        function_name,
-                        tool_call.id,
-                        content.len(),
-                        preview
-                    );
-                    crate::utils::tool_logger::log_note(&format!(
-                        "DATA-TRACE tool_result_push: tool='{}' tcid='{}' bytes={} \
-                         preview='{}'",
-                        function_name,
-                        tool_call.id,
-                        content.len(),
-                        preview
-                    ));
-                }
-                // ────────────────────────────────────────────────────────────
-
-                // ── Anti-hallucination guard ─────────────────────────────────
-                // When a tool returns a TOOL ERROR the LLM tends to ignore it
-                // and fabricate an answer anyway.  Injecting an explicit system
-                // message immediately after the error — right before the LLM
-                // generates its reply — overrides that tendency.
-                if content.starts_with("TOOL ERROR") {
-                    session.messages.push(json!({
-                        "role": "system",
-                        "content": "⚠️ STOP — the tool call above returned an error. \
-                                   You MUST NOT fabricate, guess, or invent any information. \
-                                   Your only permitted response is to report the error to the \
-                                   user in plain language and suggest they try again or check \
-                                   the file manually. Do NOT return any JSON, task data, \
-                                   titles, statuses, or descriptions."
-                    }));
-                }
-                // 🔍 DEBUG: verify the tool message was actually inserted
-                {
-                    let last = session.messages.last().unwrap();
-                    let role = last.get("role").and_then(|v| v.as_str()).unwrap_or("?");
-                    let tcid = last
-                        .get("tool_call_id")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("NONE");
-                    let bytes = last
-                        .get("content")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.len())
-                        .unwrap_or(0);
-
-                    tracing::error!(
-                        "🧪 DEBUG TOOL-PUSH → role='{}' tool_call_id='{}' bytes={} (should be >0)",
-                        role,
-                        tcid,
-                        bytes
-                    );
-
-                    crate::utils::tool_logger::log_note(&format!(
-                        "🧪 DEBUG TOOL-PUSH → role='{}' tool_call_id='{}' bytes={}",
-                        role, tcid, bytes
-                    ));
-                }
-                // ────────────────────────────────────────────────────────────
             }
 
             let loop_duration = loop_start.elapsed();
             info!("🔄 Loop iteration completed in {:?}", loop_duration);
+
+            // Brief write-lock sync: persist the updated message history so
+            // save_session_to_disk and /context queries see fresh data between iterations.
+            {
+                let mut sessions = self.sessions.write().await;
+                if let Some(s) = sessions.get_mut(&session_id.0) {
+                    s.messages = messages.clone();
+                    s.last_activity = std::time::Instant::now();
+                }
+            }
+
+            // Emit context usage after each iteration (Task 130)
+            if self.config.acp.show_context_usage
+                && let Some(sender) = &event_sender
+            {
+                let usage = crate::acp::protocol::ContextUsageUpdate::new(
+                    estimate_tokens(&messages),
+                    model_context_budget(
+                        &model,
+                        self.config.acp.max_context_tokens,
+                        self.config.acp.grok4_max_context_tokens,
+                    ),
+                    messages.len(),
+                );
+                let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                    usage,
+                ));
+
+                // Live status bar update during generation (Task 164)
+                let status_state = crate::acp::status_bar::StatusBarState {
+                    model: model.clone(),
+                    thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
+                    current_tokens: estimate_tokens(&messages),
+                    max_tokens: model_context_budget(
+                        &model,
+                        self.config.acp.max_context_tokens,
+                        self.config.acp.grok4_max_context_tokens,
+                    ),
+                    context_percent: (estimate_tokens(&messages) as f32)
+                        / (model_context_budget(
+                            &model,
+                            self.config.acp.max_context_tokens,
+                            self.config.acp.grok4_max_context_tokens,
+                        ) as f32),
+                    is_generating: true,
+                };
+                self.emit_status_bar(Some(sender), &status_state);
+            }
+
+            // Post-tool-loop guard: if the model signalled "stop" alongside
+            // tool calls, return now instead of spinning up a redundant extra
+            // API iteration (the tools have already completed).
+            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
+                info!(
+                    "✅ Model flagged stop after tool execution — returning ({} loops)",
+                    loop_count
+                );
+                // Emit context usage
+                if self.config.acp.show_context_usage
+                    && let Some(sender) = &event_sender
+                {
+                    let usage = crate::acp::protocol::ContextUsageUpdate::new(
+                        estimate_tokens(&messages),
+                        model_context_budget(
+                            &model,
+                            self.config.acp.max_context_tokens,
+                            self.config.acp.grok4_max_context_tokens,
+                        ),
+                        messages.len(),
+                    );
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                        usage,
+                    ));
+                }
+                // ── Phase 3: Final sync (brief write lock) ──────────────────────────
+                {
+                    let mut sessions = self.sessions.write().await;
+                    if let Some(s) = sessions.get_mut(&session_id.0) {
+                        s.messages = messages.clone();
+                        s.bayes_engine = local_bayes.clone();
+                        for name in &newly_always_allowed {
+                            s.always_allow.insert(name.clone());
+                        }
+                        s.last_activity = std::time::Instant::now();
+                    }
+                }
+                return Ok(String::new());
+            }
             // Continue loop to get next response from model with tool results
         }
     }
@@ -1614,7 +1765,7 @@ impl GrokAcpAgent {
                 session.config.max_tokens,
                 &session.config.model,
                 None,
-                None,
+                None, // no thinking mode for code operations
             )
             .await?;
 
@@ -1630,7 +1781,22 @@ impl GrokAcpAgent {
         Ok(content_to_string(response.content.as_ref()))
     }
 
-    /// Get agent capabilities
+    /// Handle an official elicitation request (Task 111.6).
+    /// This is the integration point for the official agent-client-protocol
+    /// elicitation flow.
+    pub async fn handle_elicitation(
+        &self,
+        request: crate::acp::elicitation::ElicitationRequest,
+    ) -> crate::acp::elicitation::ElicitationResponse {
+        // For now we delegate to the existing permission bridge pattern.
+        // In a full implementation this would use the official
+        // `agent_client_protocol::schema::Elicitation*` types.
+        tracing::info!("Elicitation requested for session {}", request.session_id);
+
+        // Placeholder: return cancelled for safety until full UI integration.
+        crate::acp::elicitation::ElicitationResponse::cancelled()
+    }
+
     /// Returns `true` if the given tool name is in the session's always-allow
     /// set (i.e. the user previously chose "Always Allow" for this tool).
     ///
@@ -1660,7 +1826,275 @@ impl GrokAcpAgent {
     }
 
     pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
-        &self.capabilities
+        &self.capabilities()
+    }
+
+    /// Emit the dynamic status bar + token meter (Task 164)
+    fn emit_status_bar(
+        &self,
+        event_sender: Option<
+            &tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
+        >,
+        state: &crate::acp::status_bar::StatusBarState,
+    ) {
+        if let Some(sender) = event_sender {
+            // Structured status bar (for future native support)
+            let update = crate::acp::protocol::StatusBarUpdate::new(
+                &state.model,
+                &state.thinking_mode,
+                state.current_tokens,
+                state.max_tokens,
+                state.context_percent,
+                state.is_generating,
+            );
+            let _ = sender.send(crate::acp::protocol::SessionUpdate::StatusBarUpdate(update));
+
+            // Fallback visible line (temporary until Zed supports StatusBarUpdate)
+            let status_line = format!(
+                "┌─ Grok ─ {} ─ {} ─ {}/{} tokens ({:.0}%) {}",
+                state.model,
+                state.thinking_mode,
+                state.current_tokens,
+                state.max_tokens,
+                state.context_percent * 100.0,
+                if state.is_generating {
+                    "⏳ generating..."
+                } else {
+                    "✓ ready"
+                }
+            );
+            // Send as a normal message chunk so it appears in the transcript
+            let chunk =
+                crate::acp::protocol::ContentChunk::new(crate::acp::protocol::ContentBlock::Text(
+                    crate::acp::protocol::TextContent::new(status_line),
+                ));
+            let _ = sender.send(crate::acp::protocol::SessionUpdate::AgentMessageChunk(
+                chunk,
+            ));
+        }
+    }
+    pub fn emit_agent_activity(
+        &self,
+        event_sender: Option<
+            &tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
+        >,
+        agent_id: impl Into<String>,
+        parent_id: Option<String>,
+        status: crate::acp::protocol::AgentActivityStatus,
+        description: impl Into<String>,
+    ) {
+        if let Some(sender) = event_sender {
+            let update = crate::acp::protocol::AgentActivityUpdate {
+                agent_id: agent_id.into(),
+                parent_id,
+                status,
+                description: description.into(),
+            };
+            let _ = sender.send(crate::acp::protocol::SessionUpdate::AgentActivity(update));
+        }
+    }
+
+    // ── Bayesian engine commands (───────────────────────────────────────────────
+
+    /// Return an ASCII bar-chart of the current Bayesian belief state for a session.
+    ///
+    /// Used by the `/bayes show` slash command.
+    pub async fn get_bayes_visualize(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found — no Bayesian state to display.".to_string()),
+            Some(session) => {
+                let vis = session.bayes_engine.visualize();
+                let best = session
+                    .bayes_engine
+                    .best_intent()
+                    .unwrap_or_else(|| "(none)".to_string());
+                Ok(format!(
+                    "## 🧠 Bayesian Belief State\n\n\
+                     **Best intent:** `{best}`\n\n\
+                     ```\n{vis}\n```",
+                ))
+            }
+        }
+    }
+
+    /// Reset the Bayesian engine for a session back to compiled-in defaults.
+    ///
+    /// Used by the `/bayes reset` slash command.
+    pub async fn reset_bayes(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found — nothing to reset.".to_string()),
+            Some(session) => {
+                session.bayes_engine = crate::bayes::BayesianEngine::new_with_default_priors();
+                info!("Bayesian engine reset for session: {}", session_id.0);
+                Ok(
+                    "✅ Bayesian priors reset to defaults. The engine will re-learn from \
+                    the next few messages."
+                        .to_string(),
+                )
+            }
+        }
+    }
+
+    /// Return a plain-English explanation of the current Bayesian state for a session.
+    ///
+    /// Used by the `/bayes explain` slash command.
+    pub async fn get_bayes_explain(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found — no Bayesian state to explain.".to_string()),
+            Some(session) => {
+                let e = &session.bayes_engine;
+                let best = e.best_intent().unwrap_or_else(|| "(none)".to_string());
+                let intent_label = match best.as_str() {
+                    "intent_edit" => "editing files / writing code",
+                    "intent_shell" => "running shell commands",
+                    "intent_search" => "searching the web or codebase",
+                    "intent_question" => "answering a question",
+                    _ => "an unrecognised intent",
+                };
+                let clarify = if e.needs_clarification() {
+                    "🟡 **Clarification gate is OPEN** — the engine thinks a clarifying \
+                     question may be needed before proceeding."
+                } else {
+                    "🟢 **Clarification gate is closed** — the intent is clear enough to act."
+                };
+                let uncertain = if e.is_high_uncertainty() {
+                    "⚠️  **High uncertainty** — system uncertainty notes will be injected \
+                     into prompts to encourage the AI to ask before making changes."
+                } else {
+                    "✅ **Uncertainty is low** — the AI can proceed with reasonable confidence."
+                };
+                let vague = if e.is_vague() {
+                    "🟡 **Vagueness flag is SET** — the last message appeared vague; the AI \
+                     will be prompted to propose alternative interpretations."
+                } else {
+                    "🟢 **No vagueness detected** — the request was specific enough."
+                };
+                Ok(format!(
+                    "## 🧠 Bayesian State Explanation\n\n\
+                     **Most likely intent:** `{best}` ({intent_label})\n\n\
+                     {clarify}\n\n\
+                     {uncertain}\n\n\
+                     {vague}\n\n\
+                     Use `/bayes show` to see the raw probability bar-chart, \
+                     or `/bayes reset` to wipe the learned priors."
+                ))
+            }
+        }
+    }
+
+    /// Set the active goal for a session (used by the `/goal <text>` slash command).
+    pub async fn set_session_goal(&self, session_id: &SessionId, goal: String) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found -- goal not set.".to_string()),
+            Some(session) => {
+                session.current_goal = Some(goal.clone());
+                info!("Goal set for session {}: {}", session_id.0, goal);
+                Ok(format!(
+                    "**Goal set:** {}\n\nAll subsequent messages will be interpreted through \
+                     the lens of this goal. Type `/goal clear` to remove it.",
+                    goal
+                ))
+            }
+        }
+    }
+
+    /// Clear the active goal for a session (used by the `/goal clear` slash command).
+    pub async fn clear_session_goal(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                session.current_goal = None;
+                info!("Goal cleared for session {}", session_id.0);
+                Ok(
+                    "Goal cleared. Messages will be interpreted without a persistent goal."
+                        .to_string(),
+                )
+            }
+        }
+    }
+
+    /// Return the current goal for a session (used by `/goal show`).
+    pub async fn get_session_goal(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => Ok(match &session.current_goal {
+                Some(goal) => format!("**Current goal:** {}", goal),
+                None => "No active goal set. Use `/goal <description>` to set one.".to_string(),
+            }),
+        }
+    }
+
+    /// Add a session-only rule (used by `/rule add <text>`).
+    pub async fn add_session_rule(&self, session_id: &SessionId, text: String) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found — rule not added.".to_string()),
+            Some(session) => {
+                let id = session.session_rules.add(text.clone());
+                info!("Rule #{id} added for session {}: {text}", session_id.0);
+                Ok(format!(
+                    "**Rule #{id} added:** {text}\n\n\
+                     This rule will be applied to all subsequent messages in this session. \
+                     Use `/rule list` to see all active rules or `/rule remove {id}` to delete it."
+                ))
+            }
+        }
+    }
+
+    /// Remove the session rule with the given ID (used by `/rule remove <id>`).
+    pub async fn remove_session_rule(&self, session_id: &SessionId, id: u32) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                if session.session_rules.remove(id) {
+                    info!("Rule #{id} removed from session {}", session_id.0);
+                    Ok(format!("**Rule #{id} removed.**"))
+                } else {
+                    Ok(format!("No rule with ID #{id} found."))
+                }
+            }
+        }
+    }
+
+    /// List all active session-only rules (used by `/rule list`).
+    pub async fn list_session_rules(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                let rules = session.session_rules.list();
+                if rules.is_empty() {
+                    Ok("No active session rules. Use `/rule add <text>` to add one.".to_string())
+                } else {
+                    let mut out = String::from("**Active session rules:**\n\n");
+                    for r in rules {
+                        out.push_str(&format!("- **#{}** {}\n", r.id, r.content));
+                    }
+                    out.push_str("\nUse `/rule remove <id>` to delete a rule or `/rule clear` to remove all.");
+                    Ok(out)
+                }
+            }
+        }
+    }
+
+    /// Clear all session-only rules (used by `/rule clear`).
+    pub async fn clear_session_rules(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                session.session_rules.clear();
+                info!("All session rules cleared for session {}", session_id.0);
+                Ok("All session rules cleared.".to_string())
+            }
+        }
     }
 
     /// Clear the conversation history for a session (used by the `/clear` slash command).
@@ -1755,75 +2189,35 @@ impl GrokAcpAgent {
         Ok(())
     }
 
-    // ── Bayes helpers (used by /bayes slash commands) ────────────────────────
-
-    /// Return a human-readable visualization of the current Bayesian state
-    /// (counts, probabilities, uncertainty, etc.).
-    pub async fn get_bayes_visualize(&self, session_id: &SessionId) -> Result<String> {
-        self.ensure_session_exists(&session_id.0).await;
-        let sessions = self.sessions.read().await;
-        if let Some(s) = sessions.get(&session_id.0) {
-            Ok(s.bayes_engine.visualize())
-        } else {
-            Err(anyhow!("Session not found: {}", session_id.0))
-        }
-    }
-
-    /// Reset the Bayesian engine for the given session.
-    pub async fn reset_bayes(&self, session_id: &SessionId) -> Result<String> {
+    /// Set the thinking / reasoning mode for a session.
+    ///
+    /// The mode is stored in `SessionConfig::thinking_mode` and passed as
+    /// `reasoning_effort` in every subsequent API call.
+    pub async fn set_thinking_mode(
+        &self,
+        session_id: &SessionId,
+        mode: ThinkingMode,
+    ) -> Result<()> {
         let mut sessions = self.sessions.write().await;
-        if let Some(s) = sessions.get_mut(&session_id.0) {
-            s.bayes_engine = crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian);
-            Ok("Bayesian engine has been reset for this session.".to_string())
-        } else {
-            Err(anyhow!("Session not found: {}", session_id.0))
-        }
-    }
-
-    /// Return a textual explanation of the current Bayesian state.
-    pub async fn get_bayes_explain(&self, session_id: &SessionId) -> Result<String> {
-        self.ensure_session_exists(&session_id.0).await;
-        let sessions = self.sessions.read().await;
-        if let Some(s) = sessions.get(&session_id.0) {
-            // `explain` not implemented yet — fall back to visualize
-            Ok(s.bayes_engine.visualize())
-        } else {
-            Err(anyhow!("Session not found: {}", session_id.0))
-        }
-    }
-
-    // ── Goal helpers (used by /goal slash commands) ──────────────────────────
-
-    /// Set (or replace) the current goal for the session.
-    pub async fn set_session_goal(&self, session_id: &SessionId, goal: String) -> Result<()> {
-        let mut sessions = self.sessions.write().await;
-        if let Some(s) = sessions.get_mut(&session_id.0) {
-            s.current_goal = Some(goal);
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            let old = &session.config.thinking_mode;
+            info!(
+                "Thinking mode: {:?} → {:?} for session: {}",
+                old, mode, session_id.0
+            );
+            session.config.thinking_mode = mode;
             Ok(())
         } else {
             Err(anyhow!("Session not found: {}", session_id.0))
         }
     }
 
-    /// Clear the current goal for the session.
-    pub async fn clear_session_goal(&self, session_id: &SessionId) -> Result<()> {
-        let mut sessions = self.sessions.write().await;
-        if let Some(s) = sessions.get_mut(&session_id.0) {
-            s.current_goal = None;
-            Ok(())
-        } else {
-            Err(anyhow!("Session not found: {}", session_id.0))
-        }
-    }
-
-    /// Return the current goal (if any) for the session.
-    pub async fn get_session_goal(&self, session_id: &SessionId) -> Result<Option<String>> {
+    /// Get the current thinking mode for a session.
+    pub async fn get_thinking_mode(&self, session_id: &SessionId) -> Option<ThinkingMode> {
         let sessions = self.sessions.read().await;
-        if let Some(s) = sessions.get(&session_id.0) {
-            Ok(s.current_goal.clone())
-        } else {
-            Err(anyhow!("Session not found: {}", session_id.0))
-        }
+        sessions
+            .get(&session_id.0)
+            .map(|s| s.config.thinking_mode.clone())
     }
 
     /// Clean up expired sessions
@@ -1846,6 +2240,147 @@ impl GrokAcpAgent {
         }
 
         Ok(cleaned)
+    }
+
+    /// Returns the path to the sessions persistence directory: ~/.grok-cli/sessions/
+    fn sessions_dir() -> Option<std::path::PathBuf> {
+        Some(crate::config::grok_config_dir().join("sessions"))
+    }
+
+    /// Persist session state to ~/.grok-cli/sessions/<id>.json (system location).
+    /// Called automatically after each successful prompt response.
+    /// Retries up to 3 times on I/O errors (Starlink-safe).
+    pub async fn save_session_to_disk(&self, session_id: &SessionId) -> Result<()> {
+        let state = {
+            let sessions = self.sessions.read().await;
+            let Some(session) = sessions.get(&session_id.0) else {
+                return Ok(());
+            };
+            PersistedSession {
+                session_id: session_id.0.clone(),
+                cwd: session.cwd.clone(),
+                messages: session.messages.clone(),
+                config: session.config.clone(),
+                current_goal: session.current_goal.clone(),
+                always_allow: session.always_allow.iter().cloned().collect(),
+                saved_at_unix: std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_secs(),
+            }
+        };
+
+        let Some(dir) = Self::sessions_dir() else {
+            return Ok(());
+        };
+
+        for attempt in 1u32..=3 {
+            match tokio::fs::create_dir_all(&dir).await {
+                Ok(()) => break,
+                Err(e) if attempt < 3 => {
+                    warn!(
+                        "save_session: create_dir failed (attempt {}): {}",
+                        attempt, e
+                    );
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                        .await;
+                }
+                Err(e) => return Err(anyhow!("save_session: cannot create sessions dir: {}", e)),
+            }
+        }
+
+        let path = dir.join(format!("{}.json", session_id.0));
+        let json = serde_json::to_string_pretty(&state)?;
+
+        for attempt in 1u32..=3 {
+            match tokio::fs::write(&path, &json).await {
+                Ok(()) => {
+                    info!(
+                        "Session '{}' persisted to {:?} ({} messages)",
+                        session_id.0,
+                        path,
+                        state.messages.len()
+                    );
+                    return Ok(());
+                }
+                Err(e) if attempt < 3 => {
+                    warn!("save_session: write failed (attempt {}): {}", attempt, e);
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                        .await;
+                }
+                Err(e) => return Err(anyhow!("save_session: write failed: {}", e)),
+            }
+        }
+        Ok(())
+    }
+
+    /// Load a persisted session from ~/.grok-cli/sessions/<id>.json (system location).
+    /// Returns None if no saved state exists or if the file cannot be parsed.
+    pub async fn load_session_from_disk(&self, session_id: &str) -> Option<PersistedSession> {
+        let dir = Self::sessions_dir()?;
+        let path = dir.join(format!("{}.json", session_id));
+
+        for attempt in 1u32..=3 {
+            match tokio::fs::read_to_string(&path).await {
+                Ok(content) => {
+                    return serde_json::from_str::<PersistedSession>(&content)
+                        .map_err(|e| warn!("load_session: parse error for '{}': {}", session_id, e))
+                        .ok();
+                }
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => return None,
+                Err(e) if attempt < 3 => {
+                    warn!("load_session: read failed (attempt {}): {}", attempt, e);
+                    tokio::time::sleep(std::time::Duration::from_millis(500 * attempt as u64))
+                        .await;
+                }
+                Err(_) => return None,
+            }
+        }
+        None
+    }
+
+    /// Restore a session from a `PersistedSession` snapshot loaded from disk.
+    pub async fn restore_session_from_disk(&self, state: PersistedSession) -> Result<()> {
+        let sid = SessionId::new(state.session_id.clone());
+        // Initialize a fresh session with the saved config
+        self.initialize_session(sid.clone(), state.cwd.clone(), Some(state.config), None)
+            .await?;
+        // Overwrite the parts that initialize_session can't set
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&state.session_id) {
+            session.messages = state.messages;
+            session.current_goal = state.current_goal;
+            session.always_allow = state.always_allow.into_iter().collect();
+        }
+        info!("Session '{}' restored from disk", sid.0);
+        Ok(())
+    }
+
+    /// Clone an existing session into a new session ID (session/fork support).
+    pub async fn fork_session(&self, source_id: &SessionId, new_id: SessionId) -> Result<()> {
+        let forked = {
+            let sessions = self.sessions.read().await;
+            let source = sessions
+                .get(&source_id.0)
+                .ok_or_else(|| anyhow!("fork_session: source '{}' not found", source_id.0))?;
+            SessionData {
+                cwd: source.cwd.clone(),
+                messages: source.messages.clone(),
+                config: source.config.clone(),
+                created_at: std::time::Instant::now(),
+                last_activity: std::time::Instant::now(),
+                always_allow: source.always_allow.clone(),
+                client_commands: source.client_commands.clone(),
+                bayes_engine: crate::bayes::BayesianEngine::new_with_default_priors(),
+                dna: crate::session::dna::SessionDna::default(),
+                current_goal: source.current_goal.clone(),
+                session_rules: source.session_rules.clone(),
+            }
+        };
+        let mut sessions = self.sessions.write().await;
+        sessions.insert(new_id.0.clone(), forked);
+        info!("Session '{}' forked → '{}'", source_id.0, new_id.0);
+        Ok(())
     }
 
     /// Return a list of currently active session IDs.
@@ -1880,12 +2415,146 @@ impl GrokAcpAgent {
             "total_messages": total_messages,
             "uptime_seconds": uptime,
             "capabilities": {
-                "models": self.capabilities.models,
-                "features": self.capabilities.features,
-                "max_context_length": self.capabilities.max_context_length
+                "models": self.capabilities().models,
+                "features": self.capabilities().features,
+                "max_context_length": self.capabilities().max_context_length
             }
         }))
     }
+}
+
+// ───────────────────────────────────────────────────────────────────────────────
+// Token-management helpers
+// ───────────────────────────────────────────────────────────────────────────────
+
+/// Rough token estimate: 4 characters ≈ 1 token (standard heuristic for
+/// mixed prose/code/JSON).  We serialise each message value so that all
+/// fields (role, content, tool_calls …) are counted, not just the visible
+/// text.
+#[inline]
+fn estimate_tokens(messages: &[Value]) -> usize {
+    messages
+        .iter()
+        .map(|m| m.to_string().len().saturating_add(3) / 4) // +3 for per-message overhead
+        .sum()
+}
+
+/// Select the appropriate context-token budget based on the active model.
+///
+/// - grok-4.x models (grok-4.3 and later) have a 1 M token context window;
+///   use `grok4_budget` for those.
+/// - All other models (grok-3, grok-2, …) use `legacy_budget`.
+#[inline]
+fn model_context_budget(model: &str, legacy_budget: usize, grok4_budget: usize) -> usize {
+    if model.starts_with("grok-4") {
+        grok4_budget
+    } else {
+        legacy_budget
+    }
+}
+
+/// Remove the oldest messages (from index 0 upward) until the estimated
+/// token count is ≤ `budget`.  Always keeps at least the last message so
+/// the user turn is never lost.
+fn trim_to_token_budget(messages: &mut Vec<Value>, budget: usize) {
+    while messages.len() > 1 && estimate_tokens(messages) > budget {
+        messages.remove(0);
+    }
+}
+
+/// Truncate the `content` field of tool-result messages (role = "tool")
+/// that exceed `max_chars` characters.  A truncation notice is appended so
+/// the model knows the output was cut.
+fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
+    for msg in messages.iter_mut() {
+        // Only touch tool-result messages
+        if msg.get("role").and_then(|r| r.as_str()) != Some("tool") {
+            continue;
+        }
+        if let Some(content) = msg.get_mut("content") {
+            match content {
+                Value::String(s) if s.len() > max_chars => {
+                    let mut end = max_chars;
+                    while !s.is_char_boundary(end) {
+                        end -= 1;
+                    }
+                    let truncated = &s[..end];
+                    *s = format!(
+                        "{}\n\n[... output truncated to {} chars to fit context window ...]",
+                        truncated, max_chars
+                    );
+                }
+                // Array-of-content-blocks form used by some providers
+                Value::Array(blocks) => {
+                    for block in blocks.iter_mut() {
+                        if let Some(text_val) = block.get_mut("text") {
+                            if let Some(s) = text_val.as_str() {
+                                if s.len() > max_chars {
+                                    let mut end = max_chars;
+                                    while !s.is_char_boundary(end) {
+                                        end -= 1;
+                                    }
+                                    let truncated = &s[..end];
+                                    *text_val = Value::String(format!(
+                                        "{}\n\n[... output truncated to {} chars to fit \
+                                         context window ...]",
+                                        truncated, max_chars
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+}
+
+/// Build the compact system-role archive notice injected into the active
+/// context after a chunk is compressed and saved.
+///
+/// The notice is intentionally short (≤ 400 chars) to minimise its own
+/// token footprint while giving the model enough information to decide
+/// whether it needs to recall the archived content.
+fn build_archive_notice(chunk: &crate::memory::context_archive::ContextChunk) -> Value {
+    let ts = chunk.created_at.format("%Y-%m-%d %H:%M UTC").to_string();
+
+    let facts = if chunk.key_facts.is_empty() {
+        String::new()
+    } else {
+        let bullets: String = chunk
+            .key_facts
+            .iter()
+            .take(5)
+            .map(|f| format!("\n\u{2022} {f}"))
+            .collect();
+        format!("\nKey facts:{}", bullets)
+    };
+
+    // Keep summary under ~200 chars for the notice
+    let preview: String = chunk.summary.chars().take(200).collect();
+    let preview = if chunk.summary.len() > 200 {
+        format!("{}\u{2026}", preview)
+    } else {
+        preview
+    };
+
+    let content = format!(
+        "[\u{1F4E6} Context Archive #{id} | {ts} | {count} messages]\n\
+         Summary: {preview}{facts}\n\
+         Type `/recall {id}` or say \"recall archive {id}\" to restore this context.",
+        id = chunk.chunk_id,
+        ts = ts,
+        count = chunk.message_count,
+        preview = preview,
+        facts = facts,
+    );
+
+    json!({
+        "role": "system",
+        "content": content,
+    })
 }
 
 #[cfg(test)]
@@ -1895,9 +2564,10 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-        assert_eq!(config.model, "grok-code-fast-1");
+        assert_eq!(config.model, "grok-4.3");
         assert_eq!(config.temperature, 0.5);
-        assert_eq!(config.max_tokens, 4096);
+        // grok-4.3 supports higher output token limits; default raised to 16_384
+        assert_eq!(config.max_tokens, 16_384);
         assert!(config.system_prompt.is_some());
     }
 
@@ -1907,7 +2577,13 @@ mod tests {
         assert!(!capabilities.models.is_empty());
         assert!(!capabilities.features.is_empty());
         assert!(!capabilities.tools.is_empty());
-        assert!(capabilities.max_context_length > 0);
+        // grok-4.3 exposes a 1 M token context window
+        assert_eq!(capabilities.max_context_length, 1_048_576);
+        // grok-4.3 must be the first / default model
+        assert_eq!(capabilities.models[0], "grok-4.3");
+        // 1m_context and vision feature flags
+        assert!(capabilities.features.contains(&"1m_context".to_string()));
+        assert!(capabilities.features.contains(&"vision".to_string()));
     }
 
     #[tokio::test]
@@ -1931,6 +2607,7 @@ mod tests {
         // Build a minimal sessions map with one session entry.
         let session_id = SessionId::new("sess-perm-test");
         let session_data = SessionData {
+            dna: crate::session::dna::SessionDna::default(),
             cwd: String::new(),
             messages: Vec::new(),
             config: SessionConfig::default(),
@@ -1939,8 +2616,8 @@ mod tests {
             always_allow: std::collections::HashSet::new(),
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new(),
-            dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
+            session_rules: Default::default(),
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);
@@ -2139,5 +2816,102 @@ mod tests {
             assert!(result.is_err(), "Should timeout and return error");
             assert!(result.unwrap_err().to_string().contains("Timed out"));
         }
+    }
+
+    #[test]
+    fn build_archive_notice_has_correct_role_and_chunk_id() {
+        use crate::memory::context_archive::ContextChunk;
+        use chrono::Utc;
+
+        let chunk = ContextChunk {
+            chunk_id: 3,
+            session_id: "test-sess".to_string(),
+            created_at: Utc::now(),
+            message_count: 12,
+            estimated_tokens_saved: 4500,
+            summary: "We discussed Rust async patterns.".to_string(),
+            key_facts: vec![
+                "tokio is used".to_string(),
+                "async/await preferred".to_string(),
+            ],
+            raw_messages: vec![],
+        };
+
+        let notice = build_archive_notice(&chunk);
+        assert_eq!(notice["role"], "system");
+        let content = notice["content"].as_str().unwrap();
+        assert!(content.contains("#3"), "should contain chunk id");
+        assert!(content.contains("/recall 3"), "should contain recall hint");
+        assert!(
+            content.contains("12 messages"),
+            "should contain message count"
+        );
+    }
+
+    // ── Task 109: model_context_budget ─────────────────────────────────────────
+
+    #[test]
+    fn test_model_context_budget_grok4_uses_grok4_budget() {
+        assert_eq!(model_context_budget("grok-4.3", 220_000, 950_000), 950_000);
+        assert_eq!(
+            model_context_budget("grok-4-latest", 220_000, 950_000),
+            950_000
+        );
+        assert_eq!(model_context_budget("grok-4", 220_000, 950_000), 950_000);
+    }
+
+    #[test]
+    fn test_model_context_budget_legacy_models_use_legacy_budget() {
+        assert_eq!(model_context_budget("grok-3", 220_000, 950_000), 220_000);
+        assert_eq!(
+            model_context_budget("grok-3-mini", 220_000, 950_000),
+            220_000
+        );
+        assert_eq!(
+            model_context_budget("grok-2-latest", 220_000, 950_000),
+            220_000
+        );
+        assert_eq!(model_context_budget("grok-beta", 220_000, 950_000), 220_000);
+    }
+
+    #[test]
+    fn test_truncate_tool_results_utf8_boundary() {
+        // '─' is 3 bytes: 0xE2, 0x94, 0x80
+        // Starts at 29998, ends at 30001.
+        let long_string = "A".repeat(29998) + "─" + &"B".repeat(10);
+        let mut messages = vec![json!({
+            "role": "tool",
+            "content": long_string
+        })];
+
+        // This should truncate at index 30000, but index 30000 is inside '─' (29998..30001)
+        // Our fix should back off to 29998.
+        truncate_tool_results(&mut messages, 30000);
+
+        let content = messages[0]["content"].as_str().unwrap();
+        assert!(content.starts_with(&"A".repeat(29998)));
+        assert!(!content.contains('─'));
+        assert!(content.contains("truncated"));
+    }
+
+    #[test]
+    fn test_truncate_tool_results_array_utf8_boundary() {
+        let long_string = "A".repeat(29998) + "─" + &"B".repeat(10);
+        let mut messages = vec![json!({
+            "role": "tool",
+            "content": [
+                {
+                    "type": "text",
+                    "text": long_string
+                }
+            ]
+        })];
+
+        truncate_tool_results(&mut messages, 30000);
+
+        let text = messages[0]["content"][0]["text"].as_str().unwrap();
+        assert!(text.starts_with(&"A".repeat(29998)));
+        assert!(!text.contains('─'));
+        assert!(text.contains("truncated"));
     }
 }

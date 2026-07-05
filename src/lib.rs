@@ -300,6 +300,13 @@ pub enum BayesAction {
     /// Explain the current belief reasoning
     Explain,
 }
+
+/// Actions for the `grok sandbox` command (reserved for future subcommands).
+#[derive(Subcommand, Clone, Debug)]
+pub enum SandboxAction {
+    /// List the files pre-populated in a new sandbox workspace.
+    List,
+}
 pub use config::{Config, ConfigSource, RateLimitConfig};
 #[allow(deprecated)]
 pub use display::{

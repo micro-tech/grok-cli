@@ -113,6 +113,18 @@ pub enum SlashCommand {
 
     /// `/diagnostics` — show status of all background systems (Bayesian, DNA, compression, etc.).
     Diagnostics,
+
+    /// `/rule add <text>` — add a temporary session-only rule.
+    RuleAdd { text: String },
+
+    /// `/rule remove <id>` — remove a session rule by ID.
+    RuleRemove { id: u32 },
+
+    /// `/rules` or `/rule list` — list all active session rules.
+    RuleList,
+
+    /// `/rule clear` — remove all session-only rules.
+    RuleClear,
 }
 
 // ---------------------------------------------------------------------------
@@ -182,10 +194,28 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
                 ThinkingMode::from_str_ci(&args).map(|m| SlashCommand::Think { mode: Some(m) })
             }
         }
-        "/commit" => Some(SlashCommand::Commit {
-            instructions: args,
-        }),
+        "/commit" => Some(SlashCommand::Commit { instructions: args }),
         "/diagnostics" => Some(SlashCommand::Diagnostics),
+
+        // Session-only rules
+        "/rule" | "/rules" => {
+            let lower = args.to_lowercase();
+            if lower.starts_with("add ") {
+                Some(SlashCommand::RuleAdd {
+                    text: args[4..].trim().to_string(),
+                })
+            } else if lower.starts_with("remove ") {
+                args[7..]
+                    .trim()
+                    .parse::<u32>()
+                    .ok()
+                    .map(|id| SlashCommand::RuleRemove { id })
+            } else if lower == "clear" {
+                Some(SlashCommand::RuleClear)
+            } else {
+                Some(SlashCommand::RuleList)
+            }
+        }
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -252,6 +282,13 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         )
         .input(input("chunk number (e.g. 1, 2, 3) -- omit to list archives")),
         AvailableCommand::new(
+            "rule",
+            "Manage session-only rules that are injected into every message (add / list / remove / clear)",
+        )
+        .input(input(
+            "add <text> | list | remove <id> | clear — e.g. 'add Always use anyhow::Result'",
+        )),
+        AvailableCommand::new(
             "review",
             "Comprehensive code review: bugs, security, performance, style",
         )
@@ -310,7 +347,11 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::GoalClear
         | SlashCommand::Visualize
         | SlashCommand::Think { .. }
-        | SlashCommand::Diagnostics => None,
+        | SlashCommand::Diagnostics
+        | SlashCommand::RuleAdd { .. }
+        | SlashCommand::RuleRemove { .. }
+        | SlashCommand::RuleList
+        | SlashCommand::RuleClear => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -430,9 +471,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
 
         SlashCommand::Commit { instructions } => {
             // Fetch the actual git diff so the model has something to write about.
-            let diff = get_git_diff_for_commit().unwrap_or_else(|e| {
-                format!("[Could not obtain git diff: {}]", e)
-            });
+            let diff = get_git_diff_for_commit()
+                .unwrap_or_else(|e| format!("[Could not obtain git diff: {}]", e));
 
             let extra = if instructions.trim().is_empty() {
                 String::new()
@@ -539,6 +579,15 @@ pub enum BuiltinResult {
 
     /// Show diagnostics report for all background systems.
     ShowDiagnostics,
+
+    /// Add a session-only rule. Carries the rule text; the caller assigns the ID.
+    AddRule(String),
+    /// Remove the session rule with the given ID.
+    RemoveRule(u32),
+    /// List all active session-only rules.
+    ListRules,
+    /// Clear all session-only rules.
+    ClearRules,
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -573,6 +622,10 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::Visualize => Some(BuiltinResult::ShowVisualizer),
         SlashCommand::Think { mode } => Some(BuiltinResult::SetThinkingMode(mode.clone())),
         SlashCommand::Diagnostics => Some(BuiltinResult::Text(format_diagnostics_text())),
+        SlashCommand::RuleAdd { text } => Some(BuiltinResult::AddRule(text.clone())),
+        SlashCommand::RuleRemove { id } => Some(BuiltinResult::RemoveRule(*id)),
+        SlashCommand::RuleList => Some(BuiltinResult::ListRules),
+        SlashCommand::RuleClear => Some(BuiltinResult::ClearRules),
         _ => None, // AI-assisted command
     }
 }
@@ -736,7 +789,10 @@ pub fn format_help_text() -> String {
 pub fn format_model_list() -> String {
     let models = [
         ("grok-4.3", "Latest flagship (1M context)"),
-        ("grok-4.20-0309-reasoning", "Reasoning variant (recommended for thinking)"),
+        (
+            "grok-4.20-0309-reasoning",
+            "Reasoning variant (recommended for thinking)",
+        ),
         ("grok-4.20-0309-non-reasoning", "Non-reasoning variant"),
         ("grok-4.20-multi-agent-0309", "Multi-agent variant"),
         ("grok-build-0.1", "Build / experimental model"),
@@ -803,7 +859,9 @@ pub fn format_diagnostics_text() -> String {
 
     // Session persistence
     lines.push("### 💾 Session Persistence".to_string());
-    lines.push("- Sessions saved to `~/.grok-cli/sessions/<id>.json` after each turn (system)".to_string());
+    lines.push(
+        "- Sessions saved to `~/.grok-cli/sessions/<id>.json` after each turn (system)".to_string(),
+    );
     lines.push("- Restored automatically on reconnect (if client re-uses session ID)".to_string());
     lines.push(String::new());
 
@@ -1086,6 +1144,7 @@ mod tests {
             "goal",
             "visualize",
             "think",
+            "rule",
         ] {
             assert!(
                 names.contains(&required.to_string()),

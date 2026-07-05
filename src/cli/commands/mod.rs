@@ -8,15 +8,16 @@
 
 pub mod acp;
 pub mod audit;
+pub mod bayes;
 pub mod chat;
 pub mod code;
 pub mod config;
 pub mod health;
 pub mod history;
+pub mod sandbox;
 pub mod settings;
 pub mod setup;
 pub mod skills;
 pub mod tools;
-pub mod bayes;
 
 // Re-export all command handlers

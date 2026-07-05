@@ -26,7 +26,7 @@ use crate::acp::protocol::{
     AuthMethod, AvailableCommandsUpdate, ContentBlock, ContentChunk, Implementation,
     InitializeRequest, InitializeResponse, NewSessionRequest, NewSessionResponse,
     PermissionOutcome, PromptRequest, SessionId, SessionInfo, SessionListRequest,
-    SessionListResponse, SessionNotification, SessionUpdate, TextContent,
+    SessionListResponse, SessionLoadRequest, SessionNotification, SessionUpdate, TextContent,
 };
 use crate::acp::slash_commands::{
     self, BuiltinResult, format_context_text, handle_builtin, parse_slash_command,
@@ -452,25 +452,27 @@ where
                 let agent = Arc::clone(&a_load);
                 async move {
                     // Convert crate's LoadSessionRequest → Value for our handler.
-                    // The crate requires cwd and mcpServers in the incoming JSON.
                     let params = serde_json::to_value(&req).unwrap_or_else(|_| json!({}));
                     let sid = params["sessionId"].as_str().unwrap_or("").to_string();
-                    // Call our existing handler with a sink writer (notifications
-                    // come from session persistence, not through the old writer).
-                    let _writer_stub = tokio::io::sink();
-                    // `handle_session_load` is not yet implemented in the new ACP stack.
-                    // Return a successful empty response for now (no session history restored).
-                    let _val: Value = json!(null);
-                    // Build a LoadSessionResponse — try several JSON structures
-                    // since we don't know the exact crate-required fields at
-                    // compile time (the crate type is #[non_exhaustive]).
-                    // Our handler returns null (no history); the spec allows null.
+
+                    // Initialize (or restore) the session so that subsequent
+                    // session/prompt calls have a valid session in the agent's
+                    // sessions map and a live chat-logger session.
+                    if !sid.is_empty() {
+                        if let Err(e) = handle_session_load(&params, &agent).await {
+                            warn!("session/load: session setup failed for '{}': {}", sid, e);
+                        }
+                    }
+
+                    // Build a LoadSessionResponse — try several JSON shapes
+                    // since the crate type may be #[non_exhaustive].
                     let resp: AcpLoadResp =
                         [json!({"content": []}), json!({"messages": []}), json!({})]
                             .into_iter()
                             .find_map(|j| serde_json::from_value(j).ok())
                             .ok_or_else(|| anyhow!("Cannot construct LoadSessionResponse"))?;
                     responder.respond(resp)?;
+
                     // Re-advertise commands after load with the same retry
                     // strategy used by session/new.
                     if !sid.is_empty() {
@@ -575,74 +577,56 @@ fn send_available_commands_update_cx(
 
 // ---------------------------------------------------------------------------
 // 111.3 helper: convert a local SessionNotification to the crate's type.
-//
-// Most variants share the same wire JSON, so a serde round-trip works for
-// them.  A handful of our local variants have been renamed or restructured
-// in agent-client-protocol-schema 1.1.0 and need explicit mapping:
-//
-//  • ContextUsageUpdate → UsageUpdate  (fields: current_tokens→used, max_tokens→size)
-//  • ThinkingBlockUpdate → AgentThoughtChunk  (wraps a ContentChunk)
-//  • StatusBarUpdate     → no crate equivalent, dropped silently
+// Both types serialize to the same ACP wire JSON, so a serde round-trip works.
 // ---------------------------------------------------------------------------
+
+/// Returns `true` for `SessionUpdate` variants that the `agent_client_protocol`
+/// crate's schema understands on the wire.  Our custom extensions
+/// (`StatusBarUpdate`, `ContextUsageUpdate`, `AgentActivity`, `ThinkingUpdate`,
+/// `ThinkingBlockUpdate`, `Raw`) are grok-cli additions that Zed ignores for
+/// now; the crate round-trip would panic/warn on them, so we skip them here.
+/// The status-bar has its own `AgentMessageChunk` text fallback in
+/// `emit_status_bar`, so nothing visible is lost.
+#[inline]
+fn is_crate_compatible(notif: &SessionNotification) -> bool {
+    matches!(
+        notif.update,
+        SessionUpdate::AgentMessageChunk(_)
+            | SessionUpdate::AvailableCommandsUpdate(_)
+            | SessionUpdate::ToolCall(_)
+            | SessionUpdate::ToolCallUpdate(_)
+    )
+}
 
 fn local_notif_to_crate(
     local: &SessionNotification,
 ) -> Result<agent_client_protocol::schema::v1::SessionNotification> {
-    use agent_client_protocol::schema::v1;
-
-    let crate_sid = v1::SessionId::new(local.session_id.0.clone());
-
-    // Handle variants whose names or layouts differ from the crate schema.
-    match &local.update {
-        SessionUpdate::ContextUsageUpdate(ctx) => {
-            // Crate renamed this variant to "usage_update" and uses { used, size }.
-            let usage = v1::UsageUpdate::new(ctx.current_tokens as u64, ctx.max_tokens as u64);
-            return Ok(v1::SessionNotification::new(
-                crate_sid,
-                v1::SessionUpdate::UsageUpdate(usage),
-            ));
-        }
-        SessionUpdate::ThinkingBlockUpdate(tb) => {
-            // Map to the crate's agent_thought_chunk variant.
-            let content = v1::ContentBlock::Text(v1::TextContent::new(tb.content.clone()));
-            let chunk = v1::ContentChunk::new(content);
-            return Ok(v1::SessionNotification::new(
-                crate_sid,
-                v1::SessionUpdate::AgentThoughtChunk(chunk),
-            ));
-        }
-        SessionUpdate::StatusBarUpdate(_) => {
-            // No equivalent in the crate's SessionUpdate; drop silently.
-            return Err(anyhow!("StatusBarUpdate: no crate equivalent"));
-        }
-        _ => {}
-    }
-
-    // For all other variants the names and field layouts match the crate schema,
-    // so the JSON round-trip is safe.
     let json = serde_json::to_value(local).map_err(|e| anyhow!("serialize local notif: {e}"))?;
     serde_json::from_value(json).map_err(|e| anyhow!("deserialize crate notif: {e}"))
 }
 
 /// Convert a local `SessionNotification` to the crate's type and send it via
-/// `cx`. Logs a warning if a conversion fails, except for variants that are
-/// intentionally skipped (e.g. StatusBarUpdate has no crate equivalent).
+/// `cx`.  Variants not in the crate's schema are silently skipped — they are
+/// grok-cli extensions (status bar, context usage, thinking traces) that Zed
+/// does not yet support natively.  A warning is only emitted when a supposedly
+/// compatible variant fails to round-trip (which would indicate a real bug).
 fn send_session_notif(
     notif: &SessionNotification,
     cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
 ) {
+    if !is_crate_compatible(notif) {
+        // Extension variant — the crate doesn't know about it.  This is
+        // expected and not an error; log at debug level only.
+        debug!("Skipping crate-incompatible session update (extension variant)");
+        return;
+    }
     match local_notif_to_crate(notif) {
         Ok(crate_notif) => {
             if let Err(e) = cx.send_notification(crate_notif) {
                 warn!("cx.send_notification failed: {e}");
             }
         }
-        Err(e) => {
-            // Suppress expected "no crate equivalent" messages to avoid log noise.
-            if !e.to_string().contains("no crate equivalent") {
-                warn!("local_notif_to_crate failed (notification dropped): {e}");
-            }
-        }
+        Err(e) => warn!("local_notif_to_crate failed (notification dropped): {e}"),
     }
 }
 
@@ -739,9 +723,24 @@ async fn handle_session_prompt_v2(
                 ai_prompt.len()
             );
             let _ = chat_logger::log_user(&message_text);
-            let text = run_ai_and_collect(&agent, &session_id, &ai_prompt, &cx)
-                .await
-                .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
+            let text = match run_ai_and_collect(&agent, &session_id, &ai_prompt, &cx).await {
+                Ok(t) => t,
+                Err(e) => {
+                    // Deliver the error as a visible message so Zed stays
+                    // connected instead of receiving a hard protocol error.
+                    let err_text = format!("\u{274c} {}", e);
+                    let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                        ContentBlock::Text(TextContent::new(&err_text)),
+                    ));
+                    send_session_notif(&SessionNotification::new(session_id.clone(), update), &cx);
+                    let r = responder
+                        .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                            agent_client_protocol::schema::v1::StopReason::EndTurn,
+                        ))
+                        .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+                    return r;
+                }
+            };
             let _ = chat_logger::log_assistant(&text);
             let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
                 TextContent::new(&text),
@@ -813,11 +812,30 @@ async fn handle_session_prompt_v2(
         }
     }
 
-    // ── Normal AI chat ────────────────────────────────────────────────────────
+    // ── Normal AI chat ──────────────────────────────────────────────────────────
     let _ = chat_logger::log_user(&message_text);
-    let text = run_ai_and_collect(&agent, &session_id, &message_text, &cx)
-        .await
-        .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
+    let text = match run_ai_and_collect(&agent, &session_id, &message_text, &cx).await {
+        Ok(t) => t,
+        Err(e) => {
+            // Return the error as a visible message rather than a hard
+            // JSON-RPC error (-32603).  A protocol error causes Zed to close
+            // the ACP connection (server exits), while an error message chunk
+            // keeps the session alive so the user can retry.
+            let err_text = format!("\u{274c} {}", e);
+            warn!("AI chat error (returning as message): {}", e);
+            let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(&err_text),
+            )));
+            send_session_notif(&SessionNotification::new(session_id.clone(), update), &cx);
+            let r = responder
+                .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                    agent_client_protocol::schema::v1::StopReason::EndTurn,
+                ))
+                .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+            agent.save_session_to_disk(&session_id).await.ok();
+            return r;
+        }
+    };
     let _ = chat_logger::log_assistant(&text);
 
     // Send final text chunk
@@ -939,18 +957,17 @@ async fn handle_builtin_result(
             Ok(t) => t,
             Err(e) => format!("Bayesian explanation unavailable: {e}"),
         },
-        BuiltinResult::ShowGoal => match agent.get_session_goal(session_id).await {
-            Ok(Some(g)) => g,
-            Ok(None) => "No goal set for this session.".to_string(),
-            Err(e) => format!("Could not retrieve goal: {e}"),
-        },
         BuiltinResult::SetGoal(goal) => match agent.set_session_goal(session_id, goal).await {
-            Ok(()) => "✅ Goal set.".to_string(),
+            Ok(t) => t,
             Err(e) => format!("Could not set goal: {e}"),
         },
         BuiltinResult::ClearGoal => match agent.clear_session_goal(session_id).await {
-            Ok(()) => "✅ Goal cleared.".to_string(),
+            Ok(t) => t,
             Err(e) => format!("Could not clear goal: {e}"),
+        },
+        BuiltinResult::ShowGoal => match agent.get_session_goal(session_id).await {
+            Ok(t) => t,
+            Err(e) => format!("Could not retrieve goal: {e}"),
         },
         BuiltinResult::ShowVisualizer => crate::visualizer::generate_pipeline_markdown(None),
         BuiltinResult::SetThinkingMode(opt_mode) => match opt_mode {
@@ -1001,6 +1018,22 @@ async fn handle_builtin_result(
             }
         }
         BuiltinResult::ShowDiagnostics => slash_commands::format_diagnostics_text(),
+        BuiltinResult::AddRule(text) => match agent.add_session_rule(session_id, text).await {
+            Ok(t) => t,
+            Err(e) => format!("❌ Could not add rule: {e}"),
+        },
+        BuiltinResult::RemoveRule(id) => match agent.remove_session_rule(session_id, id).await {
+            Ok(t) => t,
+            Err(e) => format!("❌ Could not remove rule: {e}"),
+        },
+        BuiltinResult::ListRules => match agent.list_session_rules(session_id).await {
+            Ok(t) => t,
+            Err(e) => format!("❌ Could not list rules: {e}"),
+        },
+        BuiltinResult::ClearRules => match agent.clear_session_rules(session_id).await {
+            Ok(t) => t,
+            Err(e) => format!("❌ Could not clear rules: {e}"),
+        },
     }
 }
 
@@ -1060,23 +1093,13 @@ async fn handle_extension_dispatch(
         agent_client_protocol::schema::v1::ClientRequest,
         agent_client_protocol::schema::v1::ClientNotification,
     >,
-    cx: agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
-    agent: Arc<GrokAcpAgent>,
+    _cx: agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
+    _agent: Arc<GrokAcpAgent>,
 ) -> std::result::Result<(), agent_client_protocol::Error> {
     use agent_client_protocol::Dispatch;
     match msg {
         Dispatch::Request(_req, _responder) => {
-            // The new ACP v1 stable methods (logout, cancel, session/info_update,
-            // model/config_options) are not yet part of the official
-            // `ClientRequest` enum in the agent-client-protocol crate.
-            //
-            // For now we return method-not-found so the client knows we don't
-            // support the call yet.  Once the crate exposes these methods we
-            // can wire them through the typed path (or use a raw JSON-RPC layer).
-            //
-            // The handlers themselves are already implemented and tested in
-            // src/acp/handlers.rs — we just need the routing once the schema
-            // catches up.
+            // Reached for unhandled ClientRequest variants.
             Err(agent_client_protocol::Error::method_not_found())
         }
         Dispatch::Notification(_) => Ok(()),
@@ -1502,13 +1525,7 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
                             drop(client_guard);
                             let discovered = agent.get_discovered_mcp_tools();
                             let mut map = discovered.write().await;
-                            // Convert Tool list to raw JSON values for the map
-                            let tool_values: Vec<serde_json::Value> = tools
-                                .clone()
-                                .into_iter()
-                                .map(|t| serde_json::to_value(t).unwrap_or_default())
-                                .collect();
-                            map.insert(name.to_string(), tool_values);
+                            map.insert(name.to_string(), tools.clone());
 
                             // Also update the global registry so mcp_list tool can see it
                             let mut global_map = crate::tools::registry::get_discovered_mcp_tools();
@@ -1645,6 +1662,161 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
         .with_modes(modes)
         .with_models(models);
     Ok(serde_json::to_value(response)?)
+}
+
+/// Handle `session/load` — resume (or recreate) a session that the client
+/// already holds a session ID for.
+///
+/// Zed sends `session/load` instead of `session/new` when it has a persisted
+/// session ID from a previous run.  The old stub returned an empty response
+/// without ever calling `initialize_session`, which left the sessions map
+/// empty and the chat-logger without an active session.  Any subsequent
+/// `session/prompt` would then fire "Attempted to log message without an
+/// active session" and fail to find the session in the agent's map.
+///
+/// This handler now:
+/// 1. Connects any MCP servers forwarded by the client.
+/// 2. Registers the workspace root so file-system tools are trusted.
+/// 3. Restores the session from disk if a snapshot exists; otherwise
+///    creates a fresh session under the supplied session ID.
+/// 4. Starts the chat logger for the session.
+async fn handle_session_load(params: &Value, agent: &GrokAcpAgent) -> Result<()> {
+    let req: SessionLoadRequest = serde_json::from_value(params.clone())
+        .map_err(|e| anyhow!("Invalid session/load parameters: {}", e))?;
+
+    let sid = req.session_id.0.clone();
+
+    // ── 1. MCP server connection ────────────────────────────────────────────
+    if !req.mcp_servers.is_empty() {
+        info!(
+            "session/load: client forwarded {} MCP server(s) — attempting connection",
+            req.mcp_servers.len()
+        );
+        for server_val in &req.mcp_servers {
+            let name = server_val
+                .get("name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("unnamed");
+
+            let command = match server_val.get("command").and_then(|v| v.as_str()) {
+                Some(c) => c.to_string(),
+                None => {
+                    warn!(
+                        "session/load: MCP server '{}' missing 'command' — skipping",
+                        name
+                    );
+                    continue;
+                }
+            };
+
+            let args: Vec<String> = server_val
+                .get("args")
+                .and_then(|v| v.as_array())
+                .map(|arr| {
+                    arr.iter()
+                        .filter_map(|x| x.as_str().map(|s| s.to_string()))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let env: std::collections::HashMap<String, String> = server_val
+                .get("env")
+                .and_then(|v| v.as_object())
+                .map(|obj| {
+                    obj.iter()
+                        .filter_map(|(k, v)| v.as_str().map(|s| (k.clone(), s.to_string())))
+                        .collect()
+                })
+                .unwrap_or_default();
+
+            let cfg = crate::mcp::config::McpServerConfig::Stdio { command, args, env };
+            let mcp_client = agent.get_mcp_client();
+            let mut client_guard = mcp_client.write().await;
+
+            match client_guard.connect(name, &cfg).await {
+                Ok(()) => {
+                    info!("session/load: connected to MCP server '{}'", name);
+                    match client_guard.list_tools(name).await {
+                        Ok(tools) => {
+                            info!(
+                                "session/load: discovered {} tool(s) from '{}'",
+                                tools.len(),
+                                name
+                            );
+                            drop(client_guard);
+                            let discovered = agent.get_discovered_mcp_tools();
+                            let mut map = discovered.write().await;
+                            map.insert(name.to_string(), tools.clone());
+                            let mut global_map = crate::tools::registry::get_discovered_mcp_tools();
+                            global_map.insert(name.to_string(), tools);
+                            crate::tools::registry::set_discovered_mcp_tools(global_map);
+                        }
+                        Err(e) => {
+                            warn!("session/load: failed to list tools from '{}': {}", name, e)
+                        }
+                    }
+                }
+                Err(e) => warn!(
+                    "session/load: failed to connect to MCP server '{}': {}",
+                    name, e
+                ),
+            }
+        }
+    }
+
+    // ── 2. Workspace registration ───────────────────────────────────────────
+    let cwd = req.cwd.clone().unwrap_or_else(|| {
+        std::env::current_dir()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .to_string()
+    });
+    register_workspace_root(agent, &cwd);
+
+    // ── 3. Session initialization ───────────────────────────────────────────
+    // Prefer restoring a persisted snapshot; fall back to a fresh session.
+    let session_id_obj = SessionId::new(sid.clone());
+    match agent.load_session_from_disk(&sid).await {
+        Some(state) => {
+            let msg_count = state.messages.len();
+            info!(
+                "session/load: restoring '{}' from disk ({} messages)",
+                sid, msg_count
+            );
+            if let Err(e) = agent.restore_session_from_disk(state).await {
+                warn!(
+                    "session/load: restore from disk failed for '{}': {} — \
+                     creating fresh session",
+                    sid, e
+                );
+                agent
+                    .initialize_session(session_id_obj, cwd, None, None)
+                    .await?;
+            }
+        }
+        None => {
+            info!(
+                "session/load: no saved state for '{}' — creating fresh session",
+                sid
+            );
+            agent
+                .initialize_session(session_id_obj, cwd, None, None)
+                .await?;
+        }
+    }
+
+    // ── 4. Chat logging ─────────────────────────────────────────────────────
+    if let Err(e) = chat_logger::start_session(&sid) {
+        warn!(
+            "session/load: failed to start chat logging for '{}': {}",
+            sid, e
+        );
+    } else {
+        let _ = chat_logger::log_system(format!("Session '{}' loaded via session/load", sid));
+        info!("Chat logging started for session: {}", sid);
+    }
+
+    Ok(())
 }
 
 /// Task 29: Apply safe initialization defaults when a client skips the

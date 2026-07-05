@@ -330,6 +330,40 @@ grok-cli config set experimental.extensions.enabled true
 | `/version` | Show version info |
 | `/commit [instructions]` | Generate Conventional Commits message from git diff |
 
+### Session Rules
+Temporary rules that apply to every message in the current ACP session.
+Grok injects them automatically — you never have to repeat yourself.
+
+| Command | Description |
+|---------|-------------|
+| `/rule add <text>` | Add a rule for this session |
+| `/rule list` or `/rules` | List all active rules with their IDs |
+| `/rule remove <id>` | Remove a rule by its ID |
+| `/rule clear` | Remove all session rules |
+
+**How it works:** each time you send a message, the active rules are appended
+before it reaches the model — so the model always sees them, even though
+you only typed them once.
+
+```
+/rule add Always use anyhow::Result for error handling
+/rule add Never suggest .unwrap() in production code
+/rule add Prefer async/await over blocking calls
+
+/rules
+# 📋 Active session rules:
+# - #1 Always use anyhow::Result for error handling
+# - #2 Never suggest .unwrap() in production code
+# - #3 Prefer async/await over blocking calls
+
+/rule remove 2      ← drops rule #2
+/rule clear         ← wipes all rules
+```
+
+> **Note:** Rules are session-only — they are not saved to disk and reset
+> when you start a new session. For permanent rules, use a context file
+> (`.grok/context.md`, `.zed/rules`, etc.) instead.
+
 ### Context Display
 | Command | Description |
 |---------|-------------|

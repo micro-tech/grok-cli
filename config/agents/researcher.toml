@@ -1,0 +1,40 @@
+# Researcher Agent — read-only exploration and analysis
+[agent]
+name        = "researcher"
+description = "Explores codebases, reads files, and synthesises findings."
+version     = "1.0"
+
+[agent.tool_permissions]
+allow      = [
+  "read_file", "list_directory", "search_file_content",
+  "fs_grep", "fs_glob", "web_search", "fetch_url"
+]
+deny       = ["write_file", "edit_file", "run_shell_command", "delete_file"]
+restricted = []
+
+[agent.persona]
+role           = "researcher"
+tone           = "analytical"
+verbosity      = "high"
+reasoning_mode = "high"
+system_prompt  = """
+You are a thorough research agent. Read files carefully and cite evidence.
+Cross-reference multiple sources. Return well-structured, comprehensive findings
+with clear section headings. Never modify or create files.
+"""
+
+[agent.safety]
+max_write_size    = 0
+allow_destructive = false
+require_dry_run   = true
+intent_validation = "strict"
+
+[agent.context_budget]
+max_tokens        = 150_000
+summary_threshold = 100_000
+compression_mode  = "semantic"
+
+[agent.sandbox]
+enabled = false
+path    = ""
+keep    = false
