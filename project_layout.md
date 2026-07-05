@@ -1,7 +1,7 @@
 # Grok CLI — Project Layout
 
-> **Version:** 0.1.9-pre | **Author:** John McConnell <john.microtech@gmail.com>
-> **Repository:** https://github.com/micro-tech/grok-cli | **Last updated:** 2025
+> **Version:** 0.2.5 | **Author:** John McConnell <john.microtech@gmail.com>
+> **Repository:** https://github.com/micro-tech/grok-cli | **Last updated:** 2026-07-04
 
 ---
 
@@ -218,9 +218,10 @@ files that are injected into system prompts. It searches for `.grok/rules`,
 `.zed/rules`, `.claude.md`, and similar convention files, enabling per-project AI
 persona customization.
 
-| File     | Description                                                                      |
-|----------|----------------------------------------------------------------------------------|
-| `mod.rs` | Context discovery logic — `.grok/rules`, `.zed/rules`, `.claude.md` file loader |
+| File                | Description                                                                      |
+|---------------------|----------------------------------------------------------------------------------|
+| `mod.rs`            | Context discovery logic — `.grok/rules`, `.zed/rules`, `.claude.md` file loader |
+| `session_rules.rs`  | Session-only temporary rules — add/remove/list/clear via `/rule` slash command; injected into every prompt |
 
 ---
 

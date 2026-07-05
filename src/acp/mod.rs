@@ -1519,8 +1519,12 @@ impl GrokAcpAgent {
                         kind: None,
                         status: Some(status),
                         locations: None,
-                        content: Some(vec![crate::acp::protocol::ToolCallContent::Text(
-                            crate::acp::protocol::TextContent::new(content.clone()),
+                        content: Some(vec![crate::acp::protocol::ToolCallContent::Content(
+                            crate::acp::protocol::ToolCallContentInner {
+                                content: crate::acp::protocol::ContentBlock::Text(
+                                    crate::acp::protocol::TextContent::new(content.clone()),
+                                ),
+                            },
                         )]),
                     };
                     let _ = sender.send(crate::acp::protocol::SessionUpdate::ToolCallUpdate(

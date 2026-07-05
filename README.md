@@ -6,7 +6,7 @@
 
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
-> **Latest (v0.2.5-PreRelease)**: Sub-agent system fully wired — `fork_agent` now runs real parallel xAI API calls via `tokio::spawn`, `join_agents` gives per-agent status reporting, and `delegate_plan_step` properly tracks parent-child relationships. ACP `session/load` bug fixed (Zed sessions now initialize correctly), `status_bar_update` warnings eliminated, and tool-loop errors now return gracefully as chat messages instead of killing the ACP connection.
+> **Latest (v0.2.5)**: Session-only rules via `/rule add|list|remove|clear` — inject temporary per-session rules into every prompt without repeating yourself. Rules are automatically appended to each message and cleared when the session ends. `/rule` is now visible in the Zed command picker. Sub-agent system, ACP session fixes, and safety hooks all included.
 
 ## ✨ Features
 
@@ -95,6 +95,7 @@ Full options: [Doc/CONFIGURATION.md](Doc/CONFIGURATION.md)
 | `/goal <text>`       | Set an active goal for the session       |
 | `/think off\|low\|high` | Control reasoning effort              |
 | `/commit [instructions]` | Generate a Conventional Commits message from git diff |
+| `/rule add <text>`   | Add a session-only rule (injected into every prompt) |
 | `/visualize`         | Show pipeline diagram                    |
 | `/bayes show`        | Inspect Bayesian priors                  |
 

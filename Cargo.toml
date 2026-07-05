@@ -1,6 +1,6 @@
 [package]
 name = "grok-cli"
-version = "0.2.5-PreRelese"
+version = "0.2.5"
 edition = "2024"
 build = "build.rs"
 authors = ["john mcconnell john.microtech@gmail.com"]
