@@ -67,6 +67,18 @@ pub fn extract_image_from_message(message: &str) -> Option<String> {
     None
 }
 
+/// Print a nice TUI feedback line when an image is attached.
+/// Example output:
+///   [🖼️  image attached: diagram.png]
+pub fn print_image_attached_feedback(path: &str) {
+    use colored::Colorize;
+    println!(
+        "{} {}",
+        "[🖼️  image attached]".bright_cyan(),
+        path.bright_yellow()
+    );
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

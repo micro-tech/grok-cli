@@ -126,3 +126,9 @@ pub use image::{extract_image_from_message, is_image_path, is_image_url, prepare
 
 pub mod vision;
 pub use vision::{is_vision_model, recommended_vision_model, should_use_vision_model};
+pub use vision_api::{create_vision_message, message_has_image};
+
+// ── Init command ──────────────────────────────────────────────────────────────
+
+pub mod init;
+pub use init::run_init;

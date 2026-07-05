@@ -128,6 +128,9 @@ pub enum SlashCommand {
 
     /// `/image <path|url> [prompt]` — analyze an image (local file or URL).
     Image { path: String, prompt: String },
+
+    /// `/init` — initialize a new Grok project with recommended structure.
+    Init,
 }
 
 // ---------------------------------------------------------------------------
@@ -233,6 +236,8 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
             }
         }
 
+        "/init" => Some(SlashCommand::Init),
+
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -329,6 +334,7 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             .input(input("query to research")),
         AvailableCommand::new("image", "Analyze an image (local file or URL)")
             .input(input("path or URL [optional prompt]")),
+        AvailableCommand::new("init", "Initialize a new Grok project with recommended structure"),
     ];
 
     // Ensure alphabetical order by command name
@@ -371,7 +377,9 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::RuleRemove { .. }
         | SlashCommand::RuleList
         | SlashCommand::RuleClear
-        | SlashCommand::Image { .. } => None,
+        | SlashCommand::Image { .. }
+        | SlashCommand::Init
+        | SlashCommand::InitResult(_) => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -608,6 +616,9 @@ pub enum BuiltinResult {
     ListRules,
     /// Clear all session-only rules.
     ClearRules,
+
+    /// Return the result of running `/init`.
+    InitResult(String),
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -646,6 +657,13 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::RuleRemove { id } => Some(BuiltinResult::RemoveRule(*id)),
         SlashCommand::RuleList => Some(BuiltinResult::ListRules),
         SlashCommand::RuleClear => Some(BuiltinResult::ClearRules),
+        SlashCommand::Init => {
+            // Run the init logic and return the result as text
+            match crate::tools::run_init() {
+                Ok(msg) => Some(BuiltinResult::Text(msg)),
+                Err(e) => Some(BuiltinResult::Text(format!("❌ Failed to initialize: {}", e))),
+            }
+        }
         _ => None, // AI-assisted command
     }
 }
