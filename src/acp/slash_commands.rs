@@ -378,8 +378,7 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::RuleList
         | SlashCommand::RuleClear
         | SlashCommand::Image { .. }
-        | SlashCommand::Init
-        | SlashCommand::InitResult(_) => None,
+        | SlashCommand::Init => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -616,9 +615,6 @@ pub enum BuiltinResult {
     ListRules,
     /// Clear all session-only rules.
     ClearRules,
-
-    /// Return the result of running `/init`.
-    InitResult(String),
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the

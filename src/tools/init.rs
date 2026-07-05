@@ -9,7 +9,7 @@
 
 use anyhow::Result;
 use std::fs;
-use std::path::Path;
+
 
 /// Run the /init command in the current directory
 pub fn run_init() -> Result<String> {

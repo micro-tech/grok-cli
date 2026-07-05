@@ -4,6 +4,7 @@
 //! (local files + URLs) to be sent to vision-capable models.
 
 use anyhow::{bail, Result};
+use base64::Engine;
 use std::path::Path;
 
 /// Supported image extensions
@@ -33,7 +34,7 @@ pub fn encode_local_image(path: &str) -> Result<String> {
     }
 
     let bytes = std::fs::read(path)?;
-    Ok(base64::encode(bytes))
+    Ok(base64::engine::general_purpose::STANDARD.encode(bytes))
 }
 
 /// Prepare image content for the API.

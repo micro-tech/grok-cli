@@ -120,12 +120,13 @@ pub use discovery_tools::{cron_create, remote_trigger, tool_search};
 
 // ── Image / Vision ────────────────────────────────────────────────────────────
 
-pub use image::{extract_image_from_message, is_image_path, is_image_url, prepare_image_content};
+pub use image::{extract_image_from_message, is_image_path, is_image_url, prepare_image_content, print_image_attached_feedback};
 
 // ── Vision support ────────────────────────────────────────────────────────────
 
 pub mod vision;
 pub use vision::{is_vision_model, recommended_vision_model, should_use_vision_model};
+mod vision_api;
 pub use vision_api::{create_vision_message, message_has_image};
 
 // ── Init command ──────────────────────────────────────────────────────────────
