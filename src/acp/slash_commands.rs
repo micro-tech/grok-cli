@@ -282,6 +282,13 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         )
         .input(input("chunk number (e.g. 1, 2, 3) -- omit to list archives")),
         AvailableCommand::new(
+            "rule",
+            "Manage session-only rules that are injected into every message (add / list / remove / clear)",
+        )
+        .input(input(
+            "add <text> | list | remove <id> | clear — e.g. 'add Always use anyhow::Result'",
+        )),
+        AvailableCommand::new(
             "review",
             "Comprehensive code review: bugs, security, performance, style",
         )
@@ -1137,6 +1144,7 @@ mod tests {
             "goal",
             "visualize",
             "think",
+            "rule",
         ] {
             assert!(
                 names.contains(&required.to_string()),
