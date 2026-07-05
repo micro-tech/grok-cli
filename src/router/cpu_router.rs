@@ -243,7 +243,7 @@ impl CpuRouter {
             req.tools.iter().map(|t| t.function.name.clone()).collect();
 
         for tool_name in &tools_in_request {
-            layer.on_tool_selection(&mut trace, tool_name, true, None);
+            layer.on_tool_selection(&mut trace, tool_name, true, None, None);
         }
 
         let response = self.route_with_tools(req, context, max_iterations).await?;

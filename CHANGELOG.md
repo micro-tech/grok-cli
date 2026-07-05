@@ -9,7 +9,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
-## [0.2.5] — 2025-05-XX
+## [0.2.5] — 2026-07-04
 
 ### Storage Layout Clarification & Chat Log Scoping (User Request)
 
@@ -23,6 +23,18 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 - Documentation (README, QUICK_REFERENCE, dataflow maps, visualizer) updated for the new layout.
 
 This gives users the best of both worlds: project-local chat history when working inside a repo, while keeping global state (memory, long-term sessions) in one place.
+
+### Session-Only Rules — `/rule` Command (New)
+
+- Added `/rule add <text>` — adds a temporary rule that is injected into every subsequent message prompt for the current session.
+- Added `/rule list` (alias `/rules`) — lists all active rules with their assigned IDs.
+- Added `/rule remove <id>` — removes a specific rule by ID.
+- Added `/rule clear` — removes all session rules.
+- Rules are automatically appended to each user message via `SessionData::refine_prompt` so the model respects them throughout the session without the user repeating themselves.
+- `/rule` is now advertised to ACP clients (Zed) in `get_available_commands()` — it was missing from the command picker.
+- Wired into `BuiltinResult` enum (`AddRule`, `RemoveRule`, `ListRules`, `ClearRules`), `handle_builtin`, `handle_builtin_result` (ACP), and `handle_interactive_command` (CLI).
+- `src/context/session_rules.rs` — existing `SessionRules` struct (add/remove/clear/list/format_for_prompt) is now connected to ACP sessions via `SessionData.session_rules`.
+- Documented in `Doc/QUICK_REFERENCE.md` under **Interactive Mode Commands → Session Rules**.
 
 ## [0.2.3] — 2025-01-15
 

@@ -1,0 +1,40 @@
+# Verifier Agent — runs tests and validates correctness, read + shell
+[agent]
+name        = "verifier"
+description = "Runs cargo test, checks compilation, and validates agent outputs."
+version     = "1.0"
+
+[agent.tool_permissions]
+allow      = [
+  "read_file", "list_directory", "search_file_content",
+  "fs_grep", "fs_glob", "run_shell_command"
+]
+deny       = ["write_file", "edit_file", "delete_file", "web_search"]
+restricted = ["run_shell_command"]
+
+[agent.persona]
+role           = "verifier"
+tone           = "strict"
+verbosity      = "medium"
+reasoning_mode = "low"
+system_prompt  = """
+You are a quality-assurance engineer. Your job is to verify that code is correct,
+tests pass, and outputs meet the specified requirements. Run the minimum shell
+commands needed. Report failures clearly with error context.
+"""
+
+[agent.safety]
+max_write_size    = 0
+allow_destructive = false
+require_dry_run   = false
+intent_validation = "standard"
+
+[agent.context_budget]
+max_tokens        = 60_000
+summary_threshold = 40_000
+compression_mode  = "token"
+
+[agent.sandbox]
+enabled = true
+path    = ".grok/sandbox"
+keep    = false

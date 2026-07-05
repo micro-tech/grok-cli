@@ -49,11 +49,11 @@ impl KnowledgeLoader {
         Ok(Self { entries })
     }
 
-    /// Compute relevance using a lightweight TF-IDF style scorer.
-    /// Returns a score between 0.0 and 1.0.
+    /// Compute relevance score using TF-IDF style scoring + length normalization.
+    /// Returns a score in [0.0, 1.0] where higher = more relevant.
     fn compute_relevance(content: &str, query: &str) -> f32 {
         if query.trim().is_empty() {
-            return 0.5;
+            return 0.5; // neutral when no query
         }
 
         let content_lower = content.to_lowercase();
@@ -64,29 +64,33 @@ impl KnowledgeLoader {
             return 0.5;
         }
 
-        // Term frequency in content
-        let mut tf = 0.0f32;
-        for term in &query_terms {
-            let count = content_lower.matches(term).count() as f32;
-            tf += count;
+        let content_words: Vec<&str> = content_lower.split_whitespace().collect();
+        let content_len = content_words.len() as f32;
+
+        if content_len == 0.0 {
+            return 0.0;
         }
-        tf /= content_lower.split_whitespace().count().max(1) as f32;
 
-        // IDF approximation (inverse document frequency) — penalize very common words
-        let mut idf = 0.0f32;
+        // Term frequency scoring with length normalization
+        let mut score = 0.0f32;
         for term in &query_terms {
-            let df = if content_lower.contains(term) { 1.0 } else { 0.0 };
-            idf += ((1.0_f32) / (1.0_f32 + df)).ln();
+            let term_count = content_words.iter().filter(|w| w.contains(term)).count() as f32;
+            if term_count > 0.0 {
+                // TF with log dampening + length normalization
+                let tf = (1.0 + term_count.ln()).min(3.0);
+                let norm = (tf / (content_len.ln() + 1.0)).min(1.0);
+                score += norm;
+            }
         }
-        idf = idf.max(0.1);
 
-        let tf_idf = (tf * idf).min(1.0);
+        // Average over query terms, cap at 1.0
+        let avg = (score / query_terms.len() as f32).min(1.0);
 
-        // Boost for exact phrase match
+        // Boost exact phrase matches
         if content_lower.contains(&query_lower) {
-            (tf_idf + 0.25).min(1.0)
+            (avg * 1.3).min(1.0)
         } else {
-            tf_idf
+            avg
         }
     }
 

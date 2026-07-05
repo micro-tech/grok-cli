@@ -10,6 +10,19 @@ pub fn get_default_skills_dir() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".grok").join("skills"))
 }
 
+/// Default location for **global** agent rules.
+/// This is the system-wide rules directory that applies to all projects.
+/// Location: `~/.grok-cli/agents/rules/`
+pub fn get_global_rules_dir() -> Option<PathBuf> {
+    dirs::home_dir().map(|home| home.join(".grok-cli").join("agents").join("rules"))
+}
+
+/// Default location for **project-local** agent rules.
+/// Location: `<project>/.agents/rules/`
+pub fn get_project_rules_dir(project_root: &Path) -> PathBuf {
+    project_root.join(".agents").join("rules")
+}
+
 /// Load a skill from a directory (must contain SKILL.md)
 pub fn load_skill(skill_dir: &Path) -> Result<Skill> {
     let skill_file = skill_dir.join("SKILL.md");

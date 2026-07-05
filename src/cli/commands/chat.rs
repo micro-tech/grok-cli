@@ -19,10 +19,7 @@ use crate::acp::security::SecurityPolicy;
 use crate::acp::slash_commands;
 use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
-use crate::cli::display_data::DisplayData;
-use crate::cli::{
-    create_spinner, format_error, format_grok_response, format_info, format_success,
-};
+use crate::cli::{create_spinner, format_error, format_grok_response, format_info, format_success};
 use crate::config::{BayesianConfig, RateLimitConfig, ThinkingMode};
 use crate::router::AppRouter;
 use crate::tools::registry as tool_registry;
@@ -48,8 +45,7 @@ pub struct ChatOptions<'a> {
     pub explore: Option<String>,
 }
 
-/// Main chat handler — returns DisplayData for library/binary separation (Task 131/136).
-pub async fn handle_chat(options: ChatOptions<'_>) -> Result<DisplayData> {
+pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
     let client = initialize_router(options.api_key, options.timeout_secs)?;
 
     if options.interactive {
@@ -88,8 +84,11 @@ async fn handle_single_chat(
     max_tokens: u32,
     model: &str,
     thinking_mode: ThinkingMode,
-) -> Result<DisplayData> {
-    println!("{}", format_info(&format!("Sending message to Grok (model: {})...", model)));
+) -> Result<()> {
+    println!(
+        "{}",
+        format_info(&format!("Sending message to Grok (model: {})...", model))
+    );
 
     let spinner = create_spinner("Thinking...");
 
@@ -137,7 +136,7 @@ async fn handle_single_chat(
                     execute_tool_call(tool_call, &security).await?;
                 }
                 println!("{}", format_success("All operations completed!"));
-                return Ok(DisplayData::success("Chat session completed"));
+                return Ok(());
             }
 
             // Regular text response
@@ -149,19 +148,21 @@ async fn handle_single_chat(
             }
         }
         Err(e) => {
-            println!("{}", format_error(&format!("Failed to get response: {}", e)));
+            println!(
+                "{}",
+                format_error(&format!("Failed to get response: {}", e))
+            );
             return Err(e);
         }
     }
 
-    // Return structured result for library/binary separation (Task 131/136)
-    Ok(DisplayData::success("Tool executed"))
+    Ok(())
 }
 
 /// Execute a tool call from the AI using the full tool registry (all 31 tools).
 /// Previously only ~9 tools were handled here; now every tool defined in
 /// `tools::registry::get_tool_definitions` is dispatched correctly.
-async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<DisplayData> {
+async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<()> {
     let name = &tool_call.function.name;
     let args: Value = serde_json::from_str(&tool_call.function.arguments)?;
     let ctx = ToolContext::new(security.clone());
@@ -179,11 +180,13 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
             }
         }
         Err(e) => {
-            println!("{}", format_error(&format!("Tool '{}' failed: {}", name, e)));
+            println!(
+                "{}",
+                format_error(&format!("Tool '{}' failed: {}", name, e))
+            );
         }
     }
-    // Return structured result for library/binary separation (Task 131/136)
-    Ok(DisplayData::success("Tool executed"))
+    Ok(())
 }
 
 async fn handle_interactive_chat(
@@ -194,7 +197,7 @@ async fn handle_interactive_chat(
     model: &str,
     bayesian_config: BayesianConfig,
     thinking_mode: ThinkingMode,
-) -> Result<DisplayData> {
+) -> Result<()> {
     println!("{}", "🤖 Interactive Grok Chat Session".cyan().bold());
     println!("{}", format!("Model: {}", model).dimmed());
 
@@ -396,8 +399,7 @@ async fn handle_interactive_chat(
         }
     }
 
-    // Return structured result for library/binary separation (Task 131/136)
-    Ok(DisplayData::success("Tool executed"))
+    Ok(())
 }
 
 /// Enum to represent the result of processing a command
@@ -536,10 +538,28 @@ fn handle_interactive_command(
                         slash_commands::BuiltinResult::ShowDiagnostics => {
                             println!("{}", slash_commands::format_diagnostics_text());
                         }
+                        slash_commands::BuiltinResult::AddRule(text) => {
+                            println!(
+                                "📋 Rule noted (CLI session — not persisted between turns): {text}"
+                            );
+                        }
+                        slash_commands::BuiltinResult::RemoveRule(id) => {
+                            println!("📋 Rule #{id} remove request noted (CLI session).");
+                        }
+                        slash_commands::BuiltinResult::ListRules => {
+                            println!(
+                                "📋 Session rules are not persisted in CLI mode. Use the ACP interface for full rule management."
+                            );
+                        }
+                        slash_commands::BuiltinResult::ClearRules => {
+                            println!("📋 Session rules cleared (CLI session).");
+                        }
                         slash_commands::BuiltinResult::ShowCurrentModel => {
                             // In pure CLI mode we don't have a persistent session model,
                             // so we just note that the user can pass --model on the command line.
-                            println!("🧠 Current model: (use `--model <name>` when starting the CLI session)");
+                            println!(
+                                "🧠 Current model: (use `--model <name>` when starting the CLI session)"
+                            );
                         }
                     }
                     return Ok(Some(CommandResult::Continue));
@@ -569,19 +589,28 @@ fn handle_interactive_command(
                         }
                     }
                 }
-                Err(e) => println!("{}", format_error(&format!("Failed to list directory: {}", e))),
+                Err(e) => println!(
+                    "{}",
+                    format_error(&format!("Failed to list directory: {}", e))
+                ),
             }
             Ok(Some(CommandResult::Continue))
         }
         _ if lower_input.starts_with("cd ") => {
             let path = input[3..].trim();
             if let Err(e) = env::set_current_dir(path) {
-                println!("{}", format_error(&format!("Failed to change directory to '{}': {}", path, e)));
+                println!(
+                    "{}",
+                    format_error(&format!("Failed to change directory to '{}': {}", path, e))
+                );
             } else {
-                println!("{}", format_success(&format!(
-                    "Changed directory to {}",
-                    env::current_dir().unwrap_or_default().display()
-                )));
+                println!(
+                    "{}",
+                    format_success(&format!(
+                        "Changed directory to {}",
+                        env::current_dir().unwrap_or_default().display()
+                    ))
+                );
             }
             Ok(Some(CommandResult::Continue))
         }
@@ -597,10 +626,16 @@ fn handle_interactive_command(
                 match result {
                     Ok(status) => {
                         if !status.success() {
-                            println!("{}", format_error(&format!("Command exited with status: {}", status)));
+                            println!(
+                                "{}",
+                                format_error(&format!("Command exited with status: {}", status))
+                            );
                         }
                     }
-                    Err(e) => println!("{}", format_error(&format!("Failed to execute command: {}", e))),
+                    Err(e) => println!(
+                        "{}",
+                        format_error(&format!("Failed to execute command: {}", e))
+                    ),
                 }
             }
             Ok(Some(CommandResult::Continue))
@@ -679,11 +714,7 @@ mod tests {
 
 /// Handle `--explore "query"` mode.
 /// Uses EXPLORER system prompt + restricted tools and returns compact JSON evidence.
-async fn handle_explorer_mode(
-    client: AppRouter,
-    query: &str,
-    model: &str,
-) -> Result<DisplayData> {
+async fn handle_explorer_mode(client: AppRouter, query: &str, model: &str) -> Result<()> {
     use crate::agent::mode::Mode;
 
     println!("{}", format_info(&format!("Explorer mode: {}", query)));
@@ -696,7 +727,13 @@ async fn handle_explorer_mode(
     ];
 
     // Only allow read/search tools in explorer mode
-    let allowed_tools = vec!["fs_glob", "fs_read", "fs_grep", "list_directory", "search_file_content"];
+    let allowed_tools = vec![
+        "fs_glob",
+        "fs_read",
+        "fs_grep",
+        "list_directory",
+        "search_file_content",
+    ];
 
     let all_tools = tools::get_available_tool_definitions();
     let filtered_tools: Vec<serde_json::Value> = all_tools
@@ -712,9 +749,21 @@ async fn handle_explorer_mode(
         .collect();
 
     let spinner = create_spinner("Exploring repository...");
-    let response = client
+    let response = match client
         .chat_completion_with_history(&messages, 0.2, 4096, model, Some(filtered_tools), None)
-        .await?;
+        .await
+    {
+        Ok(r) => r,
+        Err(e) => {
+            spinner.finish_and_clear();
+            tracing::error!("Explorer mode API call failed: {}", e);
+            println!(
+                "{}",
+                format_error(&format!("Explorer request failed: {}", e))
+            );
+            return Err(e);
+        }
+    };
     spinner.finish_and_clear();
 
     if let Some(content) = response.message.content {
@@ -727,6 +776,5 @@ async fn handle_explorer_mode(
         }
     }
 
-    // Return structured result for library/binary separation (Task 131/136)
-    Ok(DisplayData::success("Tool executed"))
+    Ok(())
 }

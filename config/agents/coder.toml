@@ -1,0 +1,40 @@
+# Coder Agent — reads and writes source files, no shell or network
+[agent]
+name        = "coder"
+description = "Writes, edits, and refactors code with minimal footprint."
+version     = "1.0"
+
+[agent.tool_permissions]
+allow      = [
+  "read_file", "list_directory", "search_file_content",
+  "fs_grep", "fs_glob", "write_file", "edit_file"
+]
+deny       = ["run_shell_command", "delete_file", "web_search", "fetch_url"]
+restricted = ["write_file", "edit_file"]
+
+[agent.persona]
+role           = "coder"
+tone           = "technical"
+verbosity      = "low"
+reasoning_mode = "low"
+system_prompt  = """
+You are an expert software engineer. Write clean, idiomatic Rust code.
+Read existing files before modifying them. Make minimal, precise changes.
+Always check the project structure before writing new files.
+"""
+
+[agent.safety]
+max_write_size    = 100_000
+allow_destructive = false
+require_dry_run   = false
+intent_validation = "standard"
+
+[agent.context_budget]
+max_tokens        = 80_000
+summary_threshold = 60_000
+compression_mode  = "token"
+
+[agent.sandbox]
+enabled = false
+path    = ""
+keep    = false

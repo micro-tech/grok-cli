@@ -1,9 +1,9 @@
 //! MCP (Model Context Protocol) tool invocation.
 //!
-//! Spawns a fresh MCP server subprocess per call, performs the MCP
-//! initialize handshake, invokes the requested tool, and returns the result.
-//! The subprocess is killed when the [`McpClient`] is dropped at the end of
-//! the function.
+//! Two modes are supported:
+//! 1. Legacy mode (raw command string) — spawns a fresh server per call.
+//! 2. Connected mode — uses the persistent `McpClient` that was populated
+//!    during `session/new` when the client (Zed) sent `mcpServers`.
 
 use crate::acp::security::SecurityPolicy;
 use crate::mcp::client::McpClient;
@@ -154,6 +154,35 @@ pub async fn mcp_call(
             server_command
         )
     })?
+}
+
+/// Invoke a tool on an **already-connected** MCP server.
+///
+/// This is the preferred path when `session/new` received an `mcpServers` array
+/// and the agent successfully connected to those servers via `McpClient`.
+///
+/// `server_name` must match the name that was used when calling
+/// `McpClient::connect` (usually the `name` field from the client's config).
+pub async fn mcp_call_connected(
+    client: &McpClient,
+    server_name: &str,
+    tool_name: &str,
+    arguments: Value,
+) -> Result<String> {
+    if server_name.trim().is_empty() {
+        return Err(anyhow!("server_name cannot be empty"));
+    }
+    if tool_name.trim().is_empty() {
+        return Err(anyhow!("tool_name cannot be empty"));
+    }
+
+    let result = client
+        .call_tool(server_name, tool_name, arguments)
+        .await
+        .map_err(|e| anyhow!("MCP tool '{}' on server '{}' failed: {}", tool_name, server_name, e))?;
+
+    serde_json::to_string_pretty(&result)
+        .map_err(|e| anyhow!("Failed to serialise MCP result: {}", e))
 }
 
 #[cfg(test)]

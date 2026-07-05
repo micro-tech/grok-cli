@@ -61,9 +61,12 @@ pub struct InteractiveSession {
     /// Toggled at runtime with `/simulate on|off`.
     #[serde(default)]
     pub simulate_mode: bool,
-    /// Shell command permissions for this session.
+
+    /// Per-session shell permissions (ApprovalMode + always-allow list).
+    /// Persisted with the session so the user does not have to re-approve
+    /// the same commands every time the session is reloaded.
     #[serde(default)]
-    pub shell_permissions: ShellPermissions,
+    pub permissions: ShellPermissions,
 }
 
 fn default_auto_skills_enabled() -> bool {
@@ -125,12 +128,12 @@ impl InteractiveSession {
             active_skills: Vec::new(),
             auto_skills_enabled: true,
             simulate_mode: false,
-            shell_permissions: ShellPermissions::new(ApprovalMode::Default),
             system_prompt,
             conversation_history: Vec::new(),
             current_directory,
             show_context_usage: true,
             total_tokens_used: 0,
+            permissions: ShellPermissions::new(ApprovalMode::Default),
         }
     }
 
@@ -537,7 +540,7 @@ async fn run_interactive_loop(
 
     // Handle shell commands (starting with !)
     if input.starts_with('!') {
-        return handle_shell_command(input).await;
+        return handle_shell_command(input, &mut session.permissions).await;
     }
 
     // Handle special commands
@@ -644,16 +647,13 @@ fn read_user_input() -> Result<String> {
 }
 
 /// Handle shell commands (those starting with !)
-async fn handle_shell_command(input: &str) -> Result<bool> {
+async fn handle_shell_command(input: &str, permissions: &mut ShellPermissions) -> Result<bool> {
     let command = input.trim_start_matches('!').trim();
 
     if command.is_empty() {
         println!("{}", "Error: No command specified".red());
         return Ok(true);
     }
-
-    // Create permissions manager (TODO: pass from session state)
-    let mut permissions = ShellPermissions::new(ApprovalMode::Default);
 
     // Check if command should be executed
     match permissions.should_execute(command) {

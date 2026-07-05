@@ -1,6 +1,7 @@
 //! Agent coordination tools — sub-agent spawning, inter-agent messaging,
 //! and team management.
 
+use crate::agent::config::SubAgentConfig;
 use crate::agent::manager::AgentManager;
 use anyhow::{Result, anyhow};
 use chrono::Utc;
@@ -8,7 +9,7 @@ use serde_json::{Value, json};
 use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
-use tracing::warn;
+use tracing::{error, info, warn};
 
 // ── Global shared AgentManager (Task 127) ─────────────────────────────────────
 
@@ -20,6 +21,18 @@ pub fn get_agent_manager() -> Arc<AgentManager> {
     AGENT_MANAGER.clone()
 }
 
+// ── constants ────────────────────────────────────────────────────────────────
+
+/// System prompt injected into every sub-agent call.
+const SUBAGENT_SYSTEM_PROMPT: &str = "You are a focused sub-agent. Complete the given task as concisely and \
+     directly as possible. Return only the result — no preamble, no meta-commentary.";
+
+/// Per-sub-agent API timeout in seconds (Starlink-safe: 3 min).
+const SUBAGENT_TIMEOUT_SECS: u64 = 180;
+
+/// Maximum number of Starlink-aware retries for a single sub-agent call.
+const SUBAGENT_MAX_RETRIES: u32 = 3;
+
 // ── helpers ───────────────────────────────────────────────────────────────────
 
 fn grok_data_dir() -> Result<PathBuf> {
@@ -30,88 +43,309 @@ fn grok_data_dir() -> Result<PathBuf> {
     Ok(dir)
 }
 
-// ── spawn_agent ───────────────────────────────────────────────────────────────
+// ── run_agent_session ──────────────────────────────────────────────────
 
-/// Spawn a focused sub-agent to complete a well-scoped task.
+/// Run a full sub-agent session with per-agent tool permissions, persona,
+/// sandbox boundaries, and context budget defined by [`SubAgentConfig`].
 ///
-/// This version (Task 127) also registers the sub-agent with the global
-/// `AgentManager` so the system can track, list, and merge results from
-/// multiple concurrent sub-agents.
-pub async fn spawn_agent(task: &str, context: &str, max_tokens: u32) -> Result<String> {
+/// This is the core implementation used by `spawn_agent`, `fork_agent`, and
+/// `delegate_plan_step`.  Call it directly when you need full control over
+/// the agent's capabilities.
+///
+/// # How it works
+///
+/// 1. Builds a [`SecurityPolicy`] from `config.trusted_dirs` (CWD if empty).
+/// 2. Filters the global tool registry down to `config.allowed_tools`.
+/// 3. Constructs a `RouterRequest` with the persona system prompt + task.
+/// 4. If no tools are allowed, falls back to a fast single-shot text completion.
+/// 5. If tools are allowed, drives `AppRouter::route_with_tools` (the full
+///    tool loop) inside the scoped security context.
+pub async fn run_agent_session(
+    task: String,
+    context: String,
+    config: SubAgentConfig,
+) -> Result<String> {
     if task.trim().is_empty() {
-        warn!("spawn_agent: task is empty");
-        return Err(anyhow!("task cannot be empty"));
+        return Err(anyhow!("run_agent_session: task cannot be empty"));
     }
-
-    // Register with AgentManager first
-    let manager = get_agent_manager();
-    let agent_id = manager.spawn(task, None, Some("grok-3-mini".to_string()), None).await;
-
-    // Task 128.3 — emit activity
-    crate::agent::activity::emit_agent_activity(
-        &agent_id,
-        None,
-        crate::acp::protocol::AgentActivityStatus::Spawned,
-        format!("Spawned for task: {}", task),
-    );
 
     let api_key = std::env::var("GROK_API_KEY")
         .or_else(|_| std::env::var("XAI_API_KEY"))
-        .map_err(|_| {
-            anyhow!("No API key found. Set the GROK_API_KEY or XAI_API_KEY environment variable.")
-        })?;
+        .map_err(|_| anyhow!("No API key found. Set GROK_API_KEY or XAI_API_KEY."))?;
 
-    let router = crate::router::AppRouter::new(&api_key, 60)
+    // ── 1. Per-agent SecurityPolicy (sandbox + trusted_dirs) ─────────────────
+    let mut policy = crate::acp::security::SecurityPolicy::new();
+    let effective_dirs = config.effective_trusted_dirs();
+    if effective_dirs.is_empty() {
+        // Default: trust CWD only.
+        if let Ok(cwd) = std::env::current_dir() {
+            policy.add_trusted_directory(&cwd);
+        }
+    } else {
+        for dir in &effective_dirs {
+            if !dir.exists() {
+                if let Err(e) = std::fs::create_dir_all(dir) {
+                    warn!("run_agent_session: sandbox dir creation failed: {}", e);
+                }
+            }
+            policy.add_trusted_directory(dir);
+        }
+    }
+    let tool_context = crate::tools::tool_context::ToolContext::new(policy);
+
+    // ── 2. Tool filtering via ToolPermissions (allow/deny) ───────────────────
+    let all_tools = crate::tools::registry::get_full_tool_definitions();
+    let filtered_tools = config.tool_permissions.filter_tools(all_tools);
+
+    info!(
+        model = %config.model,
+        tools = filtered_tools.len(),
+        max_tokens = config.max_tokens,
+        has_persona = config.persona.system_prompt.is_some(),
+        trusted_dirs = config.trusted_dirs.len(),
+        "run_agent_session: starting"
+    );
+
+    // ── 3. Build messages with persona ─────────────────────────────────────
+    let system = config
+        .effective_system_prompt(SUBAGENT_SYSTEM_PROMPT)
+        .to_string();
+    let user_msg = if context.trim().is_empty() {
+        task.clone()
+    } else {
+        format!(
+            "{}
+
+## Context
+{}",
+            task, context
+        )
+    };
+    let messages = vec![
+        serde_json::json!({"role": "system", "content": system}),
+        serde_json::json!({"role": "user",   "content": user_msg}),
+    ];
+
+    // ── 4. Apply context budget ────────────────────────────────────────────
+    // Hard cap: use context_budget.max_tokens if set, else fall back to max_tokens
+    let budget_tokens = if config.context_budget.max_tokens > 0 {
+        config.context_budget.max_tokens as u32
+    } else {
+        config.max_tokens
+    };
+    let clamped = budget_tokens.clamp(256, 8192);
+
+    // ── 5. Build router ────────────────────────────────────────────────────
+    let router = crate::router::AppRouter::new(&api_key, SUBAGENT_TIMEOUT_SECS)
+        .map_err(|e| anyhow!("Failed to initialise router: {}", e))?;
+
+    // Persona reasoning effort (“off” → None, “high”/”low” → Some(...))
+    let reasoning_effort = config.persona.reasoning_effort().map(str::to_string);
+
+    // ── 6. Execute ──────────────────────────────────────────────────────────
+    if filtered_tools.is_empty() {
+        // Fast path: pure text completion, no tool loop needed.
+        let mwfr = router
+            .chat_completion_with_history(
+                &messages,
+                config.temperature,
+                clamped,
+                &config.model,
+                None,
+                reasoning_effort.as_deref(),
+            )
+            .await
+            .map_err(|e| anyhow!("Sub-agent text completion failed: {}", e))?;
+
+        return Ok(match mwfr.message.content {
+            Some(grok_api::MessageContent::Text(t)) => t,
+            _ => String::new(),
+        });
+    }
+
+    // Tool-enabled path: drive the full CpuRouter tool loop.
+    let mut req = crate::router::RouterRequest::new(config.model.clone(), messages)
+        .with_temperature(config.temperature)
+        .with_max_tokens(clamped)
+        .with_json_tools(filtered_tools);
+    if let Some(effort) = reasoning_effort {
+        req = req.with_reasoning_effort(effort);
+    }
+
+    let resp = router
+        .route_with_tools(req, &tool_context, config.max_tool_iterations)
+        .await
+        .map_err(|e| anyhow!("Sub-agent tool loop failed: {}", e))?;
+
+    info!(
+        "run_agent_session: completed ({} chars)",
+        resp.text.as_deref().unwrap_or("").len()
+    );
+    Ok(resp.text.unwrap_or_default())
+}
+
+// ── call_subagent_api (private) ──────────────────────────────────────────────────
+
+/// Lightweight text-only sub-agent call used by `fork_agent` and the
+/// backward-compatible `spawn_agent(task, context, max_tokens)` path.
+///
+/// Uses a direct `chat_completion` call (no tool loop, no `route_with_tools`)
+/// so the future is trivially `Send` and safe to spawn inside `fork_agent`'s
+/// parallel `tokio::spawn` tasks.  For full per-agent tool access use
+/// `spawn_agent_configured` which runs in a dedicated OS thread.
+async fn call_subagent_api(task: &str, context: &str, max_tokens: u32) -> Result<String> {
+    let api_key = std::env::var("GROK_API_KEY")
+        .or_else(|_| std::env::var("XAI_API_KEY"))
+        .map_err(|_| anyhow!("No API key found. Set GROK_API_KEY or XAI_API_KEY."))?;
+
+    let router = crate::router::AppRouter::new(&api_key, SUBAGENT_TIMEOUT_SECS)
         .map_err(|e| anyhow!("Failed to initialise router: {}", e))?;
 
     let prompt = if context.trim().is_empty() {
         task.to_string()
     } else {
-        format!("{}\n\n## Context\n{}", task, context)
+        format!(
+            "{}
+
+## Context
+{}",
+            task, context
+        )
     };
+    let clamped = max_tokens.clamp(256, 4096);
 
-    let clamped_tokens = max_tokens.clamp(256, 4096);
-
-    const MAX_RETRIES: u32 = 3;
-    for attempt in 0..=MAX_RETRIES {
+    for attempt in 0..=SUBAGENT_MAX_RETRIES {
         match router
             .chat_completion(
                 &prompt,
-                Some(
-                    "You are a focused sub-agent. Complete the given task as concisely and \
-                     directly as possible. Return only the result — no preamble, no meta-commentary.",
-                ),
+                Some(SUBAGENT_SYSTEM_PROMPT),
                 0.7,
-                clamped_tokens,
+                clamped,
                 "grok-3-mini",
             )
             .await
-            .map_err(|e| anyhow!("Sub-agent call failed: {}", e))
+            .map_err(|e| anyhow!("Sub-agent API call failed: {}", e))
         {
-            Ok(result) => {
-                // Mark as completed in the manager
-                manager.complete(&agent_id, result.clone()).await;
-                return Ok(result);
-            }
-            Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
+            Ok(result) => return Ok(result),
+            Err(e)
+                if attempt < SUBAGENT_MAX_RETRIES
+                    && crate::utils::network::detect_network_drop(&e) =>
+            {
                 let delay = crate::utils::network::calculate_retry_delay(attempt, false);
                 warn!(
                     attempt = attempt + 1,
-                    max_attempts = MAX_RETRIES + 1,
+                    max_attempts = SUBAGENT_MAX_RETRIES + 1,
                     delay_ms = delay.as_millis(),
                     error = %e,
-                    "spawn_agent: network error — retrying after delay"
+                    "call_subagent_api: network error — retrying after delay"
                 );
                 tokio::time::sleep(delay).await;
             }
             Err(e) => {
-                manager.fail(&agent_id, e.to_string()).await;
-                warn!(error = %e, "spawn_agent: sub-agent call failed — no more retries");
+                warn!(error = %e, "call_subagent_api: failed — no more retries");
                 return Err(e);
             }
         }
     }
     unreachable!()
+}
+
+// ── spawn_agent ───────────────────────────────────────────────────────────────
+
+/// Spawn a focused sub-agent with default configuration (no tools, grok-3-mini).
+///
+/// This is the backward-compatible entry point.  For per-agent tool permissions,
+/// personas, and sandbox rules use [`spawn_agent_configured`] or call
+/// [`run_agent_session`] directly.
+pub async fn spawn_agent(task: &str, context: &str, max_tokens: u32) -> Result<String> {
+    let config = SubAgentConfig::builder().max_tokens(max_tokens).build();
+    spawn_agent_configured(task, context, None, config).await
+}
+
+/// Spawn a focused sub-agent with a full [`SubAgentConfig`].
+///
+/// - `parent_id` — optional parent agent UUID for tree tracking.
+/// - `config`    — per-agent model, persona, tool whitelist, sandbox dirs, budgets.
+///
+/// Registers in `AgentManager`, runs `run_agent_session`, stores result, and
+/// emits Spawned/Joined activity events visible in Zed.
+pub async fn spawn_agent_configured(
+    task: &str,
+    context: &str,
+    parent_id: Option<String>,
+    config: SubAgentConfig,
+) -> Result<String> {
+    if task.trim().is_empty() {
+        warn!("spawn_agent_configured: task is empty");
+        return Err(anyhow!("task cannot be empty"));
+    }
+
+    let manager = get_agent_manager();
+    let agent_id = manager
+        .spawn(task, parent_id, Some(config.model.clone()), None)
+        .await;
+
+    crate::agent::activity::emit_agent_activity(
+        &agent_id,
+        None,
+        crate::acp::protocol::AgentActivityStatus::Spawned,
+        format!(
+            "Spawned (model={}, tools={}, dirs={}): {}",
+            config.model,
+            config.tool_count(),
+            config.trusted_dirs.len(),
+            &task.chars().take(60).collect::<String>()
+        ),
+    );
+    info!(
+        agent_id = %agent_id,
+        model = %config.model,
+        tools = config.tool_count(),
+        task = %task,
+        "spawn_agent_configured: starting"
+    );
+
+    // Break the compile-time Send-cycle:
+    //   execute_tool → spawn_agent_configured → route_with_tools → execute_tool
+    //
+    // tokio::spawn is insufficient because the compiler still traces through the
+    // spawned future's type.  std::thread::spawn + oneshot makes the return type
+    // Receiver<Result<String>>, which is completely opaque to the cycle checker.
+    // Each sub-agent runs in its own single-threaded tokio runtime on a new OS
+    // thread.  API calls take seconds, so the per-thread overhead is negligible.
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<String>>();
+    let task_owned = task.to_string();
+    let ctx_owned = context.to_string();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("sub-agent runtime");
+        let result = rt.block_on(run_agent_session(task_owned, ctx_owned, config));
+        let _ = tx.send(result);
+    });
+    let run_result = rx
+        .await
+        .map_err(|_| anyhow!("Sub-agent channel closed unexpectedly"))?;
+
+    match run_result {
+        Ok(result) => {
+            manager.complete(&agent_id, result.clone()).await;
+            crate::agent::activity::emit_agent_activity(
+                &agent_id,
+                None,
+                crate::acp::protocol::AgentActivityStatus::Joined,
+                "Completed successfully",
+            );
+            info!(agent_id = %agent_id, chars = result.len(), "spawn_agent_configured: completed");
+            Ok(result)
+        }
+        Err(e) => {
+            manager.fail(&agent_id, e.to_string()).await;
+            error!(agent_id = %agent_id, error = %e, "spawn_agent_configured: failed");
+            Err(e)
+        }
+    }
 }
 
 // ── send_message ──────────────────────────────────────────────────────────────
@@ -404,53 +638,290 @@ pub async fn receive_messages(target: &str) -> Result<String> {
 
 // ── Advanced orchestration tools ─────────────────────────────────────────────
 
-/// Fork / spawn multiple sub-agents in parallel for different parts of a task.
+/// Fork multiple sub-agents in parallel and wait for all results.
+///
+/// Each task is registered in the `AgentManager` and run concurrently via
+/// `tokio::spawn`.  The function waits for **all** tasks to finish (or time
+/// out) before returning a structured summary.  Use `join_agents` only when
+/// you need to re-query results from agents that were spawned earlier.
 pub async fn fork_agent(tasks: Vec<String>) -> Result<String> {
+    if tasks.is_empty() {
+        return Ok("No tasks provided to fork.".to_string());
+    }
+
     let manager = get_agent_manager();
-    let mut ids = Vec::new();
+    let total = tasks.len();
+    info!(count = total, "fork_agent: launching parallel sub-agents");
 
-    for task in tasks {
-        let id = manager.spawn(&task, None, None, None).await;
-        ids.push(id.clone());
+    // ── Phase 1: register all agents + launch tokio tasks ────────────────────────
+    let mut handles: Vec<(String, tokio::task::JoinHandle<(String, Result<String>)>)> =
+        Vec::with_capacity(total);
 
-        // Task 128.3
+    for task in &tasks {
+        let agent_id = manager
+            .spawn(task, None, Some("grok-3-mini".to_string()), None)
+            .await;
+
         crate::agent::activity::emit_agent_activity(
-            &id,
+            &agent_id,
             None,
             crate::acp::protocol::AgentActivityStatus::Forked,
-            format!("Forked task: {}", task),
+            format!("Forked: {}", &task.chars().take(80).collect::<String>()),
         );
+        info!(agent_id = %agent_id, task = %task, "fork_agent: spawning task");
+
+        let task_clone = task.clone();
+        let agent_id_clone = agent_id.clone();
+        let manager_clone = Arc::clone(&manager);
+
+        let handle = tokio::spawn(async move {
+            // Wrap with per-task timeout so one slow/stuck task can't block all.
+            let result = tokio::time::timeout(
+                std::time::Duration::from_secs(SUBAGENT_TIMEOUT_SECS),
+                call_subagent_api(&task_clone, "", 2048),
+            )
+            .await
+            .unwrap_or_else(|_| {
+                Err(anyhow!(
+                    "sub-agent timed out after {}s",
+                    SUBAGENT_TIMEOUT_SECS
+                ))
+            });
+
+            match &result {
+                Ok(r) => {
+                    manager_clone.complete(&agent_id_clone, r.clone()).await;
+                    crate::agent::activity::emit_agent_activity(
+                        &agent_id_clone,
+                        None,
+                        crate::acp::protocol::AgentActivityStatus::Joined,
+                        "Completed successfully",
+                    );
+                }
+                Err(e) => {
+                    manager_clone.fail(&agent_id_clone, e.to_string()).await;
+                    crate::agent::activity::emit_agent_activity(
+                        &agent_id_clone,
+                        None,
+                        crate::acp::protocol::AgentActivityStatus::Cancelled,
+                        format!("Failed: {}", e),
+                    );
+                }
+            }
+
+            (agent_id_clone, result)
+        });
+
+        handles.push((agent_id, handle));
     }
 
-    Ok(format!("Forked {} sub-agents: {:?}", ids.len(), ids))
-}
+    // ── Phase 2: collect results as tasks complete ────────────────────────────
+    let mut ok_results: Vec<(String, String)> = Vec::new(); // (agent_id, result)
+    let mut err_results: Vec<(String, String)> = Vec::new(); // (agent_id, error)
 
-/// Join results from multiple sub-agents (waits conceptually by checking status).
-pub async fn join_agents(agent_ids: Vec<String>) -> Result<String> {
-    let manager = get_agent_manager();
-    let mut results = Vec::new();
-
-    for id in agent_ids {
-        if let Some(agent) = manager.get(&id).await {
-            if let Some(res) = agent.result {
-                results.push(res);
+    for (agent_id, handle) in handles {
+        let short = agent_id.chars().take(8).collect::<String>();
+        match handle.await {
+            Ok((_id, Ok(result))) => {
+                info!(agent_id = %agent_id, "fork_agent: task succeeded");
+                ok_results.push((short, result));
+            }
+            Ok((_id, Err(e))) => {
+                error!(agent_id = %agent_id, error = %e, "fork_agent: task failed");
+                err_results.push((short, e.to_string()));
+            }
+            Err(join_err) => {
+                // tokio task panicked
+                error!(agent_id = %agent_id, "fork_agent: task panicked: {}", join_err);
+                err_results.push((short, format!("task panicked: {}", join_err)));
             }
         }
+    }
 
-        // Task 128.3 — treat join as a lifecycle event
-        crate::agent::activity::emit_agent_activity(
-            &id,
+    // ── Phase 3: format structured summary ─────────────────────────────────────
+    let success_count = ok_results.len();
+    let fail_count = err_results.len();
+    info!(
+        succeeded = success_count,
+        failed = fail_count,
+        "fork_agent: all tasks complete"
+    );
+
+    if success_count == 0 {
+        // All failed — surface as an error so the LLM can react.
+        let details: Vec<String> = err_results
+            .into_iter()
+            .map(|(id, e)| format!("[{}] {}", id, e))
+            .collect();
+        return Err(anyhow!(
+            "All {} forked sub-agents failed:\n{}",
+            fail_count,
+            details.join("\n")
+        ));
+    }
+
+    let mut output = format!(
+        "## Fork Results ({}/{} succeeded)\n\n",
+        success_count, total
+    );
+    for (short_id, result) in &ok_results {
+        output.push_str(&format!(
+            "### Agent `{}` ✅\n{}\n\n---\n\n",
+            short_id, result
+        ));
+    }
+    for (short_id, err) in &err_results {
+        output.push_str(&format!(
+            "### Agent `{}` ❌\nError: {}\n\n---\n\n",
+            short_id, err
+        ));
+    }
+
+    Ok(output)
+}
+
+/// Collect and merge results from previously spawned/forked sub-agents.
+///
+/// Looks up each `agent_id` in the `AgentManager`.  Reports results for
+/// completed agents, errors for failed ones, and "still running" for any that
+/// haven't finished yet.  If all requested agents are still running, returns
+/// the status table so the LLM knows to wait or retry.
+pub async fn join_agents(agent_ids: Vec<String>) -> Result<String> {
+    if agent_ids.is_empty() {
+        return Ok("No agent IDs provided to join.".to_string());
+    }
+
+    let manager = get_agent_manager();
+    let mut completed: Vec<String> = Vec::new();
+    let mut still_running: Vec<String> = Vec::new();
+    let mut failed: Vec<String> = Vec::new();
+
+    for id in &agent_ids {
+        match manager.get(id).await {
+            Some(agent) => match agent.status {
+                crate::agent::manager::AgentStatus::Completed => {
+                    crate::agent::activity::emit_agent_activity(
+                        id,
+                        None,
+                        crate::acp::protocol::AgentActivityStatus::Joined,
+                        "Results collected",
+                    );
+                    let result = agent.result.unwrap_or_else(|| "(empty result)".to_string());
+                    let short = id.chars().take(8).collect::<String>();
+                    completed.push(format!("### Agent `{}` ✅\n{}\n", short, result));
+                }
+                crate::agent::manager::AgentStatus::Failed => {
+                    let err = agent.result.unwrap_or_else(|| "unknown error".to_string());
+                    let short = id.chars().take(8).collect::<String>();
+                    failed.push(format!("### Agent `{}` ❌\nError: {}\n", short, err));
+                }
+                crate::agent::manager::AgentStatus::Running => {
+                    let short = id.chars().take(8).collect::<String>();
+                    still_running.push(format!("`{}` ⏳ still running", short));
+                }
+                crate::agent::manager::AgentStatus::Cancelled => {
+                    let short = id.chars().take(8).collect::<String>();
+                    failed.push(format!("### Agent `{}` ⚫\nCancelled.\n", short));
+                }
+            },
+            None => {
+                let short = id.chars().take(8).collect::<String>();
+                failed.push(format!(
+                    "### Agent `{}` ❓\nNot found in registry.\n",
+                    short
+                ));
+            }
+        }
+    }
+
+    if completed.is_empty() && failed.is_empty() {
+        return Ok(format!(
+            "All {} requested agents are still running: {}\n\
+             Call `join_agents` again when they finish, or `get_agent_status` to poll individually.",
+            still_running.len(),
+            still_running.join(", ")
+        ));
+    }
+
+    let total = agent_ids.len();
+    let ok_count = completed.len();
+    let mut output = format!("## Join Results ({}/{} completed)\n\n", ok_count, total);
+    for r in &completed {
+        output.push_str(r);
+        output.push_str("\n---\n\n");
+    }
+    for r in &failed {
+        output.push_str(r);
+        output.push_str("\n---\n\n");
+    }
+    if !still_running.is_empty() {
+        output.push_str(&format!(
+            "**Still running:** {}\n",
+            still_running.join(", ")
+        ));
+    }
+
+    Ok(output)
+}
+
+/// Delegate a plan step to a child sub-agent with proper parent tracking.
+///
+/// Registers the child agent under `parent_id` in the `AgentManager` (so
+/// `list_agents(Some(parent_id))` correctly returns it), then calls
+/// `call_subagent_api` directly instead of `spawn_agent` to avoid creating
+/// a second untracked entry in the registry.
+pub async fn delegate_plan_step(task: &str, parent_id: Option<&str>) -> Result<String> {
+    if task.trim().is_empty() {
+        return Err(anyhow!("delegate_plan_step: task cannot be empty"));
+    }
+
+    let manager = get_agent_manager();
+    let agent_id = manager
+        .spawn(
+            task,
+            parent_id.map(|s| s.to_string()),
+            Some("grok-3-mini".to_string()),
             None,
-            crate::acp::protocol::AgentActivityStatus::Joined,
-            "Joined results".to_string(),
-        );
-    }
+        )
+        .await;
 
-    if results.is_empty() {
-        return Ok("No completed results found yet.".to_string());
-    }
+    crate::agent::activity::emit_agent_activity(
+        &agent_id,
+        parent_id.map(|s| s.to_string()),
+        crate::acp::protocol::AgentActivityStatus::Spawned,
+        format!(
+            "Delegated plan step: {}",
+            &task.chars().take(80).collect::<String>()
+        ),
+    );
+    info!(
+        agent_id = %agent_id,
+        parent_id = ?parent_id,
+        task = %task,
+        "delegate_plan_step: starting"
+    );
 
-    merge_agent_results(results)
+    // Use run_agent_session directly so the AgentManager only has one entry
+    // for this task (the one we just created above with the correct parent_id).
+    let config = SubAgentConfig::builder().max_tokens(1024).build();
+    match run_agent_session(task.to_string(), String::new(), config).await {
+        Ok(result) => {
+            manager.complete(&agent_id, result.clone()).await;
+            crate::agent::activity::emit_agent_activity(
+                &agent_id,
+                parent_id.map(|s| s.to_string()),
+                crate::acp::protocol::AgentActivityStatus::Joined,
+                "Plan step completed",
+            );
+            info!(agent_id = %agent_id, "delegate_plan_step: completed");
+            Ok(result)
+        }
+        Err(e) => {
+            manager.fail(&agent_id, e.to_string()).await;
+            error!(agent_id = %agent_id, error = %e, "delegate_plan_step: failed");
+            Err(e)
+        }
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

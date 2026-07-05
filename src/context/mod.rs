@@ -9,7 +9,10 @@
 //! - Skill Context: Used skills with confidence and arbitration scores
 //! - Belief State: Bayesian reasoning probabilities and uncertainty
 //! - TokenCache: Stable hashing for prompt components (system prompt, tools, context)
+//! - Agent Rules: Global + project rules loaded from ~/.grok-cli/agents/rules/ and .agents/rules/
 
+pub mod agent_rules;
+pub mod session_rules;
 pub mod belief_state;
 pub mod context_budget;
 pub mod engine;
@@ -41,6 +44,8 @@ pub struct SessionContext {
     pub last_commands: Vec<String>,
     /// Session start time
     pub session_start: Option<std::time::SystemTime>,
+    /// Session-only temporary rules
+    pub session_rules: crate::context::session_rules::SessionRules,
 }
 
 /// Short-term working memory for inferred facts
@@ -299,5 +304,40 @@ impl ContextEngine {
             self.skill_context.recent_skills.len(),
             self.belief_state.probabilities.len()
         )
+    }
+
+    /// Load and inject global + project agent rules into the context.
+    /// Supports the modern AGENTS.md / CLAUDE.md style + legacy directories.
+    pub fn load_agent_rules(&mut self, project_root: &std::path::Path) -> String {
+        let mut output = String::new();
+
+        // 1. File-based rules (AGENTS.md / CLAUDE.md style)
+        if let Ok(rules) = crate::context::agent_rules::load_all_agent_rules(project_root) {
+            let rules_text = crate::context::agent_rules::format_agent_rules_for_prompt(&rules);
+            if !rules_text.is_empty() {
+                output.push_str(&rules_text);
+            }
+        }
+
+        // 2. Session-only rules (highest priority - appended last)
+        let session_rules = self.session.session_rules.format_for_prompt();
+        if !session_rules.is_empty() {
+            output.push_str(&session_rules);
+            self.add_fact("Session-only rules active".to_string(), 1.0);
+        }
+
+        if output.is_empty() {
+            // Final fallback to legacy loader
+            let legacy = crate::skills::load_and_format_rules(project_root);
+            if !legacy.is_empty() {
+                output.push_str(&legacy);
+            }
+        }
+
+        if !output.is_empty() {
+            self.add_fact("Agent rules loaded".to_string(), 1.0);
+        }
+
+        output
     }
 }

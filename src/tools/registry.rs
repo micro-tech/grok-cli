@@ -242,7 +242,46 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                         .ok_or_else(|| anyhow!("Missing: task"))?;
                     let context = args["context"].as_str().unwrap_or("");
                     let max_tokens = args["max_tokens"].as_u64().unwrap_or(2048) as u32;
-                    agent_tools::spawn_agent(task, context, max_tokens).await
+
+                    // Optional per-agent config fields — all backward-compatible.
+                    let has_config = args.get("model").is_some()
+                        || args.get("system_prompt").is_some()
+                        || args.get("allowed_tools").is_some()
+                        || args.get("trusted_dirs").is_some()
+                        || args.get("max_tool_iterations").is_some();
+
+                    if has_config {
+                        let mut builder =
+                            crate::agent::SubAgentConfig::builder().max_tokens(max_tokens);
+                        if let Some(m) = args["model"].as_str() {
+                            builder = builder.model(m);
+                        }
+                        if let Some(p) = args["system_prompt"].as_str() {
+                            builder = builder.system_prompt(p);
+                        }
+                        if let Some(tools) = args["allowed_tools"].as_array() {
+                            let names: Vec<String> = tools
+                                .iter()
+                                .filter_map(|v| v.as_str().map(str::to_string))
+                                .collect();
+                            builder =
+                                builder.allow_tools(names.iter().map(|s| s.as_str()).collect());
+                        }
+                        if let Some(dirs) = args["trusted_dirs"].as_array() {
+                            for d in dirs {
+                                if let Some(s) = d.as_str() {
+                                    builder = builder.trusted_dir(s);
+                                }
+                            }
+                        }
+                        if let Some(n) = args["max_tool_iterations"].as_u64() {
+                            builder = builder.max_tool_iterations(n as u32);
+                        }
+                        let config = builder.build();
+                        agent_tools::spawn_agent_configured(task, context, None, config).await
+                    } else {
+                        agent_tools::spawn_agent(task, context, max_tokens).await
+                    }
                 }
                 "send_message" => {
                     let target = args["target"]
@@ -337,6 +376,35 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                         .ok_or_else(|| anyhow!("Missing: tool_name"))?;
                     let arguments = args["arguments"].clone();
                     mcp_tools::mcp_call(server_command, tool_name, arguments, policy).await
+                }
+
+                // List currently connected MCP servers and their discovered tools
+                "mcp_list" => {
+                    let discovered = get_discovered_mcp_tools();
+                    if discovered.is_empty() {
+                        Ok(serde_json::json!({
+                            "connected_servers": 0,
+                            "message": "No MCP servers are currently connected."
+                        })
+                        .to_string())
+                    } else {
+                        let servers: Vec<_> = discovered
+                            .iter()
+                            .map(|(name, tools)| {
+                                serde_json::json!({
+                                    "server": name,
+                                    "tool_count": tools.len(),
+                                    "tools": tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+                                })
+                            })
+                            .collect();
+
+                        Ok(serde_json::json!({
+                            "connected_servers": discovered.len(),
+                            "servers": servers
+                        })
+                        .to_string())
+                    }
                 }
 
                 // ── LSP ─────────────────────────────────────────────────────
@@ -508,6 +576,7 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
         "fork_agent",
         "join_agents",
         "mcp_call",
+        "mcp_list",
         "lsp_query",
         "tool_search",
         "cron_create",
@@ -884,13 +953,46 @@ pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
             "type": "function",
             "function": {
                 "name": "spawn_agent",
-                "description": "Spawn a focused sub-agent to complete a well-scoped task.",
+                "description": "Spawn a focused sub-agent to complete a well-scoped task. \
+                    Optionally provide a custom model, persona, tool whitelist, sandbox dirs, \
+                    and iteration budget for per-agent isolation.",
                 "parameters": {
                     "type": "object",
                     "properties": {
-                        "task":       {"type": "string",  "description": "The task for the sub-agent to complete."},
-                        "context":    {"type": "string",  "description": "Optional additional context."},
-                        "max_tokens": {"type": "integer", "description": "Max tokens for the response (256-4096, default 2048)."}
+                        "task": {
+                            "type": "string",
+                            "description": "The task for the sub-agent to complete."
+                        },
+                        "context": {
+                            "type": "string",
+                            "description": "Optional additional context to pass to the agent."
+                        },
+                        "max_tokens": {
+                            "type": "integer",
+                            "description": "Max output tokens (256–8192, default 2048)."
+                        },
+                        "model": {
+                            "type": "string",
+                            "description": "Model to use, e.g. 'grok-3-mini' (default) or 'grok-3'."
+                        },
+                        "system_prompt": {
+                            "type": "string",
+                            "description": "Custom persona / system prompt for this agent."
+                        },
+                        "allowed_tools": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Tool whitelist. Omit for no tools. E.g. ['read_file','list_directory']."
+                        },
+                        "trusted_dirs": {
+                            "type": "array",
+                            "items": {"type": "string"},
+                            "description": "Directories the agent may access. Defaults to CWD only."
+                        },
+                        "max_tool_iterations": {
+                            "type": "integer",
+                            "description": "Max tool-loop iterations (default 10)."
+                        }
                     },
                     "required": ["task"]
                 }
@@ -1059,6 +1161,14 @@ pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
         json!({
             "type": "function",
             "function": {
+                "name": "mcp_list",
+                "description": "List all connected MCP servers and the tools discovered from them.",
+                "parameters": {"type": "object", "properties": {}}
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
                 "name": "lsp_query",
                 "description": "Query the Language Server Protocol for diagnostics, hover info, or definitions.",
                 "parameters": {
@@ -1164,4 +1274,82 @@ pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
 /// This alias is used by all ACP consumers that need the schema for the model.
 pub fn get_available_tool_definitions() -> Vec<serde_json::Value> {
     get_full_tool_definitions()
+}
+
+/// Returns the built-in tools plus any tools discovered from connected MCP servers.
+/// MCP tools are exposed with the server name as a prefix (e.g. "markmap:generate").
+/// This is the function that should be used when building the tool list for a session
+/// that has MCP servers attached.
+pub async fn get_available_tool_definitions_with_mcp(
+    mcp_tools: &[(String, crate::mcp::protocol::Tool)],
+) -> Vec<serde_json::Value> {
+    let mut defs = get_full_tool_definitions();
+
+    for (server, tool) in mcp_tools {
+        let full_name = format!("{}:{}", server, tool.name);
+        let desc = tool
+            .description
+            .clone()
+            .unwrap_or_else(|| format!("MCP tool from {}", server));
+
+        defs.push(json!({
+            "type": "function",
+            "function": {
+                "name": full_name,
+                "description": desc,
+                "parameters": tool.input_schema
+            }
+        }));
+    }
+
+    defs
+}
+
+// ── Dynamic tool registration (Task 143) ─────────────────────────────────────
+
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+// ── MCP discovered tools (populated during ACP session/new) ──────────────────
+
+use std::sync::RwLock as StdRwLock;
+
+/// Global store of tools discovered from connected MCP servers.
+/// Key = server name, Value = list of tools.
+static DISCOVERED_MCP_TOOLS: StdRwLock<Option<HashMap<String, Vec<crate::mcp::protocol::Tool>>>> =
+    StdRwLock::new(None);
+
+/// Update the global MCP tools map (called from ACP session handler).
+pub fn set_discovered_mcp_tools(map: HashMap<String, Vec<crate::mcp::protocol::Tool>>) {
+    let mut guard = DISCOVERED_MCP_TOOLS.write().unwrap();
+    *guard = Some(map);
+}
+
+/// Returns a snapshot of all discovered MCP tools.
+pub fn get_discovered_mcp_tools() -> HashMap<String, Vec<crate::mcp::protocol::Tool>> {
+    let guard = DISCOVERED_MCP_TOOLS.read().unwrap();
+    guard.clone().unwrap_or_default()
+}
+
+/// Registry of dynamically loaded custom tools.
+static DYNAMIC_TOOLS: Mutex<Option<HashMap<String, String>>> = Mutex::new(None);
+
+/// Register a tool that was loaded from a custom dylib (Task 143).
+pub fn register_dynamic_tool(name: &str, description: &str, _lib_path: &std::path::Path) {
+    let mut map = DYNAMIC_TOOLS.lock().unwrap();
+    if map.is_none() {
+        *map = Some(HashMap::new());
+    }
+    if let Some(ref mut m) = *map {
+        m.insert(name.to_string(), description.to_string());
+    }
+    tracing::info!("Dynamic tool registered: {}", name);
+}
+
+/// Returns the list of all dynamically loaded tool names.
+pub fn list_dynamic_tools() -> Vec<String> {
+    let map = DYNAMIC_TOOLS.lock().unwrap();
+    map.as_ref()
+        .map(|m| m.keys().cloned().collect())
+        .unwrap_or_default()
 }

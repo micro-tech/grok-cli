@@ -86,6 +86,14 @@ pub struct GrokAcpAgent {
 
     /// Default model override
     default_model: Option<String>,
+
+    /// MCP client for connected Model Context Protocol servers.
+    /// Populated when `session/new` receives an `mcpServers` array.
+    mcp_client: Arc<RwLock<crate::mcp::client::McpClient>>,
+
+    /// Tools discovered from connected MCP servers.
+    /// Key = server name, Value = list of tools returned by `tools/list`.
+    discovered_mcp_tools: Arc<RwLock<HashMap<String, Vec<crate::mcp::protocol::Tool>>>>,
 }
 
 /// Session data for tracking conversation state
@@ -127,6 +135,10 @@ struct SessionData {
     /// Injected into every refined prompt as a system note so the model
     /// always interprets messages through the lens of this goal.
     current_goal: Option<String>,
+
+    /// Temporary rules added via `/rule add <text>` for this session.
+    /// Injected into every refined prompt so the model respects them throughout.
+    session_rules: crate::context::session_rules::SessionRules,
 }
 
 impl SessionData {
@@ -182,6 +194,12 @@ impl SessionData {
                 "{}\n\n[Active Goal: {}  — interpret this message in the context of achieving this goal.]",
                 refined_message, goal
             );
+        }
+
+        // 5. Session-only rules injection
+        let rules_text = self.session_rules.format_for_prompt();
+        if !rules_text.is_empty() {
+            refined_message = format!("{}{}", refined_message, rules_text);
         }
 
         refined_message
@@ -294,6 +312,8 @@ impl GrokAcpAgent {
             security: std::sync::OnceLock::new(),
             hook_manager: std::sync::OnceLock::new(),
             default_model,
+            mcp_client: Arc::new(RwLock::new(crate::mcp::client::McpClient::new())),
+            discovered_mcp_tools: Arc::new(RwLock::new(HashMap::new())),
         })
     }
 
@@ -352,6 +372,32 @@ impl GrokAcpAgent {
     /// code in the ACP command handler). Lazily initializes SecurityManager.
     pub fn add_trusted_directory(&self, path: std::path::PathBuf) {
         self.get_security().add_trusted_directory(path);
+    }
+
+    /// Returns a clone of the shared MCP client so callers (especially
+    /// `handle_session_new`) can connect servers received from the client.
+    pub fn get_mcp_client(&self) -> Arc<RwLock<crate::mcp::client::McpClient>> {
+        Arc::clone(&self.mcp_client)
+    }
+
+    /// Returns the map of tools discovered from connected MCP servers.
+    pub fn get_discovered_mcp_tools(
+        &self,
+    ) -> Arc<RwLock<HashMap<String, Vec<crate::mcp::protocol::Tool>>>> {
+        Arc::clone(&self.discovered_mcp_tools)
+    }
+
+    /// Returns a flattened list of all discovered MCP tools with their server name
+    /// prepended (e.g. "markmap:generate"). Useful for merging into the main tool list.
+    pub async fn get_all_mcp_tools(&self) -> Vec<(String, crate::mcp::protocol::Tool)> {
+        let map = self.discovered_mcp_tools.read().await;
+        let mut out = Vec::new();
+        for (server, tools) in map.iter() {
+            for t in tools {
+                out.push((server.clone(), (*t).clone()));
+            }
+        }
+        out
     }
 
     /// Create agent capabilities
@@ -449,6 +495,7 @@ impl GrokAcpAgent {
             bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
             dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
+            session_rules: Default::default(),
         };
 
         // --- Task 102: Knowledge Pack Loader ---
@@ -1137,7 +1184,9 @@ impl GrokAcpAgent {
                     && let Some(sender) = &event_sender
                 {
                     let blk = crate::acp::protocol::ThinkingBlockUpdate::new(tc, false);
-                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk));
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(
+                        blk,
+                    ));
                 }
             }
 
@@ -1172,7 +1221,9 @@ impl GrokAcpAgent {
                         && let Some(sender) = &event_sender
                     {
                         let blk = crate::acp::protocol::ThinkingBlockUpdate::new(&tc, true);
-                        let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk));
+                        let _ = sender.send(
+                            crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk),
+                        );
                     }
 
                     // Still return a nice markdown version for non-Zed clients
@@ -1540,8 +1591,12 @@ impl GrokAcpAgent {
                         kind: None,
                         status: Some(status),
                         locations: None,
-                        content: Some(vec![crate::acp::protocol::ToolCallContent::Text(
-                            crate::acp::protocol::TextContent::new(content.clone()),
+                        content: Some(vec![crate::acp::protocol::ToolCallContent::Content(
+                            crate::acp::protocol::ToolCallContentInner {
+                                content: crate::acp::protocol::ContentBlock::Text(
+                                    crate::acp::protocol::TextContent::new(content.clone()),
+                                ),
+                            },
                         )]),
                     };
                     let _ = sender.send(crate::acp::protocol::SessionUpdate::ToolCallUpdate(
@@ -1878,15 +1933,20 @@ impl GrokAcpAgent {
                 state.current_tokens,
                 state.max_tokens,
                 state.context_percent * 100.0,
-                if state.is_generating { "⏳ generating..." } else { "✓ ready" }
+                if state.is_generating {
+                    "⏳ generating..."
+                } else {
+                    "✓ ready"
+                }
             );
             // Send as a normal message chunk so it appears in the transcript
-            let chunk = crate::acp::protocol::ContentChunk::new(
-                crate::acp::protocol::ContentBlock::Text(
+            let chunk =
+                crate::acp::protocol::ContentChunk::new(crate::acp::protocol::ContentBlock::Text(
                     crate::acp::protocol::TextContent::new(status_line),
-                ),
-            );
-            let _ = sender.send(crate::acp::protocol::SessionUpdate::AgentMessageChunk(chunk));
+                ));
+            let _ = sender.send(crate::acp::protocol::SessionUpdate::AgentMessageChunk(
+                chunk,
+            ));
         }
     }
     pub fn emit_agent_activity(
@@ -2043,6 +2103,73 @@ impl GrokAcpAgent {
                 Some(goal) => format!("**Current goal:** {}", goal),
                 None => "No active goal set. Use `/goal <description>` to set one.".to_string(),
             }),
+        }
+    }
+
+    /// Add a session-only rule (used by `/rule add <text>`).
+    pub async fn add_session_rule(&self, session_id: &SessionId, text: String) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found — rule not added.".to_string()),
+            Some(session) => {
+                let id = session.session_rules.add(text.clone());
+                info!("Rule #{id} added for session {}: {text}", session_id.0);
+                Ok(format!(
+                    "**Rule #{id} added:** {text}\n\n\
+                     This rule will be applied to all subsequent messages in this session. \
+                     Use `/rule list` to see all active rules or `/rule remove {id}` to delete it."
+                ))
+            }
+        }
+    }
+
+    /// Remove the session rule with the given ID (used by `/rule remove <id>`).
+    pub async fn remove_session_rule(&self, session_id: &SessionId, id: u32) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                if session.session_rules.remove(id) {
+                    info!("Rule #{id} removed from session {}", session_id.0);
+                    Ok(format!("**Rule #{id} removed.**"))
+                } else {
+                    Ok(format!("No rule with ID #{id} found."))
+                }
+            }
+        }
+    }
+
+    /// List all active session-only rules (used by `/rule list`).
+    pub async fn list_session_rules(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                let rules = session.session_rules.list();
+                if rules.is_empty() {
+                    Ok("No active session rules. Use `/rule add <text>` to add one.".to_string())
+                } else {
+                    let mut out = String::from("**Active session rules:**\n\n");
+                    for r in rules {
+                        out.push_str(&format!("- **#{}** {}\n", r.id, r.content));
+                    }
+                    out.push_str("\nUse `/rule remove <id>` to delete a rule or `/rule clear` to remove all.");
+                    Ok(out)
+                }
+            }
+        }
+    }
+
+    /// Clear all session-only rules (used by `/rule clear`).
+    pub async fn clear_session_rules(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                session.session_rules.clear();
+                info!("All session rules cleared for session {}", session_id.0);
+                Ok("All session rules cleared.".to_string())
+            }
         }
     }
 
@@ -2323,6 +2450,7 @@ impl GrokAcpAgent {
                 bayes_engine: crate::bayes::BayesianEngine::new_with_default_priors(),
                 dna: crate::session::dna::SessionDna::default(),
                 current_goal: source.current_goal.clone(),
+                session_rules: source.session_rules.clone(),
             }
         };
         let mut sessions = self.sessions.write().await;
@@ -2565,6 +2693,7 @@ mod tests {
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new(),
             current_goal: None,
+            session_rules: Default::default(),
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);

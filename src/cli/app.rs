@@ -178,6 +178,32 @@ pub enum Commands {
         #[arg(short, long)]
         output: Option<PathBuf>,
     },
+
+    /// Start a safe isolated playground workspace.
+    ///
+    /// Creates a temporary directory pre-populated with sample Rust files and
+    /// starts an interactive session scoped exclusively to that directory.
+    /// All file-tool operations are restricted to the sandbox — nothing outside
+    /// it can be read or modified.
+    ///
+    /// Examples:
+    ///   grok sandbox                  # temp dir, deleted on exit
+    ///   grok sandbox --keep           # temp dir, kept after exit
+    ///   grok sandbox --dir ./myplay   # use/create a specific directory
+    Sandbox {
+        /// Keep the sandbox directory after the session ends (prints path).
+        #[arg(long)]
+        keep: bool,
+
+        /// Use a specific directory instead of a system temp dir.
+        /// The directory is created with sample files if it does not exist.
+        #[arg(long, value_name = "PATH")]
+        dir: Option<PathBuf>,
+
+        /// Show a DRY-RUN note in the banner (full wiring: task 219.2).
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 /// Main application entry point
@@ -401,6 +427,18 @@ pub async fn run() -> Result<()> {
                 crate::BayesAction::Reset => crate::cli::commands::bayes::BayesCommand::Reset,
                 crate::BayesAction::Explain => crate::cli::commands::bayes::BayesCommand::Explain,
             })
+            .await?;
+        }
+        Some(Commands::Sandbox { keep, dir, dry_run }) => {
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn);
+            crate::cli::commands::sandbox::handle_sandbox(
+                *keep,
+                dir.clone(),
+                *dry_run,
+                &api_key,
+                model,
+                &config,
+            )
             .await?;
         }
         Some(Commands::Visualize { output }) => {

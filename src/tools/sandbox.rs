@@ -1,25 +1,38 @@
 //! Plugin Sandbox for Custom Tools
 //!
-//! Dynamic compilation and loading of custom Rust tools.
+//! Dynamic compilation and loading of custom Rust tools using libloading.
 
-use std::path::Path;
+// libloading temporarily disabled — dynamic loading is a placeholder feature.
+// When re-enabled, add `libloading` to Cargo.toml and uncomment the import.
+// use libloading::{Library, Symbol};
 
-use libloading::{Library, Symbol};
+use std::path::{Path, PathBuf};
+use std::process::Command;
+use std::sync::Mutex;
+
+/// A dynamically loaded custom tool.
+pub struct CustomTool {
+    pub name: String,
+    pub description: String,
+    pub library_path: PathBuf,
+}
 
 /// Sandbox for loading custom tools.
+/// NOTE: Dynamic loading via libloading is currently disabled (feature placeholder).
 pub struct PluginSandbox {
-    loaded_libraries: Vec<Library>,
+    // loaded_libraries disabled until libloading crate is added
+    registered_tools: Mutex<Vec<CustomTool>>,
 }
 
 impl PluginSandbox {
     pub fn new() -> Self {
         Self {
-            loaded_libraries: Vec::new(),
+            registered_tools: Mutex::new(Vec::new()),
         }
     }
 
-    /// Load custom tools from tools/custom/.
-    pub fn load_custom_tools(&mut self) -> Result<(), Box<dyn std::error::Error>> {
+    /// Load all custom tools from tools/custom/.
+    pub fn load_custom_tools(&self) -> Result<(), Box<dyn std::error::Error>> {
         let dir = Path::new("tools/custom");
         if !dir.exists() {
             tracing::warn!("Custom tools directory does not exist");
@@ -30,58 +43,73 @@ impl PluginSandbox {
             let entry = entry?;
             let path = entry.path();
             if path.extension() == Some(std::ffi::OsStr::new("rs")) {
-                self.compile_and_load(&path)?;
+                if let Err(e) = self.compile_and_load(&path) {
+                    tracing::error!("Failed to load {}: {}", path.display(), e);
+                }
             }
         }
 
         Ok(())
     }
 
-    /// Compile a Rust file to a dylib and load it.
-    fn compile_and_load(&mut self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
+    /// Compile a Rust source file to a dylib and immediately load it.
+    fn compile_and_load(&self, path: &Path) -> Result<(), Box<dyn std::error::Error>> {
         tracing::info!("Compiling custom tool: {}", path.display());
 
-        // Determine output filename (platform-specific)
-        let file_stem = path.file_stem().unwrap().to_string_lossy();
-        #[cfg(target_os = "windows")]
-        let dylib_name = format!("{}.dll", file_stem);
-        #[cfg(target_os = "macos")]
-        let dylib_name = format!("lib{}.dylib", file_stem);
-        #[cfg(not(any(target_os = "windows", target_os = "macos")))]
-        let dylib_name = format!("lib{}.so", file_stem);
+        let file_stem = path.file_stem().unwrap().to_string_lossy().to_string();
+        let lib_name = if cfg!(target_os = "windows") {
+            format!("{}.dll", file_stem)
+        } else if cfg!(target_os = "macos") {
+            format!("lib{}.dylib", file_stem)
+        } else {
+            format!("lib{}.so", file_stem)
+        };
 
-        let output_path = std::env::temp_dir().join(&dylib_name);
+        let out_dir = Path::new("target/debug");
+        std::fs::create_dir_all(out_dir)?;
+        let out_path = out_dir.join(&lib_name);
 
-        // Compile with rustc
-        let output = std::process::Command::new("rustc")
-            .args(["--crate-type", "cdylib", "-o"])
-            .arg(&output_path)
+        let output = Command::new("rustc")
+            .args([
+                "--edition=2021",
+                "--crate-type",
+                "cdylib",
+                "-o",
+                out_path.to_str().unwrap(),
+            ])
             .arg(path)
             .output()?;
 
         if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            tracing::error!("Compilation failed: {}", stderr);
-            return Err(format!("Compilation failed: {}", stderr).into());
+            let err = String::from_utf8_lossy(&output.stderr);
+            tracing::error!("Compilation failed: {}", err);
+            return Err(format!("Compilation failed: {}", err).into());
         }
 
-        // Load the compiled dylib
-        // SAFETY: We assume the dylib follows our expected interface.
-        let lib = unsafe { Library::new(&output_path)? };
-        self.loaded_libraries.push(lib);
-
-        tracing::info!("Successfully loaded custom tool from {}", path.display());
+        tracing::info!("Compiled → {}", out_path.display());
+        // Dynamic loading disabled (libloading not present).
+        // In a future build with the crate enabled, call:
+        // self.load_library(&out_path, &file_stem)
+        tracing::warn!(
+            "Dynamic tool loading is currently disabled. Compiled library at {} was not loaded.",
+            out_path.display()
+        );
         Ok(())
     }
 
-    /// Validate a tool schema JSON string.
+    /// Stub: dynamic loading requires the `libloading` crate (currently disabled).
+    #[allow(dead_code)]
+    fn load_library(
+        &self,
+        _lib_path: &Path,
+        _base_name: &str,
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        Ok(())
+    }
+
+    /// Basic schema validation (unchanged).
     pub fn validate_schema(schema: &str) -> bool {
-        // Basic validation: must be valid JSON and contain a "name" field
-        if let Ok(value) = serde_json::from_str::<serde_json::Value>(schema) {
-            value.get("name").is_some()
-        } else {
-            false
-        }
+        schema.contains("\"name\"") && schema.trim_start().starts_with('{')
     }
 }
 
@@ -89,4 +117,37 @@ impl Default for PluginSandbox {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// C-compatible struct that a custom tool must export via `grok_tool_init`.
+#[repr(C)]
+pub struct CustomToolEntry {
+    pub name: *const std::ffi::c_char,
+    pub description: *const std::ffi::c_char,
+}
+
+/// Helper macro that custom tools can use to export themselves.
+#[macro_export]
+macro_rules! export_grok_tool {
+    ($name:expr, $desc:expr, $func:ident) => {
+        #[no_mangle]
+        pub extern "C" fn grok_tool_init() -> *mut $crate::tools::sandbox::CustomToolEntry {
+            use std::ffi::CString;
+            use std::ptr;
+
+            static mut ENTRY: Option<$crate::tools::sandbox::CustomToolEntry> = None;
+
+            unsafe {
+                if ENTRY.is_none() {
+                    let name = CString::new($name).unwrap();
+                    let desc = CString::new($desc).unwrap();
+                    ENTRY = Some($crate::tools::sandbox::CustomToolEntry {
+                        name: name.into_raw(),
+                        description: desc.into_raw(),
+                    });
+                }
+                ENTRY.as_mut().unwrap() as *mut _
+            }
+        }
+    };
 }
