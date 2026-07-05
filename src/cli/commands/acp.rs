@@ -1018,6 +1018,22 @@ async fn handle_builtin_result(
             }
         }
         BuiltinResult::ShowDiagnostics => slash_commands::format_diagnostics_text(),
+        BuiltinResult::AddRule(text) => match agent.add_session_rule(session_id, text).await {
+            Ok(t) => t,
+            Err(e) => format!("❌ Could not add rule: {e}"),
+        },
+        BuiltinResult::RemoveRule(id) => match agent.remove_session_rule(session_id, id).await {
+            Ok(t) => t,
+            Err(e) => format!("❌ Could not remove rule: {e}"),
+        },
+        BuiltinResult::ListRules => match agent.list_session_rules(session_id).await {
+            Ok(t) => t,
+            Err(e) => format!("❌ Could not list rules: {e}"),
+        },
+        BuiltinResult::ClearRules => match agent.clear_session_rules(session_id).await {
+            Ok(t) => t,
+            Err(e) => format!("❌ Could not clear rules: {e}"),
+        },
     }
 }
 

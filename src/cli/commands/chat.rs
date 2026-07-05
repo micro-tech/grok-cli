@@ -19,9 +19,7 @@ use crate::acp::security::SecurityPolicy;
 use crate::acp::slash_commands;
 use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
-use crate::cli::{
-    create_spinner, format_error, format_grok_response, format_info, format_success,
-};
+use crate::cli::{create_spinner, format_error, format_grok_response, format_info, format_success};
 use crate::config::{BayesianConfig, RateLimitConfig, ThinkingMode};
 use crate::router::AppRouter;
 use crate::tools::registry as tool_registry;
@@ -87,7 +85,10 @@ async fn handle_single_chat(
     model: &str,
     thinking_mode: ThinkingMode,
 ) -> Result<()> {
-    println!("{}", format_info(&format!("Sending message to Grok (model: {})...", model)));
+    println!(
+        "{}",
+        format_info(&format!("Sending message to Grok (model: {})...", model))
+    );
 
     let spinner = create_spinner("Thinking...");
 
@@ -147,7 +148,10 @@ async fn handle_single_chat(
             }
         }
         Err(e) => {
-            println!("{}", format_error(&format!("Failed to get response: {}", e)));
+            println!(
+                "{}",
+                format_error(&format!("Failed to get response: {}", e))
+            );
             return Err(e);
         }
     }
@@ -176,7 +180,10 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
             }
         }
         Err(e) => {
-            println!("{}", format_error(&format!("Tool '{}' failed: {}", name, e)));
+            println!(
+                "{}",
+                format_error(&format!("Tool '{}' failed: {}", name, e))
+            );
         }
     }
     Ok(())
@@ -531,10 +538,28 @@ fn handle_interactive_command(
                         slash_commands::BuiltinResult::ShowDiagnostics => {
                             println!("{}", slash_commands::format_diagnostics_text());
                         }
+                        slash_commands::BuiltinResult::AddRule(text) => {
+                            println!(
+                                "📋 Rule noted (CLI session — not persisted between turns): {text}"
+                            );
+                        }
+                        slash_commands::BuiltinResult::RemoveRule(id) => {
+                            println!("📋 Rule #{id} remove request noted (CLI session).");
+                        }
+                        slash_commands::BuiltinResult::ListRules => {
+                            println!(
+                                "📋 Session rules are not persisted in CLI mode. Use the ACP interface for full rule management."
+                            );
+                        }
+                        slash_commands::BuiltinResult::ClearRules => {
+                            println!("📋 Session rules cleared (CLI session).");
+                        }
                         slash_commands::BuiltinResult::ShowCurrentModel => {
                             // In pure CLI mode we don't have a persistent session model,
                             // so we just note that the user can pass --model on the command line.
-                            println!("🧠 Current model: (use `--model <name>` when starting the CLI session)");
+                            println!(
+                                "🧠 Current model: (use `--model <name>` when starting the CLI session)"
+                            );
                         }
                     }
                     return Ok(Some(CommandResult::Continue));
@@ -564,19 +589,28 @@ fn handle_interactive_command(
                         }
                     }
                 }
-                Err(e) => println!("{}", format_error(&format!("Failed to list directory: {}", e))),
+                Err(e) => println!(
+                    "{}",
+                    format_error(&format!("Failed to list directory: {}", e))
+                ),
             }
             Ok(Some(CommandResult::Continue))
         }
         _ if lower_input.starts_with("cd ") => {
             let path = input[3..].trim();
             if let Err(e) = env::set_current_dir(path) {
-                println!("{}", format_error(&format!("Failed to change directory to '{}': {}", path, e)));
+                println!(
+                    "{}",
+                    format_error(&format!("Failed to change directory to '{}': {}", path, e))
+                );
             } else {
-                println!("{}", format_success(&format!(
-                    "Changed directory to {}",
-                    env::current_dir().unwrap_or_default().display()
-                )));
+                println!(
+                    "{}",
+                    format_success(&format!(
+                        "Changed directory to {}",
+                        env::current_dir().unwrap_or_default().display()
+                    ))
+                );
             }
             Ok(Some(CommandResult::Continue))
         }
@@ -592,10 +626,16 @@ fn handle_interactive_command(
                 match result {
                     Ok(status) => {
                         if !status.success() {
-                            println!("{}", format_error(&format!("Command exited with status: {}", status)));
+                            println!(
+                                "{}",
+                                format_error(&format!("Command exited with status: {}", status))
+                            );
                         }
                     }
-                    Err(e) => println!("{}", format_error(&format!("Failed to execute command: {}", e))),
+                    Err(e) => println!(
+                        "{}",
+                        format_error(&format!("Failed to execute command: {}", e))
+                    ),
                 }
             }
             Ok(Some(CommandResult::Continue))
@@ -674,11 +714,7 @@ mod tests {
 
 /// Handle `--explore "query"` mode.
 /// Uses EXPLORER system prompt + restricted tools and returns compact JSON evidence.
-async fn handle_explorer_mode(
-    client: AppRouter,
-    query: &str,
-    model: &str,
-) -> Result<()> {
+async fn handle_explorer_mode(client: AppRouter, query: &str, model: &str) -> Result<()> {
     use crate::agent::mode::Mode;
 
     println!("{}", format_info(&format!("Explorer mode: {}", query)));
@@ -691,7 +727,13 @@ async fn handle_explorer_mode(
     ];
 
     // Only allow read/search tools in explorer mode
-    let allowed_tools = vec!["fs_glob", "fs_read", "fs_grep", "list_directory", "search_file_content"];
+    let allowed_tools = vec![
+        "fs_glob",
+        "fs_read",
+        "fs_grep",
+        "list_directory",
+        "search_file_content",
+    ];
 
     let all_tools = tools::get_available_tool_definitions();
     let filtered_tools: Vec<serde_json::Value> = all_tools
@@ -715,7 +757,10 @@ async fn handle_explorer_mode(
         Err(e) => {
             spinner.finish_and_clear();
             tracing::error!("Explorer mode API call failed: {}", e);
-            println!("{}", format_error(&format!("Explorer request failed: {}", e)));
+            println!(
+                "{}",
+                format_error(&format!("Explorer request failed: {}", e))
+            );
             return Err(e);
         }
     };
