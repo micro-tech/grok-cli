@@ -9,7 +9,7 @@
       "dependencies": [],
       "details": "Change the method to only set a default when the caller has not already set a meaningful score, or accept an `Option<f32>` for the score.",
       "testStrategy": "A caller passing `relevance_score = 0.85` with `selected = true` preserves the 0.85 value.",
-      "subtasks": [],
+      "subtasks": []
     },
     {
       "id": 213,
@@ -30,9 +30,9 @@
           "dependencies": [],
           "details": "Add comprehensive error checking for handshake failures, schema validation, and network/protocol errors. Run `cargo test` to verify the implementation.",
           "testStrategy": "All unit and integration tests pass with `cargo test`. Edge cases for errors are covered.",
-          "subtasks": [],
-        },
-      ],
+          "subtasks": []
+        }
+      ]
     },
     {
       "id": 214,
@@ -43,7 +43,7 @@
       "priority": "high",
       "details": "Installer now correctly builds and installs `grok-cli.exe`. Updated Zed config recommendation to use the full path to grok-cli.exe.",
       "testStrategy": "",
-      "subtasks": [],
+      "subtasks": []
     },
     {
       "id": 215,
@@ -54,7 +54,7 @@
       "priority": "high",
       "details": "Phase 1 complete: GrokAcpAgent now holds an McpClient, and handle_session_new connects any mcpServers sent by the client (Zed).",
       "testStrategy": "",
-      "subtasks": [],
+      "subtasks": []
     },
     {
       "id": 216,
@@ -65,7 +65,7 @@
       "priority": "high",
       "details": "Added mcp_call_connected helper. The persistent McpClient is now populated on session/new. Full registry integration (preferring connected client) is the next small step.",
       "testStrategy": "",
-      "subtasks": [],
+      "subtasks": []
     },
     {
       "id": 217,
@@ -76,7 +76,7 @@
       "priority": "high",
       "details": "MCP servers are now connected on session/new, tools are discovered via list_tools, and stored on the agent. Ready for final integration into the tool registry / prompt if desired.",
       "testStrategy": "",
-      "subtasks": [],
+      "subtasks": []
     },
     {
       "id": 218,
@@ -87,109 +87,133 @@
       "priority": "high",
       "details": "MCP tools are now merged into the main tool list via get_available_tool_definitions_with_mcp. Full MCP bridge (Phases 1-4) is complete and builds cleanly.",
       "testStrategy": "",
-      "subtasks": [],
+      "subtasks": []
     },
     {
       "id": 219,
-      "title": "Grok Sandbox — safe playground workspace",
-      "description": "Add a `grok sandbox` subcommand that creates an isolated temp workspace pre-populated with sample Rust files, restricts all file operations to that directory via the existing SecurityPolicy, and starts an interactive session inside it. Gives the LLM a safe space to experiment without touching real project files.",
-      "status": "in_progress",
-      "priority": "medium",
+      "title": "ACP v1 Feature Additions (Logout, Cancellation, Model Config, Session Info)",
+      "description": "",
+      "status": "done",
       "dependencies": [],
-      "details": "Implementation:\n1. `SandboxWorkspace` struct — creates temp dir, writes sample files (Cargo.toml, src/main.rs, src/lib.rs, src/utils.rs, tests/integration_test.rs, data/sample.json, data/notes.txt, README.md, .gitignore), implements Drop for cleanup.\n2. `grok sandbox` CLI command with flags: `--keep` (skip cleanup), `--dir <path>` (use existing dir), `--dry-run` (note in banner).\n3. Changes CWD to sandbox dir before calling `start_interactive_mode` so SecurityPolicy auto-scopes.\n4. Prints sandbox path in banner so user knows where files are.\n5. On exit, removes sandbox dir unless `--keep` is set.",
-      "testStrategy": "Run `grok sandbox --keep` and verify the temp dir is created with correct file structure. Run `grok sandbox` and verify cleanup removes the dir on exit. Cargo tests verify SandboxWorkspace::create() produces all expected files.",
+      "priority": "high",
+      "details": "Implement the newly stabilized ACP v1 features that are missing or incomplete in grok-cli.",
+      "testStrategy": "",
       "subtasks": [
         {
-          "id": "219.1",
-          "title": "SandboxWorkspace builder + grok sandbox command",
-          "status": "done",
-          "dependencies": [],
-        },
-        {
-          "id": "219.2",
-          "title": "Wire DryRunContext into file_tools write operations",
+          "id": 219.1,
+          "title": "Implement logout method (stable)",
           "status": "pending",
-          "dependencies": ["219.1"],
+          "dependencies": []
         },
         {
-          "id": "219.3",
-          "title": "Add error checking",
-          "status": "done",
-          "dependencies": ["219.1"],
-        },
-        {
-          "id": "219.4",
-          "title": "Add cargo test coverage",
-          "status": "done",
-          "dependencies": ["219.1"],
-        },
-        {
-          "id": "219.5",
-          "title": "Add documentation",
+          "id": 219.2,
+          "title": "Implement request cancellation (stable)",
           "status": "pending",
-          "dependencies": ["219.1"],
+          "dependencies": []
         },
-      ],
+        {
+          "id": 219.3,
+          "title": "Add structured Model Config Option Category",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 219.4,
+          "title": "Implement Session Info Update (titles, status, metadata)",
+          "status": "pending",
+          "dependencies": []
+        }
+      ]
     },
     {
       "id": 220,
-      "title": "Per-agent SubAgentConfig — tool permissions, persona, safety, context budget",
-      "description": "Add a SubAgentConfig struct that gives each sub-agent its own: model, system prompt/persona, allowed_tools whitelist, trusted_dirs sandbox, max_tokens output cap, max_tool_iterations loop budget, and temperature. Wire it through run_agent_session() which uses CpuRouter::route_with_tools so sub-agents can actually call tools instead of being bare text completions.",
-      "status": "in_progress",
+      "title": "ACP v1 + v2 Upgrade Roadmap for Grok-CLI",
+      "description": "",
+      "status": "done",
+      "dependencies": [],
       "priority": "high",
-      "dependencies": [219],
-      "details": "1. src/agent/config.rs — SubAgentConfig struct + builder + Default impl.\n2. src/router/app_router.rs — add route_with_tools() delegating to self.inner.\n3. src/tools/agent_tools.rs — run_agent_session(task, context, &SubAgentConfig) core impl.\n4. spawn_agent tool schema updated with optional config fields (model, system_prompt, allowed_tools, trusted_dirs, max_tool_iterations).\n5. fork_agent updated to pass SubAgentConfig per task.\n6. registry.rs dispatch updated to parse config fields from LLM args.",
-      "testStrategy": "cargo test --lib agent::config, cargo test --lib agent_tools. SubAgentConfig builder tests, run_agent_session with empty allowed_tools falls back to text completion. Tool whitelist filtering produces correct tool subset.",
+      "details": "Master plan to bring Grok-CLI up to date with the latest stabilized ACP features (v1) and prepare for the new unstable v2 / MCP-over-ACP capabilities.",
+      "testStrategy": "",
       "subtasks": [
         {
-          "id": "220.1",
-          "title": "SubAgentConfig struct + builder",
-          "status": "done",
-          "dependencies": [],
-        },
-        {
-          "id": "220.2",
-          "title": "AppRouter::route_with_tools() method",
-          "status": "done",
-          "dependencies": [],
-        },
-        {
-          "id": "220.3",
-          "title": "run_agent_session() implementation",
-          "status": "done",
-          "dependencies": ["220.1", "220.2"],
-        },
-        {
-          "id": "220.4",
-          "title": "Update spawn_agent + fork_agent to use SubAgentConfig",
-          "status": "done",
-          "dependencies": ["220.3"],
-        },
-        {
-          "id": "220.5",
-          "title": "Update tool registry dispatch + schema",
-          "status": "done",
-          "dependencies": ["220.4"],
-        },
-        {
-          "id": "220.6",
-          "title": "Add error checking",
-          "status": "done",
-          "dependencies": ["220.3"],
-        },
-        {
-          "id": "220.7",
-          "title": "Add cargo test coverage",
-          "status": "done",
-          "dependencies": ["220.3"],
-        },
-        {
-          "id": "220.8",
-          "title": "Add documentation",
+          "id": 220.1,
+          "title": "ACP v1 Core (stable) – implement missing methods",
           "status": "pending",
-          "dependencies": ["220.3"],
+          "dependencies": [
+            219
+          ]
         },
-      ],
+        {
+          "id": 220.2,
+          "title": "ACP Registry integration",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 220.3,
+          "title": "Session Resume + Session Close (stable)",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 220.4,
+          "title": "Prepare for MCP-over-ACP (unstable)",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 220.5,
+          "title": "Remote transports (WebSocket / HTTP) groundwork",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 220.6,
+          "title": "ACP v2 unstable features (optional)",
+          "status": "pending",
+          "dependencies": []
+        }
+      ]
     },
-  ],
+    {
+      "id": 221,
+      "title": "ACP v1 Feature Additions – Cancellation Polish & Testing",
+      "description": "",
+      "status": "in_progress",
+      "dependencies": [],
+      "priority": "medium",
+      "details": "Polish the cancellation implementation and add a small test so we know it actually stops a running prompt.",
+      "testStrategy": "",
+      "subtasks": [
+        {
+          "id": 221.1,
+          "title": "Add a unit test that verifies cancel aborts a prompt",
+          "status": "pending",
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "id": 222,
+      "title": "Implement AGENTS.md / CLAUDE.md style rule loading",
+      "description": "Add support for loading agent rules from AGENTS.md, CLAUDE.md and similar files with directory walking from repo root to CWD. Also support global rules in ~/.grok/.",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Implementation complete. New agent_rules.rs + integration into ContextEngine. Supports AGENTS.md, CLAUDE.md, directory walking, global ~/.grok/ rules, and legacy fallback.",
+      "testStrategy": "Test loading rules from multiple directories, verify override order, check prompt injection",
+      "subtasks": []
+    },
+    {
+      "id": 223,
+      "title": "Implement Session-only Rules",
+      "description": "Add support for temporary, in-memory session-only rules that can be added via slash commands without touching files.",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Session-only rules fully implemented:\n- New SessionRules struct\n- /rule add, /rule remove, /rules, /rule clear commands\n- Integrated into slash command parser + ACP\n- Rules injected via ContextEngine\n- Stored only in current session",
+      "testStrategy": "",
+      "subtasks": []
+    }
+  ]
 }

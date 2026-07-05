@@ -264,7 +264,8 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                                 .iter()
                                 .filter_map(|v| v.as_str().map(str::to_string))
                                 .collect();
-                            builder = builder.allowed_tools(names);
+                            builder =
+                                builder.allow_tools(names.iter().map(|s| s.as_str()).collect());
                         }
                         if let Some(dirs) = args["trusted_dirs"].as_array() {
                             for d in dirs {

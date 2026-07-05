@@ -113,6 +113,18 @@ pub enum SlashCommand {
 
     /// `/diagnostics` — show status of all background systems (Bayesian, DNA, compression, etc.).
     Diagnostics,
+
+    /// `/rule add <text>` — add a temporary session-only rule.
+    RuleAdd { text: String },
+
+    /// `/rule remove <id>` — remove a session rule by ID.
+    RuleRemove { id: u32 },
+
+    /// `/rules` or `/rule list` — list all active session rules.
+    RuleList,
+
+    /// `/rule clear` — remove all session-only rules.
+    RuleClear,
 }
 
 // ---------------------------------------------------------------------------
@@ -186,6 +198,24 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
             instructions: args,
         }),
         "/diagnostics" => Some(SlashCommand::Diagnostics),
+
+        // Session-only rules
+        "/rule" | "/rules" => {
+            let lower = args.to_lowercase();
+            if lower.starts_with("add ") {
+                Some(SlashCommand::RuleAdd {
+                    text: args[4..].trim().to_string(),
+                })
+            } else if lower.starts_with("remove ") {
+                args[7..].trim().parse::<u32>().ok().map(|id| {
+                    SlashCommand::RuleRemove { id }
+                })
+            } else if lower == "clear" {
+                Some(SlashCommand::RuleClear)
+            } else {
+                Some(SlashCommand::RuleList)
+            }
+        }
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }

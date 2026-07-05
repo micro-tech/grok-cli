@@ -10,8 +10,6 @@ use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tracing::{error, info, warn};
-use tracing::{error, info, warn};
-use tracing::{error, info, warn};
 
 // ── Global shared AgentManager (Task 127) ─────────────────────────────────────
 
@@ -75,54 +73,45 @@ pub async fn run_agent_session(
         .or_else(|_| std::env::var("XAI_API_KEY"))
         .map_err(|_| anyhow!("No API key found. Set GROK_API_KEY or XAI_API_KEY."))?;
 
-    // ── 1. Per-agent SecurityPolicy ──────────────────────────────────────────
+    // ── 1. Per-agent SecurityPolicy (sandbox + trusted_dirs) ─────────────────
     let mut policy = crate::acp::security::SecurityPolicy::new();
-    if config.trusted_dirs.is_empty() {
-        // Default: only trust CWD (most restrictive safe default).
+    let effective_dirs = config.effective_trusted_dirs();
+    if effective_dirs.is_empty() {
+        // Default: trust CWD only.
         if let Ok(cwd) = std::env::current_dir() {
             policy.add_trusted_directory(&cwd);
         }
     } else {
-        for dir in &config.trusted_dirs {
+        for dir in &effective_dirs {
+            if !dir.exists() {
+                if let Err(e) = std::fs::create_dir_all(dir) {
+                    warn!("run_agent_session: sandbox dir creation failed: {}", e);
+                }
+            }
             policy.add_trusted_directory(dir);
         }
     }
     let tool_context = crate::tools::tool_context::ToolContext::new(policy);
 
-    // ── 2. Tool whitelist filtering ──────────────────────────────────────────
-    let filtered_tools: Vec<serde_json::Value> = match &config.allowed_tools {
-        None => vec![],
-        Some(whitelist) if whitelist.is_empty() => vec![],
-        Some(whitelist) => crate::tools::registry::get_full_tool_definitions()
-            .into_iter()
-            .filter(|t| {
-                t.get("function")
-                    .and_then(|f| f.get("name"))
-                    .and_then(|n| n.as_str())
-                    .map(|name| whitelist.iter().any(|w| w == name))
-                    .unwrap_or(false)
-            })
-            .collect(),
-    };
+    // ── 2. Tool filtering via ToolPermissions (allow/deny) ───────────────────
+    let all_tools = crate::tools::registry::get_full_tool_definitions();
+    let filtered_tools = config.tool_permissions.filter_tools(all_tools);
 
     info!(
         model = %config.model,
         tools = filtered_tools.len(),
         max_tokens = config.max_tokens,
-        has_persona = config.system_prompt.is_some(),
+        has_persona = config.persona.system_prompt.is_some(),
         trusted_dirs = config.trusted_dirs.len(),
         "run_agent_session: starting"
     );
 
-    // ── 3. Build message history ──────────────────────────────────────────────
+    // ── 3. Build messages with persona ─────────────────────────────────────
     let system = config
-        .system_prompt
-        .as_deref()
-        .unwrap_or(SUBAGENT_SYSTEM_PROMPT)
+        .effective_system_prompt(SUBAGENT_SYSTEM_PROMPT)
         .to_string();
-
     let user_msg = if context.trim().is_empty() {
-        task.to_string()
+        task.clone()
     } else {
         format!(
             "{}
@@ -132,19 +121,28 @@ pub async fn run_agent_session(
             task, context
         )
     };
-
     let messages = vec![
         serde_json::json!({"role": "system", "content": system}),
         serde_json::json!({"role": "user",   "content": user_msg}),
     ];
 
-    let clamped = config.max_tokens.clamp(256, 8192);
+    // ── 4. Apply context budget ────────────────────────────────────────────
+    // Hard cap: use context_budget.max_tokens if set, else fall back to max_tokens
+    let budget_tokens = if config.context_budget.max_tokens > 0 {
+        config.context_budget.max_tokens as u32
+    } else {
+        config.max_tokens
+    };
+    let clamped = budget_tokens.clamp(256, 8192);
 
-    // ── 4. Build router ───────────────────────────────────────────────────────
+    // ── 5. Build router ────────────────────────────────────────────────────
     let router = crate::router::AppRouter::new(&api_key, SUBAGENT_TIMEOUT_SECS)
         .map_err(|e| anyhow!("Failed to initialise router: {}", e))?;
 
-    // ── 5. Execute ─────────────────────────────────────────────────────────────
+    // Persona reasoning effort (“off” → None, “high”/”low” → Some(...))
+    let reasoning_effort = config.persona.reasoning_effort().map(str::to_string);
+
+    // ── 6. Execute ──────────────────────────────────────────────────────────
     if filtered_tools.is_empty() {
         // Fast path: pure text completion, no tool loop needed.
         let mwfr = router
@@ -154,7 +152,7 @@ pub async fn run_agent_session(
                 clamped,
                 &config.model,
                 None,
-                None,
+                reasoning_effort.as_deref(),
             )
             .await
             .map_err(|e| anyhow!("Sub-agent text completion failed: {}", e))?;
@@ -166,10 +164,13 @@ pub async fn run_agent_session(
     }
 
     // Tool-enabled path: drive the full CpuRouter tool loop.
-    let req = crate::router::RouterRequest::new(config.model.clone(), messages)
+    let mut req = crate::router::RouterRequest::new(config.model.clone(), messages)
         .with_temperature(config.temperature)
         .with_max_tokens(clamped)
         .with_json_tools(filtered_tools);
+    if let Some(effort) = reasoning_effort {
+        req = req.with_reasoning_effort(effort);
+    }
 
     let resp = router
         .route_with_tools(req, &tool_context, config.max_tool_iterations)
@@ -185,16 +186,46 @@ pub async fn run_agent_session(
 
 // ── call_subagent_api (private) ──────────────────────────────────────────────────
 
-/// Backward-compatible raw API call for a sub-agent task.
+/// Lightweight text-only sub-agent call used by `fork_agent` and the
+/// backward-compatible `spawn_agent(task, context, max_tokens)` path.
 ///
-/// Now delegates to [`run_agent_session`] with a default [`SubAgentConfig`]
-/// (no tools, default model, default persona).  Retains the same Starlink-aware
-/// retry behaviour by wrapping in a retry loop.
+/// Uses a direct `chat_completion` call (no tool loop, no `route_with_tools`)
+/// so the future is trivially `Send` and safe to spawn inside `fork_agent`'s
+/// parallel `tokio::spawn` tasks.  For full per-agent tool access use
+/// `spawn_agent_configured` which runs in a dedicated OS thread.
 async fn call_subagent_api(task: &str, context: &str, max_tokens: u32) -> Result<String> {
-    let config = SubAgentConfig::builder().max_tokens(max_tokens).build();
+    let api_key = std::env::var("GROK_API_KEY")
+        .or_else(|_| std::env::var("XAI_API_KEY"))
+        .map_err(|_| anyhow!("No API key found. Set GROK_API_KEY or XAI_API_KEY."))?;
+
+    let router = crate::router::AppRouter::new(&api_key, SUBAGENT_TIMEOUT_SECS)
+        .map_err(|e| anyhow!("Failed to initialise router: {}", e))?;
+
+    let prompt = if context.trim().is_empty() {
+        task.to_string()
+    } else {
+        format!(
+            "{}
+
+## Context
+{}",
+            task, context
+        )
+    };
+    let clamped = max_tokens.clamp(256, 4096);
 
     for attempt in 0..=SUBAGENT_MAX_RETRIES {
-        match run_agent_session(task, context, &config).await {
+        match router
+            .chat_completion(
+                &prompt,
+                Some(SUBAGENT_SYSTEM_PROMPT),
+                0.7,
+                clamped,
+                "grok-3-mini",
+            )
+            .await
+            .map_err(|e| anyhow!("Sub-agent API call failed: {}", e))
+        {
             Ok(result) => return Ok(result),
             Err(e)
                 if attempt < SUBAGENT_MAX_RETRIES
@@ -274,7 +305,30 @@ pub async fn spawn_agent_configured(
         "spawn_agent_configured: starting"
     );
 
-    match run_agent_session(task, context, &config).await {
+    // Break the compile-time Send-cycle:
+    //   execute_tool → spawn_agent_configured → route_with_tools → execute_tool
+    //
+    // tokio::spawn is insufficient because the compiler still traces through the
+    // spawned future's type.  std::thread::spawn + oneshot makes the return type
+    // Receiver<Result<String>>, which is completely opaque to the cycle checker.
+    // Each sub-agent runs in its own single-threaded tokio runtime on a new OS
+    // thread.  API calls take seconds, so the per-thread overhead is negligible.
+    let (tx, rx) = tokio::sync::oneshot::channel::<Result<String>>();
+    let task_owned = task.to_string();
+    let ctx_owned = context.to_string();
+    std::thread::spawn(move || {
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("sub-agent runtime");
+        let result = rt.block_on(run_agent_session(task_owned, ctx_owned, config));
+        let _ = tx.send(result);
+    });
+    let run_result = rx
+        .await
+        .map_err(|_| anyhow!("Sub-agent channel closed unexpectedly"))?;
+
+    match run_result {
         Ok(result) => {
             manager.complete(&agent_id, result.clone()).await;
             crate::agent::activity::emit_agent_activity(
@@ -850,7 +904,7 @@ pub async fn delegate_plan_step(task: &str, parent_id: Option<&str>) -> Result<S
     // Use run_agent_session directly so the AgentManager only has one entry
     // for this task (the one we just created above with the correct parent_id).
     let config = SubAgentConfig::builder().max_tokens(1024).build();
-    match run_agent_session(task, "", &config).await {
+    match run_agent_session(task.to_string(), String::new(), config).await {
         Ok(result) => {
             manager.complete(&agent_id, result.clone()).await;
             crate::agent::activity::emit_agent_activity(

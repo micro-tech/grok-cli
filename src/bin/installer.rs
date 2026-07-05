@@ -149,17 +149,24 @@ fn install_windows(root_dir: PathBuf) {
     println!("{}", "Setting up Session DNA...".cyan());
     setup_session_dna(&root_dir);
 
+    // 13. Install agent presets
+    println!("{}", "Installing agent presets...".cyan());
+    setup_agent_presets(&root_dir);
+
     println!("\n{}", "Installation Complete!".green().bold());
     let version = get_version(&root_dir);
     println!("Version: {}", version);
     println!("\nNew features in this version:");
-    println!("  • Reasoning Protocol Layer (RPL) — structured AI decision tracing");
-    println!("  • Reasoning Engine — goal analysis, multi-step planning, self-correction");
-    println!("  • Privacy controls — suppression layer + redaction rules");
-    println!("  • Bayesian belief integration for tool and plan scoring");
-    println!("  • Memory-aware reasoning with long-term memory bridge");
-    println!("  • Uncertainty-aware skill and tool arbitration");
-    println!("  • 227 new tests across RPL and Engine modules");
+    println!(
+        "  • Full per-agent runtime: SubAgentConfig with tool permissions, persona, safety, context budget & sandbox"
+    );
+    println!(
+        "  • Agent presets installed: planner, coder, researcher, verifier (.grok-cli/agents/)"
+    );
+    println!("  • grok sandbox — isolated playground workspace with pre-populated Rust project");
+    println!("  • ACP session/load bug fixed — Zed sessions now initialise correctly");
+    println!("  • fork_agent now runs real parallel xAI API calls via tokio::spawn");
+    println!("  • Sub-agent tool loop: spawn_agent_configured with SecurityPolicy scoping");
     println!("\nPlease restart your terminal to use the 'grok-cli' command.");
     println!(
         "{}",
@@ -548,6 +555,106 @@ fn create_shortcut(target_exe: &Path) {
 }
 
 #[cfg(windows)]
+#[cfg(windows)]
+/// Copy agent preset TOML files from `.grok/agents/` (project source) into
+/// `~/.grok-cli/agents/` (user-global agents directory).
+///
+/// Rules:
+/// - Creates `~/.grok-cli/agents/` if it does not exist.
+/// - Copies every `*.toml` found in `<root>/.grok/agents/`.
+/// - **Does NOT overwrite** if the user already has a customised copy —
+///   their edits are preserved.
+/// - Prints a summary line for each file.
+fn setup_agent_presets(root_dir: &Path) {
+    let home_dir = match dirs::home_dir() {
+        Some(h) => h,
+        None => {
+            eprintln!("setup_agent_presets: could not locate home directory");
+            return;
+        }
+    };
+
+    let agents_dst = home_dir.join(".grok-cli").join("agents");
+    if let Err(e) = fs::create_dir_all(&agents_dst) {
+        eprintln!(
+            "setup_agent_presets: failed to create agents directory: {}",
+            e
+        );
+        return;
+    }
+
+    // Shipped presets live in config/agents/ (committed to git, never user-specific).
+    // .grok/agents/ is reserved for PROJECT-LOCAL overrides — don't ship anything there.
+    let agents_src = root_dir.join("config").join("agents");
+    if !agents_src.exists() {
+        println!("No config/agents/ directory found in project root — skipping agent presets.");
+        return;
+    }
+
+    let entries = match fs::read_dir(&agents_src) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!(
+                "setup_agent_presets: failed to read agents directory: {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let mut installed = 0u32;
+    let mut skipped = 0u32;
+
+    for entry in entries.flatten() {
+        let src_path = entry.path();
+        if !src_path.is_file() || src_path.extension().map(|e| e != "toml").unwrap_or(true) {
+            continue;
+        }
+
+        let filename = match src_path.file_name() {
+            Some(n) => n,
+            None => continue,
+        };
+        let dst_path = agents_dst.join(filename);
+
+        if dst_path.exists() {
+            // Preserve user customisations.
+            println!(
+                "  ✓ Kept existing agent preset: ~/.grok-cli/agents/{}",
+                filename.to_string_lossy()
+            );
+            skipped += 1;
+        } else {
+            match fs::copy(&src_path, &dst_path) {
+                Ok(_) => {
+                    println!(
+                        "  → Installed agent preset: ~/.grok-cli/agents/{}",
+                        filename.to_string_lossy()
+                    );
+                    installed += 1;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "  ⚠ Failed to install {}: {}",
+                        filename.to_string_lossy(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    println!(
+        "Agent presets: {} installed, {} preserved (user-customised).",
+        installed, skipped
+    );
+    println!("  Location: {}", agents_dst.display());
+    println!("  Presets: planner, coder, researcher, verifier");
+    println!("  Customise any preset by editing its .toml file.");
+    println!("  Add your own by creating a new .toml in that directory.");
+}
+
+#[cfg(windows)]
 fn install_additional_files(root_dir: &Path, install_dir: &Path) {
     let base_install_dir = install_dir
         .parent()
@@ -635,6 +742,7 @@ fn install_additional_files(root_dir: &Path, install_dir: &Path) {
             "MAX_TOOL_LOOP_ITERATIONS.md",
         ),
         ("Doc/extensions.md", "extensions.md"),
+        ("Doc/SUBAGENTS.md", "SUBAGENTS.md"),
     ];
 
     for (src_path, dst_name) in user_docs {

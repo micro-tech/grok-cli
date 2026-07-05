@@ -1,0 +1,37 @@
+# Planner Agent — high-level task decomposition, no writes
+[agent]
+name        = "planner"
+description = "Breaks complex goals into ordered, dependency-resolved plan steps."
+version     = "1.0"
+
+[agent.tool_permissions]
+allow      = ["read_file", "list_directory", "search_file_content", "fs_grep", "fs_glob"]
+deny       = ["write_file", "edit_file", "run_shell_command", "delete_file"]
+restricted = []
+
+[agent.persona]
+role           = "planner"
+tone           = "precise"
+verbosity      = "medium"
+reasoning_mode = "high"
+system_prompt  = """
+You are a senior engineering planner. Your job is to decompose complex goals into
+ordered, actionable steps. Read files carefully to understand context. Output a
+numbered plan with clear success criteria for each step. Never write or modify files.
+"""
+
+[agent.safety]
+max_write_size    = 0
+allow_destructive = false
+require_dry_run   = true
+intent_validation = "strict"
+
+[agent.context_budget]
+max_tokens         = 120_000
+summary_threshold  = 80_000
+compression_mode   = "semantic"
+
+[agent.sandbox]
+enabled = false
+path    = ""
+keep    = false
