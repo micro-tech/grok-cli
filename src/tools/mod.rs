@@ -58,6 +58,7 @@ pub mod tool_arbitration;
 pub mod tool_context;
 pub mod tool_error;
 pub mod web_tools;
+pub mod image;
 
 // ── Core re-exports ───────────────────────────────────────────────────────────
 
@@ -116,3 +117,12 @@ pub use mcp_tools::mcp_call;
 // ── Discovery ─────────────────────────────────────────────────────────────────
 
 pub use discovery_tools::{cron_create, remote_trigger, tool_search};
+
+// ── Image / Vision ────────────────────────────────────────────────────────────
+
+pub use image::{extract_image_from_message, is_image_path, is_image_url, prepare_image_content};
+
+// ── Vision support ────────────────────────────────────────────────────────────
+
+pub mod vision;
+pub use vision::{is_vision_model, recommended_vision_model, should_use_vision_model};

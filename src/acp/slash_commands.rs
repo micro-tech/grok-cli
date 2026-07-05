@@ -125,6 +125,9 @@ pub enum SlashCommand {
 
     /// `/rule clear` — remove all session-only rules.
     RuleClear,
+
+    /// `/image <path|url> [prompt]` — analyze an image (local file or URL).
+    Image { path: String, prompt: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +219,20 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
                 Some(SlashCommand::RuleList)
             }
         }
+
+        // Image / vision command
+        "/image" => {
+            // Split into path + optional prompt
+            let parts: Vec<&str> = args.splitn(2, ' ').collect();
+            if parts.is_empty() || parts[0].is_empty() {
+                None // require at least a path
+            } else {
+                let path = parts[0].to_string();
+                let prompt = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
+                Some(SlashCommand::Image { path, prompt })
+            }
+        }
+
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -310,6 +327,8 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         ),
         AvailableCommand::new("web", "Research a topic or search the web for information")
             .input(input("query to research")),
+        AvailableCommand::new("image", "Analyze an image (local file or URL)")
+            .input(input("path or URL [optional prompt]")),
     ];
 
     // Ensure alphabetical order by command name
@@ -351,7 +370,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::RuleAdd { .. }
         | SlashCommand::RuleRemove { .. }
         | SlashCommand::RuleList
-        | SlashCommand::RuleClear => None,
+        | SlashCommand::RuleClear
+        | SlashCommand::Image { .. } => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {

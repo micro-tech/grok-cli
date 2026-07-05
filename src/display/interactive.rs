@@ -1204,15 +1204,43 @@ async fn send_to_grok(
     session: &mut InteractiveSession,
     input: &str,
 ) -> Result<()> {
-    // Add user message to history
+    // ── Vision / Image handling ─────────────────────────────────────────────
+    let mut effective_model = session.model.clone();
+    let mut messages = vec![];
+
+    if let Some(image_path) = crate::tools::extract_image_from_message(input) {
+        // Show nice TUI feedback
+        crate::tools::print_image_attached_feedback(&image_path);
+
+        // Switch to a vision model if current model doesn't support it
+        if !crate::tools::is_vision_model(&effective_model) {
+            effective_model = crate::tools::recommended_vision_model().to_string();
+            println!(
+                "{} Switching to vision model: {}",
+                "🖼️".bright_cyan(),
+                effective_model.bright_yellow()
+            );
+        }
+
+        // Build a vision-capable message (text + image)
+        if let Ok(vision_msg) = crate::tools::create_vision_message(input, &image_path) {
+            messages.push(vision_msg);
+        } else {
+            // Fallback to normal text if image preparation fails
+            messages.push(json!({ "role": "user", "content": input }));
+        }
+    } else {
+        messages.push(json!({ "role": "user", "content": input }));
+    }
+
+    // Add user message to history (original text)
     session.add_conversation_item("user", input, None);
 
     // Show thinking indicator
     print!("{} ", "Thinking...".bright_yellow());
     io::stdout().flush()?;
 
-    // Prepare messages for API
-    let mut messages = vec![];
+    // Prepare messages for API (we already have the first user message)
 
     // Build system prompt with active skills context
     let mut system_content = String::new();
@@ -1265,7 +1293,7 @@ async fn send_to_grok(
             &messages,
             session.temperature,
             session.max_tokens,
-            &session.model,
+            &effective_model,
             Some(tools.iter().map(|t| serde_json::json!(t)).collect()),
             None, // reasoning_effort: not exposed in interactive mode yet
         )

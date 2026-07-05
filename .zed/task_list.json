@@ -214,6 +214,124 @@
       "details": "Session-only rules fully implemented:\n- New SessionRules struct\n- /rule add, /rule remove, /rules, /rule clear commands\n- Integrated into slash command parser + ACP\n- Rules injected via ContextEngine\n- Stored only in current session",
       "testStrategy": "",
       "subtasks": []
+    },
+    {
+      "id": 224,
+      "title": "Add Picture/Image (Vision) Support to grok-cli",
+      "description": "Implement image input support via both /image command and direct prompts. Support local files + URLs. Auto-switch to vision model. Images are ephemeral (no session persistence).",
+      "status": "in_progress",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Requirements:\n- Support /image <path|url> [prompt]\n- Detect image references directly in prompts\n- Auto-switch to vision-capable model\n- Local files + URLs supported\n- No image storage in sessions\n- Use existing base64 dependency",
+      "testStrategy": "Manual testing with local images and URLs + vision model responses",
+      "subtasks": [
+        {
+          "id": 224.1,
+          "title": "Create image handling module",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 224.2,
+          "title": "Implement /image slash command",
+          "status": "pending",
+          "dependencies": [
+            1
+          ]
+        },
+        {
+          "id": 224.3,
+          "title": "Add direct prompt image detection",
+          "status": "pending",
+          "dependencies": [
+            1
+          ]
+        },
+        {
+          "id": 224.4,
+          "title": "Vision model auto-switching",
+          "status": "pending",
+          "dependencies": [
+            1,
+            3
+          ]
+        },
+        {
+          "id": 224.5,
+          "title": "Extend API request builder",
+          "status": "pending",
+          "dependencies": [
+            4
+          ]
+        },
+        {
+          "id": 224.6,
+          "title": "Add TUI feedback for attached images",
+          "status": "pending",
+          "dependencies": [
+            2,
+            3
+          ]
+        },
+        {
+          "id": 224.7,
+          "title": "Update documentation & help",
+          "status": "pending",
+          "dependencies": [
+            2
+          ]
+        }
+      ]
+    },
+    {
+      "id": 225,
+      "title": "Add /init command - Project initialization / scaffolding",
+      "description": "Add a new /init slash command that creates a .grok/ folder in the current project and copies the system-level configuration files (config.toml, agents, etc.) so users can customize them per-project.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "medium",
+      "details": "The command should:\n- Create .grok/ directory if it doesn't exist\n- Copy relevant files from the user's global config (~/.grok-cli/ or equivalent)\n- Support files like config.toml, agents, skills, etc.\n- Ask for confirmation before overwriting existing .grok folder\n- Make it easy for users to have project-specific customization",
+      "testStrategy": "Test in a clean directory and in a directory that already has .grok/",
+      "subtasks": [
+        {
+          "id": 225.1,
+          "title": "Implement /init command handler",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 225.2,
+          "title": "Copy system config files",
+          "status": "pending",
+          "dependencies": [
+            1
+          ]
+        },
+        {
+          "id": 225.3,
+          "title": "Add overwrite protection",
+          "status": "pending",
+          "dependencies": [
+            1
+          ]
+        },
+        {
+          "id": 225.4,
+          "title": "Update command registry and help",
+          "status": "pending",
+          "dependencies": [
+            1
+          ]
+        },
+        {
+          "id": 225.5,
+          "title": "Documentation update",
+          "status": "pending",
+          "dependencies": [
+            4
+          ]
+        }
+      ]
     }
   ]
 }
