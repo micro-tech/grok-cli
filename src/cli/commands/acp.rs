@@ -580,6 +580,24 @@ fn send_available_commands_update_cx(
 // Both types serialize to the same ACP wire JSON, so a serde round-trip works.
 // ---------------------------------------------------------------------------
 
+/// Returns `true` for `SessionUpdate` variants that the `agent_client_protocol`
+/// crate's schema understands on the wire.  Our custom extensions
+/// (`StatusBarUpdate`, `ContextUsageUpdate`, `AgentActivity`, `ThinkingUpdate`,
+/// `ThinkingBlockUpdate`, `Raw`) are grok-cli additions that Zed ignores for
+/// now; the crate round-trip would panic/warn on them, so we skip them here.
+/// The status-bar has its own `AgentMessageChunk` text fallback in
+/// `emit_status_bar`, so nothing visible is lost.
+#[inline]
+fn is_crate_compatible(notif: &SessionNotification) -> bool {
+    matches!(
+        notif.update,
+        SessionUpdate::AgentMessageChunk(_)
+            | SessionUpdate::AvailableCommandsUpdate(_)
+            | SessionUpdate::ToolCall(_)
+            | SessionUpdate::ToolCallUpdate(_)
+    )
+}
+
 fn local_notif_to_crate(
     local: &SessionNotification,
 ) -> Result<agent_client_protocol::schema::v1::SessionNotification> {
@@ -588,13 +606,20 @@ fn local_notif_to_crate(
 }
 
 /// Convert a local `SessionNotification` to the crate's type and send it via
-/// `cx`. Logs a warning if either step fails so callers don't need to handle
-/// the error themselves (notifications are best-effort — a failure must not
-/// abort the session).
+/// `cx`.  Variants not in the crate's schema are silently skipped — they are
+/// grok-cli extensions (status bar, context usage, thinking traces) that Zed
+/// does not yet support natively.  A warning is only emitted when a supposedly
+/// compatible variant fails to round-trip (which would indicate a real bug).
 fn send_session_notif(
     notif: &SessionNotification,
     cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
 ) {
+    if !is_crate_compatible(notif) {
+        // Extension variant — the crate doesn't know about it.  This is
+        // expected and not an error; log at debug level only.
+        debug!("Skipping crate-incompatible session update (extension variant)");
+        return;
+    }
     match local_notif_to_crate(notif) {
         Ok(crate_notif) => {
             if let Err(e) = cx.send_notification(crate_notif) {
@@ -698,9 +723,24 @@ async fn handle_session_prompt_v2(
                 ai_prompt.len()
             );
             let _ = chat_logger::log_user(&message_text);
-            let text = run_ai_and_collect(&agent, &session_id, &ai_prompt, &cx)
-                .await
-                .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
+            let text = match run_ai_and_collect(&agent, &session_id, &ai_prompt, &cx).await {
+                Ok(t) => t,
+                Err(e) => {
+                    // Deliver the error as a visible message so Zed stays
+                    // connected instead of receiving a hard protocol error.
+                    let err_text = format!("\u{274c} {}", e);
+                    let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                        ContentBlock::Text(TextContent::new(&err_text)),
+                    ));
+                    send_session_notif(&SessionNotification::new(session_id.clone(), update), &cx);
+                    let r = responder
+                        .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                            agent_client_protocol::schema::v1::StopReason::EndTurn,
+                        ))
+                        .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+                    return r;
+                }
+            };
             let _ = chat_logger::log_assistant(&text);
             let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
                 TextContent::new(&text),
@@ -772,11 +812,30 @@ async fn handle_session_prompt_v2(
         }
     }
 
-    // ── Normal AI chat ────────────────────────────────────────────────────────
+    // ── Normal AI chat ──────────────────────────────────────────────────────────
     let _ = chat_logger::log_user(&message_text);
-    let text = run_ai_and_collect(&agent, &session_id, &message_text, &cx)
-        .await
-        .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
+    let text = match run_ai_and_collect(&agent, &session_id, &message_text, &cx).await {
+        Ok(t) => t,
+        Err(e) => {
+            // Return the error as a visible message rather than a hard
+            // JSON-RPC error (-32603).  A protocol error causes Zed to close
+            // the ACP connection (server exits), while an error message chunk
+            // keeps the session alive so the user can retry.
+            let err_text = format!("\u{274c} {}", e);
+            warn!("AI chat error (returning as message): {}", e);
+            let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                TextContent::new(&err_text),
+            )));
+            send_session_notif(&SessionNotification::new(session_id.clone(), update), &cx);
+            let r = responder
+                .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                    agent_client_protocol::schema::v1::StopReason::EndTurn,
+                ))
+                .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+            agent.save_session_to_disk(&session_id).await.ok();
+            return r;
+        }
+    };
     let _ = chat_logger::log_assistant(&text);
 
     // Send final text chunk

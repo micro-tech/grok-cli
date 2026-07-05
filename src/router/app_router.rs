@@ -27,7 +27,7 @@ use serde_json::Value;
 
 use crate::MessageWithFinishReason;
 use crate::router::backends::GrokBackend;
-use crate::router::{CpuRouter, RouterRequest};
+use crate::router::{CpuRouter, RouterError, RouterRequest, RouterResponse};
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -164,6 +164,26 @@ impl AppRouter {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
 
         Ok(resp.into_message_with_finish_reason())
+    }
+
+    /// Run the full **tool-execution loop** for a sub-agent session.
+    ///
+    /// Delegates to [`CpuRouter::route_with_tools`], which calls the backend,
+    /// executes any tool calls via the registry, appends results to the
+    /// message history, and repeats until the model returns a final text
+    /// response or `max_iterations` is reached.
+    ///
+    /// This is the correct entry point for sub-agents that need tool access.
+    /// For pure text completion (no tools) use [`Self::chat_completion`].
+    pub async fn route_with_tools(
+        &self,
+        req: RouterRequest,
+        context: &crate::tools::ToolContext,
+        max_iterations: u32,
+    ) -> Result<RouterResponse, RouterError> {
+        self.inner
+            .route_with_tools(req, context, max_iterations)
+            .await
     }
 }
 

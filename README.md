@@ -6,7 +6,7 @@
 
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
-> **Latest (v0.2.2)**: ACP startup performance overhaul — `AppRouter`, `SecurityManager`, and `HookManager` are now fully lazy (`OnceLock`). `grok acp stdio` starts in milliseconds and can immediately answer Zed’s `initialize` request. Also includes per-iteration context trimming, slash-command lock fixes, `text`→`content` schema fix, and TGS-RAG engine.
+> **Latest (v0.2.5-PreRelease)**: Sub-agent system fully wired — `fork_agent` now runs real parallel xAI API calls via `tokio::spawn`, `join_agents` gives per-agent status reporting, and `delegate_plan_step` properly tracks parent-child relationships. ACP `session/load` bug fixed (Zed sessions now initialize correctly), `status_bar_update` warnings eliminated, and tool-loop errors now return gracefully as chat messages instead of killing the ACP connection.
 
 ## ✨ Features
 
@@ -27,12 +27,21 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 - **Zed Editor Integration** — Full Agent Client Protocol (ACP) support with **instant stdio startup** (lazy router, security & hook managers), session resume/fork, and rich structured feedback:
   - Real-time thinking traces (`ThinkingUpdate`)
   - Live context usage meter (`ContextUsageUpdate`)
-  - Future sub-agent activity notifications (`AgentActivityUpdate`)
+  - Live sub-agent activity notifications (AgentActivityUpdate) — spawn/fork/join/cancel events in Zed UI
 - **Thinking Modes** — `/think off|low|high` for controllable reasoning effort
 - **TGS-RAG Engine** — Text-Graph Synergy Retrieval: hybrid BM25 + embeddings + graph-aware code context (tree-sitter + syn)
 - **Code Intelligence** — Explain, review, generate, and refactor across any language
 - **Starlink Optimizations** — Smart retries and timeout handling for satellite connections
-- **Multi-Agent Orchestration** — `AgentManager`, sub-agent spawning (`spawn_agent`/`fork_agent`), result joining, in-memory messaging, and `DelegateToSubAgent` plan steps (Task 127)
+- **Multi-Agent Orchestration** — Fully wired parallel sub-agent system:
+  - `spawn_agent(task, context, max_tokens)` — real xAI API call on `grok-3-mini` with Starlink-aware retries
+  - `fork_agent(tasks[])` — parallel `tokio::spawn` per task, waits for all, returns structured results
+  - `join_agents(ids[])` — collect results with per-agent status (✅ / ❌ / ⏳ / ⚫)
+  - `delegate_plan_step(task, parent_id)` — child agents tracked under parent in registry
+  - `send_message` / `receive_messages` — file-based + in-memory message bus between agents
+  - `team_create` / `team_delete` — named agent team registry
+  - `list_agents` / `get_agent_status` / `cancel_agent` — full lifecycle management
+  - Activity events (Spawned/Forked/Joined/Cancelled) visible in Zed UI
+  - See [Doc/SUBAGENTS.md](Doc/SUBAGENTS.md) for full reference
 - **Bayesian Stabilization** — Configurable belief decay (`belief_decay_rate` / `prior_pull_rate`) prevents extreme intent dominance while keeping routing responsive
 - **Commit Message Generator** — `/commit` slash command + `generate_commit_message` tool that produces high-quality Conventional Commits messages from the current git diff (respects `commit_message_instructions` config and Session DNA)
 
@@ -110,6 +119,7 @@ All detailed guides live in the `Doc/` folder:
 - [Doc/QUICK_REFERENCE.md](Doc/QUICK_REFERENCE.md) — Command cheat sheet
 - [Doc/SECURITY.md](Doc/SECURITY.md) — Security model & external access
 - [Doc/HOOKS_AND_EXTENSIONS.md](Doc/HOOKS_AND_EXTENSIONS.md) — Extension system
+- [Doc/SUBAGENTS.md](Doc/SUBAGENTS.md) — Multi-agent orchestration reference
 - Full changelog history: [Doc/CHANGELOG_FULL.md](Doc/CHANGELOG_FULL.md)
 
 ## 🤝 Contributing
