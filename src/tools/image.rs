@@ -58,11 +58,15 @@ pub fn prepare_image_content(path_or_url: &str) -> Result<String> {
 /// This enables direct prompt usage like:
 /// "analyze this: ./diagram.png" or "what's in https://example.com/chart.jpg"
 pub fn extract_image_from_message(message: &str) -> Option<String> {
-    // Simple heuristic: look for tokens that look like image paths or URLs
-    for token in message.split_whitespace() {
-        let cleaned = token.trim_matches(|c: char| c == ',' || c == '.' || c == '!' || c == '?');
-        if is_image_path(cleaned) || is_image_url(cleaned) {
-            return Some(cleaned.to_string());
+    // Improved: handle filenames with spaces and parentheses
+    // Match common image patterns (supports spaces + parens)
+    let re = regex::Regex::new(r#"(?i)([\w\./\\~\(\) -]+\.(?:png|jpe?g|webp|gif))"#).ok()?;
+    if let Some(caps) = re.captures(message) {
+        if let Some(m) = caps.get(1) {
+            let path = m.as_str().trim();
+            if is_image_path(path) || is_image_url(path) {
+                return Some(path.to_string());
+            }
         }
     }
     None

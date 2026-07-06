@@ -40,6 +40,12 @@ pub fn should_use_vision_model(message: &str) -> bool {
         || message.to_lowercase().contains("photo")
 }
 
+/// Returns the best vision model to fall back to when the current model
+/// does not support vision. xAI's current dedicated vision model is used.
+pub fn get_vision_fallback_model() -> &'static str {
+    "grok-2-vision-1212"
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

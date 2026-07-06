@@ -572,6 +572,21 @@ fn handle_interactive_command(
                     // understand "/web ..."). Full enhancement happens in ACP mode.
                     let _ = enhanced;
                 }
+
+                // Vision / image support: if /image was used, warn if current model
+                // is not vision-capable (we don't have the model var here, so we just
+                // remind the user to use a vision model).
+                if let slash_commands::SlashCommand::Image { path, .. } = &cmd {
+                    let fallback = crate::tools::vision::get_vision_fallback_model();
+                    println!(
+                        "{} Image command detected. Use `--model {}` (or a vision model) for best results.",
+                        "🖼️".cyan(),
+                        fallback
+                    );
+                    if let Ok(_) = crate::tools::image::prepare_image_content(path) {
+                        crate::tools::image::print_image_attached_feedback(path);
+                    }
+                }
             }
             Ok(None)
         }
