@@ -1343,12 +1343,20 @@ impl Default for LoggingConfig {
 use std::env;
 
 /// Returns the root configuration directory for grok-cli.
-/// All persistent state (config, logs, sessions, memory, etc.) lives under
-/// `~/.grok-cli` (or `%APPDATA%\grok-cli` on Windows).
+/// 
+/// Platform-specific locations:
+/// - Windows: `%APPDATA%\grok-cli` (e.g. `AppData\Roaming\grok-cli`)
+/// - macOS:   `~/Library/Application Support/grok-cli`
+/// - Linux:   `~/.config/grok-cli`
+/// 
+/// Falls back to `~/.grok-cli` if the platform config dir cannot be determined.
 pub fn grok_config_dir() -> PathBuf {
-    dirs::home_dir()
-        .unwrap_or_else(|| PathBuf::from("."))
-        .join(".grok-cli")
+    dirs::config_dir()
+        .map(|p| p.join("grok-cli"))
+        .or_else(|| {
+            dirs::home_dir().map(|p| p.join(".grok-cli"))
+        })
+        .unwrap_or_else(|| PathBuf::from(".").join(".grok-cli"))
 }
 
 /// Configuration scope
