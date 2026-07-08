@@ -464,7 +464,7 @@ fn handle_interactive_command(
                     "Please analyze this image.".to_string()
                 };
 
-                match crate::tools::vision_api::create_vision_message(&text, path) {
+                match crate::tools::create_vision_message(&text, path) {
                     Ok(vision_msg) => {
                         crate::tools::image::print_image_attached_feedback(path);
                         conversation_history.push(vision_msg);
@@ -586,8 +586,6 @@ fn handle_interactive_command(
                                 "🧠 Current model: (use `--model <name>` when starting the CLI session)"
                             );
                         }
-                        // Image command is handled below (not a BuiltinResult)
-                        _ => {}
                     }
                     return Ok(Some(CommandResult::Continue));
                 }
@@ -604,7 +602,7 @@ fn handle_interactive_command(
                     } else {
                         prompt.clone()
                     };
-                    match crate::tools::vision_api::create_vision_message(&text, path) {
+                    match crate::tools::create_vision_message(&text, path) {
                         Ok(vision_msg) => {
                             crate::tools::image::print_image_attached_feedback(path);
                             conversation_history.push(vision_msg);

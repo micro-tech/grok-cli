@@ -1,0 +1,275 @@
+
+
+#default_model = "grok-build-0.1"
+default_model = "grok-4.3"
+default_temperature = 0.7
+# Output token budget (not the context window).
+# grok-4.3 supports up to 32768 output tokens; 16384 is a safe default.
+default_max_tokens = 16384
+timeout_secs = 300
+max_retries = 5
+
+[general]
+preview_features = false
+preferred_editor = ""
+vim_mode = false
+disable_auto_update = false
+disable_update_nag = false
+enable_prompt_completion = false
+retry_fetch_errors = false
+debug_keystroke_logging = false
+
+[general.session_retention]
+enabled = false
+max_age = 168
+max_count = 50
+min_retention = 24
+
+[output]
+format = "text"
+
+[ui]
+colors = true
+progress_bars = true
+verbose_errors = false
+terminal_width = 0
+unicode = true
+theme = "default"
+hide_window_title = false
+show_status_in_title = false
+hide_tips = false
+hide_banner = false
+hide_context_summary = false
+hide_footer = false
+show_memory_usage = false
+show_line_numbers = true
+show_citations = false
+show_model_info_in_chat = false
+use_full_width = true
+use_alternate_buffer = false
+incremental_rendering = false
+custom_witty_phrases = []
+
+[ui.custom_themes]
+
+[ui.footer]
+hide_cwd = false
+hide_sandbox_status = false
+hide_model_info = false
+hide_context_percentage = true
+
+[ui.accessibility]
+disable_loading_phrases = false
+screen_reader = false
+
+[ui.interactive]
+prompt_style = "rich"
+show_context_usage = true
+auto_save_sessions = false
+check_directory = true
+startup_animation = true
+update_check_hours = 24
+
+[ui.interactive.key_bindings]
+
+[model]
+name = "grok-4.3"
+max_session_turns = 200
+summarize_tool_output = false
+compression_threshold = 0.0
+skip_next_speaker_check = true
+
+[context]
+file_name = ""
+import_format = ""
+discovery_max_dirs = 0
+include_directories = []
+load_memory_from_include_directories = false
+
+[context.file_filtering]
+respect_git_ignore = true
+respect_grok_ignore = true
+enable_recursive_file_search = true
+disable_fuzzy_search = false
+
+[tools]
+auto_accept = false
+core = []
+allowed = []
+exclude = []
+discovery_command = ""
+call_command = ""
+use_ripgrep = true
+enable_tool_output_truncation = true
+truncate_tool_output_threshold = 0
+truncate_tool_output_lines = 0
+enable_message_bus_integration = true
+enable_hooks = true
+
+[tools.shell]
+enable_interactive_shell = true
+pager = ""
+show_color = false
+inactivity_timeout = 0
+# Maximum seconds a shell command (e.g. cargo build, npm install) may run
+# before it is killed and an error is returned to the model.
+# Increase this for slow builds or large dependency installs.
+# The GROK_SHELL_TIMEOUT_SECS environment variable overrides this value
+# at runtime without editing the file (useful for one-off long commands).
+# Default: 300 (5 minutes)
+command_timeout_secs = 600
+
+[security]
+disable_yolo_mode = false
+enable_permanent_tool_approval = false
+block_git_extensions = false
+shell_approval_mode = ""
+
+
+[security.folder_trust]
+enabled = false
+
+[security.environment_variable_redaction]
+allowed = []
+blocked = []
+enabled = false
+
+[security.external_access]
+enabled = false
+require_approval = true
+logging = true
+allowed_paths = ["./", "./logs", "./config", "./zed"]
+excluded_patterns = [
+    "**/.env",
+    "**/.env.*",
+    "**/.git/**",
+    "**/.ssh/**",
+    "**/*.key",
+    "**/*.pem",
+    "**/*.p12",
+    "**/*.pfx",
+    "**/id_rsa*",
+    "**/password*",
+    "**/secret*",
+    "**/.aws/**",
+    "**/.azure/**",
+]
+
+[experimental]
+enable_agents = false
+extension_management = false
+extension_reloading = false
+jit_context = false
+
+
+[bayesian]
+# Master on/off switch. When false the router is fully bypassed.
+enabled = true
+
+# Show the real-time ASCII belief-graph after each message.
+show_belief_graph = true
+
+# ── Sensitivity thresholds ────────────────────────────────────────────────────
+# All values are probabilities in [0.0, 1.0].
+# Lower  → more cautious / fires more readily
+# Higher → more permissive / fires less readily
+
+# Router asks for clarification when P(need_clarification) exceeds this.
+clarification_threshold = 0.75
+
+# System uncertainty notes injected when P(need_clarification|low_confidence)
+# exceeds this.
+uncertainty_threshold = 0.85
+
+# "Request is vague" note injected when P(is_vague) exceeds this.
+vagueness_threshold = 0.80
+
+# ── Learning parameters ───────────────────────────────────────────────────────
+
+# Strength of keyword → intent likelihood spikes.
+# Higher = more decisive routing on a keyword match.
+intent_likelihood_weight = 1.6
+
+# Fractional boost per successful tool call (0.1 = 10%).
+profile_learning_rate = 0.05
+
+# ── Default priors ────────────────────────────────────────────────────────────
+# Starting belief weights used when no saved profile exists on disk.
+# Values need not sum to 1 — they are normalised on load.
+[bayesian.priors]
+intent_edit         = 0.2
+intent_shell        = 0.2
+intent_search       = 0.2
+intent_question     = 0.3
+need_clarification  = 0.1
+low_confidence      = 0.2
+is_vague            = 0.1
+
+[experimental.codebase_investigator_settings]
+enabled = true
+max_num_turns = 10
+max_time_minutes = 15
+thinking_budget = 1000
+model = "auto"
+
+[experimental.extensions]
+enabled = true
+extension_dir = "~/.grok/extensions"
+enabled_extensions = []
+allow_config_extensions = true
+
+[acp]
+enabled = true
+bind_host = "127.0.0.1"
+protocol_version = "2024-11-05"
+dev_mode = false
+# max_tool_loop_iterations = 25   # set back to 25 had a crash wit it @100
+max_tool_loop_iterations = 30
+# Disable the session/request_permission gate by default.
+# Zed and most ACP clients do not yet implement the permission-dialog protocol,
+# so leaving this true causes every tool call to be silently blocked.
+# Set to true only when using a client that supports session/request_permission.
+require_permission = false
+permission_timeout_secs = 300
+# Keep 80 turns of conversation history by count.
+max_history_messages = 80
+# Token budget for grok-3 and older models (256 k window, ~36 k headroom).
+max_context_tokens = 220000
+# Token budget for grok-4.x models (1 M window, ~50 k headroom).
+# When the active model starts with "grok-4" this value is used instead of
+# max_context_tokens above.
+grok4_max_context_tokens = 950000
+# Truncate individual tool-result messages larger than this (chars).
+# 0 = no truncation. Raised from 30000 so the AI receives full file contents.
+# Grok-4.3 has a 1M token context window, so large reads are safe.
+max_tool_result_chars = 100000
+# Enable auto-summarization when context fills up.
+auto_compress = true
+compression_threshold = 0.75
+compression_chunk_ratio = 0.40
+# Reasoning / thinking mode for grok-4.3 and grok-3-mini.
+# off  = standard response, fastest (default)
+# low  = light reasoning, slightly more thorough
+# high = deep reasoning, most thorough but slower and more expensive
+# Change per-session with /think or the --thinking CLI flag.
+thinking_mode = "low"
+
+[mcp.servers.github]
+type = "stdio"
+command = 'H:\GitHub\grok-cli\target\debug\github_mcp.exe'
+args = []
+
+[mcp.servers.github.env]
+
+[logging]
+level = "info"
+file_logging = false
+max_file_size_mb = 10
+rotation_count = 5
+
+[telemetry]
+enabled = false
+
+[rate_limits]
+max_tokens_per_minute = 100000
+max_requests_per_minute = 60

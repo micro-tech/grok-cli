@@ -202,6 +202,18 @@ pub enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Initialize a new Grok project in the current directory.
+    ///
+    /// Creates a `.grok/` folder (with config, agents, skills, etc.)
+    /// and adds `.grok/` to `.gitignore`.
+    ///
+    /// Use `--force` to overwrite an existing `.grok/` directory.
+    Init {
+        /// Overwrite existing `.grok/` directory if present.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 /// Main application entry point
@@ -442,6 +454,12 @@ pub async fn run() -> Result<()> {
                     print!("{}", dot);
                 }
             }
+        }
+        Some(Commands::Init { force }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::init::handle_init(*force).await?;
         }
         None => {
             // Default to interactive mode

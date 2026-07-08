@@ -287,10 +287,10 @@
       "id": 225,
       "title": "Add /init command - Project initialization / scaffolding",
       "description": "Add a new /init slash command that creates a .grok/ folder in the current project and copies the system-level configuration files (config.toml, agents, etc.) so users can customize them per-project.",
-      "status": "pending",
+      "status": "done",
       "dependencies": [],
       "priority": "medium",
-      "details": "The command should:\n- Create .grok/ directory if it doesn't exist\n- Copy relevant files from the user's global config (~/.grok-cli/ or equivalent)\n- Support files like config.toml, agents, skills, etc.\n- Ask for confirmation before overwriting existing .grok folder\n- Make it easy for users to have project-specific customization",
+      "details": "Implemented in src/tools/init.rs. Properly separates system-only folders (sessions, logs, audit, memory, etc.) from project-customizable ones (config.toml, agents/, skills/). Added overwrite protection and gitignore handling.",
       "testStrategy": "Test in a clean directory and in a directory that already has .grok/",
       "subtasks": [
         {
