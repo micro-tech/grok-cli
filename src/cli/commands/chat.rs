@@ -451,28 +451,24 @@ fn handle_interactive_command(
             Ok(Some(CommandResult::Continue))
         }
         "/image" => {
-            // Parse /image command manually for CLI mode
+            // Parse /image command manually for CLI mode (proper vision format)
             let args = input.trim_start_matches("/image").trim();
             if args.is_empty() {
                 println!("{} Usage: /image <path> [prompt]", "⚠".yellow());
             } else {
                 let parts: Vec<&str> = args.splitn(2, ' ').collect();
                 let path = parts[0];
-                let prompt = parts.get(1).unwrap_or(&"").to_string();
+                let text = if parts.len() > 1 {
+                    parts[1].to_string()
+                } else {
+                    "Please analyze this image.".to_string()
+                };
 
-                match crate::tools::image::prepare_image_content(path) {
-                    Ok(_) => {
+                match crate::tools::vision_api::create_vision_message(&text, path) {
+                    Ok(vision_msg) => {
                         crate::tools::image::print_image_attached_feedback(path);
-                        let msg = if prompt.is_empty() {
-                            format!("[Attached image: {}] Please analyze this image.", path)
-                        } else {
-                            format!("[Attached image: {}] {}", path, prompt)
-                        };
-                        conversation_history.push(json!({
-                            "role": "user",
-                            "content": msg
-                        }));
-                        println!("📎 Image attached to conversation.");
+                        conversation_history.push(vision_msg);
+                        println!("📎 Image attached with vision support.");
                     }
                     Err(e) => println!("❌ {}", e),
                 }
@@ -601,21 +597,18 @@ fn handle_interactive_command(
                     let _ = enhanced;
                 }
 
-                // Handle /image specially in CLI
+                // Handle /image specially in CLI (proper vision format)
                 if let slash_commands::SlashCommand::Image { path, prompt } = &cmd {
-                    match crate::tools::image::prepare_image_content(path) {
-                        Ok(_) => {
+                    let text = if prompt.is_empty() {
+                        "Please analyze this image.".to_string()
+                    } else {
+                        prompt.clone()
+                    };
+                    match crate::tools::vision_api::create_vision_message(&text, path) {
+                        Ok(vision_msg) => {
                             crate::tools::image::print_image_attached_feedback(path);
-                            let msg = if prompt.is_empty() {
-                                format!("[Attached image: {}] Please analyze this image.", path)
-                            } else {
-                                format!("[Attached image: {}] {}", path, prompt)
-                            };
-                            conversation_history.push(json!({
-                                "role": "user",
-                                "content": msg
-                            }));
-                            println!("📎 Image attached. The next message you send will include the image.");
+                            conversation_history.push(vision_msg);
+                            println!("📎 Image attached with vision support.");
                             return Ok(Some(CommandResult::Continue));
                         }
                         Err(e) => {

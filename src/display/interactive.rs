@@ -507,6 +507,10 @@ async fn run_interactive_loop(
             description: "Dry-run simulation mode (on/off or status)".to_string(),
         },
         Suggestion {
+            text: "/image".to_string(),
+            description: "Attach an image for vision analysis".to_string(),
+        },
+        Suggestion {
             text: "!ls".to_string(),
             description: "List files (shell command)".to_string(),
         },
