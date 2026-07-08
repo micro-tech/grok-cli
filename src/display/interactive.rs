@@ -971,6 +971,33 @@ async fn handle_special_commands(
             print_hooks_info(app_config);
             Ok(Some(true))
         }
+        "image" => {
+            if parts.len() < 2 {
+                println!("{} Usage: /image <path> [prompt]", "⚠".bright_yellow());
+            } else {
+                let path = parts[1];
+                let prompt = if parts.len() > 2 {
+                    parts[2..].join(" ")
+                } else {
+                    String::new()
+                };
+                match crate::tools::image::prepare_image_content(path) {
+                    Ok(_) => {
+                        crate::tools::image::print_image_attached_feedback(path);
+                        let msg = if prompt.is_empty() {
+                            format!("[Attached image: {}] Please analyze this image.", path)
+                        } else {
+                            format!("[Attached image: {}] {}", path, prompt)
+                        };
+                        // Store the image reference in the next user message
+                        session.add_conversation_item("user", &msg, None);
+                        println!("📎 Image attached. The next message you send will include the image.");
+                    }
+                    Err(e) => println!("❌ {}", e),
+                }
+            }
+            Ok(Some(true))
+        }
         "simulate" => {
             match parts.get(1).copied() {
                 Some("on") => {

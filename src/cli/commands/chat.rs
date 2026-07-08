@@ -450,6 +450,35 @@ fn handle_interactive_command(
             print_help();
             Ok(Some(CommandResult::Continue))
         }
+        "/image" => {
+            // Parse /image command manually for CLI mode
+            let args = input.trim_start_matches("/image").trim();
+            if args.is_empty() {
+                println!("{} Usage: /image <path> [prompt]", "⚠".yellow());
+            } else {
+                let parts: Vec<&str> = args.splitn(2, ' ').collect();
+                let path = parts[0];
+                let prompt = parts.get(1).unwrap_or(&"").to_string();
+
+                match crate::tools::image::prepare_image_content(path) {
+                    Ok(_) => {
+                        crate::tools::image::print_image_attached_feedback(path);
+                        let msg = if prompt.is_empty() {
+                            format!("[Attached image: {}] Please analyze this image.", path)
+                        } else {
+                            format!("[Attached image: {}] {}", path, prompt)
+                        };
+                        conversation_history.push(json!({
+                            "role": "user",
+                            "content": msg
+                        }));
+                        println!("📎 Image attached to conversation.");
+                    }
+                    Err(e) => println!("❌ {}", e),
+                }
+            }
+            Ok(Some(CommandResult::Continue))
+        }
         "/clear" => {
             if conversation_history
                 .first()
@@ -561,30 +590,38 @@ fn handle_interactive_command(
                                 "🧠 Current model: (use `--model <name>` when starting the CLI session)"
                             );
                         }
+                        // Image command is handled below (not a BuiltinResult)
+                        _ => {}
                     }
                     return Ok(Some(CommandResult::Continue));
                 }
 
                 // AI-assisted slash commands → enhance prompt and continue as normal user message
                 if let Some(enhanced) = slash_commands::command_to_prompt(&cmd) {
-                    // We can't easily mutate the caller's input here, so we just
-                    // let the original command text go through (the model will still
-                    // understand "/web ..."). Full enhancement happens in ACP mode.
                     let _ = enhanced;
                 }
 
-                // Vision / image support: if /image was used, warn if current model
-                // is not vision-capable (we don't have the model var here, so we just
-                // remind the user to use a vision model).
-                if let slash_commands::SlashCommand::Image { path, .. } = &cmd {
-                    let fallback = crate::tools::vision::get_vision_fallback_model();
-                    println!(
-                        "{} Image command detected. Use `--model {}` (or a vision model) for best results.",
-                        "🖼️".cyan(),
-                        fallback
-                    );
-                    if let Ok(_) = crate::tools::image::prepare_image_content(path) {
-                        crate::tools::image::print_image_attached_feedback(path);
+                // Handle /image specially in CLI
+                if let slash_commands::SlashCommand::Image { path, prompt } = &cmd {
+                    match crate::tools::image::prepare_image_content(path) {
+                        Ok(_) => {
+                            crate::tools::image::print_image_attached_feedback(path);
+                            let msg = if prompt.is_empty() {
+                                format!("[Attached image: {}] Please analyze this image.", path)
+                            } else {
+                                format!("[Attached image: {}] {}", path, prompt)
+                            };
+                            conversation_history.push(json!({
+                                "role": "user",
+                                "content": msg
+                            }));
+                            println!("📎 Image attached. The next message you send will include the image.");
+                            return Ok(Some(CommandResult::Continue));
+                        }
+                        Err(e) => {
+                            println!("❌ {}", e);
+                            return Ok(Some(CommandResult::Continue));
+                        }
                     }
                 }
             }
