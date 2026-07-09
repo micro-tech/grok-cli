@@ -3,20 +3,22 @@
 use anyhow::Result;
 use tracing::info;
 
-/// Handle the `grok init [--force]` command
+/// Handle the `grok init [--force]` command.
+///
+/// Delegates to [`crate::tools::run_init`] which copies the global Grok config
+/// into the current project's `.grok/` directory.
 pub async fn handle_init(force: bool) -> Result<()> {
     if force {
-        // For now we just call the same logic; later we can add real overwrite support
-        info!("--force supplied — will overwrite existing .grok/ if present");
+        info!("--force supplied — existing .grok/ files will be overwritten");
     }
 
-    match crate::tools::run_init() {
+    match crate::tools::run_init(force) {
         Ok(msg) => {
             println!("{}", msg);
             Ok(())
         }
         Err(e) => {
-            eprintln!("❌ Failed to initialize project: {}", e);
+            eprintln!("❌  Failed to initialize project: {}", e);
             Err(e)
         }
     }

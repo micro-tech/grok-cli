@@ -231,7 +231,10 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
                 None // require at least a path
             } else {
                 let path = parts[0].to_string();
-                let prompt = parts.get(1).map(|s| s.trim().to_string()).unwrap_or_default();
+                let prompt = parts
+                    .get(1)
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
                 Some(SlashCommand::Image { path, prompt })
             }
         }
@@ -654,10 +657,14 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::RuleList => Some(BuiltinResult::ListRules),
         SlashCommand::RuleClear => Some(BuiltinResult::ClearRules),
         SlashCommand::Init => {
-            // Run the init logic and return the result as text
-            match crate::tools::run_init() {
+            // Run the init logic and return the result as text.
+            // ACP /init never forces — the user can re-run with `grok init --force`.
+            match crate::tools::run_init(false) {
                 Ok(msg) => Some(BuiltinResult::Text(msg)),
-                Err(e) => Some(BuiltinResult::Text(format!("❌ Failed to initialize: {}", e))),
+                Err(e) => Some(BuiltinResult::Text(format!(
+                    "❌ Failed to initialize: {}",
+                    e
+                ))),
             }
         }
         _ => None, // AI-assisted command
