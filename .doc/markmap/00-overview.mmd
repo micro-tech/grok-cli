@@ -1,0 +1,121 @@
+# Grok CLI — Overview
+
+## Navigation
+- [Overview](00-overview.html)
+- [CLI](01-cli.html)
+- [Agent](02-agent.html)
+- [RAG](03-rag.html)
+- [Memory](04-memory.html)
+- [Tools](05-tools.html)
+- [Engine](06-engine.html)
+- [Router](07-router.html)
+- [Config & Context](08-config-context.html)
+- [MCP & ACP](09-mcp-acp.html)
+- [Safety & Security](10-safety-security.html)
+- [Utils & Display](11-utils-display.html)
+
+## Version
+- 0.2.5 — 2026-07-04
+- Author: John McConnell
+- Repo: github.com/micro-tech/grok-cli
+
+## Entry Points
+- `src/main.rs` — binary bootstrap
+- `src/lib.rs` — crate root, all pub mods
+- `src/bin/installer.rs` — Windows installer
+
+## ACP / Zed Integration (`src/acp/`)
+- `mod.rs` — session lifecycle, JSON-RPC dispatch
+- `protocol.rs` — ACP message types
+- `security.rs` — path sandboxing
+- `slash_commands.rs` — `/help` `/clear` `/model` `/rule` etc.
+  - `get_available_commands()` — advertises to Zed command picker
+  - `handle_builtin()` — routes to BuiltinResult
+  - `command_to_prompt()` — builds AI prompt
+- `tools.rs` — routes ACP tool calls → `src/tools/`
+
+## Slash Commands
+- `/help` `/clear` `/context` `/tools` `/model`
+- `/think off|low|high` — reasoning effort
+- `/goal <text>` — session goal injection
+- `/rule add|list|remove|clear` — session-only rules
+- `/commit [instructions]` — Conventional Commits from git diff
+- `/bayes show|reset|explain` — Bayesian state
+- `/diagnostics` — system health
+- `/visualize` — pipeline graph
+- `/web` `/explain` `/review` `/plan` `/test` `/fix`
+
+## Session Data (`src/acp/mod.rs → SessionData`)
+- `messages` — conversation history
+- `config` — model, temperature, max_tokens
+- `current_goal` — active session goal
+- `session_rules` — temporary rules (SessionRules)
+- `bayes_engine` — Bayesian inference
+- `dna` — SessionDna personality
+
+## Context (`src/context/`)
+- `mod.rs` — multi-file context discovery
+- `session_rules.rs` — add/remove/list/clear/format_for_prompt
+- `belief_state.rs` — runtime belief tracking
+- `agent_rules.rs` — loads .agents/rules/ files
+
+## Router (`src/router/`)
+- Bayesian routing — belief-weighted model selection
+- Starlink-resilient retries + timeouts
+- Thinking mode passthrough (off/low/high)
+
+## Tools (`src/tools/`)
+- `registry.rs` — central tool registry
+- File: read_file, write_file, list_directory, find_path, delete_file
+- Shell: run_command
+- Web: web_search
+- Task: task graph tools
+- Agent: spawn_agent, fork_agent, join_agents
+
+## Memory (`src/memory/`)
+- 4-tier hierarchy: working → episodic → semantic → archival
+- Context compression + archiving
+
+## Safety (`src/safety/`)
+- `pre_write_hook.rs` — blocks binary, massive overwrites
+- `dry_run.rs` — diff preview before commit
+- `diff_validator.rs` — rejects full-file rewrites >200 lines
+- `intent_validator.rs` — forces clarification on ambiguous edits
+- `suspicious_write_guard.rs` — final in-tool checks
+- `dna_safety.rs` — raises thresholds on repeated failures
+- `tool_health_monitor.rs` — per-tool success/failure tracking
+
+## Session DNA (`src/session/dna.rs`)
+- tone, verbosity, risk_tolerance, coding_style, tool_preferences
+- Injected into system prompt
+- Evolves via tool feedback loop
+- Drives mode: coder / research / shell / creative
+
+## Skills (`src/skills/`)
+- Auto-activation on project context keywords
+- `.agents/skills/` — project-local skills
+- `~/.grok-cli/agents/skills/` — global skills
+
+## Engine (`src/engine/`)
+- Reasoning engine — plan → step → execute
+- `StepAction::DelegateToSubAgent` — multi-agent
+- DNA-driven skill arbitration
+
+## Multi-Agent (`src/agent/`)
+- `manager.rs` — AgentManager registry
+- `message_bus.rs` — in-memory AgentMessageBus
+- Tools: spawn_agent, fork_agent, join_agents, cancel_agent
+
+## Config (`src/config/`)
+- Priority: env vars → CLI args → .grok/.env → ~/.grok/.env → defaults
+- `config.toml` — model, ACP, logging, tools, sessions
+
+## Key Directories
+- `Doc/` — user-facing docs, quick references
+- `docs/` — architecture docs
+- `.doc/markmap/` — mind maps (this file)
+- `.agents/rules/` — agent behavior rules
+- `.agents/skills/` — project skills
+- `config/agents/` — shipped agent presets
+- `examples/skills/` — skill examples
+- `scripts/` — build/release scripts

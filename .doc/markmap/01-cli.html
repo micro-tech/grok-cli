@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="X-UA-Compatible" content="ie=edge" />
+<title>Markmap</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+}
+html {
+  font-family: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+#mindmap {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+.markmap-dark {
+  background: #27272a;
+  color: white;
+}
+</style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.18.12/dist/style.css">
+</head>
+<body>
+<svg id="mindmap"></svg>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script><script src="https://cdn.jsdelivr.net/npm/markmap-view@0.18.12/dist/browser/index.js"></script><script src="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.18.12/dist/index.js"></script><script>((r) => {
+          setTimeout(r);
+        })(() => {
+  const { markmap, mm } = window;
+  const toolbar = new markmap.Toolbar();
+  toolbar.attach(mm);
+  const el = toolbar.render();
+  el.setAttribute("style", "position:absolute;bottom:20px;right:20px");
+  document.body.append(el);
+})</script><script>((getMarkmap, getOptions, root2, jsonOptions) => {
+              const markmap = getMarkmap();
+              window.mm = markmap.Markmap.create(
+                "svg#mindmap",
+                (getOptions || markmap.deriveOptions)(jsonOptions),
+                root2
+              );
+              if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+                document.documentElement.classList.add("markmap-dark");
+              }
+            })(() => window.markmap,null,{"content":"grok-cli &#xb7; CLI","children":[{"content":"Navigation","children":[{"content":"<a href=\"00-overview.html\">Overview</a>","children":[],"payload":{"tag":"li","lines":"3,4"}},{"content":"<a href=\"01-cli.html\">CLI</a>","children":[],"payload":{"tag":"li","lines":"4,5"}},{"content":"<a href=\"02-agent.html\">Agent</a>","children":[],"payload":{"tag":"li","lines":"5,6"}},{"content":"<a href=\"03-rag.html\">RAG</a>","children":[],"payload":{"tag":"li","lines":"6,7"}},{"content":"<a href=\"04-memory.html\">Memory</a>","children":[],"payload":{"tag":"li","lines":"7,8"}},{"content":"<a href=\"05-tools.html\">Tools</a>","children":[],"payload":{"tag":"li","lines":"8,9"}},{"content":"<a href=\"06-engine.html\">Engine</a>","children":[],"payload":{"tag":"li","lines":"9,10"}},{"content":"<a href=\"07-router.html\">Router</a>","children":[],"payload":{"tag":"li","lines":"10,11"}},{"content":"<a href=\"08-config-context.html\">Config &amp; Context</a>","children":[],"payload":{"tag":"li","lines":"11,12"}},{"content":"<a href=\"09-mcp-acp.html\">MCP &amp; ACP</a>","children":[],"payload":{"tag":"li","lines":"12,13"}},{"content":"<a href=\"10-safety-security.html\">Safety &amp; Security</a>","children":[],"payload":{"tag":"li","lines":"13,14"}},{"content":"<a href=\"11-utils-display.html\">Utils &amp; Display</a>","children":[],"payload":{"tag":"li","lines":"14,16"}}],"payload":{"tag":"h2","lines":"2,3"}},{"content":"App Entry","children":[{"content":"<code>cli/app.rs</code>","children":[],"payload":{"tag":"li","lines":"17,18"}},{"content":"<code>cli/mod.rs</code>","children":[],"payload":{"tag":"li","lines":"18,20"}}],"payload":{"tag":"h2","lines":"16,17"}},{"content":"Commands","children":[{"content":"chat, code, config, tools, skills, setup...","children":[],"payload":{"tag":"li","lines":"21,22"}},{"content":"<code>cli/commands/*.rs</code>","children":[],"payload":{"tag":"li","lines":"22,24"}}],"payload":{"tag":"h2","lines":"20,21"}},{"content":"Interactive UI","children":[{"content":"<code>display/</code>","children":[],"payload":{"tag":"li","lines":"25,27"}}],"payload":{"tag":"h2","lines":"24,25"}},{"content":"Dependencies","children":[{"content":"(to be filled)","children":[],"payload":{"tag":"li","lines":"28,30"}}],"payload":{"tag":"h2","lines":"27,28"}},{"content":"Notes","children":[{"content":"(to be filled)","children":[],"payload":{"tag":"li","lines":"31,32"}}],"payload":{"tag":"h2","lines":"30,31"}}],"payload":{"tag":"h1","lines":"0,1"}},null)</script>
+</body>
+</html>

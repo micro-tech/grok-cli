@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="X-UA-Compatible" content="ie=edge" />
+<title>Markmap</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+}
+html {
+  font-family: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+#mindmap {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+.markmap-dark {
+  background: #27272a;
+  color: white;
+}
+</style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.18.12/dist/style.css">
+</head>
+<body>
+<svg id="mindmap"></svg>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script><script src="https://cdn.jsdelivr.net/npm/markmap-view@0.18.12/dist/browser/index.js"></script><script src="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.18.12/dist/index.js"></script><script>((r) => {
+          setTimeout(r);
+        })(() => {
+  const { markmap, mm } = window;
+  const toolbar = new markmap.Toolbar();
+  toolbar.attach(mm);
+  const el = toolbar.render();
+  el.setAttribute("style", "position:absolute;bottom:20px;right:20px");
+  document.body.append(el);
+})</script><script>((getMarkmap, getOptions, root2, jsonOptions) => {
+              const markmap = getMarkmap();
+              window.mm = markmap.Markmap.create(
+                "svg#mindmap",
+                (getOptions || markmap.deriveOptions)(jsonOptions),
+                root2
+              );
+              if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+                document.documentElement.classList.add("markmap-dark");
+              }
+            })(() => window.markmap,null,{"content":"grok-cli &#xb7; Main Entry","children":[{"content":"Navigation","children":[{"content":"<a href=\"00-overview.html\">Overview</a>","children":[],"payload":{"tag":"li","lines":"3,4"}},{"content":"<a href=\"01-cli.html\">CLI</a>","children":[],"payload":{"tag":"li","lines":"4,5"}},{"content":"<a href=\"02-agent.html\">Agent</a>","children":[],"payload":{"tag":"li","lines":"5,6"}},{"content":"<a href=\"03-rag.html\">RAG</a>","children":[],"payload":{"tag":"li","lines":"6,7"}},{"content":"<a href=\"04-memory.html\">Memory</a>","children":[],"payload":{"tag":"li","lines":"7,8"}},{"content":"<a href=\"05-tools.html\">Tools</a>","children":[],"payload":{"tag":"li","lines":"8,9"}},{"content":"<a href=\"06-engine.html\">Engine</a>","children":[],"payload":{"tag":"li","lines":"9,10"}},{"content":"<a href=\"07-router.html\">Router</a>","children":[],"payload":{"tag":"li","lines":"10,11"}},{"content":"<a href=\"08-config-context.html\">Config &amp; Context</a>","children":[],"payload":{"tag":"li","lines":"11,12"}},{"content":"<a href=\"09-mcp-acp.html\">MCP &amp; ACP</a>","children":[],"payload":{"tag":"li","lines":"12,13"}},{"content":"<a href=\"10-safety-security.html\">Safety &amp; Security</a>","children":[],"payload":{"tag":"li","lines":"13,14"}},{"content":"<a href=\"11-utils-display.html\">Utils &amp; Display</a>","children":[],"payload":{"tag":"li","lines":"14,16"}}],"payload":{"tag":"h2","lines":"2,3"}},{"content":"Entry Point","children":[{"content":"<code>main()</code> &#x2014; async <code>#[tokio::main]</code>","children":[{"content":"Calls <code>setup_logging()</code>","children":[],"payload":{"tag":"li","lines":"18,19"}},{"content":"Delegates to <code>grok_cli::cli::app::run()</code>","children":[],"payload":{"tag":"li","lines":"19,21"}}],"payload":{"tag":"li","lines":"17,21"}}],"payload":{"tag":"h2","lines":"16,17"}},{"content":"Logging &#x2014; <code>setup_logging()</code>","children":[{"content":"\n<h3 data-lines=\"22,23\">Log File Path</h3>","children":[{"content":"<code>~/.grok/logs/grok-errors.log</code>","children":[],"payload":{"tag":"li","lines":"23,24"}},{"content":"Built via <code>dirs::home_dir()</code>","children":[],"payload":{"tag":"li","lines":"24,25"}},{"content":"Parent dirs created with <code>fs::create_dir_all</code>","children":[],"payload":{"tag":"li","lines":"25,26"}},{"content":"Fallback: <code>grok-errors.log</code> (CWD)","children":[],"payload":{"tag":"li","lines":"26,27"}}],"payload":{"tag":"li","lines":"22,27"}},{"content":"\n<h3 data-lines=\"27,28\">EnvFilter</h3>","children":[{"content":"Reads <code>RUST_LOG</code> env var","children":[],"payload":{"tag":"li","lines":"28,29"}},{"content":"Default: <code>warn</code> when unset","children":[],"payload":{"tag":"li","lines":"29,30"}},{"content":"Examples","children":[{"content":"<code>RUST_LOG=warn</code>","children":[],"payload":{"tag":"li","lines":"31,32"}},{"content":"<code>RUST_LOG=grok_cli=debug</code>","children":[],"payload":{"tag":"li","lines":"32,33"}},{"content":"<code>RUST_LOG=info</code>","children":[],"payload":{"tag":"li","lines":"33,34"}}],"payload":{"tag":"li","lines":"30,34"}}],"payload":{"tag":"li","lines":"27,34"}},{"content":"\n<h3 data-lines=\"34,35\">Stderr Layer</h3>","children":[{"content":"Format: compact, coloured","children":[],"payload":{"tag":"li","lines":"35,36"}},{"content":"No target, no thread IDs","children":[],"payload":{"tag":"li","lines":"36,37"}},{"content":"Writer: <code>std::io::stderr</code>","children":[],"payload":{"tag":"li","lines":"37,38"}}],"payload":{"tag":"li","lines":"34,38"}},{"content":"\n<h3 data-lines=\"38,39\">File Layer (JSON)</h3>","children":[{"content":"Format: JSON lines, no ANSI","children":[],"payload":{"tag":"li","lines":"39,40"}},{"content":"Includes target, file, line number, thread IDs","children":[],"payload":{"tag":"li","lines":"40,41"}},{"content":"Writer: <code>Mutex&lt;File&gt;</code> (append mode)","children":[],"payload":{"tag":"li","lines":"41,42"}},{"content":"Error handling","children":[{"content":"Success &#x2192; full two-sink subscriber","children":[],"payload":{"tag":"li","lines":"43,44"}},{"content":"Failure &#x2192; stderr-only + <code>tracing::warn!</code>","children":[],"payload":{"tag":"li","lines":"44,46"}}],"payload":{"tag":"li","lines":"42,46"}}],"payload":{"tag":"li","lines":"38,46"}}],"payload":{"tag":"h2","lines":"21,22"}},{"content":"Dependencies","children":[{"content":"<code>tokio</code> &#x2014; async runtime","children":[],"payload":{"tag":"li","lines":"47,48"}},{"content":"<code>tracing</code> &#x2014; structured logging macros","children":[],"payload":{"tag":"li","lines":"48,49"}},{"content":"<code>tracing-subscriber</code>","children":[{"content":"<code>EnvFilter</code>","children":[],"payload":{"tag":"li","lines":"50,51"}},{"content":"<code>fmt</code> layer (stderr + file)","children":[],"payload":{"tag":"li","lines":"51,52"}},{"content":"<code>SubscriberExt</code> / <code>SubscriberInitExt</code>","children":[],"payload":{"tag":"li","lines":"52,53"}}],"payload":{"tag":"li","lines":"49,53"}},{"content":"<code>dirs</code> &#x2014; home directory resolution","children":[],"payload":{"tag":"li","lines":"53,54"}},{"content":"<code>anyhow</code> &#x2014; error propagation from <code>main</code>","children":[],"payload":{"tag":"li","lines":"54,55"}},{"content":"<code>std::sync::Mutex</code> &#x2014; thread-safe file writer","children":[],"payload":{"tag":"li","lines":"55,57"}}],"payload":{"tag":"h2","lines":"46,47"}},{"content":"Error Handling Strategy","children":[{"content":"Log file open failure &#x2192; graceful degradation","children":[{"content":"Subscriber still initialised (stderr only)","children":[],"payload":{"tag":"li","lines":"59,60"}},{"content":"Warning emitted after init","children":[],"payload":{"tag":"li","lines":"60,61"}}],"payload":{"tag":"li","lines":"58,61"}},{"content":"<code>main()</code> returns <code>anyhow::Result&lt;()&gt;</code>","children":[{"content":"Propagates errors from <code>run()</code>","children":[],"payload":{"tag":"li","lines":"62,63"}}],"payload":{"tag":"li","lines":"61,63"}}],"payload":{"tag":"h2","lines":"57,58"}}],"payload":{"tag":"h1","lines":"0,1"}},null)</script>
+</body>
+</html>

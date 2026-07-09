@@ -1,0 +1,63 @@
+# grok-cli · Main Entry
+
+## Navigation
+- [Overview](00-overview.html)
+- [CLI](01-cli.html)
+- [Agent](02-agent.html)
+- [RAG](03-rag.html)
+- [Memory](04-memory.html)
+- [Tools](05-tools.html)
+- [Engine](06-engine.html)
+- [Router](07-router.html)
+- [Config & Context](08-config-context.html)
+- [MCP & ACP](09-mcp-acp.html)
+- [Safety & Security](10-safety-security.html)
+- [Utils & Display](11-utils-display.html)
+
+## Entry Point
+- `main()` — async `#[tokio::main]`
+  - Calls `setup_logging()`
+  - Delegates to `grok_cli::cli::app::run()`
+
+## Logging — `setup_logging()`
+- ### Log File Path
+  - `~/.grok/logs/grok-errors.log`
+  - Built via `dirs::home_dir()`
+  - Parent dirs created with `fs::create_dir_all`
+  - Fallback: `grok-errors.log` (CWD)
+- ### EnvFilter
+  - Reads `RUST_LOG` env var
+  - Default: `warn` when unset
+  - Examples
+    - `RUST_LOG=warn`
+    - `RUST_LOG=grok_cli=debug`
+    - `RUST_LOG=info`
+- ### Stderr Layer
+  - Format: compact, coloured
+  - No target, no thread IDs
+  - Writer: `std::io::stderr`
+- ### File Layer (JSON)
+  - Format: JSON lines, no ANSI
+  - Includes target, file, line number, thread IDs
+  - Writer: `Mutex<File>` (append mode)
+  - Error handling
+    - Success → full two-sink subscriber
+    - Failure → stderr-only + `tracing::warn!`
+
+## Dependencies
+- `tokio` — async runtime
+- `tracing` — structured logging macros
+- `tracing-subscriber`
+  - `EnvFilter`
+  - `fmt` layer (stderr + file)
+  - `SubscriberExt` / `SubscriberInitExt`
+- `dirs` — home directory resolution
+- `anyhow` — error propagation from `main`
+- `std::sync::Mutex` — thread-safe file writer
+
+## Error Handling Strategy
+- Log file open failure → graceful degradation
+  - Subscriber still initialised (stderr only)
+  - Warning emitted after init
+- `main()` returns `anyhow::Result<()>`
+  - Propagates errors from `run()`

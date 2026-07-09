@@ -2930,7 +2930,7 @@ mod tests {
     #[tokio::test]
     async fn test_config_default() {
         let config = Config::default();
-        assert_eq!(config.default_model, "grok-4.3");
+        assert_eq!(config.default_model, "grok-4.5");
         assert_eq!(config.default_temperature, 0.7);
         assert!(config.validate().is_ok());
     }
@@ -2955,7 +2955,7 @@ mod tests {
         let mut config = Config::default();
 
         // Test getting values
-        assert_eq!(config.get_value("default_model").unwrap(), "grok-4.3");
+        assert_eq!(config.get_value("default_model").unwrap(), "grok-4.5");
         assert_eq!(config.get_value("ui.colors").unwrap(), "true");
 
         // Test setting values

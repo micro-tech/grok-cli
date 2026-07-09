@@ -57,11 +57,26 @@ pub fn prepare_image_content(path_or_url: &str) -> Result<String> {
 /// Extract the first image path or URL found in a free-text message.
 /// This enables direct prompt usage like:
 /// "analyze this: ./diagram.png" or "what's in https://example.com/chart.jpg"
+///
+/// Matching priority:
+/// 1. Image URLs (`https://…/chart.jpg`)
+/// 2. Quoted paths that may contain spaces (`"my diagram.png"`)
+/// 3. Unquoted path-like tokens without spaces (`./diagram.png`, `C:\a\b.webp`)
 pub fn extract_image_from_message(message: &str) -> Option<String> {
-    // Improved: handle filenames with spaces and parentheses
-    // Match common image patterns (supports spaces + parens)
-    let re = regex::Regex::new(r#"(?i)([\w\./\\~\(\) -]+\.(?:png|jpe?g|webp|gif))"#).ok()?;
-    if let Some(caps) = re.captures(message) {
+    // URLs first — most specific, no ambiguity with surrounding prose.
+    let url_re =
+        regex::Regex::new(r#"(?i)(https?://[^\s]+\.(?:png|jpe?g|webp|gif))"#).ok()?;
+    if let Some(m) = url_re.find(message) {
+        let path = m.as_str();
+        if is_image_url(path) {
+            return Some(path.to_string());
+        }
+    }
+
+    // Quoted paths may contain spaces / parentheses.
+    let quoted_re =
+        regex::Regex::new(r#"(?i)"([^"]+\.(?:png|jpe?g|webp|gif))""#).ok()?;
+    if let Some(caps) = quoted_re.captures(message) {
         if let Some(m) = caps.get(1) {
             let path = m.as_str().trim();
             if is_image_path(path) || is_image_url(path) {
@@ -69,6 +84,21 @@ pub fn extract_image_from_message(message: &str) -> Option<String> {
             }
         }
     }
+
+    // Unquoted path/filename tokens — no spaces so we don't swallow
+    // preceding prose like "look at this ./diagram.png".
+    // Allows: ./x.png, ../x.jpg, ~/img.webp, C:\a\b.gif, bare file.png, file(1).png
+    let path_re = regex::Regex::new(
+        r#"(?i)((?:[a-zA-Z]:)?(?:~|\.{0,2})?(?:[\\/][\w.~()-]+)*[\\/]?[\w.~()-]+\.(?:png|jpe?g|webp|gif)|[\w.~()-]+\.(?:png|jpe?g|webp|gif))"#,
+    )
+    .ok()?;
+    if let Some(m) = path_re.find(message) {
+        let path = m.as_str().trim();
+        if is_image_path(path) || is_image_url(path) {
+            return Some(path.to_string());
+        }
+    }
+
     None
 }
 

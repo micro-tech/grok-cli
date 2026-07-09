@@ -975,6 +975,16 @@ async fn handle_special_commands(
             print_hooks_info(app_config);
             Ok(Some(true))
         }
+        "init" => {
+            // Mirror ACP `/init` and `grok init [--force]`.
+            // Usage: /init | /init --force | /init force
+            let force = parts.iter().any(|p| *p == "--force" || *p == "force");
+            match crate::tools::run_init(force) {
+                Ok(msg) => println!("{}", msg),
+                Err(e) => println!("{} Failed to initialize: {}", "❌".bright_red(), e),
+            }
+            Ok(Some(true))
+        }
         "image" => {
             if parts.len() < 2 {
                 println!("{} Usage: /image <path> [prompt]", "⚠".bright_yellow());
@@ -1118,6 +1128,10 @@ fn print_interactive_help() {
             "Toggle or show skill auto-activation",
         ),
         ("/hooks", "Show hooks system status and information"),
+        (
+            "/init [--force]",
+            "Initialize .grok/ project config from global settings",
+        ),
         (
             "/simulate [on|off]",
             "Dry-run mode: predict tool calls without executing",

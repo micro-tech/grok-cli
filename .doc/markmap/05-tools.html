@@ -1,0 +1,52 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta http-equiv="X-UA-Compatible" content="ie=edge" />
+<title>Markmap</title>
+<style>
+* {
+  margin: 0;
+  padding: 0;
+}
+html {
+  font-family: ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji',
+    'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+}
+#mindmap {
+  display: block;
+  width: 100vw;
+  height: 100vh;
+}
+.markmap-dark {
+  background: #27272a;
+  color: white;
+}
+</style>
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.18.12/dist/style.css">
+</head>
+<body>
+<svg id="mindmap"></svg>
+<script src="https://cdn.jsdelivr.net/npm/d3@7.9.0/dist/d3.min.js"></script><script src="https://cdn.jsdelivr.net/npm/markmap-view@0.18.12/dist/browser/index.js"></script><script src="https://cdn.jsdelivr.net/npm/markmap-toolbar@0.18.12/dist/index.js"></script><script>((r) => {
+          setTimeout(r);
+        })(() => {
+  const { markmap, mm } = window;
+  const toolbar = new markmap.Toolbar();
+  toolbar.attach(mm);
+  const el = toolbar.render();
+  el.setAttribute("style", "position:absolute;bottom:20px;right:20px");
+  document.body.append(el);
+})</script><script>((getMarkmap, getOptions, root2, jsonOptions) => {
+              const markmap = getMarkmap();
+              window.mm = markmap.Markmap.create(
+                "svg#mindmap",
+                (getOptions || markmap.deriveOptions)(jsonOptions),
+                root2
+              );
+              if (window.matchMedia("(prefers-color-scheme: dark)").matches) {
+                document.documentElement.classList.add("markmap-dark");
+              }
+            })(() => window.markmap,null,{"content":"grok-cli Tools System","children":[{"content":"Core Components","children":[{"content":"Registry &amp; Dispatch (<code>tools/registry.rs</code>)","children":[],"payload":{"tag":"li","lines":"3,4"}},{"content":"Tool Definitions &amp; Schemas","children":[],"payload":{"tag":"li","lines":"4,5"}},{"content":"Execution Context (<code>ToolContext</code>)","children":[],"payload":{"tag":"li","lines":"5,7"}}],"payload":{"tag":"h2","lines":"2,3"}},{"content":"Tool Categories","children":[{"content":"<strong>File Tools</strong> &#x2014; read, write, replace, search, glob, list","children":[],"payload":{"tag":"li","lines":"8,9"}},{"content":"<strong>Shell Tools</strong> &#x2014; run_shell_command with timeout &amp; policy","children":[],"payload":{"tag":"li","lines":"9,10"}},{"content":"<strong>Web Tools</strong> &#x2014; web_search, web_fetch","children":[],"payload":{"tag":"li","lines":"10,11"}},{"content":"<strong>MCP Bridge</strong> &#x2014; mcp_call, mcp_list, dynamic server tools","children":[],"payload":{"tag":"li","lines":"11,12"}},{"content":"<strong>Agent Coordination</strong> &#x2014; spawn_agent, send_message, team_*, fork/join","children":[],"payload":{"tag":"li","lines":"12,13"}},{"content":"<strong>Memory &amp; Archive</strong> &#x2014; save_memory, recall_context","children":[],"payload":{"tag":"li","lines":"13,14"}},{"content":"<strong>Task Management</strong> &#x2014; task_create, task_update, task_get, execute_task_graph","children":[],"payload":{"tag":"li","lines":"14,15"}},{"content":"<strong>Planning &amp; Worktrees</strong> &#x2014; enter/exit_plan_mode, enter/exit_worktree","children":[],"payload":{"tag":"li","lines":"15,16"}},{"content":"<strong>Skills &amp; Discovery</strong> &#x2014; execute_skill, list_skills, tool_search, cron_create","children":[],"payload":{"tag":"li","lines":"16,17"}},{"content":"<strong>LSP Integration</strong> &#x2014; lsp_query (diagnostics, hover, definitions)","children":[],"payload":{"tag":"li","lines":"17,18"}},{"content":"<strong>System Utilities</strong> &#x2014; sleep, synthetic_output, generate_commit_message","children":[],"payload":{"tag":"li","lines":"18,20"}}],"payload":{"tag":"h2","lines":"7,8"}},{"content":"Security &amp; Control","children":[{"content":"ToolPolicy (read/write/execute permissions)","children":[],"payload":{"tag":"li","lines":"21,22"}},{"content":"Sandbox (<code>tools/sandbox.rs</code>)","children":[],"payload":{"tag":"li","lines":"22,23"}},{"content":"Tool Arbitration (<code>tool_arbitration.rs</code>)","children":[],"payload":{"tag":"li","lines":"23,24"}},{"content":"Permission Bridge (ACP)","children":[],"payload":{"tag":"li","lines":"24,26"}}],"payload":{"tag":"h2","lines":"20,21"}},{"content":"MCP Integration (Phase 1&#x2013;4)","children":[{"content":"Servers connected on <code>session/new</code>","children":[],"payload":{"tag":"li","lines":"27,28"}},{"content":"Tools discovered via <code>tools/list</code>","children":[],"payload":{"tag":"li","lines":"28,29"}},{"content":"Exposed as <code>server:tool_name</code> (e.g. <code>markmap:generate</code>)","children":[],"payload":{"tag":"li","lines":"29,30"}},{"content":"<code>mcp_list</code> tool for inspection","children":[],"payload":{"tag":"li","lines":"30,31"}},{"content":"Global registry for cross-session visibility","children":[],"payload":{"tag":"li","lines":"31,33"}}],"payload":{"tag":"h2","lines":"26,27"}},{"content":"Key Files","children":[{"content":"<code>src/tools/registry.rs</code>","children":[],"payload":{"tag":"li","lines":"34,35"}},{"content":"<code>src/tools/mod.rs</code>","children":[],"payload":{"tag":"li","lines":"35,36"}},{"content":"<code>src/acp/mcp_bridge.rs</code>","children":[],"payload":{"tag":"li","lines":"36,37"}},{"content":"<code>src/mcp/client.rs</code>","children":[],"payload":{"tag":"li","lines":"37,39"}}],"payload":{"tag":"h2","lines":"33,34"}},{"content":"Notes","children":[{"content":"All tools are OpenAI function-calling compatible","children":[],"payload":{"tag":"li","lines":"40,41"}},{"content":"Full JSON schemas returned by <code>get_full_tool_definitions()</code>","children":[],"payload":{"tag":"li","lines":"41,42"}},{"content":"MCP tools are merged at runtime when servers are connected","children":[],"payload":{"tag":"li","lines":"42,43"}}],"payload":{"tag":"h2","lines":"39,40"}}],"payload":{"tag":"h1","lines":"0,1"}},null)</script>
+</body>
+</html>

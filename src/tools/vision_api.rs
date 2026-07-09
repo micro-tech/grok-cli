@@ -51,8 +51,16 @@ mod tests {
 
     #[test]
     fn creates_vision_message_structure() {
-        let msg = create_vision_message("describe this", "./test.png").unwrap();
+        // Use a URL so we don't depend on a local fixture file existing.
+        let msg = create_vision_message("describe this", "https://example.com/test.png").unwrap();
         assert_eq!(msg["role"], "user");
         assert!(msg["content"].is_array());
+
+        let content = msg["content"].as_array().expect("content must be an array");
+        assert_eq!(content.len(), 2);
+        assert_eq!(content[0]["type"], "text");
+        assert_eq!(content[0]["text"], "describe this");
+        assert_eq!(content[1]["type"], "image_url");
+        assert_eq!(content[1]["image_url"]["url"], "https://example.com/test.png");
     }
 }
