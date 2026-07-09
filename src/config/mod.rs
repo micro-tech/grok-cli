@@ -21,7 +21,7 @@ use crate::mcp::config::McpConfig;
 /// - `Low`  — light reasoning; faster and cheaper.
 /// - `High` — deep reasoning; highest quality, slower, higher cost.
 ///
-/// Only grok-4.3, grok-3-mini, and similar reasoning-capable models honour
+/// Only grok-4.5, grok-4.3, grok-3-mini, and similar reasoning-capable models honour
 /// this field.  Sending it to other models will result in an API error.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -188,7 +188,7 @@ pub struct AcpConfig {
     /// Host to bind ACP server to
     pub bind_host: String,
 
-    /// ACP protocol version to use
+    /// ACP protocol version to use (1.2.0 for latest agent-client-protocol)
     pub protocol_version: String,
 
     /// Enable development features
@@ -277,7 +277,7 @@ pub struct AcpConfig {
     /// - `low`  — light reasoning effort.
     /// - `high` — deep reasoning effort (slower, more tokens).
     ///
-    /// Only grok-4.3 and grok-3-mini support this field.
+    /// Only grok-4.5, grok-4.3 and grok-3-mini support this field.
     /// Default: off
     #[serde(default)]
     pub thinking_mode: ThinkingMode,
@@ -527,7 +527,7 @@ fn default_theme() -> String {
 }
 
 fn default_model() -> String {
-    "grok-4.3".to_string()
+    "grok-4.5".to_string()
 }
 
 fn default_temperature() -> f32 {
@@ -536,7 +536,7 @@ fn default_temperature() -> f32 {
 
 fn default_max_tokens() -> u32 {
     // Output token budget (not context window size).
-    // grok-4.3 supports up to 32 768 output tokens; 16 384 is a safe default
+    // grok-4.5 / grok-4.3 supports up to 32 768 output tokens; 16 384 is a safe default
     // that avoids accidental large responses while still allowing detailed answers.
     16_384
 }
@@ -1125,7 +1125,7 @@ impl Default for AcpConfig {
             enabled: true,
             default_port: None, // Auto-assign
             bind_host: "127.0.0.1".to_string(),
-            protocol_version: "1.0".to_string(),
+            protocol_version: "1.2.0".to_string(),
             dev_mode: false,
             max_tool_loop_iterations: default_max_tool_loop_iterations(),
             require_permission: true,
