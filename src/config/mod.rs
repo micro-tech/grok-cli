@@ -1342,20 +1342,35 @@ impl Default for LoggingConfig {
 
 use std::env;
 
-/// Returns the root configuration directory for grok-cli.
-/// 
+/// Returns the **config-only** directory for grok-cli.
+///
+/// This is the location for `config.toml` and `.env`.
+///
 /// Platform-specific locations:
 /// - Windows: `%APPDATA%\grok-cli` (e.g. `AppData\Roaming\grok-cli`)
 /// - macOS:   `~/Library/Application Support/grok-cli`
 /// - Linux:   `~/.config/grok-cli`
-/// 
+///
 /// Falls back to `~/.grok-cli` if the platform config dir cannot be determined.
 pub fn grok_config_dir() -> PathBuf {
     dirs::config_dir()
         .map(|p| p.join("grok-cli"))
-        .or_else(|| {
-            dirs::home_dir().map(|p| p.join(".grok-cli"))
-        })
+        .or_else(|| dirs::home_dir().map(|p| p.join(".grok-cli")))
+        .unwrap_or_else(|| PathBuf::from(".").join(".grok-cli"))
+}
+
+/// Returns the **data** directory for grok-cli.
+///
+/// This is the location for `agents/`, `skills/`, `logs/`, `sessions/`, etc.
+///
+/// On all platforms this prefers the home-based location:
+/// - `~/.grok-cli`
+///
+/// This allows users to keep rich data (agents, logs, skills) in their home
+/// directory while still supporting the platform config dir for `config.toml`.
+pub fn grok_data_dir() -> PathBuf {
+    dirs::home_dir()
+        .map(|p| p.join(".grok-cli"))
         .unwrap_or_else(|| PathBuf::from(".").join(".grok-cli"))
 }
 

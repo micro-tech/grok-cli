@@ -153,6 +153,10 @@ fn install_windows(root_dir: PathBuf) {
     println!("{}", "Installing agent presets...".cyan());
     setup_agent_presets(&root_dir);
 
+    // 14. Setup full ~/.grok-cli data directory tree (agents, logs, sessions, skills, etc.)
+    println!("{}", "Setting up full data directory structure...".cyan());
+    setup_memory_directories();
+
     println!("\n{}", "Installation Complete!".green().bold());
     let version = get_version(&root_dir);
     println!("Version: {}", version);

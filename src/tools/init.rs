@@ -52,8 +52,10 @@ pub fn run_init() -> Result<String> {
     // Create .grok directory
     fs::create_dir_all(&project_grok)?;
 
-    // Find global config directory
-    let global_dir = crate::config::grok_config_dir();
+    // Find global data directory (agents, skills, logs, etc.)
+    // We use grok_data_dir() so we can copy from ~/.grok-cli on Windows
+    // while still allowing config.toml to live in AppData\Roaming\grok-cli
+    let global_dir = crate::config::grok_data_dir();
 
     let mut copied = Vec::new();
     let mut skipped = Vec::new();
