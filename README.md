@@ -70,7 +70,7 @@ See [Doc/SETUP.md](Doc/SETUP.md) and [Doc/INSTALL.md](Doc/INSTALL.md) for full i
 
 ## 📦 Configuration
 
-Project-local settings live in `.grok/config.toml` (overrides system defaults).
+Project-local settings live in `.grok/config.toml` (overrides system defaults). System config is stored in `~/.grok-cli/` (Linux/macOS) or `%APPDATA%\grok-cli` (Windows).
 
 ```toml
 [api]

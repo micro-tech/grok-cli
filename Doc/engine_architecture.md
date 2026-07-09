@@ -337,7 +337,7 @@ pub enum StepStatus {
 
 ### 5.1 `MemoryBridge`
 
-`MemoryBridge` is the engine's read/write interface to the persistent memory tiers. It wraps `LongTermMemory` (persisted to `~/.grok/memory.json` and mirrored to `~/.grok/memory.md`) and is also aware of the `MemorySource` enum values (`User`, `Inferred`, `System`) used by the underlying store.
+`MemoryBridge` is the engine's read/write interface to the persistent memory tiers. It wraps `LongTermMemory` (persisted to `~/.grok-cli/memory.json` and mirrored to `~/.grok-cli/memory.md`) and is also aware of the `MemorySource` enum values (`User`, `Inferred`, `System`) used by the underlying store.
 
 The bridge deliberately does **not** expose the full `LongTermMemory` API. It provides a narrow, goal-aware surface that prevents the engine from over-reading or over-writing memory.
 
@@ -444,7 +444,7 @@ ArbitrationEngine::fallback_tool(
 
 `EngineBeliefs` is a thin, goal-aware adapter over `BayesianEngine` (`src/bayes/engine.rs`). Its job is to translate engine-level events (user messages, tool outcomes, step results) into the probability-update API that `BayesianEngine` already provides.
 
-The underlying `BayesianEngine` maintains a `HashMap<String, f32>` prior distribution over intent keys (`intent_question`, `intent_edit`, `intent_shell`, `intent_search`) and meta-states (`need_clarification`, `low_confidence`, `is_vague`). The distribution is persisted to `~/.grok/bayes_profile.json` and loaded on startup, so beliefs improve over time.
+The underlying `BayesianEngine` maintains a `HashMap<String, f32>` prior distribution over intent keys (`intent_question`, `intent_edit`, `intent_shell`, `intent_search`) and meta-states (`need_clarification`, `low_confidence`, `is_vague`). The distribution is persisted to `~/.grok-cli/bayes_profile.json` and loaded on startup, so beliefs improve over time.
 
 **Default configured thresholds (from `src/bayes/engine.rs`):**
 
@@ -616,9 +616,9 @@ The following items are tracked in the task backlog and are explicitly out of sc
 
 ### 9.1 Persistent Reasoning State Across Sessions
 
-Currently `ReasoningEngineState` is ephemeral — it is constructed at the start of a turn and discarded at the end. A future enhancement would serialise the final state snapshot to `~/.grok/sessions/<session_id>/engine_state.json`, enabling multi-turn goal tracking where the engine can remember which hypotheses were evaluated and which plan steps succeeded in previous turns.
+Currently `ReasoningEngineState` is ephemeral — it is constructed at the start of a turn and discarded at the end. A future enhancement would serialise the final state snapshot to `~/.grok-cli/sessions/<session_id>/engine_state.json`, enabling multi-turn goal tracking where the engine can remember which hypotheses were evaluated and which plan steps succeeded in previous turns.
 
-This is architecturally similar to how `BayesianEngine` already persists its prior distribution to `~/.grok/bayes_profile.json` via `update_profile()` — the same atomic-write pattern from `src/memory/long_term.rs` would apply.
+This is architecturally similar to how `BayesianEngine` already persists its prior distribution to `~/.grok-cli/bayes_profile.json` via `update_profile()` — the same atomic-write pattern from `src/memory/long_term.rs` would apply.
 
 ### 9.2 Parallel Step Execution for Independent `PlanStep`s
 

@@ -45,7 +45,7 @@ Answer the user's question about Grok setup, configuration, or features.
    Read the relevant guide(s) for the user's question. If none match, fall back to
    `\\?\C:\Users\johnm\.grok/README.md` for the comprehensive reference.
 
-3. To **modify config** for the user, edit `\\?\C:\Users\johnm\.grok/config.toml` with search_replace.
+3. To **modify config** for the user, edit `\\?\C:\Users\johnm\.grok-cli/config.toml` with search_replace.
 
-4. To **create a skill** for the user, create `\\?\C:\Users\johnm\.grok/skills/<name>/SKILL.md`
+4. To **create a skill** for the user, create `\\?\C:\Users\johnm\.grok-cli/skills/<name>/SKILL.md`
    (read `\\?\C:\Users\johnm\.grok/docs/user-guide/08-skills.md` for the SKILL.md format).

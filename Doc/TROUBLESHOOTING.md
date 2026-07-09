@@ -112,7 +112,7 @@ Grok uses a **hierarchical configuration system** with the following priority (h
 
 1. **Environment variables** (highest priority)
 2. **Project-local**: `.grok/.env` in current directory or parent directories
-3. **System-level**: `~/.grok/.env` (user home directory)
+3. **System-level**: `~/.grok-cli/.env` (user home directory)
 4. **Built-in defaults** (lowest priority)
 
 **How Project Configuration is Found:**

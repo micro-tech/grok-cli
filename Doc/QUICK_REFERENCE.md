@@ -9,7 +9,7 @@ Grok CLI uses a hierarchical `.env` file configuration system:
 1. **Process environment variables** (highest priority)
 2. **CLI arguments**: `--model`, `--config`, etc.
 3. **Project-local**: `.grok/.env` in project root
-4. **System-level**: `~/.grok/.env` (or `%USERPROFILE%\.grok\.env` on Windows)
+4. **System-level**: `~/.grok-cli/.env` (or `%USERPROFILE%\.grok\.env` on Windows)
 5. **Built-in defaults** (lowest priority)
 
 ### How It Works
@@ -158,7 +158,7 @@ Example: `/load debugging-auth`
 
 ### Session Storage Location
 - **System sessions** (persistence, archives, episodes): `~/.grok-cli/sessions/` (or `%APPDATA%\grok-cli\sessions\` on Windows)
-- **Project chat logs**: prefer `<project>/.grok/logs/chat_sessions/` when a `.grok/` folder exists in the project tree; otherwise falls back to `~/.grok/logs/chat_sessions/`
+- **Project chat logs**: prefer `<project>/.grok/logs/chat_sessions/` when a `.grok/` folder exists in the project tree; otherwise falls back to `~/.grok-cli/logs/chat_sessions/`
 - Error and application logs stay in the system directory (`~/.grok-cli/logs/`)
 
 ---
@@ -237,14 +237,14 @@ grok-cli config set experimental.extensions.enabled true
 ```
 
 ### Extension Directory
-- **Default**: `~/.grok/extensions/`
+- **Default**: `~/.grok-cli/extensions/`
 - **Custom**: Set in config file
 
 ### Create an Extension
 
 1. **Create directory structure:**
    ```bash
-   mkdir -p ~/.grok/extensions/my-extension
+   mkdir -p ~/.grok-cli/extensions/my-extension
    ```
 
 2. **Create manifest** (`extension.json`):
@@ -304,7 +304,7 @@ grok-cli config set experimental.extensions.enabled true
 
 ### Config File Location
 
-- **System-wide**: `~/.grok/.env` (Linux/macOS) or `%USERPROFILE%\.grok\.env` (Windows)
+- **System-wide**: `~/.grok-cli/.env` (Linux/macOS) or `%USERPROFILE%\.grok\.env` (Windows)
 - **Project-specific**: `.grok/.env` in your project root
 - **Priority**: Project config overrides system config
 
@@ -468,7 +468,7 @@ grok-cli interactive
 
 ```bash
 # 1. Copy example extension
-cp -r examples/extensions/logging-hook ~/.grok/extensions/
+cp -r examples/extensions/logging-hook ~/.grok-cli/extensions/
 
 # 2. Enable extensions
 grok-cli config set experimental.extensions.enabled true
@@ -504,7 +504,7 @@ grok-cli interactive
 ### Extension Not Loading
 - Verify extensions enabled: `grok-cli config get experimental.extensions.enabled`
 - Check `extension.json` is valid JSON: `jq . extension.json`
-- Verify extension directory: `ls -la ~/.grok/extensions/`
+- Verify extension directory: `ls -la ~/.grok-cli/extensions/`
 - Check logs: `RUST_LOG=grok_cli::hooks=debug grok-cli interactive`
 
 ### View Debug Logs
@@ -589,7 +589,7 @@ Save template sessions for common tasks:
 ### Tip 4: Extension Chains
 Multiple extensions execute in sequence:
 ```bash
-~/.grok/extensions/
+~/.grok-cli/extensions/
   ├── logger/          # Logs all calls
   ├── validator/       # Validates security
   └── profiler/        # Measures performance

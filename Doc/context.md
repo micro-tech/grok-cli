@@ -553,7 +553,7 @@ By following these best practices, you can write high-quality Rust code that is 
 ### Skills System
 
 - Modular instruction sets for AI expertise
-- Located in `~/.grok/skills/` and `examples/skills/`
+- Located in `~/.grok-cli/skills/` and `examples/skills/`
 - Activate on-demand with `/activate skill-name`
 - Deactivate with `/deactivate skill-name`
 - Example skills: rust-expert, cli-design, task-list
@@ -562,7 +562,7 @@ By following these best practices, you can write high-quality Rust code that is 
 
 - Intercept tool calls before/after execution
 - Execute custom scripts in any language
-- Located in `~/.grok/extensions/` and `examples/extensions/`
+- Located in `~/.grok-cli/extensions/` and `examples/extensions/`
 - Configure in config.toml: `[experimental.extensions]`
 - Example extensions: logging-hook, file-backup-hook, project-setup-hook
 

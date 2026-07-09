@@ -170,7 +170,7 @@ allowed-tools: [read_file, grep]
 ### Step 1: Install Skill Builder
 ```bash
 # Copy from examples (one-time setup)
-cp -r examples/skills/skill-builder ~/.grok/skills/
+cp -r examples/skills/skill-builder ~/.grok-cli/skills/
 
 # Or on Windows
 xcopy examples\skills\skill-builder %USERPROFILE%\.grok\skills\skill-builder\ /E /I
@@ -256,7 +256,7 @@ Created an amazing skill? Share it with the community!
 
 - **Grok CLI**: v0.1.41 or higher
 - **Mode**: Interactive mode
-- **Permissions**: Write access to `~/.grok/skills/`
+- **Permissions**: Write access to `~/.grok-cli/skills/`
 
 ---
 

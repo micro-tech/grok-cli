@@ -35,7 +35,7 @@ Edit your config file (`~/.config/grok-cli/config.toml` or `C:\Users\<username>\
 ```toml
 [experimental.extensions]
 enabled = true
-extension_dir = "~/.grok/extensions"  # Optional: custom directory
+extension_dir = "~/.grok-cli/extensions"  # Optional: custom directory
 enabled_extensions = []  # Empty = all enabled, or list specific ones
 allow_config_extensions = true
 ```
@@ -44,10 +44,10 @@ allow_config_extensions = true
 
 ```bash
 # Create extension directory
-mkdir -p ~/.grok/extensions/my-first-hook
+mkdir -p ~/.grok-cli/extensions/my-first-hook
 
 # Create the manifest
-cat > ~/.grok/extensions/my-first-hook/extension.json << 'EOF'
+cat > ~/.grok-cli/extensions/my-first-hook/extension.json << 'EOF'
 {
   "name": "my-first-hook",
   "version": "1.0.0",
@@ -128,7 +128,7 @@ Executes both before and after. Perfect for:
 ### Directory Layout
 
 ```
-~/.grok/extensions/
+~/.grok-cli/extensions/
 ├── my-extension/
 │   ├── extension.json      # Required: manifest
 │   ├── README.md           # Optional: documentation
@@ -274,7 +274,7 @@ Track tool execution times:
         "log_slow_tools": true,
         "slow_threshold_ms": 1000,
         "save_metrics": true,
-        "metrics_file": "~/.grok/metrics.json"
+        "metrics_file": "~/.grok-cli/metrics.json"
       }
     }
   ],
@@ -305,7 +305,7 @@ Execute external scripts before/after tools:
       "script": "scripts/backup.sh",
       "config": {
         "tools_to_backup": ["write_file", "edit_file"],
-        "backup_dir": "~/.grok/backups"
+        "backup_dir": "~/.grok-cli/backups"
       }
     }
   ],
@@ -470,7 +470,7 @@ In `config.toml`:
 ```toml
 [experimental.extensions]
 enabled = true
-extension_dir = "~/.grok/extensions"
+extension_dir = "~/.grok-cli/extensions"
 enabled_extensions = []  # Empty = all, or ["ext1", "ext2"]
 allow_config_extensions = true
 ```
@@ -509,7 +509,7 @@ Access in scripts via `$GROK_HOOK_CONFIG` environment variable (JSON string).
 Create backups before AI modifies files:
 - Hook: `before_tool` on `write_file`, `edit_file`
 - Script: Copy file to backup directory with timestamp
-- Restore: `~/.grok/backups/` contains all versions
+- Restore: `~/.grok-cli/backups/` contains all versions
 
 ### 2. **Code Review Integration**
 
@@ -621,10 +621,10 @@ Automatically test AI-generated code:
 **Debug:**
 ```bash
 # Check logs
-tail -f ~/.grok/logs/grok.log
+tail -f ~/.grok-cli/logs/grok.log
 
 # Validate JSON
-jq . ~/.grok/extensions/my-extension/extension.json
+jq . ~/.grok-cli/extensions/my-extension/extension.json
 
 # Test manually
 grok --log-level debug interactive
@@ -642,7 +642,7 @@ grok --log-level debug interactive
 **Debug:**
 ```bash
 # Test script manually
-cd ~/.grok/extensions/my-extension
+cd ~/.grok-cli/extensions/my-extension
 ./scripts/test.sh "tool_name" '{"arg":"value"}' "before"
 
 # Check script permissions
@@ -876,7 +876,7 @@ if __name__ == "__main__":
 # Edit config.toml: experimental.extensions.enabled = true
 
 # 2. Create extension directory
-mkdir -p ~/.grok/extensions/my-hook
+mkdir -p ~/.grok-cli/extensions/my-hook
 
 # 3. Create extension.json (see examples above)
 

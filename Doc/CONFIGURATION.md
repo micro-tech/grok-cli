@@ -102,7 +102,7 @@ Settings are loaded in this order (highest priority first):
 1. **Shell/Process Environment Variables** - Set in your terminal or CI/CD
 2. **CLI Arguments** - Flags like `--model`, `--config`
 3. **Project Configuration** - `.grok/.env` in project root
-4. **System Configuration** - `~/.grok/.env` (or `%USERPROFILE%\.grok\.env` on Windows)
+4. **System Configuration** - `~/.grok-cli/.env` (or `%APPDATA%\grok-cli\.env` on Windows)
 5. **Built-in Defaults** - Fallback values
 
 Later sources override earlier ones. For example, a project `.env` overrides system config, but environment variables override everything.
