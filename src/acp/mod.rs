@@ -402,10 +402,15 @@ impl GrokAcpAgent {
         GrokAgentCapabilities {
             models: vec![
                 "grok-4.3".to_string(), // Default — 1 M token context
+                "grok-4.20-0309-reasoning".to_string(),
+                "grok-4.20-0309-non-reasoning".to_string(),
+                "grok-4.20-multi-agent-0309".to_string(),
+                "grok-coder".to_string(), // Specialized coding model
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
                 "grok-2-vision-1212".to_string(),
                 "grok-2".to_string(), // Fallback
+                "grok-build-0.1".to_string(),
             ],
             // grok-4.3 exposes a 1,048,576-token context window.
             // This is reported here so ACP clients (e.g. Zed) can make

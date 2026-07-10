@@ -829,14 +829,15 @@ pub fn format_help_text() -> String {
 /// Format the model list shown when `/model` is called with no argument.
 pub fn format_model_list() -> String {
     let models = [
-        ("grok-4.3", "Latest flagship (1M context)"),
-        (
-            "grok-4.20-0309-reasoning",
-            "Reasoning variant (recommended for thinking)",
-        ),
-        ("grok-4.20-0309-non-reasoning", "Non-reasoning variant"),
-        ("grok-4.20-multi-agent-0309", "Multi-agent variant"),
-        ("grok-build-0.1", "Build / experimental model"),
+        ("grok-4.3", "Latest flagship (1M context) — recommended default"),
+        ("grok-4.20-0309-reasoning", "Reasoning variant (best for deep thinking)"),
+        ("grok-4.20-0309-non-reasoning", "Fast non-reasoning variant"),
+        ("grok-4.20-multi-agent-0309", "Multi-agent orchestration variant"),
+        ("grok-coder", "Specialized coding model (fast iteration & edits)"),
+        ("grok-3", "Previous generation (stable)"),
+        ("grok-3-mini", "Lightweight & fast"),
+        ("grok-2-vision-1212", "Vision-enabled model"),
+        ("grok-build-0.1", "Experimental / build-focused"),
     ];
 
     let mut lines: Vec<String> = vec![
@@ -851,7 +852,7 @@ pub fn format_model_list() -> String {
     }
 
     lines.push(String::new());
-    lines.push("Example: `/model grok-3` — switches the current session to Grok 3.".to_string());
+    lines.push("Example: `/model grok-4.3` — switches the current session to Grok 4.3.".to_string());
 
     lines.join("\n")
 }
