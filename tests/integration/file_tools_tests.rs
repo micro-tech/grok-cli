@@ -378,17 +378,21 @@ async fn security_path_inside_trust_is_accessible() {
     );
 }
 
-/// Test 18 — an absolute path outside the trusted workspace is denied.
+/// Test 18 - an absolute path outside the trusted workspace is denied.
 ///
-/// Uses `C:\Windows\System32\drivers\etc\hosts` — a well-known Windows system
-/// path that is guaranteed to be outside any `TempDir`.  The security check
-/// fires before any I/O, so the test is safe even if the file doesn't exist.
+/// Uses a well-known OS system path that is guaranteed to sit outside any
+/// `TempDir`.  On Windows: `C:\\Windows\\System32\\drivers\\etc\\hosts`.
+/// On Unix: `/etc/hosts`.  The security check must fire before any I/O, so
+/// the test is safe even if the file does not exist.
 #[tokio::test]
 async fn security_system_path_outside_trust_is_denied() {
     let dir = TempDir::new().unwrap();
     let policy = helpers::make_policy(&dir);
 
+    #[cfg(windows)]
     let system_path = r"C:\Windows\System32\drivers\etc\hosts";
+    #[cfg(not(windows))]
+    let system_path = "/etc/hosts";
 
     let result = read_file(system_path, &policy).await;
 

@@ -21,6 +21,18 @@ impl Default for SecurityPolicy {
     }
 }
 
+/// Returns true for Windows-style drive-absolute paths such as `C:\\Windows`
+/// or `D:/data`.  On Unix these are NOT absolute according to `Path::is_absolute`,
+/// but joining them under the working directory is wrong and can leak trust.
+fn is_windows_drive_absolute(path: &Path) -> bool {
+    let s = path.to_string_lossy();
+    let bytes = s.as_bytes();
+    // X: or X:\ or X:/
+    bytes.len() >= 2
+        && bytes[0].is_ascii_alphabetic()
+        && bytes[1] == b':'
+}
+
 impl SecurityPolicy {
     pub fn new() -> Self {
         let working_directory = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -129,7 +141,11 @@ impl SecurityPolicy {
         let path = path.as_ref();
 
         // Convert to absolute path relative to working directory
-        let absolute = if path.is_absolute() {
+        // Also treat Windows drive-letter paths (e.g. C:\foo) as absolute even
+        // when running on Unix - otherwise Path::is_absolute is false and the
+        // path is incorrectly joined under the working directory, which can make
+        // foreign system paths appear "trusted" on Linux CI.
+        let absolute = if path.is_absolute() || is_windows_drive_absolute(path) {
             path.to_path_buf()
         } else {
             self.working_directory.join(path)
