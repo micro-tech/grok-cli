@@ -511,6 +511,10 @@ async fn run_interactive_loop(
             description: "Attach an image for vision analysis".to_string(),
         },
         Suggestion {
+            text: "/init".to_string(),
+            description: "Initialize .grok/ project config".to_string(),
+        },
+        Suggestion {
             text: "!ls".to_string(),
             description: "List files (shell command)".to_string(),
         },
