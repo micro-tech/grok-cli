@@ -1,6 +1,6 @@
 {
   "name": "grok-cli-acp",
-  "version": "0.2.5"
+  "version": "0.2.5",
   "description": "A CLI tool for interacting with Grok AI via X API with external file access, audit logging, and tool loop debugging - Rust binary wrapper",
   "main": "index.js",
   "keywords": [
@@ -30,7 +30,7 @@
     "README.md"
   ],
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Error: no test specified\"; exit 1"
   },
   "engines": {
     "node": ">=14.0.0"

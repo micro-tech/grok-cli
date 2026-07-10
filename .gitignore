@@ -127,3 +127,4 @@ nul
 .grok/config.toml
 .grok/agents/
 # Legacy global config (pre 0.2.5)
+_back/
