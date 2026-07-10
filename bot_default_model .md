@@ -1,7 +1,7 @@
-default_model = "grok-4.3"
+default_model = "grok-4.5"
 default_temperature = 0.7
 # Output token budget (not the context window).
-# grok-4.3 supports up to 32 768 output tokens; 16 384 is a safe default.
+# grok-4.5 supports up to 32 768 output tokens; 16 384 is a safe default.
 default_max_tokens = 16384
 timeout_secs = 300
 max_retries = 5
@@ -70,7 +70,7 @@ update_check_hours = 24
 [ui.interactive.key_bindings]
 
 [model]
-name = "grok-4.3"
+name = "grok-4.5"
 max_session_turns = 200
 summarize_tool_output = false
 compression_threshold = 0.0
@@ -220,7 +220,7 @@ allow_config_extensions = true
 [acp]
 enabled = true
 bind_host = "127.0.0.1"
-protocol_version = "2024-11-05"
+protocol_version = "1.2.0"
 dev_mode = false
 max_tool_loop_iterations = 100
 # Disable the session/request_permission gate by default.

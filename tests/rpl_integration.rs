@@ -115,9 +115,10 @@ fn full_cpu_lifecycle_produces_complete_trace() {
         &mut trace,
         "list_directory",
         true,
+        None, // relevance_score (defaults to 1.0 when selected)
         Some("path argument detected"),
     );
-    layer.on_tool_selection(&mut trace, "read_file", false, None);
+    layer.on_tool_selection(&mut trace, "read_file", false, None, None);
     layer.on_complete(&mut trace);
 
     assert_eq!(
@@ -261,7 +262,7 @@ fn deterministic_phase_ordering() {
         "phase must be PreEvaluation immediately after on_pre_evaluate"
     );
 
-    layer.on_tool_selection(&mut trace, "list_directory", true, None);
+    layer.on_tool_selection(&mut trace, "list_directory", true, None, None);
     assert_eq!(
         trace.phase,
         ReasoningPhase::ToolSelection,
@@ -287,6 +288,7 @@ fn regression_trace_does_not_appear_in_normal_response() {
         &mut trace,
         "read_file",
         true,
+        None, // relevance_score (defaults to 1.0 when selected)
         Some("user asked to read a file"),
     );
     layer.on_complete(&mut trace);

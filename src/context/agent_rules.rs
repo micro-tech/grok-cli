@@ -195,7 +195,11 @@ pub fn load_all_agent_rules(project_root: &Path) -> Result<Vec<AgentRule>> {
     // (we can call the old loader here if needed)
 
     let mut result: Vec<AgentRule> = all_rules.into_values().collect();
-    result.sort_by(|a, b| a.source.cmp(&b.source).then_with(|| a.filename.cmp(&b.filename)));
+    result.sort_by(|a, b| {
+        a.source
+            .cmp(&b.source)
+            .then_with(|| a.filename.cmp(&b.filename))
+    });
 
     Ok(result)
 }
@@ -221,7 +225,11 @@ pub fn format_agent_rules_for_prompt(rules: &[AgentRule]) -> String {
                 RuleSource::LegacyProject => output.push_str("### Legacy Rules\n\n"),
             }
         }
-        output.push_str(&format!("**{}**\n{}\n\n", rule.filename, rule.content.trim()));
+        output.push_str(&format!(
+            "**{}**\n{}\n\n",
+            rule.filename,
+            rule.content.trim()
+        ));
     }
 
     output

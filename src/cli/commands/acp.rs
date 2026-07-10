@@ -704,6 +704,15 @@ async fn handle_session_prompt_v2(
             )));
             let notif = SessionNotification::new(session_id.clone(), update);
             send_session_notif(&notif, &cx);
+
+            // Refresh the status bar immediately after config-changing slash
+            // commands so context budget / model labels update without waiting
+            // for the next generation turn.
+            if let Ok(state) = agent.get_status_bar_state(&session_id).await {
+                let status_update = GrokAcpAgent::status_bar_message_update(&state);
+                let status_notif = SessionNotification::new(session_id.clone(), status_update);
+                send_session_notif(&status_notif, &cx);
+            }
             // Respond first so Zed closes the turn immediately — save_session_to_disk
             // can block on a read-lock if another request holds the write lock, and we
             // must not delay the PromptResponse while that resolves.
@@ -918,12 +927,31 @@ async fn handle_builtin_result(
             "✅ Conversation history cleared. Starting fresh!".to_string()
         }
         BuiltinResult::SwitchModel(model_name) => {
+            // Capture previous config for a richer confirmation message.
+            let old_cfg = agent.get_session_config(session_id).await.ok();
+            let old_model = old_cfg.as_ref().map(|c| c.model.clone());
+            let old_max = old_cfg.as_ref().map(|c| c.max_tokens);
+
             match agent
                 .set_session_model(session_id, model_name.clone())
                 .await
             {
-                Ok(()) => format!("✅ Switched to model **`{model_name}`**."),
-                Err(e) => format!("❌ Could not switch model: {e}"),
+                Ok(()) => {
+                    let new_cfg = agent.get_session_config(session_id).await.ok();
+                    let new_max = new_cfg.as_ref().map(|c| c.max_tokens).unwrap_or(0);
+                    let budget_note = match (old_max, old_model.as_deref()) {
+                        (Some(old), Some(om)) if om != model_name.as_str() => {
+                            format!(
+                                "\n\nOutput budget: **{old}** -> **{new_max}** tokens\n\
+                                 Context window is selected automatically from the model family \
+                                 (1M for grok-4.x, legacy budget for others)."
+                            )
+                        }
+                        _ => format!("\n\nOutput budget: **{new_max}** tokens"),
+                    };
+                    format!("Switched to model **`{model_name}`**.{budget_note}")
+                }
+                Err(e) => format!("Could not switch model: {e}"),
             }
         }
         BuiltinResult::ShowCurrentModel => match agent.get_session_config(session_id).await {

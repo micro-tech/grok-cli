@@ -123,6 +123,8 @@ src/bin/home_server.md
 Doc/docs
 Doc/ai-generated-summaries
 nul
+.grok/
 .grok/config.toml
 .grok/agents/
-.doc/markmap/
+# Legacy global config (pre 0.2.5)
+_back/

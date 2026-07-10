@@ -507,6 +507,14 @@ async fn run_interactive_loop(
             description: "Dry-run simulation mode (on/off or status)".to_string(),
         },
         Suggestion {
+            text: "/image".to_string(),
+            description: "Attach an image for vision analysis".to_string(),
+        },
+        Suggestion {
+            text: "/init".to_string(),
+            description: "Initialize .grok/ project config".to_string(),
+        },
+        Suggestion {
             text: "!ls".to_string(),
             description: "List files (shell command)".to_string(),
         },
@@ -971,6 +979,43 @@ async fn handle_special_commands(
             print_hooks_info(app_config);
             Ok(Some(true))
         }
+        "init" => {
+            // Mirror ACP `/init` and `grok init [--force]`.
+            // Usage: /init | /init --force | /init force
+            let force = parts.iter().any(|p| *p == "--force" || *p == "force");
+            match crate::tools::run_init(force) {
+                Ok(msg) => println!("{}", msg),
+                Err(e) => println!("{} Failed to initialize: {}", "❌".bright_red(), e),
+            }
+            Ok(Some(true))
+        }
+        "image" => {
+            if parts.len() < 2 {
+                println!("{} Usage: /image <path> [prompt]", "⚠".bright_yellow());
+            } else {
+                let path = parts[1];
+                let prompt = if parts.len() > 2 {
+                    parts[2..].join(" ")
+                } else {
+                    String::new()
+                };
+                match crate::tools::image::prepare_image_content(path) {
+                    Ok(_) => {
+                        crate::tools::image::print_image_attached_feedback(path);
+                        let msg = if prompt.is_empty() {
+                            format!("[Attached image: {}] Please analyze this image.", path)
+                        } else {
+                            format!("[Attached image: {}] {}", path, prompt)
+                        };
+                        // Store the image reference in the next user message
+                        session.add_conversation_item("user", &msg, None);
+                        println!("📎 Image attached. The next message you send will include the image.");
+                    }
+                    Err(e) => println!("❌ {}", e),
+                }
+            }
+            Ok(Some(true))
+        }
         "simulate" => {
             match parts.get(1).copied() {
                 Some("on") => {
@@ -1088,6 +1133,10 @@ fn print_interactive_help() {
         ),
         ("/hooks", "Show hooks system status and information"),
         (
+            "/init [--force]",
+            "Initialize .grok/ project config from global settings",
+        ),
+        (
             "/simulate [on|off]",
             "Dry-run mode: predict tool calls without executing",
         ),
@@ -1204,15 +1253,43 @@ async fn send_to_grok(
     session: &mut InteractiveSession,
     input: &str,
 ) -> Result<()> {
-    // Add user message to history
+    // ── Vision / Image handling ─────────────────────────────────────────────
+    let mut effective_model = session.model.clone();
+    let mut messages = vec![];
+
+    if let Some(image_path) = crate::tools::extract_image_from_message(input) {
+        // Show nice TUI feedback
+        crate::tools::print_image_attached_feedback(&image_path);
+
+        // Switch to a vision model if current model doesn't support it
+        if !crate::tools::is_vision_model(&effective_model) {
+            effective_model = crate::tools::recommended_vision_model().to_string();
+            println!(
+                "{} Switching to vision model: {}",
+                "🖼️".bright_cyan(),
+                effective_model.bright_yellow()
+            );
+        }
+
+        // Build a vision-capable message (text + image)
+        if let Ok(vision_msg) = crate::tools::create_vision_message(input, &image_path) {
+            messages.push(vision_msg);
+        } else {
+            // Fallback to normal text if image preparation fails
+            messages.push(json!({ "role": "user", "content": input }));
+        }
+    } else {
+        messages.push(json!({ "role": "user", "content": input }));
+    }
+
+    // Add user message to history (original text)
     session.add_conversation_item("user", input, None);
 
     // Show thinking indicator
     print!("{} ", "Thinking...".bright_yellow());
     io::stdout().flush()?;
 
-    // Prepare messages for API
-    let mut messages = vec![];
+    // Prepare messages for API (we already have the first user message)
 
     // Build system prompt with active skills context
     let mut system_content = String::new();
@@ -1265,7 +1342,7 @@ async fn send_to_grok(
             &messages,
             session.temperature,
             session.max_tokens,
-            &session.model,
+            &effective_model,
             Some(tools.iter().map(|t| serde_json::json!(t)).collect()),
             None, // reasoning_effort: not exposed in interactive mode yet
         )

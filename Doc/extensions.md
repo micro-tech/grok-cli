@@ -114,7 +114,7 @@ In your `~/.config/grok-cli/config.toml`:
 ```toml
 [experimental.extensions]
 enabled = true
-extension_dir = "~/.grok/extensions"
+extension_dir = "~/.grok-cli/extensions"
 enabled_extensions = ["logging-hook", "my-extension"]
 allow_config_extensions = true
 ```
@@ -122,7 +122,7 @@ allow_config_extensions = true
 ### Configuration Options
 
 - **enabled**: Master switch for the extension system (default: false)
-- **extension_dir**: Directory to search for extensions (default: `~/.grok/extensions`)
+- **extension_dir**: Directory to search for extensions (default: `~/.grok-cli/extensions`)
 - **enabled_extensions**: List of extension names to load. Empty list = load all
 - **allow_config_extensions**: Allow loading extensions defined in config (default: false)
 
@@ -232,7 +232,7 @@ Cache expensive tool results:
     "name": "cache-handler",
     "hook_type": "both",
     "config": {
-      "cache_dir": "~/.grok/cache",
+      "cache_dir": "~/.grok-cli/cache",
       "ttl_seconds": 3600
     }
   }]
@@ -252,12 +252,12 @@ Several example extensions are provided in the `examples/extensions/` directory:
 
 1. Create your extension directory:
    ```bash
-   mkdir -p ~/.grok/extensions/my-extension
+   mkdir -p ~/.grok-cli/extensions/my-extension
    ```
 
 2. Create the manifest:
    ```bash
-   cat > ~/.grok/extensions/my-extension/extension.json << EOF
+   cat > ~/.grok-cli/extensions/my-extension/extension.json << EOF
    {
      "name": "my-extension",
      "version": "1.0.0",
@@ -379,12 +379,12 @@ Planned improvements:
 
 2. Verify the extension directory exists:
    ```bash
-   ls -la ~/.grok/extensions/
+   ls -la ~/.grok-cli/extensions/
    ```
 
 3. Validate the manifest JSON:
    ```bash
-   jq . ~/.grok/extensions/my-extension/extension.json
+   jq . ~/.grok-cli/extensions/my-extension/extension.json
    ```
 
 4. Check logs for errors:

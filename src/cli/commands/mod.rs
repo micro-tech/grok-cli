@@ -14,6 +14,7 @@ pub mod code;
 pub mod config;
 pub mod health;
 pub mod history;
+pub mod init;
 pub mod sandbox;
 pub mod settings;
 pub mod setup;

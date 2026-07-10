@@ -125,6 +125,12 @@ pub enum SlashCommand {
 
     /// `/rule clear` — remove all session-only rules.
     RuleClear,
+
+    /// `/image <path|url> [prompt]` — analyze an image (local file or URL).
+    Image { path: String, prompt: String },
+
+    /// `/init` — initialize a new Grok project with recommended structure.
+    Init,
 }
 
 // ---------------------------------------------------------------------------
@@ -216,6 +222,25 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
                 Some(SlashCommand::RuleList)
             }
         }
+
+        // Image / vision command
+        "/image" => {
+            // Split into path + optional prompt
+            let parts: Vec<&str> = args.splitn(2, ' ').collect();
+            if parts.is_empty() || parts[0].is_empty() {
+                None // require at least a path
+            } else {
+                let path = parts[0].to_string();
+                let prompt = parts
+                    .get(1)
+                    .map(|s| s.trim().to_string())
+                    .unwrap_or_default();
+                Some(SlashCommand::Image { path, prompt })
+            }
+        }
+
+        "/init" => Some(SlashCommand::Init),
+
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -310,6 +335,9 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         ),
         AvailableCommand::new("web", "Research a topic or search the web for information")
             .input(input("query to research")),
+        AvailableCommand::new("image", "Analyze an image (local file or URL)")
+            .input(input("path or URL [optional prompt]")),
+        AvailableCommand::new("init", "Initialize a new Grok project with recommended structure"),
     ];
 
     // Ensure alphabetical order by command name
@@ -351,7 +379,9 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::RuleAdd { .. }
         | SlashCommand::RuleRemove { .. }
         | SlashCommand::RuleList
-        | SlashCommand::RuleClear => None,
+        | SlashCommand::RuleClear
+        | SlashCommand::Image { .. }
+        | SlashCommand::Init => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -626,6 +656,17 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::RuleRemove { id } => Some(BuiltinResult::RemoveRule(*id)),
         SlashCommand::RuleList => Some(BuiltinResult::ListRules),
         SlashCommand::RuleClear => Some(BuiltinResult::ClearRules),
+        SlashCommand::Init => {
+            // Run the init logic and return the result as text.
+            // ACP /init never forces — the user can re-run with `grok init --force`.
+            match crate::tools::run_init(false) {
+                Ok(msg) => Some(BuiltinResult::Text(msg)),
+                Err(e) => Some(BuiltinResult::Text(format!(
+                    "❌ Failed to initialize: {}",
+                    e
+                ))),
+            }
+        }
         _ => None, // AI-assisted command
     }
 }
@@ -788,14 +829,15 @@ pub fn format_help_text() -> String {
 /// Format the model list shown when `/model` is called with no argument.
 pub fn format_model_list() -> String {
     let models = [
-        ("grok-4.3", "Latest flagship (1M context)"),
-        (
-            "grok-4.20-0309-reasoning",
-            "Reasoning variant (recommended for thinking)",
-        ),
-        ("grok-4.20-0309-non-reasoning", "Non-reasoning variant"),
-        ("grok-4.20-multi-agent-0309", "Multi-agent variant"),
-        ("grok-build-0.1", "Build / experimental model"),
+        ("grok-4.3", "Latest flagship (1M context) — recommended default"),
+        ("grok-4.20-0309-reasoning", "Reasoning variant (best for deep thinking)"),
+        ("grok-4.20-0309-non-reasoning", "Fast non-reasoning variant"),
+        ("grok-4.20-multi-agent-0309", "Multi-agent orchestration variant"),
+        ("grok-coder", "Specialized coding model (fast iteration & edits)"),
+        ("grok-3", "Previous generation (stable)"),
+        ("grok-3-mini", "Lightweight & fast"),
+        ("grok-2-vision-1212", "Vision-enabled model"),
+        ("grok-build-0.1", "Experimental / build-focused"),
     ];
 
     let mut lines: Vec<String> = vec![
@@ -810,7 +852,7 @@ pub fn format_model_list() -> String {
     }
 
     lines.push(String::new());
-    lines.push("Example: `/model grok-3` — switches the current session to Grok 3.".to_string());
+    lines.push("Example: `/model grok-4.3` — switches the current session to Grok 4.3.".to_string());
 
     lines.join("\n")
 }

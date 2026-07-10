@@ -68,18 +68,18 @@ async fn test_initialize_and_session_new() {
     });
 
     // initialize
+    // protocolVersion must be a JSON number (u16); the agent-client-protocol
+    // crate rejects string values during deserialization.
     send(
         &mut cw,
         &json!({
             "jsonrpc":"2.0","id":1,"method":"initialize",
-            "params":{"protocolVersion":"1","clientInfo":{"name":"test"}}
+            "params":{"protocolVersion":1,"clientInfo":{"name":"test"}}
         }),
     )
     .await;
     let r = recv_id(&mut cr, 1).await;
     assert!(r["error"].is_null(), "initialize error: {r}");
-    // protocolVersion may be a string OR number depending on the client's
-    // original request format (our server echoes back what the client sent).
     assert!(
         !r["result"]["protocolVersion"].is_null(),
         "no protocolVersion: {r}"
@@ -163,7 +163,7 @@ async fn test_session_load() {
     // initialize + session/new
     send(
         &mut cw,
-        &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1"}}),
+        &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}),
     )
     .await;
     let _ = recv_id(&mut cr, 1).await;
@@ -219,7 +219,7 @@ async fn test_session_fork() {
 
     send(
         &mut cw,
-        &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"1"}}),
+        &json!({"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":1}}),
     )
     .await;
     let _ = recv_id(&mut cr, 1).await;

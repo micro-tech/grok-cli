@@ -30,7 +30,7 @@ GROK_EXTERNAL_ACCESS_REQUIRE_APPROVAL=true
 
 **Option B: Using Configuration File**
 
-Create or edit `.grok/config.toml` in your project:
+Create or edit `.grok-cli/config.toml` in your project:
 
 ```toml
 [security.external_access]
@@ -507,7 +507,7 @@ grok audit external-access --from 2024-01-15 --export weekly_audit.csv
 You're now set up to access external files securely!
 
 **Remember:**
-- Configuration in `.grok/.env` or `.grok/config.toml`
+- Configuration in `.grok-cli/.env` or `.grok-cli/config.toml`
 - Use "Trust Always" for files you access often
 - Review audit logs periodically
 - Keep sensitive files excluded

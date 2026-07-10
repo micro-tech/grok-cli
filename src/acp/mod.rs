@@ -405,10 +405,15 @@ impl GrokAcpAgent {
         GrokAgentCapabilities {
             models: vec![
                 "grok-4.3".to_string(), // Default — 1 M token context
+                "grok-4.20-0309-reasoning".to_string(),
+                "grok-4.20-0309-non-reasoning".to_string(),
+                "grok-4.20-multi-agent-0309".to_string(),
+                "grok-coder".to_string(), // Specialized coding model
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
                 "grok-2-vision-1212".to_string(),
                 "grok-2".to_string(), // Fallback
+                "grok-build-0.1".to_string(),
             ],
             // grok-4.3 exposes a 1,048,576-token context window.
             // This is reported here so ACP clients (e.g. Zed) can make
@@ -1906,7 +1911,7 @@ impl GrokAcpAgent {
     }
 
     /// Emit the dynamic status bar + token meter (Task 164)
-    fn emit_status_bar(
+    pub(crate) fn emit_status_bar(
         &self,
         event_sender: Option<
             &tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
@@ -1949,6 +1954,35 @@ impl GrokAcpAgent {
             ));
         }
     }
+    /// Build an AgentMessageChunk that renders the compact status line.
+    /// Used by slash-command handlers that only have access to `cx` (not the
+    /// internal mpsc event channel).
+    /// Build an AgentMessageChunk that renders the compact status line.
+    /// Used by slash-command handlers that only have access to `cx` (not the
+    /// internal mpsc event channel).
+    pub(crate) fn status_bar_message_update(
+        state: &crate::acp::status_bar::StatusBarState,
+    ) -> crate::acp::protocol::SessionUpdate {
+        let status_line = format!(
+            "-- Grok -- {} -- {} -- {}/{} tokens ({:.0}%) {}",
+            state.model,
+            state.thinking_mode,
+            state.current_tokens,
+            state.max_tokens,
+            state.context_percent * 100.0,
+            if state.is_generating {
+                "... generating..."
+            } else {
+                "ready"
+            }
+        );
+        crate::acp::protocol::SessionUpdate::AgentMessageChunk(
+            crate::acp::protocol::ContentChunk::new(crate::acp::protocol::ContentBlock::Text(
+                crate::acp::protocol::TextContent::new(status_line),
+            )),
+        )
+    }
+
     pub fn emit_agent_activity(
         &self,
         event_sender: Option<
@@ -2250,19 +2284,66 @@ impl GrokAcpAgent {
     }
 
     /// Switch the model used for a session (used by the `/model` slash command).
+    ///
+    /// Also adjusts `session.config.max_tokens` (output budget) based on the
+    /// new model family so users get sensible defaults when switching between
+    /// flagship, mini, and legacy models.
     pub async fn set_session_model(&self, session_id: &SessionId, model: String) -> Result<()> {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(&session_id.0) {
             let old_model = session.config.model.clone();
+            let old_max_tokens = session.config.max_tokens;
+            let new_max_tokens = model_default_max_tokens(&model);
             session.config.model = model.clone();
+            session.config.max_tokens = new_max_tokens;
             info!(
-                "Switched model from '{}' to '{}' for session: {}",
-                old_model, model, session_id.0
+                "Switched model from '{}' to '{}' for session: {} (max_tokens: {} -> {})",
+                old_model, model, session_id.0, old_max_tokens, new_max_tokens
             );
         } else {
             return Err(anyhow!("Session not found: {}", session_id.0));
         }
         Ok(())
+    }
+
+    /// Build a [`StatusBarState`] snapshot for the given session.
+    ///
+    /// Used after `/model` (and similar) so the UI can refresh the context
+    /// budget immediately when the active model changes.
+    pub async fn get_status_bar_state(
+        &self,
+        session_id: &SessionId,
+    ) -> Result<crate::acp::status_bar::StatusBarState> {
+        let sessions = self.sessions.read().await;
+        let session = sessions
+            .get(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+
+        let current_tokens = estimate_tokens(&session.messages);
+        let max_tokens = model_context_budget(
+            &session.config.model,
+            self.config.acp.max_context_tokens,
+            self.config.acp.grok4_max_context_tokens,
+        );
+        let context_percent = if max_tokens > 0 {
+            current_tokens as f32 / max_tokens as f32
+        } else {
+            0.0
+        };
+
+        Ok(crate::acp::status_bar::StatusBarState {
+            model: session.config.model.clone(),
+            thinking_mode: session
+                .config
+                .thinking_mode
+                .as_api_str()
+                .unwrap_or("off")
+                .to_string(),
+            current_tokens,
+            max_tokens,
+            context_percent,
+            is_generating: false,
+        })
     }
 
     /// Set the thinking / reasoning mode for a session.
@@ -2526,6 +2607,29 @@ fn model_context_budget(model: &str, legacy_budget: usize, grok4_budget: usize) 
         grok4_budget
     } else {
         legacy_budget
+    }
+}
+
+/// Sensible default **output** token budget for a model family.
+///
+/// Used when switching models via `/model` so `session.config.max_tokens`
+/// stays appropriate for the new model.
+///
+/// | Family              | Default |
+/// |---------------------|---------|
+/// | grok-4.x / coder    | 16_384  |
+/// | grok-3-mini         |  8_192  |
+/// | grok-3 / grok-2 / … |  8_192  |
+#[inline]
+fn model_default_max_tokens(model: &str) -> u32 {
+    let m = model.to_ascii_lowercase();
+    if m.starts_with("grok-4") || m.contains("coder") {
+        16_384
+    } else if m.contains("mini") {
+        8_192
+    } else {
+        // grok-3, grok-2, build, unknown — conservative default
+        8_192
     }
 }
 
@@ -2948,6 +3052,18 @@ mod tests {
             220_000
         );
         assert_eq!(model_context_budget("grok-beta", 220_000, 950_000), 220_000);
+    }
+
+    #[test]
+    fn test_model_default_max_tokens_by_family() {
+        assert_eq!(model_default_max_tokens("grok-4.3"), 16_384);
+        assert_eq!(model_default_max_tokens("grok-4.20-0309-reasoning"), 16_384);
+        assert_eq!(model_default_max_tokens("grok-coder"), 16_384);
+        assert_eq!(model_default_max_tokens("Grok-Coder-v2"), 16_384);
+        assert_eq!(model_default_max_tokens("grok-3-mini"), 8_192);
+        assert_eq!(model_default_max_tokens("grok-3"), 8_192);
+        assert_eq!(model_default_max_tokens("grok-2"), 8_192);
+        assert_eq!(model_default_max_tokens("unknown-model"), 8_192);
     }
 
     #[test]

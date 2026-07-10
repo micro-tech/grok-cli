@@ -42,15 +42,17 @@ fn main() {
 
                         if let (Some(mmd_time), Some(html_time)) = (mmd_modified, html_modified) {
                             if mmd_time > html_time {
-                                println!(
-                                    "cargo:warning=.mmd file newer than .html — run scripts/build-markmaps.ps1"
-                                );
+                                println!("cargo:warning=.mmd file newer than .html — attempting to rebuild markmaps...");
+                                let _ = std::process::Command::new("powershell")
+                                    .args(["-ExecutionPolicy", "Bypass", "-File", "scripts/build-markmaps.ps1"])
+                                    .status();
                             }
                         } else if mmd_modified.is_some() && html_modified.is_none() {
                             // HTML doesn't exist yet
-                            println!(
-                                "cargo:warning=Missing HTML for .mmd file — run scripts/build-markmaps.ps1"
-                            );
+                            println!("cargo:warning=Missing HTML for .mmd file — attempting to build markmaps...");
+                            let _ = std::process::Command::new("powershell")
+                                .args(["-ExecutionPolicy", "Bypass", "-File", "scripts/build-markmaps.ps1"])
+                                .status();
                         }
                     }
                 }

@@ -450,6 +450,31 @@ fn handle_interactive_command(
             print_help();
             Ok(Some(CommandResult::Continue))
         }
+        "/image" => {
+            // Parse /image command manually for CLI mode (proper vision format)
+            let args = input.trim_start_matches("/image").trim();
+            if args.is_empty() {
+                println!("{} Usage: /image <path> [prompt]", "⚠".yellow());
+            } else {
+                let parts: Vec<&str> = args.splitn(2, ' ').collect();
+                let path = parts[0];
+                let text = if parts.len() > 1 {
+                    parts[1].to_string()
+                } else {
+                    "Please analyze this image.".to_string()
+                };
+
+                match crate::tools::create_vision_message(&text, path) {
+                    Ok(vision_msg) => {
+                        crate::tools::image::print_image_attached_feedback(path);
+                        conversation_history.push(vision_msg);
+                        println!("📎 Image attached with vision support.");
+                    }
+                    Err(e) => println!("❌ {}", e),
+                }
+            }
+            Ok(Some(CommandResult::Continue))
+        }
         "/clear" => {
             if conversation_history
                 .first()
@@ -567,10 +592,28 @@ fn handle_interactive_command(
 
                 // AI-assisted slash commands → enhance prompt and continue as normal user message
                 if let Some(enhanced) = slash_commands::command_to_prompt(&cmd) {
-                    // We can't easily mutate the caller's input here, so we just
-                    // let the original command text go through (the model will still
-                    // understand "/web ..."). Full enhancement happens in ACP mode.
                     let _ = enhanced;
+                }
+
+                // Handle /image specially in CLI (proper vision format)
+                if let slash_commands::SlashCommand::Image { path, prompt } = &cmd {
+                    let text = if prompt.is_empty() {
+                        "Please analyze this image.".to_string()
+                    } else {
+                        prompt.clone()
+                    };
+                    match crate::tools::create_vision_message(&text, path) {
+                        Ok(vision_msg) => {
+                            crate::tools::image::print_image_attached_feedback(path);
+                            conversation_history.push(vision_msg);
+                            println!("📎 Image attached with vision support.");
+                            return Ok(Some(CommandResult::Continue));
+                        }
+                        Err(e) => {
+                            println!("❌ {}", e);
+                            return Ok(Some(CommandResult::Continue));
+                        }
+                    }
                 }
             }
             Ok(None)

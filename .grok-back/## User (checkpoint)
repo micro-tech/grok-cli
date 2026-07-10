@@ -1135,7 +1135,7 @@ This workaround is no longer needed since `grok_api` now has native tool support
 ## Tasks
 
 ### 1. Update Tool Message Handling in `chat_completion_with_history`
-**File:** `src/grok_client_ext.rs`  
+**File:** `src/grok_client_ext.rs`
 **Location:** Lines 127-137
 
 - [ ] Replace the workaround with proper `ChatMessage::tool()` usage
@@ -1152,7 +1152,7 @@ This workaround is no longer needed since `grok_api` now has native tool support
   ```
 
 ### 2. Verify Tool Call Preservation in Assistant Messages
-**File:** `src/grok_client_ext.rs`  
+**File:** `src/grok_client_ext.rs`
 **Location:** Lines 107-120
 
 - [ ] Ensure assistant messages with tool calls are properly handled
@@ -1212,11 +1212,11 @@ This workaround is no longer needed since `grok_api` now has native tool support
 
 ## Success Criteria
 
-✅ Tool messages use native `ChatMessage::tool()` instead of user message workaround  
-✅ Tool loops complete successfully without infinite loops  
-✅ All existing tests pass  
-✅ Documentation is updated to reflect the changes  
-✅ Code compiles without warnings related to tool handling  
+✅ Tool messages use native `ChatMessage::tool()` instead of user message workaround
+✅ Tool loops complete successfully without infinite loops
+✅ All existing tests pass
+✅ Documentation is updated to reflect the changes
+✅ Code compiles without warnings related to tool handling
 ✅ Network error handling works correctly with tool messages
 
 ---
@@ -1246,7 +1246,7 @@ This workaround is no longer needed since `grok_api` now has native tool support
 
 ## Assistant
 
-Perfect! I've created a comprehensive task list in **`GROK_CLI_INTEGRATION_TASKS.md`**. 
+Perfect! I've created a comprehensive task list in **`GROK_CLI_INTEGRATION_TASKS.md`**.
 
 ## Summary
 
@@ -1885,7 +1885,7 @@ This workaround is no longer needed since `grok_api` now has native tool support
 ## Tasks
 
 ### 1. Update Tool Message Handling in `chat_completion_with_history`
-**File:** `src/grok_client_ext.rs`  
+**File:** `src/grok_client_ext.rs`
 **Location:** Lines 127-137
 
 - [x] Replace the workaround with proper `ChatMessage::tool()` usage
@@ -1902,7 +1902,7 @@ This workaround is no longer needed since `grok_api` now has native tool support
   ```
 
 ### 2. Verify Tool Call Preservation in Assistant Messages
-**File:** `src/grok_client_ext.rs`  
+**File:** `src/grok_client_ext.rs`
 **Location:** Lines 107-120
 
 - [x] Ensure assistant messages with tool calls are properly handled
@@ -1973,11 +1973,11 @@ This workaround is no longer needed since `grok_api` now has native tool support
 
 ## Success Criteria
 
-✅ Tool messages use native `ChatMessage::tool()` instead of user message workaround  
-⏳ Tool loops complete successfully without infinite loops (needs integration testing)  
-✅ All existing tests pass (90/90 unit tests)  
-⏳ Documentation is updated to reflect the changes  
-✅ Code compiles without warnings related to tool handling  
+✅ Tool messages use native `ChatMessage::tool()` instead of user message workaround
+⏳ Tool loops complete successfully without infinite loops (needs integration testing)
+✅ All existing tests pass (90/90 unit tests)
+⏳ Documentation is updated to reflect the changes
+✅ Code compiles without warnings related to tool handling
 ⏳ Network error handling works correctly with tool messages (needs integration testing)
 
 ---
@@ -2055,7 +2055,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Configuration Syntax**: Fixed `.grok/config.toml` missing required `env` field for MCP servers
+- **Configuration Syntax**: Fixed `.grok-cli/config.toml` missing required `env` field for MCP servers
   - MCP server configurations now include `env = {}` field (required even if empty)
   - Prevents TOML parse errors that could cause configuration loading failures
   - Updated project config template with proper MCP server structure
@@ -2369,7 +2369,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
     - `GROK_CHAT_LOG_ROTATION_COUNT` - Number of files to keep
     - `GROK_CHAT_LOG_INCLUDE_SYSTEM` - Include system messages
   - Default location: `~/.grok/logs/chat_sessions/`
-  
+
 - **Chat History Commands**: New `grok history` command suite
   - `grok history list` - List all saved chat sessions with previews
   - `grok history view <session-id>` - View complete conversation transcript
@@ -2564,7 +2564,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - **Critical**: Resolved "failed to deserialize response" error in Zed editor integration (TWO ROOT CAUSES)
-  
+
   **Issue 1: Clap Argument Definitions**
   - Added missing `#[arg(...)]` attributes to all Clap command-line argument definitions
   - Fixed `ConfigAction::Init` force flag parsing
@@ -2572,7 +2572,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - Fixed `AcpAction::Test` address argument parsing
   - Fixed `CodeAction` boolean flags and optional parameters
   - Fixed `SettingsAction` optional parameters
-  
+
   **Issue 2: Protocol Serialization Mismatch**
   - Fixed protocol version serialization (was returning "2024-04-15" instead of echoing client's version)
   - Added camelCase field names for JSON-RPC protocol (protocolVersion, agentCapabilities, etc.)
@@ -2768,8 +2768,8 @@ See [CONTRIBUTING.md](CONTRIBUTING.md) for details on:
 
 ---
 
-**Maintained by**: John McConnell  
-**Project Start**: 2024  
+**Maintained by**: John McConnell
+**Project Start**: 2024
 **Current Version**: 0.1.1
 ```
 
@@ -2785,8 +2785,8 @@ Diff: .grok\TOOL_MESSAGE_UPDATE.md
 ```
 # Tool Message Integration Update
 
-**Date:** 2026-02-18  
-**Status:** ✅ Completed  
+**Date:** 2026-02-18
+**Status:** ✅ Completed
 **Impact:** Medium - Improves tool calling accuracy and API compatibility
 
 ---
@@ -2932,7 +2932,7 @@ If you're extending `grok-cli` or `grok_api`:
 1. **Creating Tool Messages:**
    ```rust
    use grok_api::ChatMessage;
-   
+
    let tool_msg = ChatMessage::tool(
        "result content here",
        "tool_call_id_from_api"
@@ -2945,7 +2945,7 @@ If you're extending `grok-cli` or `grok_api`:
        for call in tool_calls {
            // Execute tool
            let result = execute_tool(&call.function);
-           
+
            // Send result back
            let tool_result = ChatMessage::tool(result, &call.id);
        }
@@ -2980,8 +2980,8 @@ If you're extending `grok-cli` or `grok_api`:
 
 This update brings `grok-cli` into full compliance with the Grok API's tool calling specification. Tool results are now properly formatted with `role: "tool"` and `tool_call_id` fields, eliminating the workaround that disguised them as user messages.
 
-**Impact on Users:** Transparent upgrade - no action required  
-**Impact on Developers:** Use `ChatMessage::tool()` for tool results  
+**Impact on Users:** Transparent upgrade - no action required
+**Impact on Developers:** Use `ChatMessage::tool()` for tool results
 **Impact on API:** Better message parsing and tool loop detection
 
 ✅ **Status:** Ready for production use
@@ -3690,7 +3690,7 @@ This workaround is no longer needed since `grok_api` now has native tool support
 ## Tasks
 
 ### 1. Update Tool Message Handling in `chat_completion_with_history`
-**File:** `src/grok_client_ext.rs`  
+**File:** `src/grok_client_ext.rs`
 **Location:** Lines 115-118 (updated)
 
 - [x] ✅ Replace the workaround with proper `ChatMessage::tool()` usage
@@ -3706,7 +3706,7 @@ This workaround is no longer needed since `grok_api` now has native tool support
 **Status:** ✅ **COMPLETE** - Successfully replaced 8 lines of workaround code with native tool support
 
 ### 2. Verify Tool Call Preservation in Assistant Messages
-**File:** `src/grok_client_ext.rs`  
+**File:** `src/grok_client_ext.rs`
 **Location:** Lines 107-120
 
 - [x] Ensure assistant messages with tool calls are properly handled
@@ -3777,11 +3777,11 @@ This workaround is no longer needed since `grok_api` now has native tool support
 
 ## Success Criteria
 
-✅ Tool messages use native `ChatMessage::tool()` instead of user message workaround  
-⏳ Tool loops complete successfully without infinite loops (needs integration testing)  
-✅ All existing tests pass (90/90 unit tests)  
-⏳ Documentation is updated to reflect the changes  
-✅ Code compiles without warnings related to tool handling  
+✅ Tool messages use native `ChatMessage::tool()` instead of user message workaround
+⏳ Tool loops complete successfully without infinite loops (needs integration testing)
+✅ All existing tests pass (90/90 unit tests)
+⏳ Documentation is updated to reflect the changes
+✅ Code compiles without warnings related to tool handling
 ⏳ Network error handling works correctly with tool messages (needs integration testing)
 
 ---
@@ -3849,9 +3849,9 @@ I've successfully integrated the updated `grok_api` tool support into `grok-cli`
 
 ### Verification Results
 
-✅ **Code compiles successfully** - `cargo check` passes  
-✅ **All 90 unit tests pass** - No regressions  
-✅ **Using `grok_api` v0.1.2** - With native tool support  
+✅ **Code compiles successfully** - `cargo check` passes
+✅ **All 90 unit tests pass** - No regressions
+✅ **Using `grok_api` v0.1.2** - With native tool support
 ⚠️ **Clippy warnings** - Pre-existing, unrelated to our changes
 
 ### What Changed
@@ -5857,9 +5857,9 @@ Diff: .grok\GROK_API_FIX_NEEDED.md
 ```
 # grok_api Compilation Error - Fix Needed
 
-**Date:** 2026-02-18  
-**Status:** ⚠️ BLOCKING - Prevents compilation  
-**Severity:** High  
+**Date:** 2026-02-18
+**Status:** ⚠️ BLOCKING - Prevents compilation
+**Severity:** High
 **Location:** `H:\GitHub\grok_crate\grok_api\src\retry.rs`
 
 ---
@@ -6053,7 +6053,7 @@ This workaround is no longer needed since `grok_api` now has native tool support
 ## Tasks
 
 ### 1. Update Tool Message Handling in `chat_completion_with_history`
-**File:** `src/grok_client_ext.rs`  
+**File:** `src/grok_client_ext.rs`
 **Location:** Lines 115-118 (updated)
 
 - [x] ✅ Replace the workaround with proper `ChatMessage::tool()` usage
@@ -6069,7 +6069,7 @@ This workaround is no longer needed since `grok_api` now has native tool support
 **Status:** ✅ **COMPLETE** - Successfully replaced 8 lines of workaround code with native tool support
 
 ### 2. Verify Tool Call Preservation in Assistant Messages
-**File:** `src/grok_client_ext.rs`  
+**File:** `src/grok_client_ext.rs`
 **Location:** Lines 107-120
 
 - [x] Ensure assistant messages with tool calls are properly handled
@@ -6140,11 +6140,11 @@ This workaround is no longer needed since `grok_api` now has native tool support
 
 ## Success Criteria
 
-✅ Tool messages use native `ChatMessage::tool()` instead of user message workaround  
-⏳ Tool loops complete successfully without infinite loops (needs integration testing)  
-✅ All existing tests pass (90/90 unit tests)  
-⏳ Documentation is updated to reflect the changes  
-✅ Code compiles without warnings related to tool handling  
+✅ Tool messages use native `ChatMessage::tool()` instead of user message workaround
+⏳ Tool loops complete successfully without infinite loops (needs integration testing)
+✅ All existing tests pass (90/90 unit tests)
+⏳ Documentation is updated to reflect the changes
+✅ Code compiles without warnings related to tool handling
 ⏳ Network error handling works correctly with tool messages (needs integration testing)
 
 ---
@@ -6216,9 +6216,9 @@ Diff: .grok\INTEGRATION_STATUS.md
 ```
 # Integration Status: Tool Message Support
 
-**Date:** 2026-02-18  
-**Version:** grok-cli v0.1.4  
-**Status:** 🟡 Implementation Complete - Testing Blocked  
+**Date:** 2026-02-18
+**Version:** grok-cli v0.1.4
+**Status:** 🟡 Implementation Complete - Testing Blocked
 
 ---
 
@@ -6278,7 +6278,7 @@ Successfully integrated native tool message support from `grok_api` v0.1.2 into 
 
 ### Compilation Error in grok_api
 
-**Location:** `H:\GitHub\grok_crate\grok_api\src\retry.rs` line 4  
+**Location:** `H:\GitHub\grok_crate\grok_api\src\retry.rs` line 4
 **Error:** Missing `RngExt` trait import
 
 ```
@@ -6290,7 +6290,7 @@ error[E0599]: no method named `random_range` found for struct `ThreadRng`
 The `rand` crate v0.10 moved `random_range` method from `Rng` trait to `RngExt` trait. The import wasn't updated when `grok_api` was modified.
 
 ### Quick Fix
-**File:** `H:\GitHub\grok_crate\grok_api\src\retry.rs`  
+**File:** `H:\GitHub\grok_crate\grok_api\src\retry.rs`
 **Line 4:** Change `use rand::Rng;` to `use rand::RngExt;`
 
 ### Impact
@@ -6330,7 +6330,7 @@ Tool: [returns file content]  ← Now properly formatted!
 Assistant: "The file contains..."  ← Should stop here (1-2 iterations)
 ```
 
-**Before:** Loop would continue indefinitely (10+ iterations)  
+**Before:** Loop would continue indefinitely (10+ iterations)
 **After:** Should complete in 1-3 iterations
 
 ---
@@ -6441,11 +6441,11 @@ Once grok_api is fixed, verify:
 
 ## 🎉 Summary
 
-**Implementation:** Complete ✅  
-**Testing:** Blocked by grok_api compilation 🟡  
-**One-line fix needed:** Change `Rng` to `RngExt` in grok_api  
-**Impact:** Eliminates infinite tool loops you experienced  
-**Ready for:** Integration testing once dependency is fixed  
+**Implementation:** Complete ✅
+**Testing:** Blocked by grok_api compilation 🟡
+**One-line fix needed:** Change `Rng` to `RngExt` in grok_api
+**Impact:** Eliminates infinite tool loops you experienced
+**Ready for:** Integration testing once dependency is fixed
 
 The core work is done! Just need to fix that one import in `grok_api` and we can verify the tool loop fix works as expected.
 ```
@@ -6462,7 +6462,7 @@ I've successfully completed the integration of native tool message support from 
 ### ✅ What's Complete
 
 1. **Core Implementation** - Updated `src/grok_client_ext.rs` to use `ChatMessage::tool()` instead of the workaround
-2. **All Unit Tests Pass** - 90/90 tests successful  
+2. **All Unit Tests Pass** - 90/90 tests successful
 3. **Documentation** - Created comprehensive docs in CHANGELOG, task lists, and `.grok/` folder
 4. **Test Infrastructure** - Created integration tests and test scripts ready to run
 
@@ -6470,7 +6470,7 @@ I've successfully completed the integration of native tool message support from 
 
 **One small fix needed in your local `grok_api` crate:**
 
-**File:** `H:\GitHub\grok_crate\grok_api\src\retry.rs`  
+**File:** `H:\GitHub\grok_crate\grok_api\src\retry.rs`
 **Line 4:** Change `use rand::Rng;` to `use rand::RngExt;`
 
 That's it! This one-line change will fix the compilation error.
@@ -6492,4 +6492,3 @@ That's it! This one-line change will fix the compilation error.
 4. Verify tool loops complete in 1-3 iterations (not 10+)
 
 This fix should solve the infinite tool loop problem you were experiencing! The tool results will now be properly formatted and sent to the API, allowing the model to see them and stop repeating the same tool calls.
-

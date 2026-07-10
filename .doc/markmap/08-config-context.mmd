@@ -1,0 +1,36 @@
+# grok-cli · Config & Context
+
+## Navigation
+- [Overview](00-overview.html)
+- [CLI](01-cli.html)
+- [Agent](02-agent.html)
+- [RAG](03-rag.html)
+- [Memory](04-memory.html)
+- [Tools](05-tools.html)
+- [Engine](06-engine.html)
+- [Router](07-router.html)
+- [Config & Context](08-config-context.html)
+- [MCP & ACP](09-mcp-acp.html)
+- [Safety & Security](10-safety-security.html)
+- [Utils & Display](11-utils-display.html)
+
+## Config
+- `config/mod.rs`
+
+## Context Engine
+- `context/engine.rs`
+- `context/session_manager.rs`
+- `context/prompt_builder.rs`
+
+## Agent Rules (Global + Project)
+- Global rules: `~/.grok-cli/agents/rules/`
+- Project rules: `<project>/.agents/rules/`
+- Loaded via `context::ContextEngine::load_agent_rules()`
+- Merge logic: global first, project overrides same filename
+- See: `skills/rules.rs`
+
+## Dependencies
+- (to be filled)
+
+## Notes
+- (to be filled)

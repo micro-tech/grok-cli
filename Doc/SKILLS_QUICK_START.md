@@ -102,7 +102,7 @@ Available Skills:
 grok skills new my-skill
 ```
 
-This creates: `~/.grok/skills/my-skill/SKILL.md`
+This creates: `~/.grok-cli/skills/my-skill/SKILL.md`
 
 ### 2. Edit the Skill File
 
@@ -234,7 +234,7 @@ grok interactive
 ## Skills Directory Structure
 
 ```
-~/.grok/skills/          # Your global skills directory
+~/.grok-cli/skills/          # Your global skills directory
 ├── rust-expert/
 │   └── SKILL.md
 ├── cli-design/
@@ -333,11 +333,11 @@ $ grok skills show rust-expert
 
 **Solution:** Check your skills directory exists:
 - Windows: `%USERPROFILE%\.grok\skills\`
-- macOS/Linux: `~/.grok/skills/`
+- macOS/Linux: `~/.grok-cli/skills/`
 
 ## Next Steps
 
-1. **Try the examples**: Copy from `examples/skills/` to `~/.grok/skills/`
+1. **Try the examples**: Copy from `examples/skills/` to `~/.grok-cli/skills/`
 2. **Create your first skill**: `grok skills new my-first-skill`
 3. **Explore the spec**: See `Doc/SKILL_SPECIFICATION.md` for details
 4. **Share skills**: Contribute useful skills back to the community

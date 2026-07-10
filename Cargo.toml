@@ -1,6 +1,6 @@
 [package]
 name = "grok-cli"
-version = "0.2.5"
+version = "0.2.5-PreRelese"
 edition = "2024"
 build = "build.rs"
 authors = ["john mcconnell john.microtech@gmail.com"]
@@ -22,7 +22,7 @@ path = "src/bin/github_mcp.rs"
 [dependencies]
 #  grok_api = { path = "../grok_crate/grok_api", version = "0.1.71" }
 # HTTP client with timeout support for network drops
-grok_api = "0.1.73"
+grok_api = "0.1.74"
 #grok_api = "0.1.7"
 
 reqwest = { version = "0.13.4", features = [
@@ -40,7 +40,7 @@ clap = { version = "4.6.1", features = ["derive", "env"] }
 # Error handling
 anyhow = "1.0"
 thiserror = "2.0"
-agent-client-protocol = "1.0.1"
+agent-client-protocol = "1.2.0"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Environment variable loading
 dotenvy = "0.15"
