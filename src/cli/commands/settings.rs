@@ -822,7 +822,7 @@ pub fn get_all_settings(config: &Config) -> Vec<SettingDefinition> {
             description: "Default model to use for requests".to_string(),
             category: "Model".to_string(),
             setting_type: SettingType::String,
-            default_value: "grok-4.3".to_string(),
+            default_value: "grok-4".to_string(),
             requires_restart: false,
             current_value: config.default_model.clone(),
         },

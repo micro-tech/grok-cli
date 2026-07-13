@@ -332,6 +332,98 @@
           ]
         }
       ]
+    },
+    {
+      "id": 226,
+      "title": "Update model defaults and lists to lead with grok-4 (crates.io grok_api caveat)",
+      "description": "The user wants the CLI to present 'grok-4' as the primary/recommended model. Note: the grok_api crate (from crates.io) may need updating first before dynamic /v1/models or new model names can be fully trusted. We keep curated static lists for now. Break changes into small steps.",
+      "status": "in_progress",
+      "dependencies": [],
+      "priority": "high",
+      "details": "User wants smaller incremental jobs to avoid max tool loop. Focus on one small edit + cargo check per step. grok_api crates.io note: we cannot rely on dynamic model list until grok_api crate is updated. Using static lists.",
+      "testStrategy": "",
+      "subtasks": [
+        {
+          "id": 226.1,
+          "title": "Update default_model() to 'grok-4'",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 226.2,
+          "title": "Update ACP capabilities and session default model",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 226.3,
+          "title": "Update slash commands model list and hints",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 226.4,
+          "title": "Clean up stale comments and specific grok-4.3/grok-4.5 references",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 226.5,
+          "title": "Update tests that assert exact old defaults",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 226.6,
+          "title": "Verify with cargo check after each small change",
+          "status": "pending",
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "id": 227,
+      "title": "Small task: Fix remaining 'grok-4.5' default test assert in config/mod.rs",
+      "description": "One tiny change: update the test that still expects 'grok-4.5' as default_model to check for 'grok-4' prefix instead. Then cargo check.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "medium",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 228,
+      "title": "Small task: Update stale comments mentioning grok-4.3 as primary model (config + acp)",
+      "description": "Replace comments like 'grok-4.3 supports...' with 'grok-4.x models support...' in non-test code. Keep specific 1M context tests as-is. One file at a time.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "low",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 229,
+      "title": "Small task: Update example/hint strings that still suggest grok-4.3 as example default",
+      "description": "In docs, help text, cli/app.rs comments, etc. Lead with grok-4. Do one file.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "low",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 230,
+      "title": "Small task: Add note about grok_api crates.io dependency for model list",
+      "description": "Document in relevant place (e.g. slash_commands or a README note) that dynamic model discovery depends on grok_api crate updates.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "low",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
     }
   ]
 }

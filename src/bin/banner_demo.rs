@@ -147,7 +147,7 @@ fn main() {
     println!(
         "  {} Model: {}",
         "🤖".bright_blue(),
-        "grok-4.3".bright_cyan()
+        "grok-4".bright_cyan()
     );
     println!(
         "  {} Network: {}",

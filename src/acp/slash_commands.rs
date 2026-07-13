@@ -298,7 +298,7 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         )),
         AvailableCommand::new("help", "Show all available slash commands and their usage"),
         AvailableCommand::new("model", "Switch to a different Grok model for this session")
-            .input(input("model name (e.g. grok-3, grok-4.3, grok-3-mini)")),
+            .input(input("model name (e.g. grok-4, grok-4.3, grok-3, grok-3-mini)")),
         AvailableCommand::new("plan", "Create a detailed step-by-step implementation plan")
             .input(input("description of what to plan")),
         AvailableCommand::new(
@@ -828,16 +828,17 @@ pub fn format_help_text() -> String {
 
 /// Format the model list shown when `/model` is called with no argument.
 pub fn format_model_list() -> String {
+    // Keep this list reasonably up to date with current xAI offerings.
+    // Newer / flagship models should appear first.
     let models = [
-        ("grok-4.3", "Latest flagship (1M context) — recommended default"),
-        ("grok-4.20-0309-reasoning", "Reasoning variant (best for deep thinking)"),
-        ("grok-4.20-0309-non-reasoning", "Fast non-reasoning variant"),
-        ("grok-4.20-multi-agent-0309", "Multi-agent orchestration variant"),
+        ("grok-4", "Latest flagship Grok 4 (recommended)"),
+        ("grok-4-latest", "Grok 4 latest alias"),
+        ("grok-4.3", "Grok 4.3 (1M context)"),
+        ("grok-3", "Grok 3"),
+        ("grok-3-mini", "Grok 3 mini (fast & lightweight)"),
         ("grok-coder", "Specialized coding model (fast iteration & edits)"),
-        ("grok-3", "Previous generation (stable)"),
-        ("grok-3-mini", "Lightweight & fast"),
         ("grok-2-vision-1212", "Vision-enabled model"),
-        ("grok-build-0.1", "Experimental / build-focused"),
+        ("grok-2", "Grok 2 (previous generation)"),
     ];
 
     let mut lines: Vec<String> = vec![
@@ -852,7 +853,8 @@ pub fn format_model_list() -> String {
     }
 
     lines.push(String::new());
-    lines.push("Example: `/model grok-4.3` — switches the current session to Grok 4.3.".to_string());
+    lines.push("Example: `/model grok-4` — switches the current session to the latest Grok 4.".to_string());
+    lines.push("Tip: You can also pass a specific variant (e.g. grok-4.3 for 1M context, grok-3-mini).".to_string());
 
     lines.join("\n")
 }

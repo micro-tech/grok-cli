@@ -57,7 +57,7 @@ pub enum Commands {
         #[arg(long, default_value = "4096")]
         max_tokens: u32,
 
-        /// Reasoning / thinking mode for grok-4.3 (off, low, high).
+        /// Reasoning / thinking mode for grok-4 / grok-4.x (off, low, high).
         /// \"high\" gives the most thorough answers at higher cost.
         #[arg(long, value_name = "MODE")]
         thinking: Option<String>,

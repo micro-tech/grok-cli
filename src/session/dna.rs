@@ -184,9 +184,10 @@ impl SessionDna {
     }
 
     /// Suggests a preferred model based on DNA (for future model routing).
+    /// Leads with grok-4 (current flagship); 4.3 variant only when very large context is desired.
     pub fn get_model_preference(&self) -> Option<&'static str> {
         match self.verbosity.as_str() {
-            "high" => Some("grok-4.3"),
+            "high" => Some("grok-4"),
             "low" => Some("grok-3-mini"),
             _ => None,
         }

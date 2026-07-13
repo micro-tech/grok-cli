@@ -953,10 +953,14 @@ async fn handle_builtin_result(
                 Err(e) => format!("Could not switch model: {e}"),
             }
         }
-        BuiltinResult::ShowCurrentModel => match agent.get_session_config(session_id).await {
-            Ok(cfg) => format!("🧠 Current model: **`{}`**", cfg.model),
-            Err(e) => format!("❌ Could not retrieve current model: {e}"),
-        },
+        BuiltinResult::ShowCurrentModel => {
+            let current = match agent.get_session_config(session_id).await {
+                Ok(cfg) => cfg.model,
+                Err(e) => return format!("❌ Could not retrieve current model: {e}"),
+            };
+            let list = slash_commands::format_model_list();
+            format!("🧠 Current model: **`{}`**\n\n{}", current, list)
+        }
         BuiltinResult::ShowContext => match agent.get_session_config(session_id).await {
             Ok(cfg) => {
                 let msg_count = agent

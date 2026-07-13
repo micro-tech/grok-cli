@@ -20,7 +20,7 @@ pub struct StatusBarState {
 impl Default for StatusBarState {
     fn default() -> Self {
         Self {
-            model: "grok-4.3".to_string(),
+            model: "grok-4".to_string(),
             thinking_mode: "Off".to_string(),
             current_tokens: 0,
             max_tokens: 950_000,

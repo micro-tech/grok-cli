@@ -131,8 +131,8 @@ pub async fn handle_model_config_options(_agent: &GrokAcpAgent) -> Result<Value>
                 "id": "model",
                 "name": "Model",
                 "type": "string",
-                "enum": ["grok-4.3", "grok-3", "grok-3-mini", "grok-2"],
-                "default": "grok-4.3",
+                "enum": ["grok-4", "grok-4.3", "grok-3", "grok-3-mini", "grok-2"],
+                "default": "grok-4",
                 "description": "Which Grok model to use for this session."
             }
         ]

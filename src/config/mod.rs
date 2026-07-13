@@ -21,7 +21,7 @@ use crate::mcp::config::McpConfig;
 /// - `Low`  — light reasoning; faster and cheaper.
 /// - `High` — deep reasoning; highest quality, slower, higher cost.
 ///
-/// Only grok-4.5, grok-4.3, grok-3-mini, and similar reasoning-capable models honour
+/// Only grok-4, grok-4.x, grok-3-mini, and similar reasoning-capable models honour
 /// this field.  Sending it to other models will result in an API error.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
@@ -232,8 +232,8 @@ pub struct AcpConfig {
     #[serde(default = "default_max_context_tokens")]
     pub max_context_tokens: usize,
 
-    /// Soft token budget for grok-4.x models (grok-4.3 and later).
-    /// grok-4.3 exposes a 1,048,576-token context window.
+    /// Soft token budget for grok-4.x models (grok-4 and later).
+    /// Certain grok-4.x variants expose a 1,048,576-token context window.
     /// This budget leaves ~50 k headroom for model response + tool definitions.
     /// Default: 950_000
     #[serde(default = "default_grok4_max_context_tokens")]
@@ -277,7 +277,7 @@ pub struct AcpConfig {
     /// - `low`  — light reasoning effort.
     /// - `high` — deep reasoning effort (slower, more tokens).
     ///
-    /// Only grok-4.5, grok-4.3 and grok-3-mini support this field.
+    /// Only grok-4 / grok-4.x and grok-3-mini support this field.
     /// Default: off
     #[serde(default)]
     pub thinking_mode: ThinkingMode,
@@ -527,7 +527,8 @@ fn default_theme() -> String {
 }
 
 fn default_model() -> String {
-    "grok-4.5".to_string()
+    // Current recommended default.  Update when xAI releases a new flagship.
+    "grok-4".to_string()
 }
 
 fn default_temperature() -> f32 {
@@ -536,7 +537,7 @@ fn default_temperature() -> f32 {
 
 fn default_max_tokens() -> u32 {
     // Output token budget (not context window size).
-    // grok-4.5 / grok-4.3 supports up to 32 768 output tokens; 16 384 is a safe default
+    // grok-4 / grok-4.x supports large output budgets; 16 384 is a safe default
     // that avoids accidental large responses while still allowing detailed answers.
     16_384
 }
@@ -2930,7 +2931,8 @@ mod tests {
     #[tokio::test]
     async fn test_config_default() {
         let config = Config::default();
-        assert_eq!(config.default_model, "grok-4.5");
+        // After the change to lead with grok-4 as the default
+        assert!(config.default_model.starts_with("grok-4"));
         assert_eq!(config.default_temperature, 0.7);
         assert!(config.validate().is_ok());
     }
@@ -2955,7 +2957,7 @@ mod tests {
         let mut config = Config::default();
 
         // Test getting values
-        assert_eq!(config.get_value("default_model").unwrap(), "grok-4.5");
+        assert_eq!(config.get_value("default_model").unwrap(), "grok-4");
         assert_eq!(config.get_value("ui.colors").unwrap(), "true");
 
         // Test setting values

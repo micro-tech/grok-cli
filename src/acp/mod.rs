@@ -267,10 +267,10 @@ pub struct ToolDefinition {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            model: "grok-4.3".to_string(),
+            model: "grok-4".to_string(),
             temperature: 0.5, // Lower temperature for more deterministic coding output
-            // grok-4.3 supports higher output token limits; 16 384 balances
-            // detailed responses with reasonable response times.
+            // grok-4.x models support large output token budgets; 16 384 is a safe default
+            // that avoids accidental huge responses while still allowing detailed answers.
             max_tokens: 16_384,
             system_prompt: Some(
                 "You are an expert software engineer and coding assistant. \
@@ -401,18 +401,16 @@ impl GrokAcpAgent {
     fn create_capabilities() -> GrokAgentCapabilities {
         GrokAgentCapabilities {
             models: vec![
-                "grok-4.3".to_string(), // Default — 1 M token context
-                "grok-4.20-0309-reasoning".to_string(),
-                "grok-4.20-0309-non-reasoning".to_string(),
-                "grok-4.20-multi-agent-0309".to_string(),
-                "grok-coder".to_string(), // Specialized coding model
+                "grok-4".to_string(),           // Current flagship
+                "grok-4-latest".to_string(),
+                "grok-4.3".to_string(),         // 1M context variant
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
+                "grok-coder".to_string(),       // Specialized coding model
                 "grok-2-vision-1212".to_string(),
-                "grok-2".to_string(), // Fallback
-                "grok-build-0.1".to_string(),
+                "grok-2".to_string(),
             ],
-            // grok-4.3 exposes a 1,048,576-token context window.
+            // grok-4.3 (and certain grok-4.x variants) expose a 1,048,576-token context window.
             // This is reported here so ACP clients (e.g. Zed) can make
             // informed decisions about context insertion.
             max_context_length: 1_048_576,
@@ -2672,9 +2670,10 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-        assert_eq!(config.model, "grok-4.3");
+        // Default should now be the current grok-4 flagship (or a 4.x variant)
+        assert!(config.model.starts_with("grok-4"), "default model should be a grok-4 variant, got {}", config.model);
         assert_eq!(config.temperature, 0.5);
-        // grok-4.3 supports higher output token limits; default raised to 16_384
+        // grok-4.x models support higher output token limits; default 16_384 kept for compatibility
         assert_eq!(config.max_tokens, 16_384);
         assert!(config.system_prompt.is_some());
     }
@@ -2687,8 +2686,12 @@ mod tests {
         assert!(!capabilities.tools.is_empty());
         // grok-4.3 exposes a 1 M token context window
         assert_eq!(capabilities.max_context_length, 1_048_576);
-        // grok-4.3 must be the first / default model
-        assert_eq!(capabilities.models[0], "grok-4.3");
+        // grok-4 (or latest) should be the first / recommended model
+        assert!(
+            capabilities.models[0].starts_with("grok-4"),
+            "Expected a grok-4 variant as first model, got {}",
+            capabilities.models[0]
+        );
         // 1m_context and vision feature flags
         assert!(capabilities.features.contains(&"1m_context".to_string()));
         assert!(capabilities.features.contains(&"vision".to_string()));

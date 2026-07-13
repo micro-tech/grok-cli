@@ -149,7 +149,7 @@ impl GrokClient {
         }
 
         // Add reasoning_effort if the caller requested a thinking mode.
-        // Only send this for models that support it (e.g. grok-4.3, grok-3-mini).
+        // Only send this for models that support it (grok-4.x, grok-3-mini, etc.).
         if let Some(effort) = reasoning_effort {
             request = request.reasoning_effort(effort);
         }
@@ -165,7 +165,16 @@ impl GrokClient {
         self.inner.test_connection().await.map_err(|e| e.into())
     }
 
-    /// List available models
+    /// List available models from the Grok API.
+    ///
+    /// Note: The actual list returned depends on the version of the `grok_api`
+    /// crate (the one published on crates.io). If that crate has not yet been
+    /// updated to call the live `/v1/models` endpoint (or to return a richer
+    /// response), this will return whatever the current published version
+    /// hard-codes or can discover.
+    ///
+    /// The static list shown by `/model` and in ACP capabilities is maintained
+    /// separately in `slash_commands.rs` and `acp/mod.rs`.
     pub async fn list_models(&self) -> Result<Vec<String>> {
         self.inner.list_models().await.map_err(|e| e.into())
     }
