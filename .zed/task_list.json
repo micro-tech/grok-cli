@@ -435,6 +435,82 @@
       "details": "Added final-answer guard system message after each tool result. This instructs the model to stop calling tools and produce the final answer. cargo check passed (only unrelated warnings). This addresses the \"max tool loop iterations\" errors that were blocking progress.",
       "testStrategy": "",
       "subtasks": []
+    },
+    {
+      "id": 232,
+      "title": "Add a \"Workflow Trace\" layer to Grok-CLI",
+      "description": "Grok-CLI should show:\n\nUser prompt\n\nLLM-generated code\n\nLocal validation tools\n\ncargo check\n\ncargo clippy\n\ncargo test\n\nPass/fail decision\n\nReturn to LLM for fix OR return to user/editor\n\nThis is a tool-chain loop with a decision gate.",
+      "status": "pending",
+      "priority": "medium",
+      "dependencies": [],
+      "details": "Add Workflow Tracing (Rust patch)\nDrop this into your Grok-CLI tool execution layer (where you handle tool calls).\nThis adds a trace vector that records each step.\n\n```rust\n#[derive(Debug, Clone)]\npub enum WorkflowStep {\n    UserPrompt(String),\n    LlmGeneratedCode(String),\n    ToolRun { tool: String, output: String, success: bool },\n    Decision { passed: bool },\n    ReturnedToLlm(String),\n    ReturnedToUser(String),\n}\n\n#[derive(Default)]\npub struct WorkflowTrace {\n    pub steps: Vec<WorkflowStep>,\n}\n\nimpl WorkflowTrace {\n    pub fn push(&mut self, step: WorkflowStep) {\n        self.steps.push(step);\n    }\n\n    pub fn print(&self) {\n        println!(\"\\n=== Workflow Trace ===\");\n        for (i, step) in self.steps.iter().enumerate() {\n            println!(\"{i:02}: {step:?}\");\n        }\n        println!(\"======================\\n\");\n    }\n}\n```\n\nNow integrate it into your tool loop:\n\n```rust\npub async fn run_workflow(prompt: &str) -> Result<()> {\n    let mut trace = WorkflowTrace::default();\n\n    trace.push(WorkflowStep::UserPrompt(prompt.to_string()));\n\n    // 1. Send prompt to LLM\n    let llm_code = call_llm_for_code(prompt).await?;\n    trace.push(WorkflowStep::LlmGeneratedCode(llm_code.clone()));\n\n    // 2. Run cargo check\n    let check = run_tool(\"cargo check\").await?;\n    trace.push(WorkflowStep::ToolRun {\n        tool: \"cargo check\".into(),\n        output: check.output.clone(),\n        success: check.success,\n    });\n\n    if !check.success {\n        trace.push(WorkflowStep::Decision { passed: false });\n        let fix = call_llm_for_fix(&llm_code, &check.output).await?;\n        trace.push(WorkflowStep::ReturnedToLlm(fix.clone()));\n        trace.print();\n        return Ok(());\n    }\n\n    // 3. Run clippy\n    let clippy = run_tool(\"cargo clippy\").await?;\n    trace.push(WorkflowStep::ToolRun {\n        tool: \"cargo clippy\".into(),\n        output: clippy.output.clone(),\n        success: clippy.success,\n    });\n\n    if !clippy.success {\n        trace.push(WorkflowStep::Decision { passed: false });\n        let fix = call_llm_for_fix(&llm_code, &clippy.output).await?;\n        trace.push(WorkflowStep::ReturnedToLlm(fix.clone()));\n        trace.print();\n        return Ok(());\n    }\n\n    // 4. Run tests\n    let tests = run_tool(\"cargo test\").await?;\n    trace.push(WorkflowStep::ToolRun {\n        tool: \"cargo test\".into(),\n        output: tests.output.clone(),\n        success: tests.success,\n    });\n\n    if !tests.success {\n        trace.push(WorkflowStep::Decision { passed: false });\n        let fix = call_llm_for_fix(&llm_code, &tests.output).await?;\n        trace.push(WorkflowStep::ReturnedToLlm(fix.clone()));\n        trace.print();\n        return Ok(());\n    }\n\n    // 5. All passed\n    trace.push(WorkflowStep::Decision { passed: true });\n    trace.push(WorkflowStep::ReturnedToUser(llm_code.clone()));\n\n    trace.print();\n    Ok(())\n}\n```",
+      "testStrategy": "Implement WorkflowTrace struct and integrate into the main tool/execution loop. Verify that traces are printed on success/failure paths for cargo check/clippy/test. Ensure decision gates work as described.",
+      "subtasks": []
+    },
+    {
+      "id": 233,
+      "title": "TUI workflow viewer (Gemini-style)",
+      "description": "Build a rich TUI workflow viewer inspired by Gemini's code/workflow display. Show the full trace with nice formatting, colors, collapsible sections, step-by-step visualization, pass/fail indicators, and LLM code diffs where applicable.",
+      "status": "pending",
+      "priority": "medium",
+      "dependencies": [
+        232
+      ],
+      "details": "Create a dedicated TUI component (probably using ratatui or similar) that can render WorkflowTrace.\n\nKey features:\n- Timeline / step list\n- Expandable tool outputs\n- Color coding (success=green, fail=red, decision=highlight)\n- Show LLM generated code blocks\n- Gemini-like \"thinking\" / workflow panels\n\nIntegrate with existing TUI or as a separate view triggered after workflow completion.",
+      "testStrategy": "Manual + automated TUI tests. Verify that a full workflow trace (with failures and passes) renders correctly with good visual hierarchy.",
+      "subtasks": []
+    },
+    {
+      "id": 234,
+      "title": "Persist workflow traces as JSON files for replay",
+      "description": "Save completed WorkflowTrace objects to disk as JSON (e.g. ~/.grok/workflows/<timestamp-or-session>.json). Support loading and replaying traces.",
+      "status": "pending",
+      "priority": "medium",
+      "dependencies": [
+        232
+      ],
+      "details": "Add serialization (serde) for WorkflowStep + WorkflowTrace.\nStore files under a dedicated workflows/ directory.\nAdd helpers:\n- save_trace(trace)\n- load_trace(path)\n- list_traces()\n\nKeep traces ephemeral by default or configurable.",
+      "testStrategy": "Write a trace, reload it, assert the steps and data are identical. Test replay of a failed + fixed workflow.",
+      "subtasks": []
+    },
+    {
+      "id": 235,
+      "title": "Add /trace slash command to show last workflow",
+      "description": "Implement the `/trace` command (and variants like `/trace last`, `/trace <id>`, `/trace list`) that displays the most recent (or selected) workflow trace using the new TUI viewer or pretty-printed output.",
+      "status": "pending",
+      "priority": "medium",
+      "dependencies": [
+        232,
+        233,
+        234
+      ],
+      "details": "Extend the slash command parser.\n\nCommands:\n- /trace          → show last trace in TUI\n- /trace list     → list saved traces\n- /trace <id>     → load and show specific trace\n- /trace json     → dump raw JSON\n\nHook into the new WorkflowTrace storage.",
+      "testStrategy": "Test all variants in a running grok-cli session. Verify it correctly shows traces from both current session and persisted files.",
+      "subtasks": []
+    },
+    {
+      "id": 236,
+      "title": "Proxmox-ready service that logs traces to OKF server",
+      "description": "Create a background/Proxmox-compatible service that can receive workflow traces and forward them to an OKF server for centralized logging and analysis.",
+      "status": "deferred",
+      "priority": "low",
+      "dependencies": [],
+      "details": "On hold until the OKF system is built.\n\nFuture requirements:\n- systemd + Proxmox LXC/container friendly\n- HTTP or gRPC endpoint to receive traces\n- Batch + reliable forwarding\n- Authentication\n- Optional local buffering\n\nDo not start implementation yet.",
+      "testStrategy": "N/A (deferred)",
+      "subtasks": []
+    },
+    {
+      "id": 237,
+      "title": "Task-graph version that parallelizes clippy + check",
+      "description": "Re-implement (or extend) the workflow runner using a proper task-graph/DAG so that independent validation steps (cargo check + cargo clippy) can execute in parallel, with proper dependency tracking.",
+      "status": "pending",
+      "priority": "medium",
+      "dependencies": [
+        232
+      ],
+      "details": "Leverage the existing `execute_task_graph` tool or build a small internal DAG executor.\n\nExample:\n- Node A: LLM generate code\n- Node B: cargo check (parallel with C)\n- Node C: cargo clippy\n- Node D: cargo test (depends on B + C)\n- Decision node after all\n\nKeep the WorkflowTrace recording working across parallel execution.",
+      "testStrategy": "Create a workflow that runs check + clippy concurrently. Measure wall time vs sequential. Verify trace still records all steps correctly and decision logic works.",
+      "subtasks": []
     }
   ]
 }
