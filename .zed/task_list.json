@@ -337,10 +337,10 @@
       "id": 226,
       "title": "Update model defaults and lists to lead with grok-4 (crates.io grok_api caveat)",
       "description": "The user wants the CLI to present 'grok-4' as the primary/recommended model. Note: the grok_api crate (from crates.io) may need updating first before dynamic /v1/models or new model names can be fully trusted. We keep curated static lists for now. Break changes into small steps.",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [],
       "priority": "high",
-      "details": "User wants smaller incremental jobs to avoid max tool loop. Focus on one small edit + cargo check per step. grok_api crates.io note: we cannot rely on dynamic model list until grok_api crate is updated. Using static lists.",
+      "details": "All primary default and leadership changes for 'grok-4' completed. Tests pass. cargo check clean (warnings only). Stale comments updated. Specific variant references (4.3 for 1M context) preserved.",
       "testStrategy": "",
       "subtasks": [
         {
@@ -422,6 +422,17 @@
       "dependencies": [],
       "priority": "low",
       "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 231,
+      "title": "Fix infinite tool loop: add final-answer guard after tool results (small incremental edit)",
+      "description": "Implement the 'final answer guard' system message after pushing tool results in handle_chat_completion. Do one small targeted replace. Then cargo check. Do not increase max iterations. Keep changes minimal.",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Added final-answer guard system message after each tool result. This instructs the model to stop calling tools and produce the final answer. cargo check passed (only unrelated warnings). This addresses the \"max tool loop iterations\" errors that were blocking progress.",
       "testStrategy": "",
       "subtasks": []
     }

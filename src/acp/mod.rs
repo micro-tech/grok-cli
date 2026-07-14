@@ -410,7 +410,7 @@ impl GrokAcpAgent {
                 "grok-2-vision-1212".to_string(),
                 "grok-2".to_string(),
             ],
-            // grok-4.3 (and certain grok-4.x variants) expose a 1,048,576-token context window.
+            // grok-4.3 (and select grok-4.x variants) expose a 1,048,576-token context window.
             // This is reported here so ACP clients (e.g. Zed) can make
             // informed decisions about context insertion.
             max_context_length: 1_048_576,
@@ -1546,6 +1546,14 @@ impl GrokAcpAgent {
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": content
+                }));
+
+                // Final-answer guard: tell the model the tool result is ready and
+                // it should now produce the final answer instead of calling more tools.
+                // This breaks common ReAct-style loops (prevents "max tool loop iterations").
+                messages.push(json!({
+                    "role": "system",
+                    "content": "Tool result received. Produce your final answer now. Do NOT call any more tools unless the user explicitly asks for additional actions."
                 }));
             }
 
