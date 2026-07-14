@@ -3,6 +3,7 @@ use std::fmt;
 use grok_api::MessageContent;
 
 use crate::router::{Backend, BackendKind, RouterError, RouterRequest, RouterResponse};
+use crate::workflow::{WorkflowStep, WorkflowTrace};
 
 /// CPU-side request router.
 ///
@@ -252,6 +253,133 @@ impl CpuRouter {
         layer.on_complete(&mut trace);
 
         Ok((response, trace))
+    }
+
+    /// Route with tools **and** record a high-level WorkflowTrace (Task 232).
+    ///
+    /// This is the integration point for the new Workflow Trace layer.
+    /// It wraps the existing tool loop and records the major stages:
+    /// UserPrompt → LlmGeneratedCode → ToolRun(s) → Decision → ReturnedTo...
+    pub async fn route_with_workflow_trace(
+        &self,
+        req: RouterRequest,
+        context: &crate::tools::ToolContext,
+        max_iterations: u32,
+        user_prompt: Option<&str>,
+    ) -> Result<(RouterResponse, WorkflowTrace), RouterError> {
+        let mut workflow = WorkflowTrace::new();
+
+        if let Some(p) = user_prompt {
+            workflow.push(WorkflowStep::UserPrompt(p.to_string()));
+        }
+
+        // We need to run a version of the tool loop that records ToolRun steps.
+        // For now we duplicate a small part of the logic to capture tool outcomes.
+        let mut messages_json: Vec<serde_json::Value> = req.messages.clone();
+        let mut final_response: Option<RouterResponse> = None;
+
+        for _iteration in 0..max_iterations {
+            let iter_req = RouterRequest {
+                model: req.model.clone(),
+                messages: messages_json.clone(),
+                tools: req.tools.clone(),
+                max_tokens: req.max_tokens,
+                temperature: req.temperature,
+                reasoning_effort: req.reasoning_effort.clone(),
+            };
+
+            let resp = self.route(&iter_req).await?;
+
+            let tool_calls = resp.tool_calls.clone();
+            let has_tool_calls = !tool_calls.is_empty();
+
+            // Record LLM output on first response that has content
+            if workflow.steps.iter().all(|s| !matches!(s, WorkflowStep::LlmGeneratedCode(_))) {
+                if let Some(text) = &resp.text {
+                    if !text.trim().is_empty() {
+                        workflow.push(WorkflowStep::LlmGeneratedCode(text.clone()));
+                    }
+                }
+            }
+
+            let assistant_msg = resp.into_message_with_finish_reason().message;
+            if let Ok(v) = serde_json::to_value(&assistant_msg) {
+                messages_json.push(v);
+            }
+
+            if !has_tool_calls {
+                final_response = Some(RouterResponse {
+                    text: assistant_msg.content.as_ref().and_then(|c| {
+                        if let grok_api::MessageContent::Text(t) = c {
+                            Some(t.clone())
+                        } else {
+                            None
+                        }
+                    }),
+                    tool_calls: vec![],
+                    raw: serde_json::Value::Null,
+                    model: req.model.clone(),
+                    usage: None,
+                    thinking_content: None,
+                });
+                break;
+            }
+
+            // Execute tools and record each as ToolRun
+            for tool_call in &tool_calls {
+                let args: serde_json::Value =
+                    serde_json::from_str(&tool_call.function.arguments).unwrap_or(serde_json::Value::Null);
+
+                let outcome =
+                    crate::tools::registry::execute_tool(&tool_call.function.name, &args, context)
+                        .await;
+
+                let (output, success) = match outcome {
+                    Ok(r) => (r, true),
+                    Err(e) => (e.to_string(), false),
+                };
+
+                workflow.push(WorkflowStep::ToolRun {
+                    tool: tool_call.function.name.clone(),
+                    output: output.clone(),
+                    success,
+                });
+
+                messages_json.push(serde_json::json!({
+                    "role": "tool",
+                    "tool_call_id": tool_call.id,
+                    "content": output,
+                }));
+            }
+        }
+
+        let response = final_response.unwrap_or_else(|| RouterResponse {
+            text: None,
+            tool_calls: vec![],
+            raw: serde_json::Value::Null,
+            model: req.model.clone(),
+            usage: None,
+            thinking_content: None,
+        });
+
+        let passed = workflow.last_decision_passed().unwrap_or_else(|| {
+            // Fallback decision based on whether we have a final text answer
+            response.text.is_some() && !response.text.as_ref().unwrap().trim().is_empty()
+        });
+
+        workflow.push(WorkflowStep::Decision { passed });
+
+        if passed {
+            if let Some(text) = &response.text {
+                workflow.push(WorkflowStep::ReturnedToUser(text.clone()));
+            }
+        } else {
+            workflow.push(WorkflowStep::ReturnedToLlm(
+                "Further iteration or user intervention needed.".to_string(),
+            ));
+        }
+
+        Ok((response, workflow))
     }
 
     /// Return the first available backend that matches the model prefix.

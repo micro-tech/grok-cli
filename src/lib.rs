@@ -58,6 +58,7 @@ pub mod task_graph;
 pub mod tools;
 pub mod utils;
 pub mod visualizer;
+pub mod workflow;
 
 #[cfg(feature = "tgs-rag")]
 pub mod rag;

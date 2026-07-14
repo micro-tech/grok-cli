@@ -136,6 +136,11 @@ struct SessionData {
     /// Temporary rules added via `/rule add <text>` for this session.
     /// Injected into every refined prompt so the model respects them throughout.
     session_rules: crate::context::session_rules::SessionRules,
+
+    /// Last workflow trace recorded for this session (Task 232).
+    /// Populated when using `route_with_workflow_trace` (e.g. in sub-agents)
+    /// or when a full tool-using code workflow completes.
+    last_workflow_trace: Option<crate::workflow::WorkflowTrace>,
 }
 
 impl SessionData {
@@ -496,6 +501,7 @@ impl GrokAcpAgent {
             dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
             session_rules: Default::default(),
+            last_workflow_trace: None,
         };
 
         // --- Task 102: Knowledge Pack Loader ---

@@ -172,10 +172,21 @@ pub async fn run_agent_session(
         req = req.with_reasoning_effort(effort);
     }
 
-    let resp = router
-        .route_with_tools(req, &tool_context, config.max_tool_iterations)
+    // Task 232: Use the workflow-traced variant when we have a clear user task.
+    // This records the full trace (UserPrompt, LlmGeneratedCode, ToolRun, Decision, etc.)
+    // without changing the observable behavior for callers.
+    let (resp, trace) = router
+        .route_with_workflow_trace(
+            req,
+            &tool_context,
+            config.max_tool_iterations,
+            Some(&task),
+        )
         .await
         .map_err(|e| anyhow!("Sub-agent tool loop failed: {}", e))?;
+
+    // Emit the trace for observability (print in CLI contexts, will be surfaced via ACP later).
+    trace.print();
 
     info!(
         "run_agent_session: completed ({} chars)",
