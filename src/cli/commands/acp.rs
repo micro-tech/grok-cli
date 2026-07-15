@@ -1066,6 +1066,10 @@ async fn handle_builtin_result(
             Ok(t) => t,
             Err(e) => format!("❌ Could not clear rules: {e}"),
         },
+        BuiltinResult::ShowTrace(sub) => {
+            // Use the workflow module implementation (Task 235)
+            crate::workflow::handle_trace_command(&sub).await
+        }
     }
 }
 

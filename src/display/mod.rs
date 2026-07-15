@@ -15,6 +15,9 @@ pub mod interactive;
 pub mod terminal;
 pub mod tips;
 
+// Re-export workflow viewer for convenience (Task 233)
+pub use components::workflow_viewer::run_workflow_viewer;
+
 // Re-export commonly used items
 #[allow(deprecated)]
 pub use ascii_art::print_grok_logo;

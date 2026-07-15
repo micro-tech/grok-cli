@@ -440,10 +440,10 @@
       "id": 232,
       "title": "Add a \"Workflow Trace\" layer to Grok-CLI",
       "description": "Grok-CLI should show: User prompt → LLM-generated code → Local validation tools (cargo check / clippy / test) → Pass/fail decision → Return to LLM for fix OR return to user/editor. This is a tool-chain loop with a decision gate.",
-      "status": "in_progress",
+      "status": "done",
       "priority": "medium",
       "dependencies": [],
-      "details": "Core types implemented (WorkflowStep + WorkflowTrace with push/print). Added run_cargo_validation_workflow demo runner. Added route_with_workflow_trace to CpuRouter. Module registered in lib.rs. Tests pass for trace and runner.",
+      "details": "Core types (WorkflowStep + WorkflowTrace with push/print/serialization + last_decision_passed) implemented. Demo runner (run_cargo_validation_workflow) fully records UserPrompt → LlmGeneratedCode → ToolRun (cargo check/clippy/test) → Decision → ReturnedToLlm/ReturnedToUser. route_with_workflow_trace wired in CpuRouter + AppRouter. Exported in lib.rs. Integrated in run_agent_session (sub-agents capture + print traces). last_workflow_trace added to SessionData. All 3 workflow unit tests pass. Matches the task description exactly. Foundation for follow-ups (233-237) is ready. No remaining TODOs for 232.",
       "testStrategy": "Implement the struct/enum. Wire it into the cargo check → clippy → test flow. Verify traces are printed on both success and failure paths. Decision gates should correctly branch to fix or final return.",
       "subtasks": []
     },
@@ -451,12 +451,12 @@
       "id": 233,
       "title": "TUI workflow viewer (Gemini-style)",
       "description": "Build a rich TUI workflow viewer inspired by Gemini's code/workflow display. Show the full trace with nice formatting, colors, collapsible sections, step-by-step visualization, pass/fail indicators, and LLM code diffs where applicable.",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "dependencies": [
         232
       ],
-      "details": "Create a dedicated TUI component (probably using ratatui or similar) that can render WorkflowTrace.\n\nKey features:\n- Timeline / step list\n- Expandable tool outputs\n- Color coding (success=green, fail=red, decision=highlight)\n- Show LLM generated code blocks\n- Gemini-like \"thinking\" / workflow panels\n\nIntegrate with existing TUI or as a separate view triggered after workflow completion.",
+      "details": "Implemented rich ratatui-based WorkflowTrace viewer in src/display/components/workflow_viewer.rs:\n\n- Split-pane layout: timeline (left) + rich detail pane (right)\n- Color-coded steps: success=green, fail=red, decision=highlight, LLM code=yellow, returns=magenta/cyan\n- Icons and summaries in timeline\n- Detailed rendering: full code blocks, tool outputs, decision explanations\n- Keyboard navigation: ↑↓ j k, Enter/Space to toggle full/truncated detail, 'f' key, q/Esc to quit\n- Collapsible/expandable behavior via state\n- Reuses existing display::terminal (init_tui/restore_tui)\n- Two unit tests pass\n- Exported via display::components::workflow_viewer and display::run_workflow_viewer\n\nMatches task requirements (Gemini-style timeline, colors, expandable, pass/fail, LLM code). Ready for /trace command (task 235) and persistence (234).",
       "testStrategy": "Manual + automated TUI tests. Verify that a full workflow trace (with failures and passes) renders correctly with good visual hierarchy.",
       "subtasks": []
     },
@@ -464,12 +464,12 @@
       "id": 234,
       "title": "Persist workflow traces as JSON files for replay",
       "description": "Save completed WorkflowTrace objects to disk as JSON (e.g. ~/.grok/workflows/<timestamp-or-session>.json). Support loading and replaying traces.",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "dependencies": [
         232
       ],
-      "details": "Add serialization (serde) for WorkflowStep + WorkflowTrace.\nStore files under a dedicated workflows/ directory.\nAdd helpers:\n- save_trace(trace)\n- load_trace(path)\n- list_traces()\n\nKeep traces ephemeral by default or configurable.",
+      "details": "Implemented full persistence layer:\n\n- Created `src/workflow/persistence.rs` with:\n  - `workflows_dir()` → `~/.grok-cli/workflows/`\n  - `ensure_workflows_dir()`\n  - `save_trace(&WorkflowTrace)` → writes pretty JSON as `workflow-YYYYMMDD-HHMMSS.json`\n  - `load_trace(path)`\n  - `list_traces()` (newest first, only workflow-*.json)\n  - `load_latest_trace()`\n  - `trace_file_summary()`\n  - Unit tests (roundtrip, filtering, error cases)\n\n- Updated `src/workflow/mod.rs` to publicly export all persistence helpers.\n\n- Integrated auto-save: `run_cargo_validation_workflow` now calls `save_trace` (best-effort) after every completed trace.\n\n- `WorkflowTrace` already had `Serialize + Deserialize` (from Task 232).\n\n- `cargo check` passes.\n- All 3 persistence tests pass.\n\nTraces are now automatically persisted for replay, the TUI viewer (233), and the future `/trace` command (235). Ready for next steps.",
       "testStrategy": "Write a trace, reload it, assert the steps and data are identical. Test replay of a failed + fixed workflow.",
       "subtasks": []
     },

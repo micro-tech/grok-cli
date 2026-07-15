@@ -586,6 +586,13 @@ fn handle_interactive_command(
                                 "🧠 Current model: (use `--model <name>` when starting the CLI session)"
                             );
                         }
+                        slash_commands::BuiltinResult::ShowTrace(sub) => {
+                            // /trace is async because of the possible TUI viewer.
+                            // Use a small blocking runtime for the CLI interactive loop.
+                            let rt = tokio::runtime::Runtime::new().unwrap();
+                            let text = rt.block_on(crate::workflow::handle_trace_command(&sub));
+                            println!("{}", text);
+                        }
                     }
                     return Ok(Some(CommandResult::Continue));
                 }

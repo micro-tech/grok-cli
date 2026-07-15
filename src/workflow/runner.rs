@@ -113,6 +113,14 @@ edition = "2021"
     // Best-effort cleanup
     let _ = std::fs::remove_dir_all(&temp_dir);
 
+    // Task 234: Persist the completed trace to ~/.grok-cli/workflows/
+    // We do this best-effort so a persistence failure never breaks the caller.
+    if let Err(e) = crate::workflow::save_trace(&trace) {
+        // In a real run we might log this, but for now we silently continue.
+        // The trace is still returned in memory for the TUI viewer and /trace.
+        let _ = e; // silence unused warning in some builds
+    }
+
     trace
 }
 

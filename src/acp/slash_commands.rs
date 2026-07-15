@@ -131,6 +131,14 @@ pub enum SlashCommand {
 
     /// `/init` — initialize a new Grok project with recommended structure.
     Init,
+
+    /// `/trace [last|list|<id>|json]` — show the latest (or specified) workflow trace.
+    /// Uses the rich TUI viewer when possible, otherwise falls back to pretty print.
+    /// `/trace list` — list saved traces.
+    /// `/trace last` or `/trace` — show most recent trace in TUI.
+    /// `/trace <timestamp>` — load specific trace by filename prefix (e.g. 20250405-143022).
+    /// `/trace json` — dump raw JSON of the latest trace.
+    Trace { subcommand: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +249,11 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
 
         "/init" => Some(SlashCommand::Init),
 
+        "/trace" => {
+            let sub = if args.is_empty() { "last".to_string() } else { args };
+            Some(SlashCommand::Trace { subcommand: sub })
+        }
+
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -338,6 +351,11 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         AvailableCommand::new("image", "Analyze an image (local file or URL)")
             .input(input("path or URL [optional prompt]")),
         AvailableCommand::new("init", "Initialize a new Grok project with recommended structure"),
+        AvailableCommand::new(
+            "trace",
+            "View workflow traces (UserPrompt → LLM code → validation → decision) using the rich TUI viewer. Supports list, last, specific ID, or raw JSON."
+        )
+        .input(input("last | list | <id-or-timestamp> | json — omit for last trace")),
     ];
 
     // Ensure alphabetical order by command name
@@ -381,7 +399,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::RuleList
         | SlashCommand::RuleClear
         | SlashCommand::Image { .. }
-        | SlashCommand::Init => None,
+        | SlashCommand::Init
+        | SlashCommand::Trace { .. } => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -618,6 +637,10 @@ pub enum BuiltinResult {
     ListRules,
     /// Clear all session-only rules.
     ClearRules,
+
+    /// Internal result for /trace command handling.
+    /// Carries the subcommand string (last, list, <id>, json, etc.).
+    ShowTrace(String),
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -666,6 +689,9 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
                     e
                 ))),
             }
+        }
+        SlashCommand::Trace { subcommand } => {
+            Some(BuiltinResult::ShowTrace(subcommand.clone()))
         }
         _ => None, // AI-assisted command
     }
@@ -1413,6 +1439,28 @@ mod tests {
     fn test_parse_think_unknown_arg_returns_none() {
         // Unknown argument — fall through to AI
         assert!(parse_slash_command("/think ultra").is_none());
+
+        // --- /trace (Task 235) ---
+        assert!(matches!(
+            parse_slash_command("/trace"),
+            Some(SlashCommand::Trace { subcommand }) if subcommand == "last"
+        ));
+        assert!(matches!(
+            parse_slash_command("/trace last"),
+            Some(SlashCommand::Trace { subcommand }) if subcommand == "last"
+        ));
+        assert!(matches!(
+            parse_slash_command("/trace list"),
+            Some(SlashCommand::Trace { subcommand }) if subcommand == "list"
+        ));
+        assert!(matches!(
+            parse_slash_command("/trace json"),
+            Some(SlashCommand::Trace { subcommand }) if subcommand == "json"
+        ));
+        assert!(matches!(
+            parse_slash_command("/trace 20250405-143022"),
+            Some(SlashCommand::Trace { subcommand }) if subcommand == "20250405-143022"
+        ));
     }
 
     #[test]

@@ -2472,6 +2472,7 @@ impl GrokAcpAgent {
                 dna: crate::session::dna::SessionDna::default(),
                 current_goal: source.current_goal.clone(),
                 session_rules: source.session_rules.clone(),
+                last_workflow_trace: None,
             }
         };
         let mut sessions = self.sessions.write().await;
@@ -2743,6 +2744,7 @@ mod tests {
             bayes_engine: crate::bayes::BayesianEngine::new(),
             current_goal: None,
             session_rules: Default::default(),
+            last_workflow_trace: None,
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);
