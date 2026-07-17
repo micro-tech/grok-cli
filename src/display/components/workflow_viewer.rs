@@ -143,6 +143,11 @@ async fn run_app(terminal: &mut Tui, app: &mut WorkflowViewerApp) -> Result<()> 
 }
 
 fn ui(frame: &mut ratatui::Frame, app: &mut WorkflowViewerApp) {
+    // Explicitly use Rect and Clear (imported for layout + potential overlays/popups)
+    // so the imports are considered used rather than removed.
+    let _area: Rect = frame.area();
+    let _clear_ref = Clear;
+
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([

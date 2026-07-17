@@ -139,6 +139,11 @@ pub enum SlashCommand {
     /// `/trace <timestamp>` — load specific trace by filename prefix (e.g. 20250405-143022).
     /// `/trace json` — dump raw JSON of the latest trace.
     Trace { subcommand: String },
+
+    /// `/okf [query]` — Search the loaded OKF Knowledge OS bundles (structured knowledge).
+    /// `/okf` with no argument shows a summary of loaded knowledge.
+    /// `/okf <query>` performs a semantic search across all bundles (e.g. "orders table", "weekly active users").
+    Okf { query: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -254,6 +259,8 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
             Some(SlashCommand::Trace { subcommand: sub })
         }
 
+        "/okf" => Some(SlashCommand::Okf { query: args }),
+
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -356,6 +363,11 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "View workflow traces (UserPrompt → LLM code → validation → decision) using the rich TUI viewer. Supports list, last, specific ID, or raw JSON."
         )
         .input(input("last | list | <id-or-timestamp> | json — omit for last trace")),
+        AvailableCommand::new(
+            "okf",
+            "Search or list concepts from the loaded OKF Knowledge OS bundles (structured knowledge)"
+        )
+        .input(input("optional search query — omit to list loaded bundles and top concepts")),
     ];
 
     // Ensure alphabetical order by command name
@@ -400,7 +412,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::RuleClear
         | SlashCommand::Image { .. }
         | SlashCommand::Init
-        | SlashCommand::Trace { .. } => None,
+        | SlashCommand::Trace { .. }
+        | SlashCommand::Okf { .. } => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -641,6 +654,11 @@ pub enum BuiltinResult {
     /// Internal result for /trace command handling.
     /// Carries the subcommand string (last, list, <id>, json, etc.).
     ShowTrace(String),
+
+    /// Show or search OKF Knowledge OS.
+    /// `query` empty → summary of loaded bundles.
+    /// `query` non-empty → search results.
+    ShowOkf(String),
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -693,6 +711,7 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::Trace { subcommand } => {
             Some(BuiltinResult::ShowTrace(subcommand.clone()))
         }
+        SlashCommand::Okf { query } => Some(BuiltinResult::ShowOkf(query.clone())),
         _ => None, // AI-assisted command
     }
 }
@@ -1433,6 +1452,56 @@ mod tests {
                 mode: Some(crate::config::ThinkingMode::High)
             })
         ));
+    }
+
+    // ── /okf slash command (Knowledge OS) ─────────────────────────────────────
+
+    #[test]
+    fn test_parse_okf_empty() {
+        assert_eq!(
+            parse_slash_command("/okf"),
+            Some(SlashCommand::Okf { query: String::new() })
+        );
+    }
+
+    #[test]
+    fn test_parse_okf_with_query() {
+        assert_eq!(
+            parse_slash_command("/okf weekly active users"),
+            Some(SlashCommand::Okf {
+                query: "weekly active users".to_string()
+            })
+        );
+        assert_eq!(
+            parse_slash_command("/okf orders table"),
+            Some(SlashCommand::Okf {
+                query: "orders table".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_okf_is_builtin() {
+        let result = handle_builtin(&SlashCommand::Okf { query: String::new() });
+        assert!(matches!(result, Some(BuiltinResult::ShowOkf(_))));
+
+        let result2 = handle_builtin(&SlashCommand::Okf {
+            query: "orders".to_string()
+        });
+        match result2 {
+            Some(BuiltinResult::ShowOkf(q)) => assert_eq!(q, "orders"),
+            other => panic!("expected ShowOkf, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_okf_no_ai_prompt() {
+        // /okf must be handled as builtin, never sent to the model via command_to_prompt
+        assert!(command_to_prompt(&SlashCommand::Okf { query: String::new() }).is_none());
+        assert!(command_to_prompt(&SlashCommand::Okf {
+            query: "foo".to_string()
+        })
+        .is_none());
     }
 
     #[test]

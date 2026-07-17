@@ -1,28 +1,46 @@
 # grok-cli Tools System
 
+## Navigation
+- [Overview](00-overview.html)
+- [CLI](01-cli.html)
+- [Agent](02-agent.html)
+- [RAG](03-rag.html)
+- [Memory](04-memory.html)
+- [Tools](05-tools.html)
+- [Engine](06-engine.html)
+- [Router](07-router.html)
+- [Config & Context](08-config-context.html)
+- [MCP & ACP](09-mcp-acp.html)
+- [Safety & Security](10-safety-security.html)
+- [Utils & Display](11-utils-display.html)
+
 ## Core Components
 - Registry & Dispatch (`tools/registry.rs`)
 - Tool Definitions & Schemas
 - Execution Context (`ToolContext`)
+- `tools/tool_context.rs`, `tools/tool_error.rs`
 
 ## Tool Categories
-- **File Tools** — read, write, replace, search, glob, list
+- **File Tools** — read, write, replace, search, glob, list, delete
 - **Shell Tools** — run_shell_command with timeout & policy
 - **Web Tools** — web_search, web_fetch
-- **MCP Bridge** — mcp_call, mcp_list, dynamic server tools
-- **Agent Coordination** — spawn_agent, send_message, team_*, fork/join
+- **MCP Bridge** — mcp_call, mcp_list, dynamic server tools (`tools/mcp_tools.rs`)
+- **Agent Coordination** — spawn_agent, send_message, team_*, fork/join, cancel_agent
 - **Memory & Archive** — save_memory, recall_context
 - **Task Management** — task_create, task_update, task_get, execute_task_graph
 - **Planning & Worktrees** — enter/exit_plan_mode, enter/exit_worktree
 - **Skills & Discovery** — execute_skill, list_skills, tool_search, cron_create
 - **LSP Integration** — lsp_query (diagnostics, hover, definitions)
 - **System Utilities** — sleep, synthetic_output, generate_commit_message
+- **Vision / Image** — vision tools
+- **Notebook / OKF** — notebook_tools, okf_tools
 
 ## Security & Control
 - ToolPolicy (read/write/execute permissions)
 - Sandbox (`tools/sandbox.rs`)
 - Tool Arbitration (`tool_arbitration.rs`)
 - Permission Bridge (ACP)
+- `safety/` integration for pre-write checks
 
 ## MCP Integration (Phase 1–4)
 - Servers connected on `session/new`
@@ -36,8 +54,15 @@
 - `src/tools/mod.rs`
 - `src/acp/mcp_bridge.rs`
 - `src/mcp/client.rs`
+- `src/tools/init.rs`
+
+## Recent Changes
+- Many new tool categories (task_graph, plan, skills, LSP, vision, notebook)
+- Stronger arbitration and sandboxing
+- MCP tools merged at runtime
 
 ## Notes
 - All tools are OpenAI function-calling compatible
 - Full JSON schemas returned by `get_full_tool_definitions()`
 - MCP tools are merged at runtime when servers are connected
+- Documentation build fix: `build.rs` no longer auto-invokes markmap generation (see 00-overview)

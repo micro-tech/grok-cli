@@ -64,6 +64,20 @@ allow_config_extensions = true
 level = "info"
 chat_logging = true
 
+# ── OKF (Workflow Trace Forwarder) ────────────────────────────────────────────
+# Best-effort forwarding of completed workflow traces to a central OKF server.
+# Useful for observability and centralized logging (e.g. Proxmox).
+[okf]
+enabled = false
+server = ""
+port = 8080
+endpoint = "/api/traces"
+use_https = false
+timeout_secs = 10
+buffer_on_failure = true
+max_buffer_size = 100
+# api_key = "your-token-here"
+
 # MCP (Model Context Protocol) Servers
 # Uncomment and configure as needed
 # [mcp.servers.example]

@@ -464,12 +464,12 @@
       "id": 234,
       "title": "Persist workflow traces as JSON files for replay",
       "description": "Save completed WorkflowTrace objects to disk as JSON (e.g. ~/.grok/workflows/<timestamp-or-session>.json). Support loading and replaying traces.",
-      "status": "done",
+      "status": "pending",
       "priority": "medium",
       "dependencies": [
         232
       ],
-      "details": "Implemented full persistence layer:\n\n- Created `src/workflow/persistence.rs` with:\n  - `workflows_dir()` → `~/.grok-cli/workflows/`\n  - `ensure_workflows_dir()`\n  - `save_trace(&WorkflowTrace)` → writes pretty JSON as `workflow-YYYYMMDD-HHMMSS.json`\n  - `load_trace(path)`\n  - `list_traces()` (newest first, only workflow-*.json)\n  - `load_latest_trace()`\n  - `trace_file_summary()`\n  - Unit tests (roundtrip, filtering, error cases)\n\n- Updated `src/workflow/mod.rs` to publicly export all persistence helpers.\n\n- Integrated auto-save: `run_cargo_validation_workflow` now calls `save_trace` (best-effort) after every completed trace.\n\n- `WorkflowTrace` already had `Serialize + Deserialize` (from Task 232).\n\n- `cargo check` passes.\n- All 3 persistence tests pass.\n\nTraces are now automatically persisted for replay, the TUI viewer (233), and the future `/trace` command (235). Ready for next steps.",
+      "details": "Add serialization (serde) for WorkflowStep + WorkflowTrace.\nStore files under a dedicated workflows/ directory.\nAdd helpers:\n- save_trace(trace)\n- load_trace(path)\n- list_traces()\n\nKeep traces ephemeral by default or configurable.",
       "testStrategy": "Write a trace, reload it, assert the steps and data are identical. Test replay of a failed + fixed workflow.",
       "subtasks": []
     },
@@ -490,12 +490,12 @@
     },
     {
       "id": 236,
-      "title": "Proxmox-ready service that logs traces to OKF server",
+      "title": "Proxmox-ready service that logs traces to OKF server + config support",
       "description": "Create a background/Proxmox-compatible service that can receive workflow traces and forward them to an OKF server for centralized logging and analysis.",
-      "status": "deferred",
+      "status": "done",
       "priority": "low",
       "dependencies": [],
-      "details": "On hold until the OKF system is built.\n\nFuture requirements:\n- systemd + Proxmox LXC/container friendly\n- HTTP or gRPC endpoint to receive traces\n- Batch + reliable forwarding\n- Authentication\n- Optional local buffering\n\nDo not start implementation yet.",
+      "details": "User now has OKF running at 192.168.1.106. Primary immediate task: add full OKF configuration section to config.toml (enabled, server_url/ip, port, api_key, batching, buffering, etc.). Then implement basic forwarding hook from workflow traces. Make it systemd/Proxmox friendly in the future (separate service or background thread).",
       "testStrategy": "N/A (deferred)",
       "subtasks": []
     },

@@ -106,7 +106,7 @@ fn load_global_rules() -> Vec<AgentRule> {
 fn load_directory_rules(start_dir: &Path) -> Vec<AgentRule> {
     let repo_root = find_repo_root(start_dir);
     let mut rules = Vec::new();
-    let mut current = repo_root.clone();
+    let _current = repo_root.clone();
     let mut depth: u8 = 0;
 
     // Collect all directories from root to start_dir

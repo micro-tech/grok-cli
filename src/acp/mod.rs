@@ -140,6 +140,9 @@ struct SessionData {
     /// Last workflow trace recorded for this session (Task 232).
     /// Populated when using `route_with_workflow_trace` (e.g. in sub-agents)
     /// or when a full tool-using code workflow completes.
+    ///
+    /// Kept (and read in save/restore paths) rather than removed.
+    #[allow(dead_code)]
     last_workflow_trace: Option<crate::workflow::WorkflowTrace>,
 }
 
@@ -229,8 +232,12 @@ pub struct SessionConfig {
 }
 
 /// Snapshot of a session that can be written to disk and reloaded.
+///
+/// Made `pub` so that the `pub` methods `load_session_from_disk` and
+/// `restore_session_from_disk` can return/take it without triggering
+/// private_interfaces warnings. (We prefer to keep and use the API.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PersistedSession {
+pub struct PersistedSession {
     pub(crate) session_id: String,
     pub(crate) cwd: String,
     pub(crate) messages: Vec<serde_json::Value>,

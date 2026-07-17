@@ -46,6 +46,7 @@ pub mod lsp_tools;
 pub mod mcp_tools;
 pub mod memory_tools;
 pub mod notebook_tools;
+pub mod okf_tools;
 pub mod plan_tools;
 pub mod registry;
 pub mod sandbox;
@@ -87,6 +88,7 @@ pub use web_tools::{is_web_search_configured, web_fetch, web_search};
 // ── Memory ────────────────────────────────────────────────────────────────────
 
 pub use memory_tools::save_memory;
+pub use okf_tools::{okf_lookup, okf_get};
 
 // ── Task management ───────────────────────────────────────────────────────────
 

@@ -145,6 +145,12 @@ pub struct Config {
     #[serde(default)]
     pub telemetry: TelemetryConfig,
 
+    /// OKF (Observability / Workflow Trace Forwarding) configuration.
+    /// Used to forward WorkflowTrace records to a central OKF server
+    /// (e.g. for Proxmox / cluster-wide analysis).
+    #[serde(default)]
+    pub okf: OkfConfig,
+
     /// Rate limiting configuration
     #[serde(default)]
     pub rate_limits: RateLimitConfig,
@@ -174,6 +180,109 @@ pub struct TelemetryConfig {
 
     /// Path to telemetry log file
     pub log_file: Option<PathBuf>,
+}
+
+/// OKF (Open Knowledge Format + Workflow Trace Forwarder) configuration.
+///
+/// This section serves two purposes:
+/// 1. Workflow trace forwarding (observability) to a central server.
+/// 2. Open Knowledge Format (OKF) bundles for structured, portable knowledge.
+///
+/// Google's OKF (markdown + YAML frontmatter knowledge directories) can be
+/// loaded at session start and queried as a "Knowledge OS" / "Knowledge API".
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct OkfConfig {
+    /// Master switch for the entire OKF subsystem (both forwarding and knowledge).
+    #[serde(default)]
+    pub enabled: bool,
+
+    // ── Trace Forwarder (original use) ──────────────────────────────────────
+    /// Server address for trace forwarding. Can be IP or hostname.
+    #[serde(default)]
+    pub server: String,
+
+    /// Port the OKF server listens on
+    #[serde(default = "default_okf_port")]
+    pub port: u16,
+
+    /// Optional bearer token / API key for the trace forwarder
+    #[serde(default)]
+    pub api_key: Option<String>,
+
+    /// Ingestion endpoint path for traces
+    #[serde(default = "default_okf_endpoint")]
+    pub endpoint: String,
+
+    /// Use HTTPS for trace forwarding
+    #[serde(default)]
+    pub use_https: bool,
+
+    /// Timeout for the HTTP POST to OKF (trace forwarder)
+    #[serde(default = "default_okf_timeout")]
+    pub timeout_secs: u64,
+
+    /// Whether to buffer traces locally when the OKF server is unreachable
+    #[serde(default = "default_true")]
+    pub buffer_on_failure: bool,
+
+    /// Maximum number of traces to keep in the local buffer
+    #[serde(default = "default_okf_buffer_size")]
+    pub max_buffer_size: usize,
+
+    // ── Open Knowledge Format (Knowledge OS / Bundles) ──────────────────────
+    /// Directories containing OKF bundles (Google's Open Knowledge Format).
+    ///
+    /// Each directory is treated as one bundle. Markdown files with YAML
+    /// frontmatter inside will be loaded as structured knowledge.
+    ///
+    /// These are loaded at session start and become part of the agent's
+    /// "Knowledge OS". They can also be queried via the `okf_lookup` tool.
+    ///
+    /// Examples:
+    ///   knowledge_bundles = [
+    ///     "~/.grok-cli/knowledge",
+    ///     "./.grok/knowledge",
+    ///     "/opt/okf-bundles/company-metrics"
+    ///   ]
+    #[serde(default)]
+    pub knowledge_bundles: Vec<String>,
+}
+
+fn default_okf_port() -> u16 {
+    8080
+}
+
+fn default_okf_endpoint() -> String {
+    "/api/traces".to_string()
+}
+
+fn default_okf_timeout() -> u64 {
+    10
+}
+
+fn default_okf_buffer_size() -> usize {
+    100
+}
+
+impl Default for OkfConfig {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            server: String::new(),
+            port: default_okf_port(),
+            api_key: None,
+            endpoint: default_okf_endpoint(),
+            use_https: false,
+            timeout_secs: default_okf_timeout(),
+            buffer_on_failure: true,
+            max_buffer_size: default_okf_buffer_size(),
+            // New: OKF knowledge bundles (Google Open Knowledge Format)
+            knowledge_bundles: vec![
+                "~/.grok-cli/knowledge".to_string(),
+                ".grok/knowledge".to_string(),
+            ],
+        }
+    }
 }
 
 /// ACP-specific configuration
@@ -1115,6 +1224,7 @@ impl Default for Config {
             network: NetworkConfig::default(),
             logging: LoggingConfig::default(),
             telemetry: TelemetryConfig::default(),
+            okf: OkfConfig::default(),
             rate_limits: RateLimitConfig::default(),
         }
     }
@@ -1755,6 +1865,7 @@ impl Config {
         merged.network = override_config.network;
         merged.logging = override_config.logging;
         merged.telemetry = override_config.telemetry;
+        merged.okf = override_config.okf;
 
         merged
     }
@@ -2000,6 +2111,45 @@ impl Config {
 
         if let Ok(path) = std::env::var("GROK_TELEMETRY_LOG_FILE") {
             self.telemetry.log_file = Some(PathBuf::from(path));
+        }
+
+        // OKF configuration (Workflow Trace Forwarder)
+        if let Ok(val) = std::env::var("GROK_OKF_ENABLED") {
+            self.okf.enabled = val.parse::<bool>().unwrap_or(false);
+        }
+        if let Ok(s) = std::env::var("GROK_OKF_SERVER") {
+            self.okf.server = s;
+        }
+        if let Ok(p) = std::env::var("GROK_OKF_PORT") {
+            if let Ok(port_val) = p.parse::<u16>() {
+                self.okf.port = port_val;
+            }
+        }
+        if let Ok(key) = std::env::var("GROK_OKF_API_KEY") {
+            self.okf.api_key = Some(key);
+        }
+        if let Ok(ep) = std::env::var("GROK_OKF_ENDPOINT") {
+            self.okf.endpoint = ep;
+        }
+        if let Ok(val) = std::env::var("GROK_OKF_USE_HTTPS") {
+            self.okf.use_https = val.parse::<bool>().unwrap_or(false);
+        }
+        if let Ok(t) = std::env::var("GROK_OKF_TIMEOUT") {
+            if let Ok(t_val) = t.parse::<u64>() {
+                self.okf.timeout_secs = t_val;
+            }
+        }
+        if let Ok(val) = std::env::var("GROK_OKF_BUFFER_ON_FAILURE") {
+            self.okf.buffer_on_failure = val.parse::<bool>().unwrap_or(true);
+        }
+
+        // OKF Knowledge Bundles (Open Knowledge Format - "Knowledge OS")
+        if let Ok(bundles) = std::env::var("GROK_OKF_KNOWLEDGE_BUNDLES") {
+            self.okf.knowledge_bundles = bundles
+                .split(',')
+                .map(|s| s.trim().to_string())
+                .filter(|s| !s.is_empty())
+                .collect();
         }
 
         // Security configuration
@@ -2297,6 +2447,17 @@ impl Config {
 
             // Telemetry settings
             "telemetry.enabled" => Ok(self.telemetry.enabled.to_string()),
+
+            // OKF (Workflow Trace Forwarder) settings
+            "okf.enabled" => Ok(self.okf.enabled.to_string()),
+            "okf.server" => Ok(self.okf.server.clone()),
+            "okf.port" => Ok(self.okf.port.to_string()),
+            "okf.endpoint" => Ok(self.okf.endpoint.clone()),
+            "okf.use_https" => Ok(self.okf.use_https.to_string()),
+            "okf.timeout_secs" => Ok(self.okf.timeout_secs.to_string()),
+            "okf.buffer_on_failure" => Ok(self.okf.buffer_on_failure.to_string()),
+            "okf.max_buffer_size" => Ok(self.okf.max_buffer_size.to_string()),
+            "okf.knowledge_bundles" => Ok(self.okf.knowledge_bundles.join(", ")),
 
             _ => Err(anyhow!("Unknown configuration key: {}", key)),
         }

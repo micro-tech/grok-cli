@@ -51,6 +51,10 @@ pub fn save_trace(trace: &WorkflowTrace) -> Result<PathBuf> {
     fs::write(&path, json)
         .with_context(|| format!("Failed to write workflow trace to {:?}", path))?;
 
+    // Task 236: Best-effort forward to OKF (Workflow Trace Forwarder)
+    // We clone because maybe_forward_trace takes ownership and spawns a task.
+    crate::workflow::maybe_forward_trace(trace.clone());
+
     Ok(path)
 }
 

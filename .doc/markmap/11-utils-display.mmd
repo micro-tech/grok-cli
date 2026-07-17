@@ -1,16 +1,51 @@
 # grok-cli · Utils & Display
 
-## Utils
-- `utils/` (auth, client, history, telemetry...)
+## Navigation
+- [Overview](00-overview.html)
+- [CLI](01-cli.html)
+- [Agent](02-agent.html)
+- [RAG](03-rag.html)
+- [Memory](04-memory.html)
+- [Tools](05-tools.html)
+- [Engine](06-engine.html)
+- [Router](07-router.html)
+- [Config & Context](08-config-context.html)
+- [MCP & ACP](09-mcp-acp.html)
+- [Safety & Security](10-safety-security.html)
+- [Utils & Display](11-utils-display.html)
 
-## Display
-- `display/` (banner, terminal, interactive components)
+## Utils (`src/utils/`)
+- `auth.rs` — authentication helpers
+- `client.rs` — HTTP / API client utilities
+- `chat_logger.rs`, `tool_logger.rs`
+- `telemetry.rs` — telemetry loop
+- `history_compressor.rs`
+- `network.rs`, `rate_limiter.rs`
+- `session.rs`, `context.rs`
+- `shell_permissions.rs`
+- `mod.rs`
 
-## Terminal
-- `terminal/`
+## Display (`src/display/`)
+- `banner.rs`, `ascii_art.rs`
+- `interactive.rs`
+- `tips.rs`
+- `mod.rs`
+- `components/` — input, settings_list, workflow_viewer, mod
+- `terminal.rs`
+
+## Terminal (`src/terminal/`)
+- `terminal/display.rs`, `terminal/input.rs`
+- `terminal/progress.rs`
+- `terminal/mod.rs`
+
+## Recent Changes
+- Rich workflow visualization components
+- Improved telemetry and logging
+- Better interactive terminal support
 
 ## Dependencies
-- (to be filled)
+- `crossterm`, `ratatui` (partial), `tracing`
 
 ## Notes
-- (to be filled)
+- Display layer provides both CLI banners and rich interactive UI.
+- Utils support resilience (rate limiting, network helpers) and observability.

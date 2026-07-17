@@ -498,6 +498,21 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                     ai_tools::run(&args, policy).await
                 }
 
+                // ── Open Knowledge Format (OKF) - Knowledge OS / API ─────────
+                "okf_lookup" => {
+                    let query = args["query"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Missing: query"))?;
+                    let max_results = args["max_results"].as_u64().map(|n| n as usize);
+                    crate::tools::okf_tools::okf_lookup(query, max_results)
+                }
+                "okf_get" => {
+                    let id = args["id"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Missing: id"))?;
+                    crate::tools::okf_tools::okf_get(id)
+                }
+
                 // ── Commit message generation (Task 161) ─────────────────────
                 "generate_commit_message" => {
                     // This tool is primarily a convenience for the AI to call itself.
@@ -584,6 +599,8 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
         "recall_context",
         "ai_tool",
         "generate_commit_message",
+        "okf_lookup",
+        "okf_get",
     ]
 }
 
@@ -1264,6 +1281,45 @@ pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
                             "description": "Optional extra instructions for the commit message style (e.g. 'use conventional commits with scope')"
                         }
                     }
+                }
+            }
+        }),
+        // ── OKF Knowledge (Open Knowledge Format) ─────────────────────────
+        json!({
+            "type": "function",
+            "function": {
+                "name": "okf_lookup",
+                "description": "Search the loaded Open Knowledge Format (OKF) bundles. This is Grok-CLI's Knowledge API. Use it to find structured knowledge such as tables, metrics, runbooks, schemas, definitions, etc. that were loaded from markdown+frontmatter bundles.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "What to search for (e.g. 'orders table', 'weekly active users', 'runbook for data refresh')"
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Maximum number of concepts to return (default 5, max 20)"
+                        }
+                    },
+                    "required": ["query"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "okf_get",
+                "description": "Retrieve the full content of a specific OKF concept by its ID (the relative path inside the bundle, e.g. 'metrics/weekly_active_users' or 'tables/orders').",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "description": "The stable ID of the concept (usually the path without .md)"
+                        }
+                    },
+                    "required": ["id"]
                 }
             }
         }),

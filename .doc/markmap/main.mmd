@@ -20,44 +20,25 @@
   - Delegates to `grok_cli::cli::app::run()`
 
 ## Logging — `setup_logging()`
-- ### Log File Path
-  - `~/.grok/logs/grok-errors.log`
-  - Built via `dirs::home_dir()`
-  - Parent dirs created with `fs::create_dir_all`
-  - Fallback: `grok-errors.log` (CWD)
-- ### EnvFilter
-  - Reads `RUST_LOG` env var
-  - Default: `warn` when unset
-  - Examples
-    - `RUST_LOG=warn`
-    - `RUST_LOG=grok_cli=debug`
-    - `RUST_LOG=info`
-- ### Stderr Layer
-  - Format: compact, coloured
-  - No target, no thread IDs
-  - Writer: `std::io::stderr`
-- ### File Layer (JSON)
-  - Format: JSON lines, no ANSI
-  - Includes target, file, line number, thread IDs
-  - Writer: `Mutex<File>` (append mode)
-  - Error handling
-    - Success → full two-sink subscriber
-    - Failure → stderr-only + `tracing::warn!`
+- Log File: `~/.grok/logs/grok-errors.log` (with graceful fallback)
+- Uses `tracing` + `tracing-subscriber`
+- Dual sink: coloured stderr + JSON file
+- Respects `RUST_LOG`
+
+## Key Modules Loaded Early
+- Full crate via `lib.rs`
+- CLI app, engine, tools registry, context, safety, etc.
+
+## Recent Notes
+- Build system cleaned up: `build.rs` no longer auto-runs markmap generation on every build (avoids repeated warnings).
+- To regenerate diagrams: `.\scripts\build-markmaps.ps1`
 
 ## Dependencies
-- `tokio` — async runtime
-- `tracing` — structured logging macros
-- `tracing-subscriber`
-  - `EnvFilter`
-  - `fmt` layer (stderr + file)
-  - `SubscriberExt` / `SubscriberInitExt`
-- `dirs` — home directory resolution
-- `anyhow` — error propagation from `main`
-- `std::sync::Mutex` — thread-safe file writer
+- `tokio`, `tracing`, `tracing-subscriber`, `anyhow`, `dirs`
 
-## Error Handling Strategy
-- Log file open failure → graceful degradation
-  - Subscriber still initialised (stderr only)
-  - Warning emitted after init
+## Error Handling
+- Graceful degradation on logging init failure
 - `main()` returns `anyhow::Result<()>`
-  - Propagates errors from `run()`
+
+## Notes
+- This is the bootstrap. Real behavior lives in `cli/`, `engine/`, `acp/`, and the tool system.

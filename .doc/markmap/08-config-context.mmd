@@ -15,22 +15,34 @@
 - [Utils & Display](11-utils-display.html)
 
 ## Config
-- `config/mod.rs`
+- `config/mod.rs` — priority loading (env → CLI → files → defaults)
 
 ## Context Engine
 - `context/engine.rs`
 - `context/session_manager.rs`
 - `context/prompt_builder.rs`
+- `context/prompt_applicator.rs`
+- `context/tool_optimizer.rs`
+
+## Advanced Context Features
+- `context/prompt_cache.rs`, `prompt_delta.rs`, `prompt_diff.rs`
+- `context/session_summarizer.rs`
+- `context/token_counter.rs`, `context_budget.rs`
 
 ## Agent Rules (Global + Project)
 - Global rules: `~/.grok-cli/agents/rules/`
 - Project rules: `<project>/.agents/rules/`
 - Loaded via `context::ContextEngine::load_agent_rules()`
 - Merge logic: global first, project overrides same filename
-- See: `skills/rules.rs`
+- See: `skills/rules.rs` and `context/agent_rules.rs`
+
+## Recent Changes
+- Rich prompt delta / caching system
+- Better agent rule merging
+- Belief state tracking in context
 
 ## Dependencies
-- (to be filled)
+- (internal)
 
 ## Notes
-- (to be filled)
+- Context is assembled fresh every turn using DNA, skills, rules, RAG, and memory.

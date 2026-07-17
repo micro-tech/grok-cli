@@ -79,15 +79,17 @@ use tracing::{debug, warn};
 
 /// The unified memory facade for a single chat session.
 ///
-/// `MemoryStore` wires together all four memory tiers and exposes the
+/// `MemoryStore` wires together **five** memory tiers and exposes the
 /// high-level operations that command handlers and the interactive loop need:
 ///
-/// - **Boot**: load project context (working), open the long-term store, and
-///   build an enriched system prompt injected into short-term memory.
+/// - **Boot**: load project context (working), open the long-term store,
+///   load OKF Knowledge OS bundles, and build an enriched system prompt.
 /// - **Chat**: push messages through [`short_term`] which auto-trims when
 ///   the context window fills up.
 /// - **Remember**: persist a user- or AI-supplied fact to [`long_term`].
 /// - **Archive**: save the session transcript + metadata to [`episodic`].
+/// - **Knowledge OS**: structured Open Knowledge Format (OKF) bundles loaded
+///   from `okf.knowledge_bundles` directories. Query via the `okf_lookup` / `okf_get` tools.
 ///
 /// # Example
 /// See the [module-level documentation](self) for a full example.
@@ -101,6 +103,11 @@ pub struct MemoryStore {
     pub episodic: EpisodicMemory,
     /// Project context loaded from files — read-only for this session.
     pub working: WorkingMemory,
+
+    /// Loaded Open Knowledge Format (OKF) bundles.
+    /// These act as the "Knowledge OS" — structured, portable knowledge
+    /// that is loaded at session start and available for the agent.
+    pub okf_knowledge: Vec<crate::knowledge::OkfBundle>,
 
     // ── Session metadata (used when saving an episode) ────────────────────
     session_id: String,
@@ -160,22 +167,6 @@ impl MemoryStore {
             EpisodicMemory::with_dir(std::env::temp_dir().join("grok_sessions_fallback"))
         });
 
-        // ── Short-term memory + system prompt ─────────────────────────────────
-        let mut short_term = ShortTermMemory::new();
-
-        let system_prompt = build_system_prompt(base_system_prompt, &working, &long_term);
-        if !system_prompt.trim().is_empty() {
-            short_term.push_system(&system_prompt);
-        }
-
-        debug!(
-            session_id = %session_id,
-            model = %model,
-            has_context = working.has_context(),
-            long_term_facts = long_term.len(),
-            "MemoryStore: session initialised"
-        );
-
         // ── Tool memory ───────────────────────────────────────────────────────
         let tool_mem = tool_memory::ToolMemory::new(&session_id);
 
@@ -187,11 +178,58 @@ impl MemoryStore {
                 None
             });
 
+        // ── Open Knowledge Format (OKF) bundles ──────────────────────────────
+        // This is grok-cli's "Knowledge OS" — structured knowledge loaded at
+        // session start from directories defined in [okf] knowledge_bundles.
+        // Load OKF *before* building the system prompt so it can be injected.
+        // We spawn a small runtime in a thread to safely block on the async config load.
+        let okf_knowledge: Vec<crate::knowledge::OkfBundle> = std::thread::spawn(|| {
+            let rt = tokio::runtime::Runtime::new().ok()?;
+            let cfg = rt.block_on(crate::config::Config::load_hierarchical()).ok()?;
+            if cfg.okf.enabled {
+                Some(crate::tools::okf_tools::load_okf_from_config(&cfg))
+            } else {
+                Some(vec![])
+            }
+        })
+        .join()
+        .ok()
+        .flatten()
+        .unwrap_or_default();
+
+        // ── Short-term memory + system prompt ─────────────────────────────────
+        let mut short_term = ShortTermMemory::new();
+
+        let system_prompt = build_system_prompt(base_system_prompt, &working, &long_term, &okf_knowledge);
+        if !system_prompt.trim().is_empty() {
+            short_term.push_system(&system_prompt);
+        }
+
         debug!(
             session_id = %session_id,
             model = %model,
             has_context = working.has_context(),
             long_term_facts = long_term.len(),
+            okf_bundles = okf_knowledge.len(),
+            "MemoryStore: session initialised"
+        );
+
+        if !okf_knowledge.is_empty() {
+            let total_concepts: usize = okf_knowledge.iter().map(|b| b.concepts.len()).sum();
+            debug!(
+                session_id = %session_id,
+                bundles = okf_knowledge.len(),
+                concepts = total_concepts,
+                "MemoryStore: loaded OKF knowledge bundles"
+            );
+        }
+
+        debug!(
+            session_id = %session_id,
+            model = %model,
+            has_context = working.has_context(),
+            long_term_facts = long_term.len(),
+            okf_bundles = okf_knowledge.len(),
             "MemoryStore: session initialised"
         );
 
@@ -200,6 +238,7 @@ impl MemoryStore {
             long_term,
             episodic,
             working,
+            okf_knowledge,
             session_id,
             model: model.to_string(),
             started_at,
@@ -229,6 +268,7 @@ impl MemoryStore {
                 .expect("temp dir must be writable for minimal store"),
             episodic: EpisodicMemory::with_dir(sessions),
             working: WorkingMemory::empty(),
+            okf_knowledge: vec![],
             tool_memory: tool_memory::ToolMemory::new(&sid),
             skill_memory: None,
             session_id: sid,
@@ -397,7 +437,7 @@ impl MemoryStore {
         let changed = self.working.reload()?;
 
         if changed {
-            let new_prompt = build_system_prompt(None, &self.working, &self.long_term);
+            let new_prompt = build_system_prompt(None, &self.working, &self.long_term, &self.okf_knowledge);
             if !new_prompt.trim().is_empty() {
                 self.short_term.push_system(&new_prompt);
             }
@@ -408,11 +448,108 @@ impl MemoryStore {
     }
 
     /// Build and return a fresh system prompt string from the current working
-    /// context and long-term facts without pushing it into short-term memory.
+    /// context, long-term facts, **and OKF Knowledge OS** without pushing it into short-term memory.
     ///
     /// Useful when you need the system prompt text for logging or display.
     pub fn build_system_prompt(&self) -> String {
-        build_system_prompt(None, &self.working, &self.long_term)
+        build_system_prompt(None, &self.working, &self.long_term, &self.okf_knowledge)
+    }
+
+    /// Return a short Markdown section describing the loaded OKF Knowledge OS bundles.
+    /// Used both for system prompt injection and for `/context` + `/okf`.
+    pub fn okf_knowledge_context(&self, max_concepts: usize) -> String {
+        if self.okf_knowledge.is_empty() {
+            return String::new();
+        }
+
+        let total_bundles = self.okf_knowledge.len();
+        let total_concepts: usize = self.okf_knowledge.iter().map(|b| b.concepts.len()).sum();
+
+        let mut lines = vec![
+            "## 📚 OKF Knowledge OS".to_string(),
+            format!(
+                "Loaded **{}** bundle(s) with **{}** structured concepts.",
+                total_bundles, total_concepts
+            ),
+            String::new(),
+        ];
+
+        // Collect top concepts across bundles (simple: first N from each)
+        let mut shown = 0;
+        for bundle in &self.okf_knowledge {
+            if shown >= max_concepts {
+                break;
+            }
+            for concept in bundle.concepts.iter().take(3) {
+                if shown >= max_concepts {
+                    break;
+                }
+                let type_str = if concept.r#type.is_empty() {
+                    "Concept".to_string()
+                } else {
+                    concept.r#type.clone()
+                };
+                lines.push(format!(
+                    "- **{}** ({}) — {} [bundle: {}]",
+                    concept.title,
+                    type_str,
+                    concept
+                        .description
+                        .chars()
+                        .take(80)
+                        .collect::<String>()
+                        .trim(),
+                    bundle.name
+                ));
+                shown += 1;
+            }
+        }
+
+        if shown > 0 {
+            lines.push(String::new());
+            lines.push(
+                "Use the `okf_lookup` tool or `/okf <query>` for full search across this knowledge."
+                    .to_string(),
+            );
+        }
+
+        lines.join("\n")
+    }
+
+    /// Search across all loaded OKF bundles (the Knowledge OS).
+    /// This is the high-level API used by the `/okf` slash command and tools.
+    pub fn search_okf(&self, query: &str, max_results: usize) -> Vec<&crate::knowledge::OkfConcept> {
+        if query.trim().is_empty() || self.okf_knowledge.is_empty() {
+            return vec![];
+        }
+
+        let mut all_results: Vec<(&crate::knowledge::OkfConcept, f32)> = Vec::new();
+
+        for bundle in &self.okf_knowledge {
+            for concept in &bundle.concepts {
+                let score = crate::knowledge::okf::score_concept_for_search(concept, query);
+                if score > 0.0 {
+                    all_results.push((concept, score));
+                }
+            }
+        }
+
+        all_results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        all_results
+            .into_iter()
+            .take(max_results)
+            .map(|(c, _)| c)
+            .collect()
+    }
+
+    /// Get a full OKF concept by its stable ID (relative path within its bundle).
+    pub fn get_okf_by_id(&self, id: &str) -> Option<&crate::knowledge::OkfConcept> {
+        for bundle in &self.okf_knowledge {
+            if let Some(c) = bundle.get_by_id(id) {
+                return Some(c);
+            }
+        }
+        None
     }
 
     /// Return a brief one-liner describing memory usage — suitable for the
@@ -420,14 +557,23 @@ impl MemoryStore {
     ///
     /// Example output:
     /// ```text
-    /// Short-term: 12 msgs (~840 tokens) | Long-term: 5 facts | Working: 1.2 KB
+    /// Short-term: 12 msgs (~840 tokens) | Long-term: 5 facts | OKF: 2 bundles / 47 concepts | Working: 1.2 KB
     /// ```
     pub fn status_line(&self) -> String {
+        let okf_info = if self.okf_knowledge.is_empty() {
+            String::new()
+        } else {
+            let bundles = self.okf_knowledge.len();
+            let concepts: usize = self.okf_knowledge.iter().map(|b| b.concepts.len()).sum();
+            format!(" | OKF: {} bundles / {} concepts", bundles, concepts)
+        };
+
         format!(
-            "Short-term: {} msgs (~{} tokens) | Long-term: {} facts | Tools: {} calls | Working: {} bytes",
+            "Short-term: {} msgs (~{} tokens) | Long-term: {} facts{} | Tools: {} calls | Working: {} bytes",
             self.short_term.len(),
             self.short_term.estimated_tokens(),
             self.long_term.len(),
+            okf_info,
             self.tool_memory.len(),
             self.working.byte_len(),
         )
@@ -457,10 +603,12 @@ impl MemoryStore {
 ///    helpful assistant.")
 /// 2. Working context — project rules, conventions, etc.
 /// 3. Long-term facts — user-remembered facts, most recent first.
+/// 4. OKF Knowledge OS — structured concepts from loaded bundles (Knowledge API).
 fn build_system_prompt(
     base: Option<&str>,
     working: &WorkingMemory,
     long_term: &LongTermMemory,
+    okf_bundles: &[crate::knowledge::OkfBundle],
 ) -> String {
     let mut parts: Vec<String> = Vec::new();
 
@@ -479,6 +627,53 @@ fn build_system_prompt(
     let facts_section = long_term.to_prompt_section_default();
     if !facts_section.trim().is_empty() {
         parts.push(facts_section);
+    }
+
+    // ── OKF Knowledge OS section (the "Knowledge API" / structured knowledge)
+    if !okf_bundles.is_empty() {
+        let mut okf_lines = vec![
+            "## 📚 Knowledge OS (OKF Bundles)".to_string(),
+            String::new(),
+        ];
+
+        let mut concept_count = 0;
+        for bundle in okf_bundles {
+            for concept in &bundle.concepts {
+                if concept_count >= 12 {
+                    break;
+                } // keep prompt size reasonable
+                let type_info = if concept.r#type.is_empty() {
+                    "".to_string()
+                } else {
+                    format!(" ({})", concept.r#type)
+                };
+                let short_desc = if !concept.description.is_empty() {
+                    format!(" — {}", concept.description.chars().take(90).collect::<String>())
+                } else {
+                    String::new()
+                };
+                okf_lines.push(format!(
+                    "- **{}**{}: {}{}",
+                    concept.title,
+                    type_info,
+                    concept.id,
+                    short_desc
+                ));
+                concept_count += 1;
+            }
+            if concept_count >= 12 {
+                break;
+            }
+        }
+
+        if concept_count > 0 {
+            okf_lines.push(String::new());
+            okf_lines.push(
+                "Use the `okf_lookup` and `okf_get` tools to search this knowledge base deeply."
+                    .to_string(),
+            );
+            parts.push(okf_lines.join("\n"));
+        }
     }
 
     parts.join("\n\n")
@@ -544,7 +739,7 @@ mod tests {
     fn build_system_prompt_base_only() {
         let wm = WorkingMemory::empty();
         let lt = LongTermMemory::load_or_create_at(tempdir().unwrap().path()).unwrap();
-        let prompt = build_system_prompt(Some("You are helpful."), &wm, &lt);
+        let prompt = build_system_prompt(Some("You are helpful."), &wm, &lt, &[]);
         assert_eq!(prompt, "You are helpful.");
     }
 
@@ -552,7 +747,7 @@ mod tests {
     fn build_system_prompt_includes_working_context() {
         let wm = WorkingMemory::from_content("# Rules\nUse Rust 2024.");
         let lt = LongTermMemory::load_or_create_at(tempdir().unwrap().path()).unwrap();
-        let prompt = build_system_prompt(Some("base"), &wm, &lt);
+        let prompt = build_system_prompt(Some("base"), &wm, &lt, &[]);
         assert!(prompt.contains("Use Rust 2024."));
         assert!(prompt.contains("base"));
     }
@@ -564,7 +759,7 @@ mod tests {
         lt.save_fact("user likes dark mode", MemorySource::User, vec![])
             .unwrap();
         let wm = WorkingMemory::empty();
-        let prompt = build_system_prompt(None, &wm, &lt);
+        let prompt = build_system_prompt(None, &wm, &lt, &[]);
         assert!(prompt.contains("dark mode"));
         assert!(prompt.contains("Remembered Facts"));
     }
@@ -573,7 +768,7 @@ mod tests {
     fn build_system_prompt_empty_when_nothing() {
         let wm = WorkingMemory::empty();
         let lt = LongTermMemory::load_or_create_at(tempdir().unwrap().path()).unwrap();
-        let prompt = build_system_prompt(None, &wm, &lt);
+        let prompt = build_system_prompt(None, &wm, &lt, &[]);
         assert!(prompt.trim().is_empty());
     }
 

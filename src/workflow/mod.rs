@@ -5,11 +5,13 @@
 //!
 //! This is the foundation for Task 232 and later tasks (TUI viewer, /trace command, JSON persistence, task-graph parallelization).
 
+pub mod okf;
 pub mod persistence;
 pub mod runner;
 pub mod trace;
 pub mod trace_command;
 
+pub use okf::{buffered_trace_count, forward_workflow_trace, maybe_forward_trace, trigger_okf_flush};
 pub use persistence::{
     ensure_workflows_dir, list_traces, load_latest_trace, load_trace, save_trace, trace_file_summary,
     workflows_dir,

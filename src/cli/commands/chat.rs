@@ -593,6 +593,14 @@ fn handle_interactive_command(
                             let text = rt.block_on(crate::workflow::handle_trace_command(&sub));
                             println!("{}", text);
                         }
+                        slash_commands::BuiltinResult::ShowOkf(query) => {
+                            let text = if query.trim().is_empty() {
+                                crate::tools::okf_lookup("", None).unwrap_or_else(|e| format!("Error: {}", e))
+                            } else {
+                                crate::tools::okf_lookup(&query, Some(8)).unwrap_or_else(|e| format!("Error: {}", e))
+                            };
+                            println!("{}", text);
+                        }
                     }
                     return Ok(Some(CommandResult::Continue));
                 }

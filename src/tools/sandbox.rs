@@ -87,11 +87,22 @@ impl PluginSandbox {
         }
 
         tracing::info!("Compiled → {}", out_path.display());
+
+        // Even though dynamic loading is currently disabled (libloading placeholder),
+        // we still record the compiled tool metadata. This makes the
+        // `registered_tools` field actively written to and usable.
+        {
+            let mut tools = self.registered_tools.lock().unwrap();
+            tools.push(CustomTool {
+                name: file_stem.clone(),
+                description: format!("Custom tool compiled from {}", path.display()),
+                library_path: out_path.clone(),
+            });
+        }
+
         // Dynamic loading disabled (libloading not present).
-        // In a future build with the crate enabled, call:
-        // self.load_library(&out_path, &file_stem)
         tracing::warn!(
-            "Dynamic tool loading is currently disabled. Compiled library at {} was not loaded.",
+            "Dynamic tool loading is currently disabled. Compiled library at {} was not loaded (metadata recorded).",
             out_path.display()
         );
         Ok(())

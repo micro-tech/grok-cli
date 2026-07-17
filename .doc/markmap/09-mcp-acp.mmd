@@ -15,17 +15,35 @@
 - [Utils & Display](11-utils-display.html)
 
 ## MCP
-- `mcp/client.rs`
-- `mcp/protocol.rs`
+- `mcp/client.rs` — MCP client connection and tool discovery
+- `mcp/protocol.rs` — MCP wire protocol types
+- `mcp/config.rs` — MCP server configuration
+- `mcp/mod.rs`
 
-## ACP
-- `acp/mod.rs`
-- `acp/protocol.rs`
-- `acp/tools.rs`
-- `acp/elicitation.rs`
+## ACP (Agent Communication Protocol / Zed)
+- `acp/mod.rs` — GrokAdapter, session management, BacklocksMap
+- `acp/protocol.rs` — SessionUpdateAction, ContextBlock, message types
+- `acp/tools.rs` — tool definitions for ACP
+- `acp/elicitation.rs` — user permission elicitation
+- `acp/handlers.rs`
+- `acp/mcp_bridge.rs` — bridge between ACP sessions and MCP servers
+- `acp/slash_commands.rs` — built-in slash command handling (`/help`, `/rule`, `/commit`, etc.)
+- `acp/security.rs` — path sandboxing for ACP
+- `acp/status_bar.rs`
+
+## Integration Points
+- ACP tools route to `src/tools/`
+- MCP tools are exposed as `server:tool_name` (e.g. `markmap:generate`)
+- Slash commands feed into prompt / goal / rule systems
+
+## Recent Changes
+- Expanded MCP bridge support
+- Rich slash command set including Bayesian and diagnostics
+- Better security sandboxing
 
 ## Dependencies
-- (to be filled)
+- JSON-RPC style protocol for Zed ACP
 
 ## Notes
-- (to be filled)
+- ACP is the primary integration point for Zed editor.
+- MCP allows external tool servers to be discovered and used dynamically.

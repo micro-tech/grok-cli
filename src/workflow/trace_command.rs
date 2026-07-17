@@ -15,7 +15,6 @@ use crate::workflow::persistence::{
     list_traces, load_latest_trace, load_trace, trace_file_summary,
 };
 use crate::workflow::WorkflowTrace;
-use anyhow::Result;
 
 /// Handle the `/trace` command. Returns a human-readable response string.
 ///

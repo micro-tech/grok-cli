@@ -4,9 +4,6 @@
 #
 # Priority order (highest → lowest):
 #   Environment variables → project .grok/config.toml → system ~/.grok-cli/config.toml → built-in defaults
-#
-# Priority order (highest → lowest):
-#   Environment variables → project .grok/config.toml → system ~/.grok-cli/config.toml → built-in defaults
 
 # ── API ──────────────────────────────────────────────────────────────────────
 # NOTE: Do NOT store your API key in this file!
@@ -239,6 +236,45 @@ enabled = false
 [rate_limits]
 max_tokens_per_minute = 100000
 max_requests_per_minute = 60
+
+# ── OKF (Observability / Workflow Trace Forwarder) ────────────────────────────
+# Forwards completed `WorkflowTrace` records to a central OKF server.
+# Intended for centralized logging and analysis (e.g. Proxmox host or logging cluster).
+# This is completely best-effort and never blocks the main workflow.
+#
+# Can be enabled via:
+#   - This [okf] section
+#   - Environment variables: GROK_OKF_ENABLED, GROK_OKF_SERVER, GROK_OKF_API_KEY, etc.
+#
+# When enabled, traces are sent after they are saved to disk (see workflow persistence).
+[okf]
+# Master switch. Set to true to enable forwarding.
+enabled = false
+
+# Server address (IP or hostname). Do not include http:// or https:// here.
+# Example: "192.168.1.106" or "okf.example.com"
+server = ""
+
+# Port the OKF server listens on
+port = 8080
+
+# Ingestion endpoint path
+endpoint = "/api/traces"
+
+# Use HTTPS instead of HTTP
+use_https = false
+
+# Optional Bearer token / API key for authentication
+# api_key = "your-secret-token-here"
+
+# HTTP request timeout in seconds
+timeout_secs = 10
+
+# Whether to keep traces in a local buffer when the server is unreachable
+buffer_on_failure = true
+
+# Maximum number of traces to keep in the local buffer
+max_buffer_size = 100
 
 # MCP (Model Context Protocol) Servers Configuration
 # Configure external MCP servers for extended functionality
