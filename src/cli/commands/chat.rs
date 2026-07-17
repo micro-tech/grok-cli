@@ -601,6 +601,11 @@ fn handle_interactive_command(
                             };
                             println!("{}", text);
                         }
+                        slash_commands::BuiltinResult::ForceCompress => {
+                            println!("⚠️  /compress is only fully supported in ACP sessions (Zed, etc.).");
+                            println!("   In pure CLI mode it is not connected to a real session context.");
+                            println!("   Start an ACP session or use a long conversation + the auto-compress path instead.");
+                        }
                     }
                     return Ok(Some(CommandResult::Continue));
                 }
