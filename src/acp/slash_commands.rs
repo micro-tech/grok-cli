@@ -144,6 +144,10 @@ pub enum SlashCommand {
     /// `/okf` with no argument shows a summary of loaded knowledge.
     /// `/okf <query>` performs a semantic search across all bundles (e.g. "orders table", "weekly active users").
     Okf { query: String },
+
+    /// `/compress` — Force an immediate context compression + archive pass (for testing).
+    /// This bypasses the normal threshold and compresses the oldest messages right now.
+    Compress,
 }
 
 // ---------------------------------------------------------------------------
@@ -261,6 +265,8 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
 
         "/okf" => Some(SlashCommand::Okf { query: args }),
 
+        "/compress" | "/force_compress" => Some(SlashCommand::Compress),
+
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -368,6 +374,11 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "Search or list concepts from the loaded OKF Knowledge OS bundles (structured knowledge)"
         )
         .input(input("optional search query — omit to list loaded bundles and top concepts")),
+
+        AvailableCommand::new(
+            "compress",
+            "Force an immediate context compression + archive (great for testing the compressor)"
+        ),
     ];
 
     // Ensure alphabetical order by command name
@@ -413,7 +424,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Image { .. }
         | SlashCommand::Init
         | SlashCommand::Trace { .. }
-        | SlashCommand::Okf { .. } => None,
+        | SlashCommand::Okf { .. }
+        | SlashCommand::Compress => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -659,6 +671,9 @@ pub enum BuiltinResult {
     /// `query` empty → summary of loaded bundles.
     /// `query` non-empty → search results.
     ShowOkf(String),
+
+    /// Force an immediate context compression (for testing `/compress`).
+    ForceCompress,
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -712,6 +727,7 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
             Some(BuiltinResult::ShowTrace(subcommand.clone()))
         }
         SlashCommand::Okf { query } => Some(BuiltinResult::ShowOkf(query.clone())),
+        SlashCommand::Compress => Some(BuiltinResult::ForceCompress),
         _ => None, // AI-assisted command
     }
 }

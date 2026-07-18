@@ -2164,6 +2164,112 @@ impl GrokAcpAgent {
         Ok(())
     }
 
+    /// Force an immediate context compression + archive for testing.
+    /// This ignores the normal `compression_threshold` and always tries to
+    /// summarize + archive the oldest non-system messages.
+    pub async fn force_compress(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        let session = sessions
+            .get_mut(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found"))?;
+
+        let model = session.config.model.clone();
+
+        // Collect non-system messages
+        let non_system_indices: Vec<usize> = session
+            .messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+            .map(|(i, _)| i)
+            .collect();
+
+        if non_system_indices.len() < 4 {
+            return Ok("Not enough conversation history to compress (need at least 4 non-system messages).".to_string());
+        }
+
+        let compress_count = ((non_system_indices.len() as f64
+            * self.config.acp.compression_chunk_ratio as f64) as usize)
+            .max(4)
+            .min(non_system_indices.len());
+
+        let start = non_system_indices[0];
+        let end = non_system_indices
+            .get(compress_count - 1)
+            .copied()
+            .unwrap_or(start);
+
+        let to_compress: Vec<Value> = session.messages.drain(start..=end).collect();
+        let tokens_saved = estimate_tokens(&to_compress);
+
+        // Release lock before the (potentially slow) summarization call
+        drop(sessions);
+
+        let router = self.get_router()?;
+
+        match crate::memory::context_compressor::compress(&to_compress, &router, &model).await {
+            Ok((summary, key_facts)) => {
+                let mut archive = crate::memory::context_archive::ContextArchive::for_session(&session_id.0)?;
+
+                let chunk_id = archive.next_chunk_id();
+                let chunk = crate::memory::context_archive::ContextChunk {
+                    chunk_id,
+                    session_id: session_id.0.clone(),
+                    created_at: chrono::Utc::now(),
+                    message_count: to_compress.len(),
+                    estimated_tokens_saved: tokens_saved,
+                    summary: summary.clone(),
+                    key_facts: key_facts.clone(),
+                    raw_messages: to_compress,
+                };
+
+                archive.save_chunk(&chunk)?;
+
+                // Re-acquire lock to insert the archive notice
+                let mut sessions = self.sessions.write().await;
+                if let Some(s) = sessions.get_mut(&session_id.0) {
+                    let insert_at = if s
+                        .messages
+                        .first()
+                        .and_then(|m| m.get("role"))
+                        .and_then(|r| r.as_str())
+                        == Some("system")
+                    {
+                        1
+                    } else {
+                        0
+                    };
+
+                    let notice = build_archive_notice(&chunk);
+                    s.messages.insert(insert_at, notice);
+                }
+
+                Ok(format!(
+                    "✅ **Forced compression complete**\n\n\
+                     - Archived **{}** messages into chunk **#{}**\n\
+                     - Tokens saved: **~{}**\n\
+                     - Summary: {}\n\n\
+                     Use `/archives` to see all chunks or `/recall {}` to restore.",
+                    chunk.message_count,
+                    chunk_id,
+                    tokens_saved,
+                    summary,
+                    chunk_id
+                ))
+            }
+            Err(e) => {
+                // Restore the messages we drained
+                let mut sessions = self.sessions.write().await;
+                if let Some(s) = sessions.get_mut(&session_id.0) {
+                    for (offset, msg) in to_compress.into_iter().enumerate() {
+                        s.messages.insert(start + offset, msg);
+                    }
+                }
+                Err(e.context("Compression failed — original messages restored"))
+            }
+        }
+    }
+
     /// Return a clone of the [`SessionConfig`] for a session.
     ///
     /// Used by the `/context` slash command to report the active model, temperature, etc.
