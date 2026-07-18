@@ -10,8 +10,11 @@ use anyhow::{anyhow, Result};
 
 use crate::config::Config;
 use crate::knowledge::okf::{load_okf_bundles, OkfBundle, OkfConcept};
+use chrono;
+use reqwest::Client;
 use std::path::PathBuf;
 use std::sync::OnceLock;
+use std::time::Duration;
 
 /// Global cache of loaded OKF bundles for the current process.
 /// Loaded lazily on first use of the tool or at session start.
@@ -215,4 +218,157 @@ pub fn okf_get(id: &str) -> Result<String> {
     }
 
     Err(anyhow!("OKF concept not found: {}", id))
+}
+
+/// Create a new OKF concept.
+///
+/// If a remote OKF server is configured (`okf.remote_url`), it will attempt
+/// to push the concept to the server (to the `default_bundle`).
+/// Otherwise it falls back to creating it locally in the first knowledge bundle.
+///
+/// Returns a success message with the new concept's ID.
+pub async fn okf_create(
+    r#type: &str,
+    title: &str,
+    body: &str,
+    description: Option<&str>,
+    tags: Option<Vec<String>>,
+    resource: Option<&str>,
+    explicit_id: Option<&str>,
+) -> Result<String> {
+    let cfg = crate::config::Config::load_hierarchical().await?;
+
+    if !cfg.okf.enabled {
+        return Err(anyhow!("OKF is disabled. Set `okf.enabled = true` in config."));
+    }
+
+    let id = explicit_id
+        .map(|s| s.to_string())
+        .unwrap_or_else(|| {
+            // Generate a clean ID from title + type
+            let slug = title
+                .to_lowercase()
+                .replace(|c: char| !c.is_alphanumeric() && c != '-', "-")
+                .trim_matches('-')
+                .to_string();
+            let type_slug = r#type.to_lowercase().replace(' ', "-");
+            format!("{}/{}", type_slug, slug)
+        });
+
+    let concept = OkfConcept {
+        id: id.clone(),
+        r#type: r#type.to_string(),
+        title: title.to_string(),
+        description: description.unwrap_or("").to_string(),
+        resource: resource.map(|s| s.to_string()),
+        tags: tags.unwrap_or_default(),
+        timestamp: Some(chrono::Utc::now().to_rfc3339()),
+        body: body.to_string(),
+        source_path: PathBuf::new(),
+        bundle_name: cfg.okf.default_bundle.clone(),
+    };
+
+    // Try remote first if configured
+    if let Some(remote) = &cfg.okf.remote_url {
+        match push_concept_to_remote(&concept, remote, &cfg.okf.default_bundle, &cfg.okf.api_key).await {
+            Ok(_) => {
+                // Invalidate cache so future lookups see it (best effort)
+                let _ = OKF_BUNDLES.take();
+                return Ok(format!(
+                    "✅ Created concept '{}' on remote OKF server (bundle: {})\nID: {}",
+                    title, cfg.okf.default_bundle, id
+                ));
+            }
+            Err(e) => {
+                tracing::warn!("Failed to push to remote OKF server: {}. Falling back to local.", e);
+            }
+        }
+    }
+
+    // Local fallback
+    write_concept_locally(&concept, &cfg).await?;
+
+    // Reload cache
+    let _ = OKF_BUNDLES.take();
+
+    Ok(format!(
+        "✅ Created local OKF concept '{}'\nID: {}\nBundle: {}",
+        title, id, cfg.okf.default_bundle
+    ))
+}
+
+async fn push_concept_to_remote(
+    concept: &OkfConcept,
+    base_url: &str,
+    bundle: &str,
+    api_key: &Option<String>,
+) -> Result<()> {
+    let client = Client::builder()
+        .timeout(Duration::from_secs(15))
+        .build()?;
+
+    let url = format!(
+        "{}/bundles/{}/concepts",
+        base_url.trim_end_matches('/'),
+        bundle
+    );
+
+    let mut req = client.post(&url).json(concept);
+
+    if let Some(key) = api_key {
+        if !key.trim().is_empty() {
+            req = req.bearer_auth(key.trim());
+        }
+    }
+
+    let resp = req.send().await?;
+
+    if resp.status().is_success() {
+        Ok(())
+    } else {
+        let status = resp.status();
+        let body = resp.text().await.unwrap_or_default();
+        Err(anyhow!("Remote OKF returned {}: {}", status, body))
+    }
+}
+
+async fn write_concept_locally(concept: &OkfConcept, cfg: &Config) -> Result<()> {
+    use std::fs;
+
+    if cfg.okf.knowledge_bundles.is_empty() {
+        return Err(anyhow!("No knowledge_bundles configured for local write."));
+    }
+
+    let base_dir = shellexpand::tilde(&cfg.okf.knowledge_bundles[0]).to_string();
+    let base = PathBuf::from(base_dir);
+    fs::create_dir_all(&base)?;
+
+    // Build markdown with frontmatter
+    let mut md = String::new();
+    md.push_str("---\n");
+    md.push_str(&format!("type: {}\n", concept.r#type));
+    md.push_str(&format!("title: {}\n", concept.title));
+    if !concept.description.is_empty() {
+        md.push_str(&format!("description: {}\n", concept.description));
+    }
+    if let Some(res) = &concept.resource {
+        md.push_str(&format!("resource: {}\n", res));
+    }
+    if !concept.tags.is_empty() {
+        md.push_str(&format!("tags: {:?}\n", concept.tags));
+    }
+    if let Some(ts) = &concept.timestamp {
+        md.push_str(&format!("timestamp: {}\n", ts));
+    }
+    md.push_str("---\n\n");
+    md.push_str(&concept.body);
+
+    let file_path = base.join(format!("{}.md", concept.id));
+    if let Some(parent) = file_path.parent() {
+        fs::create_dir_all(parent)?;
+    }
+
+    fs::write(&file_path, md)?;
+    tracing::info!("Wrote local OKF concept to {:?}", file_path);
+    Ok(())
 }

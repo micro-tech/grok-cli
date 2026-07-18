@@ -246,6 +246,24 @@ pub struct OkfConfig {
     ///   ]
     #[serde(default)]
     pub knowledge_bundles: Vec<String>,
+
+    /// Remote OKF server base URL for reading/writing knowledge bundles.
+    /// Example: "http://192.168.1.106:8080"
+    ///
+    /// When set, Grok-CLI can fetch bundles and push new concepts
+    /// (via okf_create / okf_push) to the central server instead of (or in
+    /// addition to) local files.
+    #[serde(default)]
+    pub remote_url: Option<String>,
+
+    /// Default bundle name to use when writing knowledge to the remote server.
+    /// Typical values: "grok-cli", "shared"
+    #[serde(default = "default_okf_bundle")]
+    pub default_bundle: String,
+}
+
+fn default_okf_bundle() -> String {
+    "grok-cli".to_string()
 }
 
 fn default_okf_port() -> u16 {
@@ -281,6 +299,8 @@ impl Default for OkfConfig {
                 "~/.grok-cli/knowledge".to_string(),
                 ".grok/knowledge".to_string(),
             ],
+            remote_url: None,
+            default_bundle: default_okf_bundle(),
         }
     }
 }
@@ -2152,6 +2172,13 @@ impl Config {
                 .collect();
         }
 
+        if let Ok(url) = std::env::var("GROK_OKF_REMOTE_URL") {
+            self.okf.remote_url = Some(url);
+        }
+        if let Ok(bundle) = std::env::var("GROK_OKF_DEFAULT_BUNDLE") {
+            self.okf.default_bundle = bundle;
+        }
+
         // Security configuration
         if let Ok(mode) = std::env::var("GROK_SHELL_APPROVAL_MODE") {
             self.security.shell_approval_mode = mode;
@@ -2458,6 +2485,8 @@ impl Config {
             "okf.buffer_on_failure" => Ok(self.okf.buffer_on_failure.to_string()),
             "okf.max_buffer_size" => Ok(self.okf.max_buffer_size.to_string()),
             "okf.knowledge_bundles" => Ok(self.okf.knowledge_bundles.join(", ")),
+            "okf.remote_url" => Ok(self.okf.remote_url.clone().unwrap_or_default()),
+            "okf.default_bundle" => Ok(self.okf.default_bundle.clone()),
 
             _ => Err(anyhow!("Unknown configuration key: {}", key)),
         }

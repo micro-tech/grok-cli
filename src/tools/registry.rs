@@ -512,6 +512,33 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                         .ok_or_else(|| anyhow!("Missing: id"))?;
                     crate::tools::okf_tools::okf_get(id)
                 }
+                "okf_create" => {
+                    let r#type = args["type"].as_str().unwrap_or("Concept");
+                    let title = args["title"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Missing: title"))?;
+                    let body = args["body"]
+                        .as_str()
+                        .ok_or_else(|| anyhow!("Missing: body"))?;
+                    let description = args["description"].as_str();
+                    let tags: Option<Vec<String>> = args["tags"]
+                        .as_array()
+                        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
+                    let resource = args["resource"].as_str();
+                    let id = args["id"].as_str();
+
+                    // okf_create is async because of remote push
+                    crate::tools::okf_tools::okf_create(
+                        r#type,
+                        title,
+                        body,
+                        description,
+                        tags,
+                        resource,
+                        id,
+                    )
+                    .await
+                }
 
                 // ── Commit message generation (Task 161) ─────────────────────
                 "generate_commit_message" => {
@@ -601,6 +628,7 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
         "generate_commit_message",
         "okf_lookup",
         "okf_get",
+        "okf_create",
     ]
 }
 
@@ -1320,6 +1348,48 @@ pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
                         }
                     },
                     "required": ["id"]
+                }
+            }
+        }),
+        json!({
+            "type": "function",
+            "function": {
+                "name": "okf_create",
+                "description": "Create and store a new structured knowledge concept in the OKF Knowledge OS. Writes to the remote OKF server (if configured via okf.remote_url) or falls back to local knowledge bundles. Use this to permanently record tables, metrics, runbooks, decisions, patterns, etc. so they become queryable via okf_lookup.",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "type": {
+                            "type": "string",
+                            "description": "Concept type (e.g. 'Table', 'Metric', 'Runbook', 'Decision', 'API', 'Pattern', 'Schema')"
+                        },
+                        "title": {
+                            "type": "string",
+                            "description": "Human-readable title"
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "Markdown body content with the actual knowledge"
+                        },
+                        "description": {
+                            "type": "string",
+                            "description": "Short one-line description (optional)"
+                        },
+                        "tags": {
+                            "type": "array",
+                            "items": { "type": "string" },
+                            "description": "Tags for categorization (optional)"
+                        },
+                        "resource": {
+                            "type": "string",
+                            "description": "Link to the real resource (optional)"
+                        },
+                        "id": {
+                            "type": "string",
+                            "description": "Optional explicit ID/path (e.g. 'metrics/weekly_active_users'). If omitted, one is generated from type+title."
+                        }
+                    },
+                    "required": ["title", "body"]
                 }
             }
         }),
