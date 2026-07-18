@@ -13,12 +13,16 @@ use crate::knowledge::okf::{load_okf_bundles, OkfBundle, OkfConcept};
 use chrono;
 use reqwest::Client;
 use std::path::PathBuf;
-use std::sync::OnceLock;
+use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
 
 /// Global cache of loaded OKF bundles for the current process.
-/// Loaded lazily on first use of the tool or at session start.
-static OKF_BUNDLES: OnceLock<Vec<OkfBundle>> = OnceLock::new();
+/// Uses RwLock so we can invalidate it after `okf_create`.
+static OKF_BUNDLES: OnceLock<RwLock<Vec<OkfBundle>>> = OnceLock::new();
+
+fn get_okf_cache() -> &'static RwLock<Vec<OkfBundle>> {
+    OKF_BUNDLES.get_or_init(|| RwLock::new(Vec::new()))
+}
 
 /// Load OKF bundles according to the current config.
 /// This is called both at session start and on first tool use.
@@ -60,35 +64,43 @@ pub fn load_okf_from_config(config: &Config) -> Vec<OkfBundle> {
 }
 
 /// Get (or lazily load) the current OKF bundles.
-pub fn get_okf_bundles(config: Option<&Config>) -> &'static [OkfBundle] {
-    OKF_BUNDLES.get_or_init(|| {
-        if let Some(cfg) = config {
-            load_okf_from_config(cfg)
-        } else {
-            // Fallback: try to load hierarchical config
-            match std::thread::spawn(|| {
-                // We can't easily do async here, so use blocking load
-                // In practice the caller should pass config.
-                vec![]
-            })
-            .join()
-            {
-                Ok(v) => v,
-                Err(_) => vec![],
-            }
+pub fn get_okf_bundles(config: Option<&Config>) -> Vec<OkfBundle> {
+    let cache = get_okf_cache();
+    {
+        let guard = cache.read().unwrap();
+        if !guard.is_empty() {
+            return guard.clone();
         }
-    })
+    }
+
+    let bundles = if let Some(cfg) = config {
+        load_okf_from_config(cfg)
+    } else {
+        match std::thread::spawn(|| {
+            let rt = tokio::runtime::Runtime::new().ok()?;
+            rt.block_on(crate::config::Config::load_hierarchical()).ok()
+        })
+        .join()
+        .ok()
+        .flatten()
+        {
+            Some(cfg) => load_okf_from_config(&cfg),
+            None => vec![],
+        }
+    };
+
+    let mut guard = cache.write().unwrap();
+    *guard = bundles.clone();
+    bundles
 }
 
 /// Force reload of OKF bundles (useful after config change).
-pub fn reload_okf_bundles(config: &Config) -> &'static [OkfBundle] {
-    // Simple approach: drop the old value by replacing the OnceLock is hard,
-    // so we just document that restart is needed for now, or we can use a RwLock later.
-    // For v1 we just load fresh if the OnceLock is empty.
-    if OKF_BUNDLES.get().is_none() {
-        let _ = OKF_BUNDLES.set(load_okf_from_config(config));
-    }
-    OKF_BUNDLES.get().map(|v| v.as_slice()).unwrap_or(&[])
+pub fn reload_okf_bundles(config: &Config) -> Vec<OkfBundle> {
+    let bundles = load_okf_from_config(config);
+    let cache = get_okf_cache();
+    let mut guard = cache.write().unwrap();
+    *guard = bundles.clone();
+    bundles
 }
 
 /// The main OKF lookup tool.
@@ -99,26 +111,7 @@ pub fn okf_lookup(query: &str, max_results: Option<usize>) -> Result<String> {
     let max = max_results.unwrap_or(5).min(20);
 
     // Try to get bundles. If not loaded yet, attempt a config load.
-    let bundles: &[OkfBundle] = if let Some(b) = OKF_BUNDLES.get() {
-        b
-    } else {
-        // Best effort load (async load_hierarchical needs a runtime)
-        let loaded = std::thread::spawn(|| {
-            let rt = tokio::runtime::Runtime::new().ok()?;
-            rt.block_on(crate::config::Config::load_hierarchical()).ok()
-        })
-        .join()
-        .ok()
-        .flatten();
-
-        if let Some(cfg) = loaded {
-            let b = load_okf_from_config(&cfg);
-            let _ = OKF_BUNDLES.set(b);
-            OKF_BUNDLES.get().map(|v| v.as_slice()).unwrap_or(&[])
-        } else {
-            &[]
-        }
-    };
+    let bundles = get_okf_bundles(None);
 
     if bundles.is_empty() {
         return Ok(
@@ -137,12 +130,12 @@ pub fn okf_lookup(query: &str, max_results: Option<usize>) -> Result<String> {
         );
     }
 
-    let mut all_results: Vec<(&OkfConcept, f32)> = Vec::new();
+    let mut all_results: Vec<(OkfConcept, f32)> = Vec::new();
 
-    for bundle in bundles {
+    for bundle in &bundles {
         for concept in bundle.search(query) {
             // crude scoring boost by bundle if needed
-            all_results.push((concept, 1.0));
+            all_results.push((concept.clone(), 1.0));
         }
     }
 
@@ -201,9 +194,9 @@ pub fn okf_lookup(query: &str, max_results: Option<usize>) -> Result<String> {
 
 /// Get full content of a specific OKF concept by its ID (path inside bundle).
 pub fn okf_get(id: &str) -> Result<String> {
-    let bundles = OKF_BUNDLES.get().map(|v| v.as_slice()).unwrap_or(&[]);
+    let bundles = get_okf_bundles(None);
 
-    for bundle in bundles {
+    for bundle in &bundles {
         if let Some(concept) = bundle.get_by_id(id) {
             return Ok(format!(
                 "# {} ({})\n\n**Type**: {}\n**Bundle**: {}\n\n{}\n\n---\nSource: {}",
@@ -272,8 +265,10 @@ pub async fn okf_create(
     if let Some(remote) = &cfg.okf.remote_url {
         match push_concept_to_remote(&concept, remote, &cfg.okf.default_bundle, &cfg.okf.api_key).await {
             Ok(_) => {
-                // Invalidate cache so future lookups see it (best effort)
-                let _ = OKF_BUNDLES.take();
+                // Invalidate cache so future lookups see the new concept
+                let cache = get_okf_cache();
+                let mut guard = cache.write().unwrap();
+                *guard = vec![];
                 return Ok(format!(
                     "✅ Created concept '{}' on remote OKF server (bundle: {})\nID: {}",
                     title, cfg.okf.default_bundle, id
@@ -288,8 +283,10 @@ pub async fn okf_create(
     // Local fallback
     write_concept_locally(&concept, &cfg).await?;
 
-    // Reload cache
-    let _ = OKF_BUNDLES.take();
+    // Invalidate cache
+    let cache = get_okf_cache();
+    let mut guard = cache.write().unwrap();
+    *guard = vec![];
 
     Ok(format!(
         "✅ Created local OKF concept '{}'\nID: {}\nBundle: {}",
