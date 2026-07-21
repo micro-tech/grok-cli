@@ -9,6 +9,7 @@ use tracing::{debug, info};
 
 use crate::mcp::config::McpServerConfig;
 use crate::mcp::protocol::Tool;
+use crate::mcp::MCP_PROTOCOL_VERSION;
 
 pub struct McpClient {
     servers: HashMap<String, ServerConnection>,
@@ -85,7 +86,7 @@ impl McpClient {
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": "0.1.0",
+                "protocolVersion": MCP_PROTOCOL_VERSION,
                 "capabilities": {},
                 "clientInfo": {
                     "name": "grok-cli",
@@ -136,10 +137,16 @@ impl McpClient {
             .ok_or_else(|| anyhow!("Initialize result missing 'protocolVersion'"))?;
 
         // 5. Basic protocol version compatibility check
-        if server_version != "0.1.0" {
+        // Accept legacy "0.1.0" and the modern date-based versions (2024-11-05+).
+        // We now target MCP 2024-11-05 (first stable widely deployed release).
+        if server_version != "0.1.0"
+            && !server_version.starts_with("2024-")
+            && !server_version.starts_with("2025-")
+        {
             tracing::warn!(
-                "MCP server protocol version {} may not be fully compatible with client 0.1.0",
-                server_version
+                "MCP server protocol version {} may not be fully compatible with client {}",
+                server_version,
+                MCP_PROTOCOL_VERSION
             );
         }
 

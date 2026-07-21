@@ -43,7 +43,7 @@ async fn handle_request(request: &Value, stdout: &mut tokio::io::Stdout) -> Resu
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {
-                    "protocolVersion": "0.1.0",
+                    "protocolVersion": "2024-11-05",
                     "capabilities": {},
                     "serverInfo": {
                         "name": "github-mcp",
