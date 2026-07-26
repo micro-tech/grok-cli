@@ -9,7 +9,7 @@ use tracing::{debug, info};
 
 use crate::mcp::config::McpServerConfig;
 use crate::mcp::protocol::Tool;
-use crate::mcp::MCP_PROTOCOL_VERSION;
+use crate::mcp::{MCP_CLIENT_NAME, MCP_PROTOCOL_VERSION};
 
 pub struct McpClient {
     servers: HashMap<String, ServerConnection>,
@@ -20,6 +20,9 @@ struct ServerConnection {
     process: Child,
     stdin: Mutex<ChildStdin>,
     reader: Mutex<BufReader<ChildStdout>>,
+    /// If true, the legacy initialize handshake was performed.
+    /// If false, we are in 2026+ stateless mode and must inject client info via _meta.
+    use_legacy_handshake: bool,
 }
 
 impl Default for McpClient {
@@ -37,10 +40,10 @@ impl McpClient {
 
     pub async fn connect(&mut self, name: &str, config: &McpServerConfig) -> Result<()> {
         match config {
-            McpServerConfig::Stdio { command, args, env } => {
+            McpServerConfig::Stdio { command, args, env, use_legacy_handshake } => {
                 info!(
-                    "Connecting to MCP server '{}' via stdio: {} {:?}",
-                    name, command, args
+                    "Connecting to MCP server '{}' via stdio: {} {:?} (legacy_handshake={})",
+                    name, command, args, use_legacy_handshake
                 );
 
                 let mut cmd = Command::new(command);
@@ -67,10 +70,17 @@ impl McpClient {
                     process: child,
                     stdin: Mutex::new(stdin),
                     reader: Mutex::new(BufReader::new(stdout)),
+                    use_legacy_handshake: *use_legacy_handshake,
                 };
 
-                // Initialize handshake
-                self.initialize_handshake(&connection).await?;
+                if *use_legacy_handshake {
+                    // Legacy 2024/2025 behavior
+                    self.initialize_handshake(&connection).await?;
+                } else {
+                    // 2026+ stateless mode: no handshake.
+                    // Client info will be sent via _meta on every subsequent request.
+                    debug!("Stateless 2026-style connection for '{}'", name);
+                }
 
                 self.servers.insert(name.to_string(), connection);
                 info!("Connected to MCP server '{}'", name);
@@ -188,12 +198,20 @@ impl McpClient {
             .get(server_name)
             .ok_or_else(|| anyhow!("Server not connected: {}", server_name))?;
 
-        let msg = json!({
+        let mut msg = json!({
             "jsonrpc": "2.0",
-            "id": 2, // simple id gen needed
+            "id": 2,
             "method": "tools/list",
             "params": {}
         });
+
+        // Phase 0: For 2026+ stateless mode, inject client info via _meta
+        // instead of relying on a prior initialize handshake.
+        if !connection.use_legacy_handshake {
+            if let Some(obj) = msg.as_object_mut() {
+                obj.insert("_meta".to_string(), self.client_meta());
+            }
+        }
 
         self.send_message(connection, &msg).await?;
         let response = self.read_response(connection).await?;
@@ -220,7 +238,7 @@ impl McpClient {
             .get(server_name)
             .ok_or_else(|| anyhow!("Server not connected: {}", server_name))?;
 
-        let msg = json!({
+        let mut msg = json!({
             "jsonrpc": "2.0",
             "id": 3,
             "method": "tools/call",
@@ -229,6 +247,13 @@ impl McpClient {
                 "arguments": args
             }
         });
+
+        // Phase 0 (2026 readiness): inject client info via _meta when using stateless mode
+        if !connection.use_legacy_handshake {
+            if let Some(obj) = msg.as_object_mut() {
+                obj.insert("_meta".to_string(), self.client_meta());
+            }
+        }
 
         self.send_message(connection, &msg).await?;
         let response = self.read_response(connection).await?;
@@ -243,5 +268,56 @@ impl McpClient {
         }
 
         Err(anyhow!("Invalid response from tool call"))
+    }
+
+    /// Build the `_meta` object containing client info for stateless 2026+ mode.
+    ///
+    /// Per the upcoming spec, client identity and protocol version travel on
+    /// every request inside `_meta` instead of a one-time initialize handshake.
+    fn client_meta(&self) -> Value {
+        json!({
+            "io.modelcontextprotocol/clientInfo": {
+                "name": MCP_CLIENT_NAME,
+                "version": env!("CARGO_PKG_VERSION")
+            },
+            "protocolVersion": MCP_PROTOCOL_VERSION
+        })
+    }
+
+    /// Optional: Call the new `server/discover` method (2026+ stateless servers).
+    ///
+    /// This is a Phase 0 stub. It will only work if the server supports the
+    /// method and we are in stateless mode.
+    pub async fn server_discover(&self, server_name: &str) -> Result<Value> {
+        let connection = self
+            .servers
+            .get(server_name)
+            .ok_or_else(|| anyhow!("Server not connected: {}", server_name))?;
+
+        let mut msg = json!({
+            "jsonrpc": "2.0",
+            "id": 4,
+            "method": "server/discover",
+            "params": {}
+        });
+
+        if !connection.use_legacy_handshake {
+            if let Some(obj) = msg.as_object_mut() {
+                obj.insert("_meta".to_string(), self.client_meta());
+            }
+        }
+
+        self.send_message(connection, &msg).await?;
+        let response = self.read_response(connection).await?;
+
+        if let Some(result) = response.get("result") {
+            return Ok(result.clone());
+        }
+
+        if let Some(error) = response.get("error") {
+            return Err(anyhow!("server/discover failed: {:?}", error));
+        }
+
+        Ok(json!({}))
     }
 }

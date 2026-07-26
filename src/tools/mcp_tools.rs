@@ -77,6 +77,7 @@ pub async fn mcp_call(
             command,
             args,
             env: HashMap::new(),
+            use_legacy_handshake: true,
         };
 
         // ── connect with retry (up to 2 retries = 3 total attempts) ───────

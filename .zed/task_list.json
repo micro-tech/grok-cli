@@ -511,6 +511,133 @@
       "details": "Leverage the existing `execute_task_graph` tool or build a small internal DAG executor.\n\nExample:\n- Node A: LLM generate code\n- Node B: cargo check (parallel with C)\n- Node C: cargo clippy\n- Node D: cargo test (depends on B + C)\n- Decision node after all\n\nKeep the WorkflowTrace recording working across parallel execution.",
       "testStrategy": "Create a workflow that runs check + clippy concurrently. Measure wall time vs sequential. Verify trace still records all steps correctly and decision logic works.",
       "subtasks": []
+    },
+    {
+      "id": 238,
+      "title": "MCP 2026-07-28 Phase 0: Preparatory / Backward-compatible changes",
+      "description": "Prepare the MCP layer for the upcoming stateless 2026-07-28 protocol (handshake removal via SEP-2575, no Mcp-Session-Id via SEP-2567). Do this in a non-breaking way so current 2025-11-25 and older servers continue to work.",
+      "status": "in_progress",
+      "priority": "high",
+      "dependencies": [],
+      "details": "Core implementation complete. cargo check passed cleanly. Need to verify with cargo test + update any callers that construct McpServerConfig manually.",
+      "testStrategy": "Legacy MCP servers (2024-11-05 / 2025-11-25) still connect and work. New code paths for _meta injection exist and are tested. cargo check + existing MCP tests pass.",
+      "subtasks": [
+        {
+          "id": 238.1,
+          "title": "Add optional handshake mode to McpServerConfig / McpClient",
+          "description": "Add a field like `legacy_handshake: bool` (default true for now). Make initialize_handshake() conditional.",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 238.2,
+          "title": "Implement _meta injection helper for client info",
+          "description": "Create a helper that adds `{\"io.modelcontextprotocol/clientInfo\": {...}, \"protocolVersion\": \"...\"}` into _meta on requests when in stateless mode.",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 238.3,
+          "title": "Update MCP_PROTOCOL_VERSION and version negotiation",
+          "description": "Add support for 2025-11-25 + future 2026-07-28. Keep backward compat with 0.1.0 and 2024-xx.",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 238.4,
+          "title": "Add server/discover stub + basic request builders",
+          "description": "Add support for calling/discovering via server/discover when handshake is skipped.",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 238.5,
+          "title": "Refactor client.rs to support both modes cleanly",
+          "description": "Clean separation between legacy handshake path and stateless path. Update list_tools() and call_tool() to optionally attach _meta.",
+          "status": "pending",
+          "dependencies": [
+            "238.1",
+            "238.2"
+          ]
+        }
+      ]
+    },
+    {
+      "id": 239,
+      "title": "MCP 2026-07-28 Phase 1: Full stateless mode (post-spec release)",
+      "description": "Once the 2026-07-28 spec is officially released, switch the default behavior to the new stateless model.",
+      "status": "pending",
+      "priority": "high",
+      "dependencies": [
+        238
+      ],
+      "details": "Major work:\n- Make stateless mode the default (remove or deprecate handshake for new connections).\n- Update all request construction to always include client info in _meta.\n- Handle ttlMs + cacheScope on tools/list and resource results.\n- Update InitializeResult / capability handling (or remove reliance on it).\n- Handle breaking changes: tasks/list removal, deprecation of Roots/Sampling/Logging, error code shifts (e.g. resource not found).\n- Update documentation and comments throughout the MCP layer.",
+      "testStrategy": "New default connections use stateless model. Existing servers that still require handshake can opt-in via config. Full tool discovery and calls work without initialize.",
+      "subtasks": [
+        {
+          "id": 239.1,
+          "title": "Switch default to 2026-07-28 + remove mandatory handshake",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 239.2,
+          "title": "Implement ttlMs / cacheScope support on list results",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 239.3,
+          "title": "Audit and fix breaking protocol changes",
+          "description": "tasks/list removal, Roots/Sampling/Logging deprecation, error code updates, etc.",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 239.4,
+          "title": "Update mcp_call, list_tools, and ACP integration paths",
+          "status": "pending",
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "id": 240,
+      "title": "MCP 2026-07-28 Phase 2: HTTP transport + routable headers (future)",
+      "description": "Implement proper HTTP/Streamable transport for MCP so grok-cli can take advantage of the new stateless + routable design (Mcp-Method, Mcp-Name headers, W3C trace context, no session affinity).",
+      "status": "pending",
+      "priority": "low",
+      "dependencies": [
+        239
+      ],
+      "details": "This is lower priority because current usage is stdio + ACP.\n\nIncludes:\n- Add Http / Streamable HTTP transport variant to McpServerConfig.\n- Implement Mcp-Method + Mcp-Name header generation + validation.\n- Full W3C Trace Context propagation in _meta (traceparent, tracestate, baggage).\n- Proper stateless request handling (no Mcp-Session-Id).\n- Edge caching / ttl support integration.",
+      "testStrategy": "Can connect to an HTTP MCP server using the new 2026 stateless model. Headers are correctly set and round-tripped.",
+      "subtasks": [
+        {
+          "id": 240.1,
+          "title": "Add HTTP transport support to McpClient",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 240.2,
+          "title": "Implement routable headers (Mcp-Method, Mcp-Name, MCP-Protocol-Version)",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 240.3,
+          "title": "Add W3C Trace Context propagation",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 240.4,
+          "title": "Remove / deprecate Mcp-Session-Id handling entirely",
+          "status": "pending",
+          "dependencies": []
+        }
+      ]
     }
   ]
 }

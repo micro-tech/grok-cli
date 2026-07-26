@@ -1567,7 +1567,12 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
                 })
                 .unwrap_or_default();
 
-            let cfg = crate::mcp::config::McpServerConfig::Stdio { command, args, env };
+            let cfg = crate::mcp::config::McpServerConfig::Stdio {
+                command,
+                args,
+                env,
+                use_legacy_handshake: true,
+            };
 
             // Acquire the lock for this server only
             let mcp_client = agent.get_mcp_client();
@@ -1793,7 +1798,12 @@ async fn handle_session_load(params: &Value, agent: &GrokAcpAgent) -> Result<()>
                 })
                 .unwrap_or_default();
 
-            let cfg = crate::mcp::config::McpServerConfig::Stdio { command, args, env };
+            let cfg = crate::mcp::config::McpServerConfig::Stdio {
+                command,
+                args,
+                env,
+                use_legacy_handshake: true,
+            };
             let mcp_client = agent.get_mcp_client();
             let mut client_guard = mcp_client.write().await;
 
