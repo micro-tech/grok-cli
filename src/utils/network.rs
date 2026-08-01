@@ -143,27 +143,6 @@ pub fn analyze_network_error(error: &Error) -> NetworkDropInfo {
     }
 }
 
-/// Check if we're likely on a Starlink connection
-pub async fn detect_starlink_connection() -> bool {
-    // Try to resolve Starlink-specific domains or check for satellite-specific patterns
-    // This is a heuristic approach
-
-    // Check if we can resolve starlink.com (indicates possible Starlink connection)
-    if let Ok(addrs) = tokio::net::lookup_host("starlink.com:80").await
-        && addrs.count() > 0
-    {
-        info!("Starlink domain resolution successful - possible Starlink connection");
-        return true;
-    }
-
-    // Additional heuristics could be added here:
-    // - Check for specific IP ranges
-    // - Analyze latency patterns
-    // - Check for satellite-specific network characteristics
-
-    false
-}
-
 /// Perform a network connectivity test
 pub async fn test_connectivity(timeout: Duration) -> Result<Duration, Error> {
     let start = Instant::now();

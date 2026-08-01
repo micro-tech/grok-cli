@@ -9,10 +9,22 @@ use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
-use std::sync::{Arc, Mutex};
+
 use tracing::{debug, info, warn};
 
 use crate::mcp::config::McpConfig;
+
+pub mod network;
+pub mod security_cfg;
+pub mod ui;
+
+pub use network::NetworkConfig;
+pub use security_cfg::{
+    EnvVarRedactionConfig, ExternalAccessConfig, FolderTrustConfig, SecurityConfig,
+};
+pub use ui::{
+    AccessibilityConfig, CustomTheme, FooterConfig, InteractiveUIConfig, ThemeColors, UiConfig,
+};
 
 /// Reasoning / thinking mode for models that support extended chain-of-thought.
 ///
@@ -430,230 +442,7 @@ pub struct AcpConfig {
     pub commit_message_instructions: String,
 }
 
-/// Network configuration optimized for satellite connections
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NetworkConfig {
-    /// Enable Starlink-specific optimizations
-    pub starlink_optimizations: bool,
 
-    /// Base retry delay in seconds
-    pub base_retry_delay: u64,
-
-    /// Maximum retry delay in seconds
-    pub max_retry_delay: u64,
-
-    /// Enable network health monitoring
-    pub health_monitoring: bool,
-
-    /// Connection timeout in seconds
-    pub connect_timeout: u64,
-
-    /// Read timeout in seconds
-    pub read_timeout: u64,
-}
-
-/// UI and display configuration
-/// UI configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct UiConfig {
-    /// Enable colored output
-    #[serde(default = "default_true")]
-    pub colors: bool,
-
-    /// Enable progress indicators
-    #[serde(default = "default_true")]
-    pub progress_bars: bool,
-
-    /// Show detailed error information
-    #[serde(default)]
-    pub verbose_errors: bool,
-
-    /// Terminal width override (0 = auto-detect)
-    #[serde(default)]
-    pub terminal_width: usize,
-
-    /// Enable Unicode characters
-    #[serde(default = "default_true")]
-    pub unicode: bool,
-
-    /// Color theme for the UI
-    #[serde(default = "default_theme")]
-    pub theme: String,
-
-    /// Custom theme definitions
-    #[serde(default)]
-    pub custom_themes: std::collections::HashMap<String, CustomTheme>,
-
-    /// Hide window title bar
-    #[serde(default)]
-    pub hide_window_title: bool,
-
-    /// Show status information in terminal title
-    #[serde(default)]
-    pub show_status_in_title: bool,
-
-    /// Hide helpful tips in the UI
-    #[serde(default)]
-    pub hide_tips: bool,
-
-    /// Hide startup banner (ASCII art logo)
-    #[serde(default)]
-    pub hide_banner: bool,
-
-    /// Hide context summary above input
-    #[serde(default)]
-    pub hide_context_summary: bool,
-
-    /// Footer configuration
-    #[serde(default)]
-    pub footer: FooterConfig,
-
-    /// Hide the footer from the UI
-    #[serde(default)]
-    pub hide_footer: bool,
-
-    /// Display memory usage information in the UI
-    #[serde(default)]
-    pub show_memory_usage: bool,
-
-    /// Show line numbers in the chat
-    #[serde(default = "default_true")]
-    pub show_line_numbers: bool,
-
-    /// Show citations for generated text in the chat
-    #[serde(default)]
-    pub show_citations: bool,
-
-    /// Show the model name in the chat for each model turn
-    #[serde(default)]
-    pub show_model_info_in_chat: bool,
-
-    /// Use the entire width of the terminal for output
-    #[serde(default = "default_true")]
-    pub use_full_width: bool,
-
-    /// Use an alternate screen buffer for the UI, preserving shell history
-    #[serde(default)]
-    pub use_alternate_buffer: bool,
-
-    /// Enable incremental rendering for the UI
-    #[serde(default)]
-    pub incremental_rendering: bool,
-
-    /// Custom witty phrases to display during loading
-    #[serde(default)]
-    pub custom_witty_phrases: Vec<String>,
-
-    /// Accessibility settings
-    #[serde(default)]
-    pub accessibility: AccessibilityConfig,
-
-    /// Interactive mode configuration
-    #[serde(default)]
-    pub interactive: InteractiveUIConfig,
-}
-
-/// Footer display configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct FooterConfig {
-    /// Hide current working directory in footer
-    #[serde(default)]
-    pub hide_cwd: bool,
-
-    /// Hide sandbox status indicator in footer
-    #[serde(default)]
-    pub hide_sandbox_status: bool,
-
-    /// Hide model information in footer
-    #[serde(default)]
-    pub hide_model_info: bool,
-
-    /// Hide context window percentage in footer
-    #[serde(default = "default_hide_context_percentage")]
-    pub hide_context_percentage: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct CustomTheme {
-    #[serde(default)]
-    pub name: String,
-    #[serde(default)]
-    pub background: ThemeColors,
-    #[serde(default)]
-    pub foreground: ThemeColors,
-    #[serde(default)]
-    pub accent: ThemeColors,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct ThemeColors {
-    #[serde(default)]
-    pub primary: String,
-    #[serde(default)]
-    pub secondary: String,
-    #[serde(default)]
-    pub success: String,
-    #[serde(default)]
-    pub warning: String,
-    #[serde(default)]
-    pub error: String,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct AccessibilityConfig {
-    #[serde(default)]
-    pub disable_loading_phrases: bool,
-    #[serde(default)]
-    pub screen_reader: bool,
-}
-
-/// Interactive mode UI configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct InteractiveUIConfig {
-    /// Prompt style (simple, rich, minimal)
-    #[serde(default = "default_prompt_style")]
-    pub prompt_style: String,
-
-    /// Enable context usage display
-    #[serde(default = "default_true")]
-    pub show_context_usage: bool,
-
-    /// Auto-save sessions
-    #[serde(default)]
-    pub auto_save_sessions: bool,
-
-    /// Check for home directory usage
-    #[serde(default = "default_true")]
-    pub check_directory: bool,
-
-    /// Enable startup animation
-    #[serde(default = "default_true")]
-    pub startup_animation: bool,
-
-    /// Update check frequency in hours (0 = disabled)
-    #[serde(default = "default_update_check_hours")]
-    pub update_check_hours: u64,
-
-    /// Custom key bindings
-    #[serde(default)]
-    pub key_bindings: std::collections::HashMap<String, String>,
-}
-
-fn default_prompt_style() -> String {
-    "rich".to_string()
-}
-
-fn default_true() -> bool {
-    true
-}
-
-fn default_update_check_hours() -> u64 {
-    24
-}
-
-fn default_theme() -> String {
-    "default".to_string()
-}
 
 fn default_model() -> String {
     // Current recommended default.  Update when xAI releases a new flagship.
@@ -679,7 +468,7 @@ fn default_max_retries() -> u32 {
     3
 }
 
-fn default_hide_context_percentage() -> bool {
+fn default_true() -> bool {
     true
 }
 
@@ -817,113 +606,7 @@ pub struct ShellConfig {
     pub command_timeout_secs: u64,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct SecurityConfig {
-    #[serde(default)]
-    pub disable_yolo_mode: bool,
-    #[serde(default)]
-    pub enable_permanent_tool_approval: bool,
-    #[serde(default)]
-    pub block_git_extensions: bool,
-    #[serde(default)]
-    pub folder_trust: FolderTrustConfig,
-    #[serde(default)]
-    pub environment_variable_redaction: EnvVarRedactionConfig,
-    #[serde(default = "default_shell_approval_mode")]
-    pub shell_approval_mode: String,
-    #[serde(default)]
-    pub external_access: ExternalAccessConfig,
-}
 
-fn default_shell_approval_mode() -> String {
-    "default".to_string()
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct FolderTrustConfig {
-    #[serde(default)]
-    pub enabled: bool,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct EnvVarRedactionConfig {
-    #[serde(default)]
-    pub allowed: Vec<String>,
-    #[serde(default)]
-    pub blocked: Vec<String>,
-    #[serde(default)]
-    pub enabled: bool,
-}
-
-/// Configuration for external directory access
-/// Allows read-only access to files outside project boundaries with security controls
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct ExternalAccessConfig {
-    /// Enable external directory access feature (disabled by default)
-    #[serde(default)]
-    pub enabled: bool,
-
-    /// Require user approval for each external file access
-    #[serde(default = "default_require_approval")]
-    pub require_approval: bool,
-
-    /// Log all external access attempts
-    #[serde(default = "default_true_external")]
-    pub logging: bool,
-
-    /// List of allowed external paths (absolute paths only)
-    #[serde(default)]
-    pub allowed_paths: Vec<PathBuf>,
-
-    /// Glob patterns to exclude even within allowed paths
-    /// e.g., "**/.env", "**/.ssh/**", "**/*.key"
-    #[serde(default = "default_excluded_patterns")]
-    pub excluded_patterns: Vec<String>,
-
-    /// Session-only trusted paths (not persisted to config)
-    /// Used for "Trust Always" decisions during a session
-    #[serde(skip)]
-    pub session_trusted_paths: Arc<Mutex<Vec<PathBuf>>>,
-}
-
-fn default_require_approval() -> bool {
-    true
-}
-
-fn default_true_external() -> bool {
-    true
-}
-
-fn default_excluded_patterns() -> Vec<String> {
-    vec![
-        "**/.env".to_string(),
-        "**/.env.*".to_string(),
-        "**/.git/**".to_string(),
-        "**/.ssh/**".to_string(),
-        "**/*.key".to_string(),
-        "**/*.pem".to_string(),
-        "**/*.p12".to_string(),
-        "**/*.pfx".to_string(),
-        "**/id_rsa*".to_string(),
-        "**/password*".to_string(),
-        "**/secret*".to_string(),
-        "**/.aws/**".to_string(),
-        "**/.azure/**".to_string(),
-    ]
-}
-
-impl Default for ExternalAccessConfig {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            require_approval: true,
-            logging: true,
-            allowed_paths: Vec::new(),
-            excluded_patterns: default_excluded_patterns(),
-            session_trusted_paths: Arc::new(Mutex::new(Vec::new())),
-        }
-    }
-}
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ExperimentalConfig {
@@ -1276,60 +959,7 @@ impl Default for AcpConfig {
     }
 }
 
-impl Default for NetworkConfig {
-    fn default() -> Self {
-        Self {
-            starlink_optimizations: true,
-            base_retry_delay: 1,
-            max_retry_delay: 60,
-            health_monitoring: true,
-            connect_timeout: 10,
-            read_timeout: 300,
-        }
-    }
-}
 
-impl Default for UiConfig {
-    fn default() -> Self {
-        Self {
-            colors: true,
-            progress_bars: true,
-            verbose_errors: false,
-            terminal_width: 0, // Auto-detect
-            unicode: true,
-            theme: "default".to_string(),
-            custom_themes: std::collections::HashMap::new(),
-            hide_window_title: false,
-            show_status_in_title: false,
-            hide_tips: false,
-            hide_banner: false,
-            hide_context_summary: false,
-            footer: FooterConfig::default(),
-            hide_footer: false,
-            show_memory_usage: false,
-            show_line_numbers: true,
-            show_citations: false,
-            show_model_info_in_chat: false,
-            use_full_width: true,
-            use_alternate_buffer: false,
-            incremental_rendering: false,
-            custom_witty_phrases: Vec::new(),
-            accessibility: AccessibilityConfig::default(),
-            interactive: InteractiveUIConfig::default(),
-        }
-    }
-}
-
-impl Default for FooterConfig {
-    fn default() -> Self {
-        Self {
-            hide_cwd: false,
-            hide_sandbox_status: false,
-            hide_model_info: false,
-            hide_context_percentage: true,
-        }
-    }
-}
 
 impl Default for SessionRetentionConfig {
     fn default() -> Self {
@@ -1430,31 +1060,6 @@ impl Default for CodebaseInvestigatorConfig {
             max_time_minutes: 15,
             thinking_budget: 1000,
             model: "auto".to_string(),
-        }
-    }
-}
-
-impl Default for CustomTheme {
-    fn default() -> Self {
-        Self {
-            name: "default".to_string(),
-            background: ThemeColors::default(),
-            foreground: ThemeColors::default(),
-            accent: ThemeColors::default(),
-        }
-    }
-}
-
-impl Default for InteractiveUIConfig {
-    fn default() -> Self {
-        Self {
-            prompt_style: "rich".to_string(),
-            show_context_usage: true,
-            auto_save_sessions: false,
-            check_directory: true,
-            startup_animation: true,
-            update_check_hours: 24,
-            key_bindings: std::collections::HashMap::new(),
         }
     }
 }

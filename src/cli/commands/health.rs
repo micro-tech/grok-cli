@@ -17,7 +17,7 @@ use crate::cli::{
     create_spinner, format_error, format_info, format_success, format_warning,
 };
 use crate::utils::client::initialize_client;
-use crate::utils::network::{detect_starlink_connection, test_connectivity};
+use crate::utils::network::test_connectivity;
 
 /// Handle health check commands
 pub async fn handle_health_check(
@@ -92,25 +92,14 @@ pub async fn handle_health_check(
         }
     }
 
-    // Check for Starlink connection
+    // Network type detection removed (COR-1).
+    // The previous heuristic (DNS lookup of starlink.com) was a false-positive generator
+    // that returned true for any working internet connection.
+    // Starlink-specific retry logic in calculate_retry_delay is still available via config
+    // but no longer auto-detected here. Users can still enable starlink_optimizations manually.
     total_checks += 1;
-    let starlink_spinner = create_spinner("Detecting network type...");
-    let is_starlink = detect_starlink_connection().await;
-    starlink_spinner.finish_and_clear();
-
-    if is_starlink {
-        println!("{}", format_info("Detected possible Starlink satellite connection"));
-        if config.network.starlink_optimizations {
-            println!("{}", format_success("Starlink optimizations are enabled"));
-        } else {
-            println!("{}", format_warning("Consider enabling Starlink optimizations"));
-            warnings.push("Enable Starlink optimizations with: grok config set network.starlink_optimizations true".to_string());
-        }
-        checks_passed += 1;
-    } else {
-        println!("{}", format_info("Standard internet connection detected"));
-        checks_passed += 1;
-    }
+    println!("{}", format_info("Network type detection skipped (heuristic removed)"));
+    checks_passed += 1;
 
     // Configuration validation if requested
     if check_config {

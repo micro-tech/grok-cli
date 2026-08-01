@@ -22,6 +22,41 @@ fn effective_timeout(security: &SecurityPolicy) -> u64 {
         .unwrap_or_else(|| security.shell_timeout_secs())
 }
 
+/// Translate a bash-style `&&` chain into PowerShell that respects
+/// "run next only on success".
+///
+/// Example:
+///   "cargo check && cargo test"
+/// becomes (roughly):
+///   "cargo check; if ($LASTEXITCODE -eq 0) { cargo test }"
+///
+/// This is required because PowerShell `;` runs unconditionally,
+/// while bash `&&` short-circuits on failure.
+#[cfg(target_os = "windows")]
+fn translate_powershell_and_chain(cmd: &str) -> String {
+    // Split on the exact " && " sequence the original code used.
+    // This keeps the translation simple and predictable.
+    let parts: Vec<&str> = cmd.split(" && ").collect();
+    if parts.len() <= 1 {
+        return cmd.to_string();
+    }
+
+    let mut result = String::new();
+    for (i, part) in parts.iter().enumerate() {
+        let trimmed = part.trim();
+        if i == 0 {
+            result.push_str(trimmed);
+        } else {
+            // After previous command, only run this one if exit code was 0.
+            result.push_str(&format!(
+                "; if ($LASTEXITCODE -eq 0) {{ {} }}",
+                trimmed
+            ));
+        }
+    }
+    result
+}
+
 /// Run a shell command with a hard execution timeout.
 ///
 /// # Security
@@ -30,8 +65,10 @@ fn effective_timeout(security: &SecurityPolicy) -> u64 {
 /// - The command runs in the session's working directory so it cannot
 ///   accidentally affect files outside the project root.
 /// - On **Windows**, PowerShell is invoked with `-NonInteractive -NoProfile
-///   -ExecutionPolicy Bypass` to prevent profile side-effects and hangs.
-///   Bash-style `&&` chaining is rewritten to PowerShell `;`.
+///   -ExecutionPolicy Bypass`.
+///   Bash-style `&&` (run-next-only-on-success) is correctly translated so
+///   later commands do **not** run if an earlier one fails. We use a
+///   `$LASTEXITCODE` conditional that works on both PowerShell 5.1 and 7+.
 /// - Execution is bounded by [`effective_timeout`]; if the process does not
 ///   finish in time an error is returned (the child is killed by the OS when
 ///   the `Command` future is dropped).
@@ -55,8 +92,11 @@ pub async fn run_shell_command(
     let timeout_duration = Duration::from_secs(timeout_secs);
 
     let spawn_result = if cfg!(target_os = "windows") {
-        // Convert bash-style && to PowerShell-style ; for command chaining.
-        let ps_command = command.replace(" && ", "; ");
+        // Bash-style `&&` means "run next command only if previous succeeded".
+        // PowerShell `;` is unconditional (like `; ` in bash).
+        // We translate `&&` chains into conditional blocks using $LASTEXITCODE.
+        // This works on both Windows PowerShell 5.1 and PowerShell 7+ (pwsh).
+        let ps_command = translate_powershell_and_chain(command);
 
         Command::new("powershell")
             .args([
@@ -146,5 +186,52 @@ mod tests {
         // "rm -rf" is on the denylist; must be rejected before spawning.
         let result = run_shell_command("rm -rf /tmp/should_not_exist", &policy, 0).await;
         assert!(result.is_err(), "dangerous command should be blocked");
+    }
+
+    // ── PowerShell && chaining tests (Windows only) ───────────────────────────
+    //
+    // These verify that `&&` is translated into a conditional that respects
+    // "run next command only if the previous one succeeded".
+    // The naive `replace(" && ", "; ")` would have let the second command run
+    // unconditionally.
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn windows_and_chain_stops_on_failure() {
+        let policy = SecurityPolicy::new();
+        // First part fails (exit 1), second part must NOT execute.
+        let result = run_shell_command(
+            "cmd /c exit 1 && echo SHOULD_NOT_APPEAR_IN_OUTPUT",
+            &policy,
+            0,
+        )
+        .await;
+
+        let out = result.unwrap_or_default();
+        assert!(
+            !out.contains("SHOULD_NOT_APPEAR_IN_OUTPUT"),
+            "second command after && must not run when first fails. Got: {}",
+            out
+        );
+    }
+
+    #[cfg(target_os = "windows")]
+    #[tokio::test]
+    async fn windows_and_chain_runs_second_on_success() {
+        let policy = SecurityPolicy::new();
+        let result = run_shell_command(
+            "cmd /c exit 0 && echo CHAIN_SUCCESS_MARKER",
+            &policy,
+            0,
+        )
+        .await;
+
+        assert!(result.is_ok(), "successful chain should succeed");
+        let out = result.unwrap();
+        assert!(
+            out.contains("CHAIN_SUCCESS_MARKER"),
+            "second command should have run. Got: {}",
+            out
+        );
     }
 }
