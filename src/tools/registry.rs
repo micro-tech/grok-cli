@@ -579,57 +579,27 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
     }
 }
 /// Returns a list of all tool names supported by the registry.
+///
+/// This list is **derived** from `get_full_tool_definitions()` so that
+/// there is only one place that needs to be updated when adding/removing tools.
+/// This is a key step toward the unified registry goal (ARCH-2).
 pub fn get_tool_definitions() -> Vec<&'static str> {
-    vec![
-        "read_file",
-        "read_multiple_files",
-        "list_code_definitions",
-        "write_file",
-        "replace",
-        "list_directory",
-        "glob_search",
-        "search_file_content",
-        "run_shell_command",
-        "web_search",
-        "web_fetch",
-        "save_memory",
-        "sleep",
-        "synthetic_output",
-        "execute_task_graph",
-        "task_get",
-        "task_create",
-        "task_update",
-        "enter_plan_mode",
-        "exit_plan_mode",
-        "enter_worktree",
-        "exit_worktree",
-        "notebook_edit",
-        "execute_skill",
-        "list_skills",
-        "spawn_agent",
-        "send_message",
-        "team_create",
-        "team_delete",
-        "list_agents",
-        "get_agent_status",
-        "cancel_agent",
-        "send_message_in_memory",
-        "receive_messages",
-        "fork_agent",
-        "join_agents",
-        "mcp_call",
-        "mcp_list",
-        "lsp_query",
-        "tool_search",
-        "cron_create",
-        "remote_trigger",
-        "recall_context",
-        "ai_tool",
-        "generate_commit_message",
-        "okf_lookup",
-        "okf_get",
-        "okf_create",
-    ]
+    // We use a static cache to avoid repeatedly walking the JSON on every call.
+    // The list is small and stable.
+    static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
+
+    NAMES.get_or_init(|| {
+        get_full_tool_definitions()
+            .iter()
+            .filter_map(|v| {
+                v.get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(|s| s.to_owned().leak() as &'static str)  // leak is fine for static tool names
+            })
+            .collect()
+    })
+    .clone()
 }
 
 /// Returns full OpenAI-style JSON tool schemas for every registered tool.

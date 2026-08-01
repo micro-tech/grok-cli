@@ -209,36 +209,37 @@ fn read_masked() -> Result<String> {
 
     let result: Result<String> = loop {
         // poll with a short timeout so we don't spin forever
-        if event::poll(Duration::from_millis(200))?
-            && let Event::Key(KeyEvent {
+        if event::poll(Duration::from_millis(200))? {
+            if let Event::Key(KeyEvent {
                 code, modifiers, ..
             }) = event::read()?
-        {
-            match code {
-                // Finish on Enter
-                KeyCode::Enter => {
-                    break Ok(key);
+            {
+                match code {
+                    // Finish on Enter
+                    KeyCode::Enter => {
+                        break Ok(key);
+                    }
+                    // Abort on Ctrl-C / Ctrl-D
+                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        break Err(anyhow!("Setup cancelled (Ctrl-C)."));
+                    }
+                    KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+                        break Err(anyhow!("Setup cancelled (Ctrl-D)."));
+                    }
+                    // Backspace: erase last char
+                    KeyCode::Backspace | KeyCode::Delete if key.pop().is_some() => {
+                        // Move back, overwrite with space, move back again
+                        write!(stdout, "\x08 \x08")?;
+                        stdout.flush()?;
+                    }
+                    // Regular character
+                    KeyCode::Char(c) => {
+                        key.push(c);
+                        write!(stdout, "*")?;
+                        stdout.flush()?;
+                    }
+                    _ => {}
                 }
-                // Abort on Ctrl-C / Ctrl-D
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    break Err(anyhow!("Setup cancelled (Ctrl-C)."));
-                }
-                KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-                    break Err(anyhow!("Setup cancelled (Ctrl-D)."));
-                }
-                // Backspace: erase last char
-                KeyCode::Backspace | KeyCode::Delete if key.pop().is_some() => {
-                    // Move back, overwrite with space, move back again
-                    write!(stdout, "\x08 \x08")?;
-                    stdout.flush()?;
-                }
-                // Regular character
-                KeyCode::Char(c) => {
-                    key.push(c);
-                    write!(stdout, "*")?;
-                    stdout.flush()?;
-                }
-                _ => {}
             }
         }
     };

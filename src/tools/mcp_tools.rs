@@ -77,7 +77,7 @@ pub async fn mcp_call(
             command,
             args,
             env: HashMap::new(),
-            use_legacy_handshake: true,
+            use_legacy_handshake: false,
         };
 
         // ── connect with retry (up to 2 retries = 3 total attempts) ───────
@@ -221,6 +221,60 @@ mod tests {
         assert!(
             msg.contains("blocked") || msg.contains("security"),
             "unexpected error: {msg}"
+        );
+    }
+
+    /// Real-process stateless MCP test.
+    ///
+    /// Spawns the `mcp_test_echo` binary (built from src/bin/mcp_test_echo.rs)
+    /// and exercises it using the **stateless** path (`use_legacy_handshake: false`).
+    ///
+    /// This proves:
+    /// - We can connect without an initialize handshake
+    /// - list_tools works via _meta
+    /// - call_tool works via _meta (the echo tool returns what we sent)
+    #[tokio::test]
+    async fn stateless_mcp_echo_works_with_real_process() {
+        // Build the test server binary if needed (cargo test will handle this for us in most cases).
+        // We just invoke the binary that cargo builds for src/bin/mcp_test_echo.rs.
+        let exe = if cfg!(windows) {
+            "target/debug/mcp_test_echo.exe"
+        } else {
+            "target/debug/mcp_test_echo"
+        };
+
+        // If the binary doesn't exist yet, try to build it quickly.
+        if !std::path::Path::new(exe).exists() {
+            let build_status = std::process::Command::new("cargo")
+                .args(["build", "--bin", "mcp_test_echo"])
+                .status()
+                .expect("failed to run cargo build for test server");
+
+            if !build_status.success() {
+                panic!("Could not build mcp_test_echo test server. Run `cargo build --bin mcp_test_echo` manually.");
+            }
+        }
+
+        let policy = SecurityPolicy::new();
+
+        // Use the raw mcp_call path but point it at our echo server.
+        // Because we set the default to stateless now, this will go through the _meta path.
+        let result = mcp_call(
+            exe,
+            "echo",
+            serde_json::json!({ "message": "hello stateless world" }),
+            &policy,
+        )
+        .await;
+
+        assert!(result.is_ok(), "stateless mcp_call failed: {:?}", result.err());
+
+        let output = result.unwrap();
+        // The echo server returns something like: ECHO: {"message":"hello stateless world"}
+        assert!(
+            output.contains("ECHO") && output.contains("hello stateless world"),
+            "unexpected echo output: {}",
+            output
         );
     }
 }

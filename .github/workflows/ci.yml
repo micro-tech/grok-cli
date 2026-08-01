@@ -8,23 +8,33 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  build_and_test:
+  msrv:
+    name: MSRV (1.85)
     runs-on: ubuntu-latest
-
-    strategy:
-      matrix:
-        toolchain: [stable]
-
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85
+      - run: cargo check
+      - run: cargo test
 
-      - name: Install Rust
-        run: |
-          rustup update ${{ matrix.toolchain }}
-          rustup default ${{ matrix.toolchain }}
+  stable:
+    name: Stable
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo check
+      - run: cargo test
+      - run: cargo clippy -- -D warnings || true   # non-blocking for now
 
-      - name: Build
-        run: cargo build --verbose
+  windows:
+    name: Windows (stable)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - run: cargo check
+      - run: cargo test -- --quiet
 
-      - name: Test
-        run: cargo test --verbose

@@ -53,54 +53,15 @@ pub fn arbitrate_tool_call(name: &str, args: &Value) -> Result<ArbitrationDecisi
     })
 }
 
-/// Minimal known-tool check. Keep in sync with get_tool_definitions / execute_tool.
-fn is_known_tool(name: &str) -> bool {
-    matches!(
-        name,
-        "read_file"
-            | "read_multiple_files"
-            | "list_code_definitions"
-            | "write_file"
-            | "replace"
-            | "list_directory"
-            | "glob_search"
-            | "search_file_content"
-            | "run_shell_command"
-            | "web_search"
-            | "web_fetch"
-            | "save_memory"
-            | "sleep"
-            | "synthetic_output"
-            | "task_get"
-            | "task_create"
-            | "task_update"
-            | "execute_task_graph"
-            | "enter_plan_mode"
-            | "exit_plan_mode"
-            | "enter_worktree"
-            | "exit_worktree"
-            | "notebook_edit"
-            | "execute_skill"
-            | "list_skills"
-            | "spawn_agent"
-            | "send_message"
-            | "team_create"
-            | "team_delete"
-            | "list_agents"
-            | "get_agent_status"
-            | "cancel_agent"
-            | "send_message_in_memory"
-            | "receive_messages"
-            | "fork_agent"
-            | "join_agents"
-            | "mcp_call"
-            | "lsp_query"
-            | "tool_search"
-            | "cron_create"
-            | "remote_trigger"
-            | "recall_context"
-            | "ai_tool"
-    )
+/// Minimal known-tool check.
+///
+/// This now delegates to the single source of truth in `registry::get_tool_definitions()`.
+/// This is a step toward ARCH-2 (unified tool registry).
+/// Long term we should have one static table that drives names, schemas, and dispatch.
+pub(crate) fn is_known_tool(name: &str) -> bool {
+    // Note: this creates a runtime lookup, but the list is small (~50 items)
+    // and called once per tool invocation. Acceptable for now.
+    crate::tools::registry::get_tool_definitions().contains(&name)
 }
 
 /// Return a list of missing required fields for a given tool.

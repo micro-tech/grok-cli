@@ -1,5 +1,5 @@
+use anyhow::{anyhow, Result};
 use colored::*;
-use std::process;
 use tracing::error;
 
 use crate::config::Config;
@@ -12,16 +12,16 @@ pub fn resolve_api_key(cli_key: Option<String>, config: &Config) -> Option<Strin
         .or_else(|| std::env::var("X_API_KEY").ok())
 }
 
-/// Ensures an API key is present, or exits with a helpful error message.
+/// Ensures an API key is present.
 ///
-/// Returns the API key if present.
+/// Returns the API key if present, or an error (caller in main() should handle exit).
 pub fn require_api_key(
     api_key: Option<String>,
     hide_banner: bool,
     show_banner_fn: impl FnOnce(),
-) -> String {
+) -> Result<String> {
     if let Some(key) = api_key {
-        return key;
+        return Ok(key);
     }
 
     // Show welcome banner even without API key if requested
@@ -36,5 +36,6 @@ pub fn require_api_key(
         "GROK_API_KEY".yellow(),
         "--api-key".yellow()
     );
-    process::exit(1);
+
+    Err(anyhow!("No API key provided. Set GROK_API_KEY environment variable or use --api-key option"))
 }

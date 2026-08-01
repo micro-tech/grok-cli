@@ -273,7 +273,7 @@ pub async fn run() -> Result<()> {
             thinking,
             explore,
         }) => {
-            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn);
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
             let thinking_mode = thinking
                 .as_deref()
                 .and_then(ThinkingMode::from_str_ci)
@@ -296,7 +296,7 @@ pub async fn run() -> Result<()> {
             .await?;
         }
         Some(Commands::Code { action }) => {
-            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn);
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
             crate::cli::commands::code::handle_code_action(
                 action.clone(),
                 &api_key,
@@ -311,7 +311,7 @@ pub async fn run() -> Result<()> {
             crate::cli::commands::acp::handle_acp_action(action.clone(), &config).await?;
         }
         Some(Commands::Interactive) => {
-            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn);
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
             let interactive_config = InteractiveConfig {
                 show_banner: !cli.hide_banner,
                 show_tips: true,
@@ -323,7 +323,7 @@ pub async fn run() -> Result<()> {
             start_interactive_mode(&api_key, model, &config, interactive_config).await?;
         }
         Some(Commands::Query { prompt }) => {
-            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn);
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
             let query = prompt.join(" ");
 
             if !cli.hide_banner {
@@ -425,7 +425,7 @@ pub async fn run() -> Result<()> {
             .await?;
         }
         Some(Commands::Sandbox { keep, dir, dry_run }) => {
-            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn);
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
             crate::cli::commands::sandbox::handle_sandbox(
                 *keep,
                 dir.clone(),
@@ -463,7 +463,7 @@ pub async fn run() -> Result<()> {
         }
         None => {
             // Default to interactive mode
-            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn);
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
             let interactive_config = InteractiveConfig {
                 show_banner: !cli.hide_banner,
                 show_tips: true,

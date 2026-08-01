@@ -16,19 +16,19 @@ pub enum McpServerConfig {
         env: HashMap<String, String>,
         /// Whether to perform the legacy `initialize` + `notifications/initialized` handshake.
         /// 
-        /// Set to `false` to use the stateless 2026-07-28+ model where client info
-        /// travels in `_meta` on every request instead of a one-time handshake.
+        /// Set to `true` only for very old MCP servers that still require the handshake.
         /// 
-        /// Default: `true` (for backward compatibility with 2024-11-05 and 2025 servers).
-        #[serde(default = "default_true")]
+        /// Default: `false` — we now use the stateless 2026-07-28+ model
+        /// (client info travels in `_meta` on every request).
+        #[serde(default = "default_false")]
         use_legacy_handshake: bool,
     },
     #[serde(rename = "sse")]
     Sse { url: String },
 }
 
-fn default_true() -> bool {
-    true
+fn default_false() -> bool {
+    false
 }
 
 impl Default for McpServerConfig {
@@ -37,7 +37,7 @@ impl Default for McpServerConfig {
             command: String::new(),
             args: vec![],
             env: HashMap::new(),
-            use_legacy_handshake: true,
+            use_legacy_handshake: false,
         }
     }
 }

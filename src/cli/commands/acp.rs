@@ -1571,7 +1571,7 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
                 command,
                 args,
                 env,
-                use_legacy_handshake: true,
+                use_legacy_handshake: false,
             };
 
             // Acquire the lock for this server only
@@ -1802,7 +1802,7 @@ async fn handle_session_load(params: &Value, agent: &GrokAcpAgent) -> Result<()>
                 command,
                 args,
                 env,
-                use_legacy_handshake: true,
+                use_legacy_handshake: false,
             };
             let mcp_client = agent.get_mcp_client();
             let mut client_guard = mcp_client.write().await;

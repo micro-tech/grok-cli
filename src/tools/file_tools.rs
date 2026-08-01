@@ -101,9 +101,12 @@ pub async fn read_file(path: &str, security: &SecurityPolicy) -> Result<String> 
                         );
                         let _ = logger.log_access(log);
                     }
-                    // NOTE: session-trust mutation requires a mutable policy reference;
-                    // callers that need session-trust should call
-                    // `security.add_session_trusted_path(path)` before invoking this function.
+
+                    // SECURITY FIX (SEC-3): Actually persist the "Trust Always" decision
+                    // for the remainder of this session so future reads of the same path
+                    // do not re-prompt.
+                    security.add_session_trusted_path(path);
+
                     path.clone()
                 }
                 Ok(ApprovalDecision::Deny) => {
@@ -326,9 +329,10 @@ pub async fn write_file(
     match on_before_write_file(&ctx) {
         SafetyDecision::Block(reason) => return Err(anyhow!(reason)),
         SafetyDecision::RequireConfirmation(msg) => {
-            // In a real implementation this would prompt the user.
-            // For now we treat it as a warning but still proceed.
-            tracing::warn!("Safety confirmation required: {}", msg);
+            // SECURITY FIX (SEC-2): Previously this was a no-op (just a warn).
+            // Now we properly block the write until confirmation is implemented.
+            // TODO: Wire up real interactive prompt via ACP/CLI when available.
+            return Err(anyhow!("Safety confirmation required: {}", msg));
         }
         _ => {}
     }
@@ -347,19 +351,11 @@ pub async fn write_file(
         ));
     }
 
-    let path_ref = Path::new(path);
-    let absolute_path = if path_ref.is_absolute() {
-        path_ref.to_path_buf()
-    } else {
-        security.working_directory().join(path_ref)
-    };
-
-    if let Some(parent) = absolute_path.parent() {
-        fs::create_dir_all(parent)
-            .await
-            .map_err(|e| anyhow!("Failed to create directory: {}", e))?;
-    }
-
+    // ── SECURITY FIX (SEC-1): Validate access BEFORE any filesystem mutation ─
+    // We must check permissions *first*. Only after the path is approved do we
+    // create directories or write. This prevents an attacker from forcing
+    // directory creation in unauthorized locations via a path like
+    // "../../outside/project/evil/".
     let access_type = security.validate_path_access(path)?;
 
     let resolved_path = match &access_type {
@@ -377,6 +373,13 @@ pub async fn write_file(
             ));
         }
     };
+
+    // Now that we know the write is allowed, we can safely create parent dirs.
+    if let Some(parent) = resolved_path.parent() {
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|e| anyhow!("Failed to create directory: {}", e))?;
+    }
 
     fs::write(&resolved_path, content)
         .await

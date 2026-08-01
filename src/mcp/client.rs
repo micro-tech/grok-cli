@@ -20,8 +20,8 @@ struct ServerConnection {
     process: Child,
     stdin: Mutex<ChildStdin>,
     reader: Mutex<BufReader<ChildStdout>>,
-    /// If true, the legacy initialize handshake was performed.
-    /// If false, we are in 2026+ stateless mode and must inject client info via _meta.
+    /// If true, we performed the old `initialize` handshake (for very old servers).
+    /// If false (the default), we are in stateless mode: client info goes in `_meta` on every request.
     use_legacy_handshake: bool,
 }
 
