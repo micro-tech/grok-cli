@@ -55,134 +55,23 @@ pub fn arbitrate_tool_call(name: &str, args: &Value) -> Result<ArbitrationDecisi
 
 /// Minimal known-tool check.
 ///
-/// This now delegates to the single source of truth in `registry::get_tool_definitions()`.
-/// This is a step toward ARCH-2 (unified tool registry).
-/// Long term we should have one static table that drives names, schemas, and dispatch.
+/// Delegates to the single source of truth in `registry::get_tool_definitions()`.
+/// This is part of ARCH-2 (unified tool registry).
 pub(crate) fn is_known_tool(name: &str) -> bool {
-    // Note: this creates a runtime lookup, but the list is small (~50 items)
-    // and called once per tool invocation. Acceptable for now.
     crate::tools::registry::get_tool_definitions().contains(&name)
 }
 
 /// Return a list of missing required fields for a given tool.
+///
+/// Now driven **entirely** from the JSON schemas in registry (via `get_required_parameters`).
+/// This removes the duplicated per-tool match (ARCH-2 progress).
 fn missing_required_fields(name: &str, args: &Value) -> Vec<String> {
-    let mut missing = Vec::new();
+    let required = crate::tools::registry::get_required_parameters(name);
 
-    let require = |field: &str, args: &Value, missing: &mut Vec<String>| {
-        if args.get(field).is_none() || args[field].is_null() {
-            missing.push(field.to_string());
-        }
-    };
-
-    match name {
-        "read_file" => {
-            require("path", args, &mut missing);
-        }
-        "read_multiple_files" => {
-            require("paths", args, &mut missing);
-        }
-        "list_code_definitions" => {
-            require("path", args, &mut missing);
-        }
-        "write_file" => {
-            require("path", args, &mut missing);
-            require("content", args, &mut missing);
-        }
-        "replace" => {
-            require("path", args, &mut missing);
-            require("old_string", args, &mut missing);
-            require("new_string", args, &mut missing);
-        }
-        "list_directory" => {
-            require("path", args, &mut missing);
-        }
-        "glob_search" => {
-            require("pattern", args, &mut missing);
-        }
-        "search_file_content" => {
-            require("path", args, &mut missing);
-            require("pattern", args, &mut missing);
-        }
-        "run_shell_command" => {
-            require("command", args, &mut missing);
-        }
-        "web_search" => {
-            require("query", args, &mut missing);
-        }
-        "web_fetch" => {
-            require("url", args, &mut missing);
-        }
-        "save_memory" => {
-            require("fact", args, &mut missing);
-        }
-        "sleep" => {
-            require("seconds", args, &mut missing);
-        }
-        "synthetic_output" => {
-            require("schema_name", args, &mut missing);
-            require("data", args, &mut missing);
-        }
-        "task_get" => {
-            require("id", args, &mut missing);
-        }
-        "task_create" => {
-            require("title", args, &mut missing);
-        }
-        "task_update" => {
-            require("id", args, &mut missing);
-        }
-        "execute_task_graph" => {
-            require("graph", args, &mut missing);
-        }
-        "enter_worktree" => {
-            require("branch", args, &mut missing);
-            require("path", args, &mut missing);
-        }
-        "notebook_edit" => {
-            require("path", args, &mut missing);
-            require("source", args, &mut missing);
-        }
-        "execute_skill" => {
-            require("skill_name", args, &mut missing);
-        }
-        "spawn_agent" => {
-            require("task", args, &mut missing);
-        }
-        "send_message" => {
-            require("target", args, &mut missing);
-            require("message", args, &mut missing);
-        }
-        "team_create" => {
-            require("name", args, &mut missing);
-        }
-        "team_delete" => {
-            require("name", args, &mut missing);
-        }
-        "mcp_call" => {
-            require("server_command", args, &mut missing);
-            require("tool_name", args, &mut missing);
-        }
-        "lsp_query" => {
-            require("file", args, &mut missing);
-        }
-        "tool_search" => {
-            require("query", args, &mut missing);
-        }
-        "cron_create" => {
-            require("name", args, &mut missing);
-            require("schedule", args, &mut missing);
-            require("task", args, &mut missing);
-        }
-        "remote_trigger" => {
-            require("endpoint", args, &mut missing);
-        }
-        "recall_context" => {
-            require("chunk_id", args, &mut missing);
-        }
-        _ => {}
-    }
-
-    missing
+    required
+        .into_iter()
+        .filter(|field| args.get(field).is_none() || args[field].is_null())
+        .collect()
 }
 
 /// Hook for argument normalization / correction.

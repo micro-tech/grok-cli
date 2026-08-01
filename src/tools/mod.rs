@@ -64,7 +64,8 @@ pub mod image;
 // ── Core re-exports ───────────────────────────────────────────────────────────
 
 pub use registry::{
-    execute_tool, get_available_tool_definitions, get_full_tool_definitions, get_tool_definitions,
+    execute_tool, get_available_tool_definitions, get_full_tool_definitions, get_required_parameters,
+    get_tool_definitions,
 };
 pub use tool_context::ToolContext;
 pub use tool_error::ToolError;

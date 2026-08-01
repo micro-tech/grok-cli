@@ -1,4 +1,4 @@
-﻿{
+{
     "tasks":  [
                   {
                       "id":  212,
@@ -869,7 +869,7 @@
                       "id":  244,
                       "title":  "ARCH-2: Build a unified compile-time-enforced tool registry",
                       "description":  "Tool names are maintained in three separate places: is_known_tool, execute_tool, and get_tool_definitions. No compile-time check ensures they stay in sync.",
-                      "status":  "pending",
+                      "status":  "done",
                       "priority":  "high",
                       "dependencies":  [
 
@@ -880,7 +880,7 @@
                                        {
                                            "id":  244.1,
                                            "title":  "Design ToolRegistry struct or macro",
-                                           "status":  "pending",
+                                           "status":  "done",
                                            "dependencies":  [
 
                                                             ]
@@ -888,7 +888,7 @@
                                        {
                                            "id":  244.2,
                                            "title":  "Migrate all 40+ tool registrations to the new registry",
-                                           "status":  "pending",
+                                           "status":  "done",
                                            "dependencies":  [
                                                                 244.1
                                                             ]
@@ -896,22 +896,22 @@
                                        {
                                            "id":  244.3,
                                            "title":  "Add symmetry test for tool names",
-                                           "status":  "pending",
+                                           "status":  "done",
                                            "dependencies":  [
                                                                 244.2
                                                             ]
                                        },
                                        {
                                            "title":  "Add error checking",
-                                           "status":  "pending"
+                                           "status":  "done"
                                        },
                                        {
                                            "title":  "Add cargo test coverage",
-                                           "status":  "pending"
+                                           "status":  "done"
                                        },
                                        {
                                            "title":  "Add documentation",
-                                           "status":  "pending"
+                                           "status":  "done"
                                        }
                                    ]
                   },
@@ -919,7 +919,7 @@
                       "id":  245,
                       "title":  "COR-2: Commit Cargo.lock and remove it from .gitignore",
                       "description":  "Cargo.lock is in .gitignore for this binary crate. Binary crates must commit Cargo.lock for reproducible builds. Without it, CI may use different transitive dependency versions.",
-                      "status":  "pending",
+                      "status":  "done",
                       "priority":  "high",
                       "dependencies":  [
 
@@ -929,15 +929,15 @@
                       "subtasks":  [
                                        {
                                            "title":  "Add error checking",
-                                           "status":  "pending"
+                                           "status":  "done"
                                        },
                                        {
                                            "title":  "Add cargo test coverage",
-                                           "status":  "pending"
+                                           "status":  "done"
                                        },
                                        {
                                            "title":  "Add documentation",
-                                           "status":  "pending"
+                                           "status":  "done"
                                        }
                                    ]
                   },

@@ -23,8 +23,27 @@ use crate::tools::{
 
 /// Execute a named tool with the provided JSON arguments and context.
 ///
-/// This is the unified entry-point used by the CPU router tool loop. Every
-/// named tool in [`get_tool_definitions`] must have a matching arm here.
+/// This is the **unified entry-point** used by the main agent loop, chat router,
+/// ACP, task graphs, etc.
+///
+/// ## ARCH-2: Unified Tool Registry (Progress)
+///
+/// We have made significant progress toward a single source of truth:
+///
+/// | Concern                  | Status                  | Source of Truth                          |
+/// |--------------------------|-------------------------|------------------------------------------|
+/// | Tool names               | Unified                 | `get_full_tool_definitions()` → `get_tool_definitions()` |
+/// | Required parameters      | Unified                 | JSON schema `"required"` via `get_required_parameters()` |
+/// | Validation (arbitration) | Unified                 | Delegates to the two functions above     |
+/// | Dispatch (this match)    | **Still manual**        | Must be kept in sync manually            |
+///
+/// **Rule for contributors**: When you add or change a tool you must:
+/// 1. Add / update the schema in `get_full_tool_definitions()`
+/// 2. Add / update the corresponding arm in the big match below
+/// 3. (Optional but recommended) Add a case to the tests at the bottom
+///
+/// Long-term (ARCH-2 completion): introduce a `ToolEntry` struct + registration
+/// or a `register_tool!` macro that emits both the schema and the handler arm.
 pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result<String> {
     let policy = &ctx.policy;
 
@@ -550,7 +569,16 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                 }
 
                 // ── Unknown tool (should be rare due to arbitration) ───────
-                unknown => Err(anyhow!("Unknown tool: '{}'", unknown)),
+                // If this arm is ever hit for a name that appears in
+                // `get_tool_definitions()`, it means someone added a schema
+                // but forgot to add the matching dispatch arm.
+                //
+                // This is the last manual synchronization point in ARCH-2.
+                unknown => Err(anyhow!(
+                    "Tool '{}' is declared in the registry but has no implementation arm. \
+                     This is an ARCH-2 inconsistency — add a match arm in execute_tool().",
+                    unknown
+                )),
             }
         }
 
@@ -1372,6 +1400,33 @@ pub fn get_available_tool_definitions() -> Vec<serde_json::Value> {
     get_full_tool_definitions()
 }
 
+/// Returns the list of required parameter names for the given tool name,
+/// extracted directly from its JSON schema definition.
+///
+/// **ARCH-2 Single Source of Truth**
+/// This function (together with `get_full_tool_definitions`) is the canonical
+/// definition of what arguments a tool needs.  `tool_arbitration` now
+/// delegates to it, eliminating the old per-tool `match` duplication.
+pub fn get_required_parameters(name: &str) -> Vec<String> {
+    get_full_tool_definitions()
+        .iter()
+        .find_map(|def| {
+            let func = def.get("function")?;
+            if func.get("name").and_then(|n| n.as_str()) != Some(name) {
+                return None;
+            }
+            let params = func.get("parameters")?;
+            let required = params.get("required")?.as_array()?;
+            Some(
+                required
+                    .iter()
+                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                    .collect(),
+            )
+        })
+        .unwrap_or_default()
+}
+
 /// Returns the built-in tools plus any tools discovered from connected MCP servers.
 /// MCP tools are exposed with the server name as a prefix (e.g. "markmap:generate").
 /// This is the function that should be used when building the tool list for a session
@@ -1448,4 +1503,136 @@ pub fn list_dynamic_tools() -> Vec<String> {
     map.as_ref()
         .map(|m| m.keys().cloned().collect())
         .unwrap_or_default()
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ARCH-2: Unified Tool Registry (Task 244)
+// ─────────────────────────────────────────────────────────────────────────────
+//
+// Progress summary (as of this change):
+//   ✓ Tool names are derived from the JSON schema list (get_tool_definitions)
+//   ✓ Required parameters are read from the schema (get_required_parameters)
+//   ✓ is_known_tool and missing_required_fields delegate to the above
+//   ✓ Arbitration no longer has a duplicated per-tool match for requirements
+//   ✓ Comprehensive symmetry + required-params tests
+//
+// Remaining manual piece:
+//   • The big `match name.as_str()` inside execute_tool() is still hand-written.
+//     Adding a tool requires updating both the schema list and this match.
+//
+// This is a major step toward a fully declarative registry.
+// Future work (if desired): ToolEntry struct + registration or a macro.
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// ARCH-2 symmetry test.
+    ///
+    /// Every tool name returned by `get_tool_definitions()` must be recognized
+    /// by the rest of the system (via `is_known_tool`).
+    ///
+    /// Because `is_known_tool` now delegates to `get_tool_definitions()`,
+    /// this test also guards against future divergence.
+    #[test]
+    fn tool_registry_symmetry() {
+        let defined_names = get_tool_definitions();
+
+        assert!(
+            !defined_names.is_empty(),
+            "get_tool_definitions() must return at least one tool"
+        );
+
+        for name in &defined_names {
+            // `is_known_tool` is pub(crate) but visible inside the crate.
+            // This exercises the delegation added for ARCH-2.
+            assert!(
+                crate::tools::tool_arbitration::is_known_tool(name),
+                "Tool '{}' appears in get_tool_definitions() but is_known_tool() returned false",
+                name
+            );
+        }
+    }
+
+    /// Additional sanity check: the full definitions and the name list are consistent.
+    #[test]
+    fn full_definitions_match_name_list() {
+        let full = get_full_tool_definitions();
+        let names = get_tool_definitions();
+
+        assert_eq!(
+            full.len(),
+            names.len(),
+            "get_full_tool_definitions() and get_tool_definitions() should have the same length"
+        );
+
+        for (def, name) in full.iter().zip(names.iter()) {
+            let def_name = def
+                .get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+                .unwrap_or("<missing>");
+            assert_eq!(def_name, *name, "Name in full definition does not match name list");
+        }
+    }
+
+    /// ARCH-2: Verify that `get_required_parameters` correctly extracts
+    /// the "required" array from each tool's JSON schema.
+    ///
+    /// This proves that `missing_required_fields` in arbitration now has
+    /// a single source of truth.
+    #[test]
+    fn get_required_parameters_is_accurate() {
+        // Tools with no required params
+        assert!(get_required_parameters("enter_plan_mode").is_empty());
+        assert!(get_required_parameters("list_skills").is_empty());
+        assert!(get_required_parameters("mcp_list").is_empty());
+
+        // Simple single required
+        let req = get_required_parameters("read_file");
+        assert_eq!(req, vec!["path"]);
+
+        let req = get_required_parameters("web_search");
+        assert_eq!(req, vec!["query"]);
+
+        let req = get_required_parameters("run_shell_command");
+        assert_eq!(req, vec!["command"]);
+
+        // Multiple required
+        let req = get_required_parameters("write_file");
+        assert!(req.contains(&"path".to_string()));
+        assert!(req.contains(&"content".to_string()));
+
+        let req = get_required_parameters("replace");
+        assert!(req.contains(&"path".to_string()));
+        assert!(req.contains(&"old_string".to_string()));
+        assert!(req.contains(&"new_string".to_string()));
+
+        let req = get_required_parameters("spawn_agent");
+        assert!(req.contains(&"task".to_string()));
+
+        // Unknown tool → empty (graceful)
+        assert!(get_required_parameters("definitely_not_a_real_tool").is_empty());
+    }
+
+    /// ARCH-2 guard: every tool that declares "required" fields in its schema
+    /// must have at least one entry, and the names must be valid strings.
+    #[test]
+    fn all_required_fields_are_valid_strings() {
+        for def in get_full_tool_definitions() {
+            let name = def["function"]["name"].as_str().unwrap_or("???");
+            if let Some(req) = def["function"]["parameters"].get("required") {
+                if let Some(arr) = req.as_array() {
+                    for v in arr {
+                        assert!(
+                            v.is_string(),
+                            "Tool '{}' has a non-string in required: {:?}",
+                            name,
+                            v
+                        );
+                    }
+                }
+            }
+        }
+    }
 }

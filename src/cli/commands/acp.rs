@@ -1169,7 +1169,7 @@ async fn handle_extension_dispatch(
         Dispatch::Notification(_) => Ok(()),
         Dispatch::Response(result, router) => {
             router
-                .respond_with_result(result)
+                .route_with_result(result)
                 .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
             Ok(())
         }
