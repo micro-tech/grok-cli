@@ -141,13 +141,13 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                     let query = args["query"]
                         .as_str()
                         .ok_or_else(|| anyhow!("Missing: query"))?;
-                    web_tools::web_search(query).await
+                    web_tools::web_search(query, ctx).await
                 }
                 "web_fetch" => {
                     let url = args["url"]
                         .as_str()
                         .ok_or_else(|| anyhow!("Missing: url"))?;
-                    web_tools::web_fetch(url).await
+                    web_tools::web_fetch(url, ctx).await
                 }
 
                 // ── Memory ──────────────────────────────────────────────────

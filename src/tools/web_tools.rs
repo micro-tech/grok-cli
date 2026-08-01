@@ -8,6 +8,8 @@ use once_cell::sync::Lazy;
 use regex::Regex;
 use tracing::warn;
 
+use crate::tools::ToolContext;
+
 // ── Compiled regex patterns (compiled once) ───────────────────────────────────
 
 static RE_SEARCH_RESULT: Lazy<Regex> = Lazy::new(|| {
@@ -22,6 +24,33 @@ static RE_SEARCH_SIMPLE: Lazy<Regex> = Lazy::new(|| {
 
 static RE_STRIP_TAGS: Lazy<Regex> =
     Lazy::new(|| Regex::new(r"<[^>]*>").expect("BUG: invalid static RE_STRIP_TAGS pattern"));
+
+// ── Shared HTTP client (connection pooling + single initialization) ───────────
+
+/// Shared reqwest client used by all web tools.
+///
+/// Created once via `once_cell::Lazy`. Provides connection reuse, keep-alive,
+/// and avoids the cost of new TCP/TLS handshakes on every request.
+/// Configured with a 30s timeout and a reasonable user-agent.
+static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+    #[cfg(test)]
+    CLIENT_CREATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+
+    reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(30))
+        .user_agent(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
+             AppleWebKit/537.36 (KHTML, like Gecko) \
+             Chrome/124.0.0.0 Safari/537.36 (grok-cli/0.2)",
+        )
+        .build()
+        .expect("Failed to build shared HTTP client")
+});
+
+/// Test-only counter to verify the shared client is initialized exactly once.
+#[cfg(test)]
+pub static CLIENT_CREATION_COUNT: std::sync::atomic::AtomicUsize =
+    std::sync::atomic::AtomicUsize::new(0);
 
 // ── Public helpers ────────────────────────────────────────────────────────────
 
@@ -43,7 +72,7 @@ pub fn is_web_search_configured() -> bool {
 /// Retries up to 3 times on transient network errors (satellite handover,
 /// timeout, connection reset) with exponential back-off before surfacing an
 /// error to the caller.
-pub async fn web_search(query: &str) -> Result<String> {
+pub async fn web_search(query: &str, _ctx: &ToolContext) -> Result<String> {
     let query = query.trim();
     if query.is_empty() {
         return Err(anyhow::anyhow!("web_search: query must not be empty"));
@@ -83,17 +112,11 @@ pub async fn web_search(query: &str) -> Result<String> {
 /// Returns an error with a human-readable diagnosis if the request fails,
 /// including hints about network connectivity, invalid URLs, and
 /// firewall / proxy issues.
-pub async fn web_fetch(url: &str) -> Result<String> {
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
-
+pub async fn web_fetch(url: &str, _ctx: &ToolContext) -> Result<String> {
     const MAX_RETRIES: u32 = 3;
     for attempt in 0..=MAX_RETRIES {
-        let send_result = client
+        let send_result = HTTP_CLIENT
             .get(url)
-            .header("User-Agent", "grok-cli/0.1.0")
             .send()
             .await
             .map_err(|e| {
@@ -162,22 +185,12 @@ pub async fn web_fetch(url: &str) -> Result<String> {
 // ── Private implementation ────────────────────────────────────────────────────
 
 async fn duckduckgo_search(query: &str) -> Result<String> {
-    let client = reqwest::Client::builder()
-        .user_agent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-             AppleWebKit/537.36 (KHTML, like Gecko) \
-             Chrome/58.0.3029.110 Safari/537.36",
-        )
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| anyhow!("Failed to build HTTP client: {}", e))?;
-
     let url = format!(
         "https://html.duckduckgo.com/html/?q={}",
         urlencoding::encode(query)
     );
 
-    let response = client
+    let response = HTTP_CLIENT
         .get(&url)
         .send()
         .await
@@ -249,28 +262,56 @@ mod tests {
     #[test]
     fn web_search_empty_query_returns_error() {
         let rt = tokio::runtime::Runtime::new().unwrap();
-        let r = rt.block_on(web_search("   "));
+        let ctx = ToolContext::default_for_cwd();
+        let r = rt.block_on(web_search("   ", &ctx));
         assert!(r.is_err());
         assert!(r.unwrap_err().to_string().contains("must not be empty"));
     }
 
     #[tokio::test]
     async fn web_fetch_invalid_url_returns_error() {
-        let result = web_fetch("not-a-valid-url").await;
+        let ctx = ToolContext::default_for_cwd();
+        let result = web_fetch("not-a-valid-url", &ctx).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn web_fetch_timeout_on_unreachable() {
         // This test just verifies we return an error — not a panic/hang.
-        let result = web_fetch("http://192.0.2.1/timeout-test").await;
+        let ctx = ToolContext::default_for_cwd();
+        let result = web_fetch("http://192.0.2.1/timeout-test", &ctx).await;
         assert!(result.is_err());
     }
 
     #[tokio::test]
     async fn web_search_returns_result_or_no_results() {
         // Does NOT assert on specific content — just ensures no panic.
-        let result = web_search("rust programming language").await;
+        let ctx = ToolContext::default_for_cwd();
+        let result = web_search("rust programming language", &ctx).await;
         assert!(result.is_ok() || result.is_err());
+    }
+
+    #[test]
+    fn shared_http_client_constructed_only_once() {
+        // Measure the creation count before forcing initialization
+        let count_before = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+
+        // Force the Lazy to initialize (this should increment the counter exactly once)
+        let _ = &*HTTP_CLIENT;
+
+        let count_after_first = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+
+        // Second access must not create a new client
+        let _ = &*HTTP_CLIENT;
+        let count_after_second = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+
+        assert!(
+            count_after_first > count_before,
+            "HTTP client should have been constructed on first access"
+        );
+        assert_eq!(
+            count_after_first, count_after_second,
+            "Subsequent accesses to the shared client must not construct a new instance"
+        );
     }
 }

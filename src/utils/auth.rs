@@ -39,3 +39,24 @@ pub fn require_api_key(
 
     Err(anyhow!("No API key provided. Set GROK_API_KEY environment variable or use --api-key option"))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn require_api_key_returns_err_when_no_key() {
+        // hide_banner=true so the closure is not invoked
+        let result = require_api_key(None, true, || {});
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(err.to_string().contains("No API key provided"));
+    }
+
+    #[test]
+    fn require_api_key_returns_ok_when_key_present() {
+        let result = require_api_key(Some("test-key-123".to_string()), true, || {});
+        assert!(result.is_ok());
+        assert_eq!(result.unwrap(), "test-key-123");
+    }
+}

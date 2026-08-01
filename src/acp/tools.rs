@@ -217,7 +217,8 @@ mod tests {
             std::env::remove_var("GOOGLE_CX");
         }
 
-        let result = web_search("test query").await;
+        let ctx = ToolContext::default_for_cwd();
+        let result = web_search("test query", &ctx).await;
         if let Err(e) = result {
             let error_msg = e.to_string();
             assert!(!error_msg.contains("GOOGLE_API_KEY"));
@@ -227,7 +228,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_web_fetch_invalid_url() {
-        let result = web_fetch("not-a-valid-url").await;
+        let ctx = ToolContext::default_for_cwd();
+        let result = web_fetch("not-a-valid-url", &ctx).await;
         assert!(result.is_err());
         let error_msg = result.unwrap_err().to_string();
         assert!(error_msg.contains("Failed to fetch") || error_msg.contains("invalid"));
@@ -235,7 +237,8 @@ mod tests {
 
     #[tokio::test]
     async fn test_web_fetch_timeout() {
-        let result = web_fetch("http://10.255.255.1").await;
+        let ctx = ToolContext::default_for_cwd();
+        let result = web_fetch("http://10.255.255.1", &ctx).await;
         assert!(result.is_err());
     }
 
