@@ -289,25 +289,26 @@ mod tests {
 
     #[test]
     fn shared_http_client_constructed_only_once() {
-        // Measure the creation count before forcing initialization
-        let count_before = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::SeqCst);
-
-        // Force the Lazy to initialize (this should increment the counter exactly once)
+        // Force initialization (other tests may have already touched HTTP_CLIENT
+        // because it's a process-wide static Lazy, so we only assert that
+        // repeated access does not increment the counter further).
         let _ = &*HTTP_CLIENT;
-
         let count_after_first = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::SeqCst);
 
-        // Second access must not create a new client
+        // Second and third access must not create additional clients
         let _ = &*HTTP_CLIENT;
         let count_after_second = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::SeqCst);
 
-        assert!(
-            count_after_first > count_before,
-            "HTTP client should have been constructed on first access"
-        );
+        let _ = &*HTTP_CLIENT;
+        let count_after_third = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+
         assert_eq!(
             count_after_first, count_after_second,
-            "Subsequent accesses to the shared client must not construct a new instance"
+            "Second access must not construct a new HTTP client"
+        );
+        assert_eq!(
+            count_after_second, count_after_third,
+            "Third access must not construct a new HTTP client"
         );
     }
 }

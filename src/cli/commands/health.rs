@@ -486,7 +486,7 @@ mod tests {
     #[tokio::test]
     async fn test_performance_diagnostics() {
         let config = Config::default();
-        let result = run_performance_diagnostics(&config).await;
+        let _result = run_performance_diagnostics(&config).await;
         // This test might fail if config loading fails, but that's expected
         // in a test environment without proper setup
     }

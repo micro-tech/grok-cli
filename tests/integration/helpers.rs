@@ -18,16 +18,19 @@ use tempfile::TempDir;
 
 /// Create a [`SecurityPolicy`] rooted at the temp dir so all path operations
 /// stay within the isolated sandbox.
+#[allow(dead_code)]
 pub fn make_security(dir: &TempDir) -> SecurityPolicy {
     SecurityPolicy::with_working_directory(dir.path().to_path_buf())
 }
 
 /// Alias of [`make_security`] — preferred name in file-tools tests.
+#[allow(dead_code)]
 pub fn make_policy(dir: &TempDir) -> SecurityPolicy {
     make_security(dir)
 }
 
 /// Create a [`ToolContext`] rooted at the temp dir.
+#[allow(dead_code)]
 pub fn make_ctx(dir: &TempDir) -> ToolContext {
     ToolContext::new(make_security(dir))
 }

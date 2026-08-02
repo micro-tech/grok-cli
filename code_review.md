@@ -1,8 +1,8 @@
 # Grok-CLI Code Review
 
 **Reviewer:** Grumpy Old Rust Expert  
-**Date:** 2026-07-30  
-**Version reviewed:** 0.2.5-PreRelease  
+**Date:** 2026-07-30 (updated)  
+**Version reviewed:** current (post 249/251/257/258 + SEC-1/3/9 fixes)  
 **Scope:** Full codebase — security, correctness, performance, architecture, readability
 
 ---
@@ -20,280 +20,98 @@
 | 🟠 | High — fix soon |
 | 🟡 | Medium — should fix |
 | 🔵 | Low / Style — nice to have |
-| ✅ | Good — noting it as a positive |
+| ✅ | Good / Previously fixed — noting progress |
 
 ---
 
 ## 1. SECURITY
 
-### 🔴 SEC-1 — `write_file` creates directories before path validation
+### ✅ SEC-1 — `write_file` creates directories before path validation (FIXED)
 
-**File:** `src/tools/file_tools.rs` L357–383
+**File:** `src/tools/file_tools.rs`
 
-```rust
-// Creates the directory FIRST ...
-if let Some(parent) = absolute_path.parent() {
-    fs::create_dir_all(parent).await ...
-}
-// ... then validates access AFTER
-let access_type = security.validate_path_access(path)?;
-```
+`validate_path_access` is now called **before** `fs::create_dir_all`. Directory creation only happens for resolved/approved paths. Good.
 
-The directory is created in an unauthorized location BEFORE the security check runs.
-An attacker-supplied path like `../../outside/project/malicious/` would get the directory
-created even if the subsequent security check denies the write. **Flip the order: validate
-first, create directory only if the path passes.**
+### ✅ SEC-2 — `RequireConfirmation` handling (PARTIALLY FIXED)
 
----
+**File:** `src/tools/file_tools.rs`
 
-### 🔴 SEC-2 — `RequireConfirmation` silently proceeds in `write_file`
+- `write_file`: now correctly returns `Err("Safety confirmation required: ...")`.
+- `replace`: still only does `tracing::warn!` and continues.
 
-**File:** `src/tools/file_tools.rs` L328–333
+**Remaining issue:** Inconsistent enforcement between write and replace.
 
-```rust
-SafetyDecision::RequireConfirmation(msg) => {
-    // "For now we treat it as a warning but still proceed."
-    tracing::warn!("Safety confirmation required: {}", msg);
-}
-```
+### ✅ SEC-3 — `TrustAlways` decision (FIXED)
 
-The `on_before_write_file` hook explicitly returns `RequireConfirmation` for DELETE operations.
-The caller then ignores this and writes anyway. A confirmation guard that never blocks is not
-a safety guard. Either wire up real confirmation logic or document it clearly as unimplemented
-and gate it behind a feature flag. **As-is, the safety subsystem is theater.**
+**File:** `src/tools/file_tools.rs:111`
 
----
-
-### 🔴 SEC-3 — `TrustAlways` decision is silently dropped in `read_file`
-
-**File:** `src/tools/file_tools.rs` L86–107
-
-```rust
-Ok(ApprovalDecision::TrustAlways) => {
-    // NOTE: session-trust mutation requires a mutable policy reference...
-    // callers that need session-trust should call ...
-    path.clone()
-}
-```
-
-The user clicked "Trust Always." The code acknowledges it in a comment but does nothing.
-The next `read_file` call on the same path will prompt again. Users are being lied to by
-their own tool. **Fix this or remove the `TrustAlways` option entirely.**
-
----
+Now properly calls `security.add_session_trusted_path(path)`. Future reads in the same session no longer re-prompt.
 
 ### 🟠 SEC-4 — `process::exit(1)` in a library function
 
-**File:** `src/utils/auth.rs` L39
+**File:** `src/utils/auth.rs`
 
-```rust
-pub fn require_api_key(...) -> String {
-    ...
-    process::exit(1);
-}
-```
-
-Library code must **never** call `process::exit`. It bypasses all Drop implementations,
-prevents async runtimes from flushing, skips any registered panic/signal handlers, and
-makes the function un-testable. Return `Result<String, anyhow::Error>` and let `main`
-decide how to exit. The current design also means the function signature lies — it claims
-to return `String` but may never return at all.
-
----
+Still present. Library code must never call `process::exit`.
 
 ### 🟠 SEC-5 — `session_dna.json` at the project root
 
-**File:** `src/session/dna.rs` L39
+Still at repo root. Should live under `.grok/`.
 
-```rust
-let local = std::path::Path::new("session_dna.json");
-```
+### ✅ SEC-6 / SEC-7 — Audit logger tests & construction side-effects (FIXED)
 
-Behavioral configuration (tone, risk tolerance, tool preferences) lives in the project root
-by default. This file can be accidentally committed to version control and exposes session
-behavior to anyone who forks the repo. Use `.grok/session_dna.json` as the project-level
-path, or at minimum add `session_dna.json` to `.gitignore`.
+All tests use `temp_logger()` + `TempDir`. Directory creation is deferred until first actual write when enabled. `new(false)` creates nothing.
 
----
+### ✅ SEC-8 — Session ID for audit (FIXED)
 
-### 🟡 SEC-6 — Audit logger tests hit the real audit log directory
+`ToolContext.session_id` is now propagated and used consistently instead of a fresh UUID per call.
 
-**File:** `src/security/audit.rs` L364–496
+### ✅ SEC-9 — `replace()` had weaker security than `write_file` (FIXED)
 
-Every `#[test]` function creates `AuditLogger::new(true)` which writes to
-`%LOCALAPPDATA%\.grok\audit\external_access.jsonl` — the **real** log file on the
-developer's machine. Tests should use `tempfile::TempDir` and inject the path. The
-`test_get_statistics` test even calls `clear_logs()` to reset state, which would wipe
-a developer's real audit history. Use dependency injection or at minimum `TempDir`.
-
----
-
-### 🟡 SEC-7 — `AuditLogger::new` creates the audit directory even when disabled
-
-**File:** `src/security/audit.rs` L64–79
-
-When `enabled = false` the logger still creates `~/.grok/audit/` on disk during
-construction. Move directory creation inside `log_access` (or make it lazy) so a disabled
-logger has zero filesystem side-effects.
-
----
-
-### 🟡 SEC-8 — New UUID per-call is not a session ID
-
-**File:** `src/tools/file_tools.rs` L42, L65
-
-```rust
-let session_id = Uuid::new_v4().to_string();
-```
-
-This generates a random ID on every file access, not a real session identifier. The audit
-log therefore contains IDs that cannot be correlated across calls in the same session.
-Pass in the real session ID from `SessionData` instead.
+`replace` now goes through the full `validate_path_access` + audit logging path. External paths that require approval are rejected (same policy as write).
 
 ---
 
 ## 2. CORRECTNESS
 
-### 🔴 COR-1 — `detect_starlink_connection` logic is backwards
+### ✅ COR-1 — `detect_starlink_connection` (REMOVED)
 
-**File:** `src/utils/network.rs` L147–165
+No references remain.
 
-```rust
-if let Ok(addrs) = tokio::net::lookup_host("starlink.com:80").await
-    && addrs.count() > 0
-{
-    return true;  // "possible Starlink connection"
-}
-```
+### 🟠 COR-2 — Cargo.lock in `.gitignore` for a binary
 
-`starlink.com` resolves from ANY internet-connected machine (it's just a public website).
-This function will return `true` for literally every non-Starlink connection with working
-DNS. This is a useless heuristic that pollutes log output. Remove it or replace with
-something meaningful (e.g., checking gateway IP ranges, detecting high latency variance).
-
----
-
-### 🔴 COR-2 — Cargo.lock is in `.gitignore` for a binary crate
-
-**File:** `.gitignore` (per AGENTS.md instructions)
-
-For an executable crate, `Cargo.lock` **must** be committed to version control. Without
-it, `cargo build` on a CI machine or another developer's workstation may pull a different
-version of a transitive dependency, causing non-reproducible builds and potential supply
-chain surprises. The Cargo team's own guidance is explicit: binaries commit Cargo.lock,
-libraries don't.
-
----
+**Status:** `Cargo.lock` now exists in the repo (good).
 
 ### 🟠 COR-3 — `&&` → `;` PowerShell replacement is dangerously naïve
 
-**File:** `src/tools/shell_tools.rs` L59
+**File:** `src/tools/shell_tools.rs`
 
-```rust
-let ps_command = command.replace(" && ", "; ");
-```
+Still does the naive `replace(" && ", "; ")`. This turns conditional execution into unconditional. Still dangerous.
 
-Bash `&&` means "run next command only if the previous succeeded". PowerShell `;` is
-unconditional — it always runs the next statement. Translating `build && test` into
-`build; test` means `test` runs even if `build` fails, potentially destroying state or
-reporting false success. Use PowerShell's native `&&` operator (available in PowerShell 7+)
-or rewrite the command as:
+### ✅ COR-4 / PERF-5 — Regex compiled on every call (FIXED)
 
-```powershell
-if ($?) { test }
-```
+Promoted to `once_cell::sync::Lazy<Regex>`:
+- `RE_JSONC_TRAILING_COMMA`
+- `RE_CODE_DEF`
 
-The current approach will silently give wrong results in error cases.
+### 🟠 COR-5 — `RateLimitConfig` is still a no-op
 
----
+Config exists and is shown, but never enforced at the client layer.
 
-### 🟠 COR-4 — `strip_jsonc_trailing_commas` compiles a regex on every call
+### ✅ COR-6 — Unused `_timeout_secs` (FIXED — Task 257)
 
-**File:** `src/tools/file_tools.rs` L233–238
+Parameter removed. Timeout now comes exclusively from `SecurityPolicy` + `GROK_SHELL_TIMEOUT_SECS`.
 
-```rust
-fn strip_jsonc_trailing_commas(s: &str) -> String {
-    let re = Regex::new(r",(\s*[}\]])").expect("static regex is valid");
-    ...
-}
-```
+### 🟡 COR-7 — Vacuous test
 
-This function is called on every JSON file read. Regex compilation is expensive.
-Use `once_cell::sync::Lazy` (the pattern already used in `web_tools.rs`) or make `re` a
-`static`. Same problem in `list_code_definitions` (L274).
+`web_search_returns_result_or_no_results` still exists in some form and is still logically `assert!(true)`.
 
----
+### 🟡 COR-8 — `STARLINK_ERROR_PATTERNS` too broad
 
-### 🟠 COR-5 — `RateLimitConfig` is a no-op
+Still contains generic patterns ("connection refused", "network error", etc.).
 
-**File:** `src/grok_client_ext.rs` L51–55
+### 🟠 COR-10 — `run_shell_command` returns `Ok` even on non-zero exit
 
-```rust
-/// Set rate limit configuration (for compatibility - currently a no-op)
-pub fn with_rate_limits(mut self, config: RateLimitConfig) -> Self {
-    self.rate_limit_config = Some(config);
-    self
-}
-```
-
-The `RateLimitConfig` struct is defined, configurable in TOML, shown in `Config::show`,
-but never actually enforced. If the API rate-limits requests, the client will receive
-429 errors and retry — but there is no token-bucket or request-counter guard at the
-client layer. This is misleading to users who configure `rate_limits` in their config.
-Either implement it or remove the config knob entirely.
-
----
-
-### 🟡 COR-6 — Unused parameter `_timeout_secs` in `run_shell_command`
-
-**File:** `src/tools/shell_tools.rs` L49
-
-```rust
-pub async fn run_shell_command(
-    command: &str,
-    security: &SecurityPolicy,
-    _timeout_secs: u64,   // ← suppressed warning, never used
-) -> Result<String> {
-```
-
-The function reads `effective_timeout(security)` internally. The public `_timeout_secs`
-parameter is dead weight — callers pass it in but it has no effect. This creates a
-misleading API. Remove the parameter and have callers rely on the policy-driven timeout,
-or use the parameter.
-
----
-
-### 🟡 COR-7 — `web_search_returns_result_or_no_results` test always passes
-
-**File:** `src/tools/web_tools.rs` L271–275
-
-```rust
-let result = web_search("rust programming language").await;
-assert!(result.is_ok() || result.is_err()); // This ALWAYS passes
-```
-
-This assertion is logically equivalent to `assert!(true)`. It provides zero value and
-gives false confidence. Either assert on the content or mark the test as `#[ignore]` for
-offline CI. Delete it if you have nothing meaningful to assert.
-
----
-
-### 🟡 COR-8 — `STARLINK_ERROR_PATTERNS` includes non-Starlink patterns
-
-**File:** `src/utils/network.rs` L12–30
-
-```
-"connection refused",      // This is a SERVER-side rejection, not a network drop
-"network error",           // Too generic — matches many non-transient errors
-"error sending request",   // Matches auth failures, malformed requests, etc.
-"service unavailable",     // Could be legitimate 503 from the API itself
-```
-
-The pattern list conflates transient satellite-link drops with server-side errors. A 503
-from the Grok API (e.g., model overloaded) is correctly handled by retrying, but
-"connection refused" indicates the server is rejecting the connection, not that the
-satellite handover dropped. Retrying on "connection refused" without back-off will hammer
-a down service. Tighten the list.
+Still returns `Ok("Command failed with code ...")` instead of `Err`. Callers cannot distinguish success from failure.
 
 ---
 
@@ -301,480 +119,174 @@ a down service. Tighten the list.
 
 ### 🟠 PERF-1 — New `reqwest::Client` on every HTTP call
 
-**File:** `src/tools/web_tools.rs` L87, L165
+Still present in `web_fetch`, search helpers, etc. No shared `Arc<Client>` with connection pooling.
 
-```rust
-pub async fn web_fetch(url: &str) -> Result<String> {
-    let client = reqwest::Client::builder()...build()?;
-    // used once, then dropped
-}
+### 🟡 PERF-2 — Audit logger flush-on-every-write
 
-async fn duckduckgo_search(query: &str) -> Result<String> {
-    let client = reqwest::Client::builder()...build()?;
-    // same story
-}
-```
+Still does `.flush()` after every `log_access`. Acceptable for durability, but worth a periodic-flush review.
 
-`reqwest::Client` manages a connection pool. Creating a new one on every call means:
-- No connection reuse (TCP handshake + TLS negotiation on every request)
-- Repeated DNS resolution
-- Memory allocation and cleanup overhead
+### ✅ PERF-3 — `get_all_logs` / stats (IMPROVED)
 
-Create ONE `Arc<reqwest::Client>` at startup and pass/share it. This is a classic
-beginner mistake with `reqwest`.
+In-memory cache + `cache_dirty` flag means most stats calls no longer read the full file. Good.
 
----
+### 🟡 PERF-4 — `AgentManager` capacity
 
-### 🟠 PERF-2 — `AuditLogger::log_access` opens a new file handle per entry
+Minor — `HashMap::new()` with no initial capacity.
 
-**File:** `src/security/audit.rs` L130–140
+### 🟡 PERF-6 — Eager directory creation in logging
 
-```rust
-let mut file = OpenOptions::new()
-    .create(true).append(true)
-    .open(&self.log_file_path)...;
-writeln!(file, "{}", json)?;
-file.flush()?;
-```
-
-Opening, writing, flushing, and closing a file on every log entry is expensive. Consider
-keeping an `Arc<Mutex<BufWriter<File>>>` open, or at minimum batch-write. For an audit log
-that may be called on every file access, this is a hot path.
-
----
-
-### 🟠 PERF-3 — `get_all_logs` reads the entire log file on every stats call
-
-**File:** `src/security/audit.rs` L193–212, L264–282
-
-`get_statistics`, `get_top_accessed_paths`, `get_logs_for_path`, and `get_logs_in_range`
-all call `get_all_logs()`, which reads and deserializes every log entry from disk. A busy
-session will produce thousands of entries. Without caching or a rolling-window structure,
-the `audit summary` command will slow to a crawl over time.
-
----
-
-### 🟡 PERF-4 — `AgentManager` holds `RwLock<HashMap>` without capacity
-
-**File:** `src/agent/manager.rs` L40–41
-
-```rust
-agents: RwLock::new(HashMap::new()),
-```
-
-Minor, but `HashMap::new()` starts with zero capacity and doubles on each resize. Use
-`HashMap::with_capacity(16)` or similar if agents are expected to be spawned frequently.
-
----
-
-### 🟡 PERF-5 — `list_code_definitions` regex compiled on every call
-
-**File:** `src/tools/file_tools.rs` L274–277
-
-Same issue as COR-4 above. Promote to `Lazy<Regex>` static.
+Still happens unconditionally at startup in some paths.
 
 ---
 
 ## 4. ARCHITECTURE
 
-### 🔴 ARCH-1 — Monolithic files that need splitting
+### 🟠 ARCH-1 — Monolithic files
 
-The following files are too large for any single human (or AI) to reason about safely:
+Still large:
+- `src/acp/mod.rs` (~3k+ lines, `handle_chat_completion` is still a monster)
+- `src/config/mod.rs` (improved with submodules, but still heavy)
+- `src/tools/registry.rs` (giant `match` + 700+ line JSON schema vec)
 
-| File | Lines | Problem |
-|------|-------|---------|
-| `src/config/mod.rs` | ~3,100 | 25+ structs, all config concerns in one file |
-| `src/acp/mod.rs` | ~3,200 | `GrokAcpAgent::handle_chat_completion` alone is ~1,000 lines |
-| `src/tools/registry.rs` | ~1,450 | `execute_tool` (552 lines), `get_full_tool_definitions` (755 lines) |
+### 🟠 ARCH-2 — Tool registry still manually synced
 
-`handle_chat_completion` contains retry logic, tool loop, permission checks, compression,
-history management, and model routing — all in one function. Extract each concern into its
-own function or module.
+Three places still need to stay in sync:
+- `get_full_tool_definitions()`
+- `execute_tool` match arms
+- `get_required_parameters`
 
-Split `config/mod.rs` into: `config/acp.rs`, `config/network.rs`, `config/ui.rs`,
-`config/security.rs`, etc.
+No compile-time enforcement. Task 244 made progress but the big manual dispatch remains.
 
----
+### 🟠 ARCH-3 — Library/binary separation violations
 
-### 🔴 ARCH-2 — `is_known_tool` / `execute_tool` / `get_tool_definitions` must be manually synced
+Still documented in `lib.rs` with TODOs. `require_api_key` calling `exit` is the worst offender.
 
-**File:** `src/tools/tool_arbitration.rs` L57–104, `src/tools/registry.rs`
+### 🟠 ARCH-4 — Stray backup file
 
-There are THREE places where the full tool list must be maintained:
-1. `is_known_tool` — for rejection
-2. `execute_tool` — for dispatch
-3. `get_tool_definitions` / `get_full_tool_definitions` — for schema export
+`src/acp/mod .rs_bak` (if still present) should be deleted.
 
-Adding a tool requires updating all three, in three different files, with no compile-time
-enforcement. This WILL cause bugs. Consolidate into a `Tool` trait or a single registry
-macro/array that drives all three. At minimum, add a test that asserts
-`is_known_tool(name) == true` for every name returned by `get_tool_definitions()`.
+### 🟡 ARCH-7 — `handle_chat_completion` is ~1000 lines
 
----
+Still the single biggest function in the codebase. Needs extraction (context trimming, compression, tool loop, status emission, etc.).
 
-### 🟠 ARCH-3 — Library/binary separation violations documented but not fixed
+### 🟡 ARCH-8 — Tool definitions duplicated in three large blocks
 
-**File:** `src/lib.rs` L18–34
-
-The `lib.rs` doc-comment honestly lists the violations: direct `println!`, `eprintln!`,
-`indicatif`, `ratatui`, `process::exit`. These have been acknowledged with TODO comments
-for what appears to be a long time. 
-
-The `require_api_key` function (SEC-4 above) calling `process::exit` is a direct result of
-this. Mark a date by which these will be addressed, or accept that the crate is a binary
-with a thin library veneer and remove the pub API.
-
----
-
-### 🟠 ARCH-4 — Stray backup file `mod .rs_bak` with a space in the filename
-
-**File:** `src/acp/mod .rs_bak`
-
-A backup file with a space in the name (`mod .rs_bak`) is committed to the repository.
-This is not source code — it is editor garbage. Delete it. It causes issues with tools
-that glob for `*.rs` files and is confusing to anyone reading the directory listing.
-
----
-
-### 🟡 ARCH-5 — Tool role → user role conversion loses structured context
-
-**File:** `src/grok_client_ext.rs` L123–131
-
-```rust
-"tool" => {
-    // Fallback: report tool result as user message...
-    Some(ChatMessage::user(format!(
-        "Tool result (ID: {}): {}",
-        tool_call_id, content.unwrap_or("")
-    )))
-}
-```
-
-Tool results are being downcast to user messages because the `grok_api` crate does not
-support the `tool` role. This flattens structured tool output into free text. If the
-API ever supports the tool role properly, update this immediately. In the meantime, add a
-`tracing::warn!` here so the behavior is visible in logs.
-
----
-
-### 🟡 ARCH-6 — `session_dna.json` in project root may be committed to VCS
-
-**File:** `src/session/dna.rs` L39
-
-Covered in SEC-5, but worth repeating as an arch concern: behavioral session data in the
-project root couples the tool's runtime state to the source tree. Use `.grok/` exclusively.
+Same as ARCH-2.
 
 ---
 
 ## 5. READABILITY & STYLE
 
-### 🟠 READ-1 — Typo in version string
+### 🟡 READ-1 — Version string
 
-**File:** `Cargo.toml` L3
+`0.2.5-PreRelease` — the old typo is gone, but consider a cleaner pre-release scheme.
 
-```toml
-version = "0.2.5-PreRelease"
-```
+### 🟡 READ-3 — Magic numbers
 
-"PreRelese" should be "PreRelease". This propagates into `--version` output, `cargo publish`
-metadata, and any release artifacts.
+Still scattered (10_000, 300, 200_000, 0.75, 16_384, etc.). Centralize.
 
----
+### 🟡 READ-8 — Duplicated defaults
 
-### 🟡 READ-2 — `ExternalAccessResult::Denied` accepts a `String` but `ExternalAccessResult` is not an enum variant
+See above.
 
-The security module has `ExternalAccessResult::Denied(String)` that carries a human-readable
-reason, but some branches that call it pass empty strings or lose the reason on the way
-to the caller. Verify the denial reason is always propagated to the audit log.
+### 🔵 READ-5 / COR-7 — Vacuous tests
 
----
+`is_web_search_configured` / related tests still exist and are always-true.
 
-### 🟡 READ-3 — Magic numbers throughout
+### 🔵 Import style
 
-Examples:
-- `content.len() > 200_000` in `pre_write_hook.rs` — extract to a named constant
-- `non_printable > content.len() / 10` — what does 10% binary mean? Name it.
-- `10_000` char truncation in `web_fetch` — name it `WEB_FETCH_MAX_CHARS`
-- `8` max tool preferences in `session_dna.rs` — name it `MAX_TOOL_PREFERENCES`
-
----
-
-### 🟡 READ-4 — `detect_starlink_connection` is dead weight in the public API
-
-**File:** `src/utils/network.rs` L147`
-
-This function is `pub async` but never called from outside the module (only the test
-harness would call it). Either use it properly or remove it. Having broken heuristics
-in a pub API is worse than not having them.
-
----
-
-### 🔵 READ-5 — `web_search_is_always_configured` is a vacuous test
-
-**File:** `src/tools/web_tools.rs` L244–247
-
-```rust
-fn web_search_is_always_configured() {
-    assert!(is_web_search_configured());
-}
-```
-
-`is_web_search_configured()` is a function that always returns `true`. The test for it
-always passes. Delete both the function and the test, or make `is_web_search_configured`
-actually check something.
-
----
-
-### 🔵 READ-6 — Import style inconsistency
-
-Some modules use `use tracing::{warn};` inside function bodies (e.g., `file_tools.rs`
-L110, L129) when the same module already imports `use tracing::info` at the top. Put all
-tracing imports at the module level for consistency.
-
----
-
-### 🔵 READ-7 — `format_grok_logo` / `get_logo_for_width` vs `print_grok_logo`
-
-The `#[allow(deprecated)]` on the `print_grok_logo` re-export in `lib.rs` signals ongoing
-technical debt. The deprecated functions should have been removed in the same PR that
-introduced their replacements, not just `#[deprecated]`-tagged. Set a removal milestone.
+Occasional `use tracing::warn;` inside functions.
 
 ---
 
 ## 6. TESTING
 
-### 🟠 TEST-1 — Audit log tests write to production paths
+### ✅ TEST-1 — Audit tests (FIXED)
 
-See SEC-6 above. The tests are contaminating real user data. This is unacceptable.
+### ✅ TEST-2 — Tool dispatch round-trip (ADDED — Task 258)
 
----
+`execute_tool_round_trip_write_read_unknown_missing` exists and is good.
 
-### 🟡 TEST-2 — No integration test for tool dispatch round-trip
+### 🟡 TEST-3 — Network-dependent test
 
-`execute_tool` → `tool_arbitration` → actual tool function is a critical path with no
-end-to-end test. Add at least one test that calls `execute_tool("write_file", ...)` and
-verifies both the arbitration and the file write happened correctly.
+`test_grok_client_creation` may still be flaky offline.
 
----
-
-### 🟡 TEST-3 — `test_grok_client_creation` requires network
-
-**File:** `src/grok_client_ext.rs` L233–239
-
-```rust
-#[tokio::test]
-async fn test_grok_client_creation() {
-    let client = GrokClient::with_settings("test-key", 30, 3);
-    assert!(client.is_ok());
-    let empty_key_client = GrokClient::with_settings("", 30, 3);
-    assert!(empty_key_client.is_err());
-}
-```
-
-Whether this test passes depends on whether `grok_api::GrokClient::builder().build()`
-makes a network call during construction. If it does (e.g., to validate the key), this
-is a flaky test in offline CI. Tag with `#[ignore]` if it requires network access, or use
-a mock via the `GROK_API_BASE_URL` env var and `mockito`.
+### 🟡 Missing tests
+- End-to-end "Trust Always" (second call on same external path does not prompt)
+- `RequireConfirmation` actually returns error from both `write_file` and `replace`
 
 ---
 
-### 🔵 TEST-4 — `serial_test` for audit tests masks test isolation problems
+## 7. BUILD / RELEASE BLOCKERS (Current)
 
-Using `#[serial]` forces audit tests to run sequentially because they share global state
-(the real audit file). The fix is proper test isolation (TempDir), not serialization.
+### ✅ BUILD-1 — `edition = "2024"` (RESOLVED — no longer a blocker)
 
----
-
-## 7. POSITIVES (Yes, I have some)
-
-✅ **Starlink-aware retry logic** — `web_tools.rs` and `utils/network.rs` have thoughtful
-retry-with-backoff and jitter. The intent is solid; tighten the error patterns (COR-8).
-
-✅ **`SecurityPolicy` path resolution** — Handling Windows drive-absolute paths on Linux CI
-(`is_windows_drive_absolute`) and resolving symlinks before trust checks shows real
-security engineering thinking.
-
-✅ **Structured logging** — Consistent use of `tracing` with field names (`error = %e`,
-`path = %path.display()`) makes log parsing pleasant. The dual sink (stderr + JSON file)
-in `main.rs` is well done.
-
-✅ **`AgentManager` is clean** — Good use of `Arc<RwLock<HashMap>>`, correct async patterns,
-no `unwrap()` on lock poison, good tests with proper assertion messages.
-
-✅ **`SafetyDecision` enum** — The pre-write hook design with `Allow/AllowWithWarning/
-RequireConfirmation/Block` is the right shape. It just needs to be enforced (SEC-2).
-
-✅ **`GrokClient::with_settings` environment variable override** — Using
-`GROK_API_BASE_URL` for test mocking without changing production code is clean.
-
-✅ **Binary detection heuristic in `pre_write_hook`** — Checking for >10% non-printable
-bytes before writing is a sensible guard that prevents the model from accidentally writing
-binary garbage to text files.
-
----
-
-## 8. PRIORITY ACTION LIST
-
-Fix these first, in this order:
-
-1. 🔴 **SEC-2** — Wire up real `RequireConfirmation` logic or admit the safety hook is unimplemented
-2. 🔴 **SEC-1** — Fix directory creation before path validation in `write_file`
-3. 🔴 **SEC-3** — Fix or remove `TrustAlways` in `read_file`
-4. 🔴 **ARCH-2** — Add a compile-time-enforced registry for tool names
-5. 🔴 **COR-2** — Commit `Cargo.lock` to version control
-6. 🟠 **SEC-4** — Change `require_api_key` to return `Result<String>`
-7. 🟠 **PERF-1** — Shared `Arc<reqwest::Client>` for web tools
-8. 🟠 **COR-3** — Fix `&&` → `;` PowerShell translation
-9. 🟠 **COR-1** — Remove or fix `detect_starlink_connection`
-10. 🟠 **ARCH-1** — Begin splitting `config/mod.rs`, `acp/mod.rs`, `registry.rs`
-11. 🟠 **TEST-1** — Fix audit tests to use `TempDir`
-12. 🟡 **COR-4/PERF-5** — Lazy static regex in `file_tools.rs`
-13. 🟡 **READ-1** — Fix version typo in `Cargo.toml`
-14. 🟠 **ARCH-4** — Delete `src/acp/mod .rs_bak`
-
----
-
-*Review complete. The bones of this project are good. The security model has the right
-concepts. The async patterns are generally correct. But there are real bugs (SEC-1, SEC-2,
-SEC-3) and the codebase is beginning to show the weight of rapid feature addition without
-consistent cleanup. Address the critical items before a public release.*
-
----
-
-## 9. ADDITIONAL FINDINGS FROM FULL DEEP DIVE (Post-Original Review)
-
-These items were identified during a comprehensive walk of the entire source tree, Cargo.toml, main entry points, large modules, and cross-cutting concerns (after the original review above was written).
-
-### 🔴 BUILD-1 / COR-9 — `edition = "2024"` in Cargo.toml
-
-**File:** `Cargo.toml` line 3
+**File:** `Cargo.toml:3`
 
 ```toml
 edition = "2024"
+rust-version = "1.85"
 ```
 
-Rust 2024 edition is **not yet stable** (as of mid-2026 the stable edition is still 2021). This will cause `cargo build` / `cargo test` to fail on any machine using a stable Rust toolchain. This is a release blocker for anyone who clones the repo.
+As of 2026 (Rust 1.97+), the 2024 edition is fully stable and the project's current toolchain (`rustc 1.97.1`) builds cleanly with it. The old concern from the 2025-era review no longer applies.
 
-**Impact:** Breaks reproducible builds, CI, and contributor onboarding.
-
-**Recommendation:** Change to `edition = "2021"` immediately. If any 2024-specific syntax is being used, backport it.
+**Status:** No action needed. `cargo check` / `cargo build` succeed with `edition = "2024"`.
 
 ---
 
-### 🟠 COR-10 — `run_shell_command` returns `Ok` even on non-zero exit
+## 8. POSITIVES (Current State)
 
-**Files:** `src/tools/shell_tools.rs`, `src/tools/registry.rs`
-
-The shell tool does this:
-
-```rust
-if output.status.success() {
-    Ok(format!("Stdout: ..."))
-} else {
-    Ok(format!("Command failed with code {}: ...", ...))   // Still Ok!
-}
-```
-
-This is inconsistent with the rest of the tool system (most errors return `Err`). Callers (including the model and arbitration layer) cannot easily distinguish "tool ran and produced output" from "tool failed".
-
-**Recommendation:** Return `Err` for non-zero exits (or at minimum wrap in a structured error type) so the upper layers can react correctly.
+✅ Security model (trusted dirs + external approval + audit + safety hooks) is now actually enforced in the main write/replace paths.  
+✅ `TrustAlways` now works.  
+✅ `replace` security was aligned with `write_file`.  
+✅ Static regexes + `AuditLogger` cache are nice performance wins.  
+✅ `execute_tool` round-trip test added.  
+✅ `ToolContext.session_id` for audit correlation.  
+✅ Directory creation is now lazy in audit logger.  
+✅ `Cargo.lock` is committed.
 
 ---
 
-### 🟠 SEC-9 — `replace()` tool has weaker security than `write_file`
+## 9. UPDATED PRIORITY ACTION LIST
 
-**File:** `src/tools/file_tools.rs` (the `replace` function)
+### Must fix before release
 
-- `write_file` goes through the full external-access approval + audit logging flow.
-- `replace` does its own `is_path_trusted` check and **bypasses** the `ExternalRequiresApproval` path and the audit logger entirely.
+1. 🔴 **SEC-2 (remaining)** — Make `replace()` `RequireConfirmation` return `Err` (match `write_file`)
+2. 🟠 **COR-10** — Make shell tool return proper `Err` on non-zero exit
+3. 🟠 **PERF-1** — Shared `Arc<reqwest::Client>` for all web tools
+4. 🟠 **COR-3** — Fix naive `&&` → `;` PowerShell translation
 
-An attacker (or confused model) can use `replace` to modify files that would have triggered an approval prompt.
+> **Note:** BUILD-1 (`edition = "2024"`) was previously listed as critical but is no longer a concern in 2026+ with Rust 1.85+. The project builds successfully with the 2024 edition on the current stable toolchain (1.97+).
 
-**Recommendation:** Make `replace` go through the same `read_file` / `write_file` style approval + audit path, or explicitly document that `replace` is a "trusted-paths only" operation.
+### High priority (soon)
 
----
+6. 🟠 **ARCH-2 / ARCH-8** — Strengthen tool registry (reduce manual sync points)
+7. 🟠 **ARCH-7** — Refactor `handle_chat_completion` (extract sub-functions)
+8. 🟠 **SEC-4** — Remove `process::exit` from `require_api_key`
+9. 🟠 **SEC-5** — Move `session_dna.json` under `.grok/`
+10. 🟡 **Standardize file tool signatures** on `&ToolContext`
 
-### 🟠 ARCH-7 — `handle_chat_completion` in `GrokAcpAgent` is ~1000 lines
+### Medium
 
-**File:** `src/acp/mod.rs`
-
-This single method contains:
-- Multiple layers of history trimming + token budgeting
-- Auto-compression + archiving logic
-- Permission bridge interaction
-- DNA + Bayesian injection
-- Status bar / context usage emission
-- Tool loop + retry logic
-- Thinking trace handling
-
-This is the heart of every ACP session and is extremely hard to reason about or test.
-
-**Recommendation:** Extract at minimum:
-- `trim_context_for_model()`
-- `maybe_compress_history()`
-- `emit_status_updates()`
-- The core tool-execution sub-loop
+11. 🟡 Centralize magic numbers / defaults
+12. 🟡 Add missing tests (TrustAlways round-trip, RequireConfirmation error path)
+13. 🟡 Tighten `STARLINK_ERROR_PATTERNS`
+14. 🟡 Review rate-limit implementation (or remove the config knob)
+15. 🟡 Clean up stray backup files and old `#[allow(dead_code)]` / TODOs
 
 ---
 
-### 🟡 PERF-6 — Eager directory creation in logging setup
-
-**File:** `src/main.rs` (setup_logging)
-
-```rust
-if let Some(parent) = log_file_path.parent() {
-    let _ = std::fs::create_dir_all(parent);
-}
-```
-
-This runs unconditionally at startup, even if file logging later fails or is disabled. Minor, but contributes to the general pattern of "create things on disk before we know we need them".
+*Review updated. The security surface has improved significantly since the original review. The remaining hard blockers are mostly build-related and a couple of inconsistent enforcement points. Good bones — keep going.*
 
 ---
 
-### 🟡 READ-8 — Duplicated default values and magic thresholds
+## 10. Notes for Future Work
 
-Seen across `config/mod.rs`, `acp/mod.rs`, `file_tools.rs`, `session/dna.rs`, etc.
-
-Examples:
-- Multiple places define `16_384` or `300` as token/timeout defaults.
-- `8` as max tool preferences in DNA.
-- `0.75` compression threshold, `0.40` chunk ratio, etc. with no named constants.
-
-**Recommendation:** Centralize magic numbers into `const` items (ideally in a `constants.rs` or per-module).
+- When fixing the registry (ARCH-2), consider a small declarative table or macro that feeds schemas, dispatch, and required-params.
+- Consider a proper `ToolError` type instead of sprinkling `anyhow!` everywhere in the tool layer.
+- The safety hook design (`SafetyDecision`) is the right shape — finish wiring the confirmation path properly.
+- Long-term: move more of the giant ACP handler into focused modules (history management, tool loop, compression, etc.).
 
 ---
 
-### 🟡 ARCH-8 — Tool definitions are duplicated in three large blocks
-
-Already covered as ARCH-2, but worth reinforcing after seeing the full registry:
-
-- `get_tool_definitions()` (Vec<&str>)
-- `get_full_tool_definitions()` (massive `vec![ json!{...}, ... ]`)
-- The giant `match name` inside `execute_tool`
-
-Any new tool (e.g. future vision or OKF tools) requires touching all three with no compiler help. The dynamic registration path (`register_dynamic_tool`) exists but is barely used.
-
----
-
-### ✅ Positive notes from the deeper walk
-
-- Lazy initialization of `router`, `security`, and `hook_manager` in `GrokAcpAgent` is excellent for fast `grok acp stdio` startup.
-- The final-answer guard system message (Task 231) is a pragmatic and effective mitigation for tool-loop explosions.
-- WorkflowTrace + TUI viewer (Tasks 232–233) is a genuinely nice observability addition.
-- Hierarchical config loading + project-local `.grok/` is well executed.
-- Use of raw `serde_json::Value` for message history (instead of round-tripping through typed structs) preserves `tool_call_id` fidelity.
-
----
-
-## 10. UPDATED PRIORITY ACTION LIST (Augmented)
-
-Add these to the existing list:
-
-15. 🔴 **BUILD-1** — Change `edition = "2024"` → `"2021"` in Cargo.toml
-16. 🟠 **COR-10** — Make shell tool return proper `Err` on non-zero exit
-17. 🟠 **SEC-9** — Align `replace()` security/audit path with `write_file`
-18. 🟠 **ARCH-7** — Refactor `handle_chat_completion` (extract sub-functions)
-19. 🟡 **PERF-6** — Make log directory creation lazy
-20. 🟡 **ARCH-8** — Strengthen the tool registry (macro or static table) — see task 244
-
-*These new items were discovered during a full source-tree + dependency + data-flow review.*
+**End of updated review**

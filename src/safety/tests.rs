@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use super::*;
+    // super::* not needed here; we use the crate::safety re-exports below
     use crate::safety::*;
 
     #[test]

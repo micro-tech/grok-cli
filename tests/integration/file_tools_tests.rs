@@ -19,7 +19,6 @@ mod helpers;
 use grok_cli::tools::{
     glob_search, list_directory, read_file, replace, search_file_content, write_file,
 };
-use grok_cli::tools::ToolContext;
 use std::fs;
 use tempfile::TempDir;
 
@@ -31,7 +30,7 @@ use tempfile::TempDir;
 #[tokio::test]
 async fn read_file_returns_content() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
     let file = helpers::write_fixture(&dir, "hello.txt", "Hello, Grok!");
 
     let result = read_file(file.to_str().unwrap(), &helpers::make_ctx(&dir)).await.unwrap();

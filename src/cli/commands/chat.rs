@@ -771,9 +771,7 @@ fn print_conversation_history(history: &[Value]) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tokio;
-
+    // super::* intentionally not used — placeholder test only verifies compilation
     #[tokio::test]
     async fn test_chat_command_structure() {
         // Test that the chat command structure is properly defined

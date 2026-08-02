@@ -1640,4 +1640,89 @@ mod tests {
             }
         }
     }
+
+    /// TEST-2: End-to-end round-trip through execute_tool dispatch.
+    ///
+    /// Exercises the critical path: execute_tool → arbitration → actual tool impl.
+    /// Uses an isolated TempDir so no real filesystem is touched.
+    #[tokio::test]
+    async fn execute_tool_round_trip_write_read_unknown_missing() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let policy = crate::acp::security::SecurityPolicy::with_working_directory(
+            dir.path().to_path_buf(),
+        );
+        let ctx = crate::tools::ToolContext::new(policy);
+
+        let test_file = dir
+            .path()
+            .join("roundtrip_via_execute_tool.txt")
+            .to_string_lossy()
+            .to_string();
+
+        // (2) write_file via dispatch — file must be created on disk
+        let write_args = serde_json::json!({
+            "path": test_file,
+            "content": "hello from TEST-2 round-trip"
+        });
+        let write_result = execute_tool("write_file", &write_args, &ctx).await;
+        assert!(
+            write_result.is_ok(),
+            "write_file dispatch failed: {:?}",
+            write_result.err()
+        );
+        let on_disk = std::fs::read_to_string(&test_file).expect("file should exist after write");
+        assert_eq!(on_disk, "hello from TEST-2 round-trip");
+
+        // (3) read_file via dispatch — content must match exactly
+        let read_args = serde_json::json!({ "path": test_file });
+        let read_result = execute_tool("read_file", &read_args, &ctx).await;
+        assert_eq!(
+            read_result.unwrap(),
+            "hello from TEST-2 round-trip",
+            "read_file after write_file must return exact content"
+        );
+
+        // (4) unknown tool — arbitration now returns a structured Ok with error
+        // (instead of hard Err) for consistency with Reject/NeedMoreInfo paths.
+        // We accept either Err or an Ok that signals rejection/unknown.
+        let unknown_result = execute_tool("this_tool_does_not_exist_12345", &serde_json::json!({}), &ctx).await;
+        let unknown_str = match &unknown_result {
+            Ok(s) => s.clone(),
+            Err(e) => e.to_string(),
+        };
+        assert!(
+            unknown_result.is_err()
+                || unknown_str.contains("unknown")
+                || unknown_str.contains("rejected")
+                || unknown_str.contains("tool_rejected")
+                || unknown_str.contains("no implementation")
+                || unknown_str.contains("declared in the registry"),
+            "unknown tool should produce error or structured rejection, got: {}",
+            unknown_str
+        );
+
+        // (5) known tool but missing required argument.
+        // Arbitration now returns a structured Ok (NeedMoreInfo) instead of Err.
+        // This is the intended behavior after the unified arbitration layer.
+        let missing_arg_args = serde_json::json!({
+            "path": test_file
+            // deliberately omit "content" for write_file
+        });
+        let missing_result = execute_tool("write_file", &missing_arg_args, &ctx).await;
+        assert!(
+            missing_result.is_ok(),
+            "arbitration for missing args should return Ok with structured error info"
+        );
+        let missing_str = missing_result.unwrap().to_lowercase();
+        assert!(
+            missing_str.contains("missing")
+                || missing_str.contains("content")
+                || missing_str.contains("required")
+                || missing_str.contains("arguments")
+                || missing_str.contains("needmoreinfo")
+                || missing_str.contains("error"),
+            "structured response for missing required arg should mention the problem, got: {}",
+            missing_str
+        );
+    }
 }
