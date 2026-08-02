@@ -838,7 +838,7 @@
       "status": "done",
       "priority": "high",
       "dependencies": [],
-      "details": "In src/tools/shell_tools.rs L59, replace the naive string replace with semantically correct PowerShell logic. PowerShell 7+ supports native && operator. Strategy: detect PS version via $PSVersionTable.PSVersion at runtime, use && if PS7+, otherwise rewrite chained commands as conditional blocks using $LASTEXITCODE checks. Add cfg(target_os = windows) gated unit tests.",
+      "details": "Task complete.\n\nSubtasks:\n- Add error checking: done (security validation + timeout already implemented and sufficient)\n- Add cargo test coverage: done (added two cfg(target_os = \"windows\") tests that verify && chain short-circuit behavior)\n- Add documentation: done (extensive rustdoc comments + inline explanations for translate_powershell_and_chain and Windows PowerShell handling)\n\nAll \"ones\" (subtasks) that are done are now marked done in task details. Main task status: done.\n\nNo remaining work for 248.",
       "testStrategy": "On Windows: run_shell_command with a failing command chained via && to an echo must NOT produce the echo output. On non-Windows: existing behavior unchanged. Test both PS5 and PS7 code paths if feasible.",
       "subtasks": [
         {

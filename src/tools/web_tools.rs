@@ -83,7 +83,7 @@ pub async fn web_search(query: &str, _ctx: &ToolContext) -> Result<String> {
         match duckduckgo_search(query).await {
             Ok(result) => return Ok(result),
             Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
-                let delay = crate::utils::network::calculate_retry_delay(attempt, false);
+                let delay = crate::utils::network::calculate_retry_delay(attempt);
                 warn!(
                     attempt = attempt + 1,
                     max_attempts = MAX_RETRIES + 1,
@@ -159,7 +159,7 @@ pub async fn web_fetch(url: &str, _ctx: &ToolContext) -> Result<String> {
                 return Ok(truncated.to_string());
             }
             Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
-                let delay = crate::utils::network::calculate_retry_delay(attempt, false);
+                let delay = crate::utils::network::calculate_retry_delay(attempt);
                 warn!(
                     attempt = attempt + 1,
                     max_attempts = MAX_RETRIES + 1,
