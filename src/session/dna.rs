@@ -30,15 +30,16 @@ impl Default for SessionDna {
 impl SessionDna {
     /// Load Session DNA.
     ///
-    /// Search order:
-    /// 1. `./session_dna.json`  (project root – checked first so per-project DNA wins)
-    /// 2. `~/.grok/session_dna.json`
+    /// Search order (SEC-5: VCS-safe location):
+    /// 1. `./.grok/session_dna.json`  (project-local under .grok dir – wins for per-project DNA)
+    ///    NOTE: bare `session_dna.json` in project root is deliberately ignored to avoid VCS exposure.
+    /// 2. `~/.grok/session_dna.json` (global user defaults)
     /// 3. Built-in defaults
     pub fn load() -> Self {
-        // 1. Project-local file (highest priority)
-        let local = std::path::Path::new("session_dna.json");
-        if local.exists() {
-            if let Ok(content) = fs::read_to_string(local) {
+        // 1. Project-local under .grok (highest priority, VCS-safe)
+        let project_grok = std::path::Path::new(".grok").join("session_dna.json");
+        if project_grok.exists() {
+            if let Ok(content) = fs::read_to_string(&project_grok) {
                 if let Ok(dna) = serde_json::from_str(&content) {
                     return dna;
                 }

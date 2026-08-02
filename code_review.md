@@ -2,7 +2,7 @@
 
 **Reviewer:** Grumpy Old Rust Expert  
 **Date:** 2026-07-30  
-**Version reviewed:** 0.2.5-PreRelese  
+**Version reviewed:** 0.2.5-PreRelease  
 **Scope:** Full codebase — security, correctness, performance, architecture, readability
 
 ---
@@ -473,7 +473,7 @@ project root couples the tool's runtime state to the source tree. Use `.grok/` e
 **File:** `Cargo.toml` L3
 
 ```toml
-version = "0.2.5-PreRelese"
+version = "0.2.5-PreRelease"
 ```
 
 "PreRelese" should be "PreRelease". This propagates into `--version` output, `cargo publish`

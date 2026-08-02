@@ -59,7 +59,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                     let path = args["path"]
                         .as_str()
                         .ok_or_else(|| anyhow!("Missing: path"))?;
-                    file_tools::read_file(path, policy).await
+                    file_tools::read_file(path, ctx).await
                 }
                 "read_multiple_files" => {
                     let paths_val = args["paths"]
@@ -73,13 +73,13 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                                 .map(str::to_string)
                         })
                         .collect();
-                    file_tools::read_multiple_files(paths?, policy).await
+                    file_tools::read_multiple_files(paths?, ctx).await
                 }
                 "list_code_definitions" => {
                     let path = args["path"]
                         .as_str()
                         .ok_or_else(|| anyhow!("Missing: path"))?;
-                    file_tools::list_code_definitions(path, policy).await
+                    file_tools::list_code_definitions(path, ctx).await
                 }
                 "write_file" => {
                     let path = args["path"]
@@ -101,7 +101,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                         .as_str()
                         .ok_or_else(|| anyhow!("Missing: new_string"))?;
                     let expected = args["expected_replacements"].as_u64().map(|n| n as u32);
-                    file_tools::replace(path, old_string, new_string, expected, policy, false).await
+                    file_tools::replace(path, old_string, new_string, expected, ctx, false).await
                 }
                 "list_directory" => {
                     let path = args["path"]

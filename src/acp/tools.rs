@@ -36,17 +36,18 @@ mod tests {
 
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
+        let ctx = ToolContext::new(security.clone());
 
-        // Test write_file
+        // Test write_file (still takes &SecurityPolicy)
         let write_result = write_file(path_str, "Hello, world!", &security, false).await;
         assert!(write_result.is_ok());
 
-        // Test read_file
-        let read_result = read_file(path_str, &security).await;
+        // Test read_file (now takes &ToolContext for SEC-8 audit correlation)
+        let read_result = read_file(path_str, &ctx).await;
         assert!(read_result.is_ok());
         assert_eq!(read_result.unwrap(), "Hello, world!");
 
-        // Test list_directory (sync — no .await needed)
+        // Test list_directory (sync — still takes &SecurityPolicy)
         let list_result = list_directory(temp_dir.path().to_str().unwrap(), &security);
         assert!(list_result.is_ok());
         assert!(list_result.unwrap().contains("test.txt"));
@@ -62,13 +63,14 @@ mod tests {
 
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
+        let ctx = ToolContext::new(security.clone());
 
         let paths = vec![
             file1.to_str().unwrap().to_string(),
             file2.to_str().unwrap().to_string(),
         ];
 
-        let result = read_multiple_files(paths, &security).await;
+        let result = read_multiple_files(paths, &ctx).await;
         assert!(result.is_ok());
         let output = result.unwrap();
         assert!(output.contains("--- File:"));
@@ -99,8 +101,9 @@ mod tests {
 
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
+        let ctx = ToolContext::new(security.clone());
 
-        let result = list_code_definitions(file_path.to_str().unwrap(), &security).await;
+        let result = list_code_definitions(file_path.to_str().unwrap(), &ctx).await;
         assert!(result.is_ok());
         let output = result.unwrap();
         assert!(output.contains("struct MyStruct"));
@@ -154,28 +157,29 @@ mod tests {
 
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
+        let ctx = ToolContext::new(security.clone());  // use ToolContext for SEC-9 aligned replace
 
         fs::write(&file_path, "Hello world, hello universe").unwrap();
 
         // Test successful replace
-        let result = replace(path_str, "hello", "hi", None, &security, false).await;
+        let result = replace(path_str, "hello", "hi", None, &ctx, false).await;
         assert!(result.is_ok());
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Hello world, hi universe");
 
         // Test replace with expected count
-        let result = replace(path_str, "universe", "cosmos", Some(1), &security, false).await;
+        let result = replace(path_str, "universe", "cosmos", Some(1), &ctx, false).await;
         assert!(result.is_ok());
         let content = fs::read_to_string(&file_path).unwrap();
         assert_eq!(content, "Hello world, hi cosmos");
 
         // Test replace not found
-        let result = replace(path_str, "missing", "nothing", None, &security, false).await;
+        let result = replace(path_str, "missing", "nothing", None, &ctx, false).await;
         assert!(result.is_err());
         assert!(result.unwrap_err().to_string().contains("not found"));
 
         // Test replace count mismatch
-        let result = replace(path_str, "hi", "hey", Some(5), &security, false).await;
+        let result = replace(path_str, "hi", "hey", Some(5), &ctx, false).await;
         assert!(result.is_err());
         assert!(
             result

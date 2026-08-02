@@ -19,6 +19,7 @@ mod helpers;
 use grok_cli::tools::{
     glob_search, list_directory, read_file, replace, search_file_content, write_file,
 };
+use grok_cli::tools::ToolContext;
 use std::fs;
 use tempfile::TempDir;
 
@@ -33,7 +34,7 @@ async fn read_file_returns_content() {
     let policy = helpers::make_policy(&dir);
     let file = helpers::write_fixture(&dir, "hello.txt", "Hello, Grok!");
 
-    let result = read_file(file.to_str().unwrap(), &policy).await.unwrap();
+    let result = read_file(file.to_str().unwrap(), &helpers::make_ctx(&dir)).await.unwrap();
 
     assert_eq!(result, "Hello, Grok!");
 }
@@ -45,7 +46,7 @@ async fn read_file_missing_returns_err() {
     let policy = helpers::make_policy(&dir);
     let missing = dir.path().join("does_not_exist.txt");
 
-    let result = read_file(missing.to_str().unwrap(), &policy).await;
+    let result = read_file(missing.to_str().unwrap(), &helpers::make_ctx(&dir)).await;
 
     assert!(result.is_err(), "expected Err for missing file");
     let msg = result.unwrap_err().to_string().to_lowercase();
@@ -67,7 +68,7 @@ async fn read_file_valid_json_returned_verbatim() {
     let json_text = r#"{"version":1,"items":["a","b"]}"#;
     let file = helpers::write_fixture(&dir, "data.json", json_text);
 
-    let result = read_file(file.to_str().unwrap(), &policy).await.unwrap();
+    let result = read_file(file.to_str().unwrap(), &helpers::make_ctx(&dir)).await.unwrap();
 
     assert_eq!(
         result, json_text,
@@ -85,7 +86,7 @@ async fn read_file_outside_trust_is_denied() {
     let policy = helpers::make_policy(&trusted);
     let secret = helpers::write_fixture(&other, "secret.txt", "classified");
 
-    let result = read_file(secret.to_str().unwrap(), &policy).await;
+    let result = read_file(secret.to_str().unwrap(), &helpers::make_ctx(&trusted)).await;
 
     assert!(result.is_err(), "path outside trust must return Err");
     let msg = result.unwrap_err().to_string().to_lowercase();
@@ -170,7 +171,7 @@ async fn replace_updates_file_content() {
         "World",
         "Grok",
         None,
-        &policy,
+        &helpers::make_ctx(&dir),
         false,
     )
     .await
@@ -192,7 +193,7 @@ async fn replace_old_string_not_found_returns_err() {
         "DOES_NOT_EXIST",
         "replacement",
         None,
-        &policy,
+        &helpers::make_ctx(&dir),
         false,
     )
     .await;
@@ -217,7 +218,7 @@ async fn replace_nonexistent_file_returns_err() {
         "old",
         "new",
         None,
-        &policy,
+        &helpers::make_ctx(&dir),
         false,
     )
     .await;
@@ -377,7 +378,7 @@ async fn security_path_inside_trust_is_accessible() {
     let policy = helpers::make_policy(&dir);
     let file = helpers::write_fixture(&dir, "trusted.txt", "trusted content");
 
-    let read_result = read_file(file.to_str().unwrap(), &policy).await;
+    let read_result = read_file(file.to_str().unwrap(), &helpers::make_ctx(&dir)).await;
     assert!(
         read_result.is_ok(),
         "trusted path must be readable, err: {:?}",
@@ -409,7 +410,7 @@ async fn security_system_path_outside_trust_is_denied() {
     #[cfg(not(windows))]
     let system_path = "/etc/hosts";
 
-    let result = read_file(system_path, &policy).await;
+    let result = read_file(system_path, &helpers::make_ctx(&dir)).await;
 
     assert!(
         result.is_err(),
@@ -435,7 +436,7 @@ async fn security_path_traversal_is_denied() {
     // Classic traversal — lands above the temp dir.
     let traversal = "../../etc/passwd";
 
-    let result = read_file(traversal, &policy).await;
+    let result = read_file(traversal, &helpers::make_ctx(&dir)).await;
 
     assert!(
         result.is_err(),
@@ -478,7 +479,7 @@ async fn replace_preserves_crlf_line_endings() {
         "line one\nline two",
         "replaced",
         None,
-        &policy,
+        &helpers::make_ctx(&dir),
         false,
     )
     .await
@@ -508,7 +509,7 @@ async fn write_then_read_round_trip() {
         .await
         .unwrap();
 
-    let result = read_file(path.to_str().unwrap(), &policy).await.unwrap();
+    let result = read_file(path.to_str().unwrap(), &helpers::make_ctx(&dir)).await.unwrap();
     assert_eq!(result, content);
 }
 

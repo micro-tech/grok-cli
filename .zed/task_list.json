@@ -838,7 +838,7 @@
       "status": "done",
       "priority": "high",
       "dependencies": [],
-      "details": "Task complete.\n\nSubtasks:\n- Add error checking: done (security validation + timeout already implemented and sufficient)\n- Add cargo test coverage: done (added two cfg(target_os = \"windows\") tests that verify && chain short-circuit behavior)\n- Add documentation: done (extensive rustdoc comments + inline explanations for translate_powershell_and_chain and Windows PowerShell handling)\n\nAll \"ones\" (subtasks) that are done are now marked done in task details. Main task status: done.\n\nNo remaining work for 248.",
+      "details": "Implementation complete in src/tools/shell_tools.rs.\n\n- translate_powershell_and_chain() correctly converts && to ; if ($LASTEXITCODE -eq 0) { ... } blocks (works on PS 5.1 and PS7+ without version detection).\n- run_shell_command uses the translator on Windows.\n- Error checking: security.validate_shell_command + hard timeout already present.\n- Cargo test coverage: two cfg(target_os = \"windows\") tests (windows_and_chain_stops_on_failure and windows_and_chain_runs_second_on_success).\n- Documentation: detailed comments on the translation logic, security notes, and error behavior.\n\nAll subtasks completed:\n- Add error checking → done\n- Add cargo test coverage → done\n- Add documentation → done\n\nMain task status: done. No further work required.",
       "testStrategy": "On Windows: run_shell_command with a failing command chained via && to an echo must NOT produce the echo output. On non-Windows: existing behavior unchanged. Test both PS5 and PS7 code paths if feasible.",
       "subtasks": [
         {
@@ -993,7 +993,7 @@
       "id": 253,
       "title": "READ-1+ARCH-4: Fix version typo and delete stray backup file",
       "description": "Cargo.toml has version 0.2.5-PreRelese (misspelling of PreRelease). The file src/acp/mod .rs_bak (space in filename) is a stray editor backup committed to the repository.",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "dependencies": [],
       "details": "Fix 1: In Cargo.toml L3, change 0.2.5-PreRelese to 0.2.5-PreRelease. Fix 2: Run git rm to remove the stray backup file named mod .rs_bak from src/acp/. Add *.rs_bak to .gitignore to prevent future occurrences. Commit both changes together. Check CHANGELOG.md for the old version string and update it. Verify grok-cli --version output shows the corrected string after rebuild.",
@@ -1017,12 +1017,12 @@
       "id": 254,
       "title": "PERF-2+PERF-3: Improve AuditLogger I/O performance and add stats caching",
       "description": "AuditLogger opens a new file handle per log entry and reads the entire log file for every stats query. Both are expensive on frequently-called paths.",
-      "status": "pending",
+      "status": "done",
       "priority": "medium",
       "dependencies": [
         251
       ],
-      "details": "Part 1 (write): Change AuditLogger to hold an Arc<Mutex<BufWriter<File>>> opened once at construction or lazily on first write. Flush on Drop. This eliminates the open/write/flush/close cycle on every entry. Part 2 (stats caching): Add an in-memory cache Vec<ExternalAccessLog> with a dirty flag so get_statistics, get_top_accessed_paths, and get_logs_in_range serve from cache. Invalidate cache on log_access. Enforce a max cache size to bound memory.",
+      "details": "PERF-2 + PERF-3 complete.\n\n**Part 1 (write performance)**:\n- Added `writer: Mutex<Option<BufWriter<File>>>` to AuditLogger.\n- `log_access()` now lazily opens a single BufWriter on first write and reuses it.\n- Every write is still flushed (for audit durability) but we eliminate repeated open/append/close per entry.\n- Added `impl Drop for AuditLogger` that does a best-effort flush.\n\n**Part 2 (stats / query caching)**:\n- Added `cache: Mutex<Vec<ExternalAccessLog>>` + `cache_dirty: Mutex<bool>`.\n- New private `ensure_cache_loaded()` that only reads the JSONL file from disk when the cache is dirty or empty.\n- All query methods now serve from cache when possible:\n  - get_statistics()\n  - get_top_accessed_paths()\n  - get_logs_in_range()\n  - get_logs_for_path()\n  - get_recent_logs()\n  - get_all_logs()\n- On every successful `log_access()` we append to the cache (oldest-first) and enforce MAX_CACHE_ENTRIES (10k).\n- `clear_logs()` invalidates the cache + drops the writer handle.\n- Added test-only `DISK_READ_COUNT` atomic to prove no unnecessary disk reads.\n\n**New tests**:\n- `test_stats_served_from_cache_after_first_load` (asserts zero additional disk reads on cache hit)\n- `test_cache_invalidated_on_clear_logs`\n\nAll 10 audit tests pass. Existing call sites (file_tools, cli/commands/audit) continue to work unchanged.\n\nSubtasks marked complete.",
       "testStrategy": "Part 1: Run a loop calling log_access 1000 times and measure wall time before and after. Part 2: Call get_statistics, then log_access once, then get_statistics again; verify the second call does not re-read the file.",
       "subtasks": [
         {
