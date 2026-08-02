@@ -31,9 +31,10 @@ impl SessionDna {
     /// Load Session DNA.
     ///
     /// Search order (SEC-5: VCS-safe location):
-    /// 1. `./.grok/session_dna.json`  (project-local under .grok dir – wins for per-project DNA)
-    ///    NOTE: bare `session_dna.json` in project root is deliberately ignored to avoid VCS exposure.
-    /// 2. `~/.grok/session_dna.json` (global user defaults)
+    /// 1. `./.grok/session_dna.json`  (project-local under .grok/ – wins for per-project DNA)
+    ///    NOTE: bare `session_dna.json` directly in project root is deliberately ignored
+    ///    to prevent accidental commits to VCS.
+    /// 2. `~/.grok-cli/session_dna.json` (global user defaults, migrated location)
     /// 3. Built-in defaults
     pub fn load() -> Self {
         // 1. Project-local under .grok (highest priority, VCS-safe)
@@ -48,7 +49,7 @@ impl SessionDna {
 
         // 2. Global user file
         if let Some(home) = dirs::home_dir() {
-            let path = home.join(".grok").join("session_dna.json");
+            let path = home.join(".grok-cli").join("session_dna.json");
             if path.exists() {
                 if let Ok(content) = fs::read_to_string(&path) {
                     if let Ok(dna) = serde_json::from_str(&content) {

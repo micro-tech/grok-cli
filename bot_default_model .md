@@ -1,7 +1,7 @@
-default_model = "grok-4.5"
+default_model = "grok-4"
 default_temperature = 0.7
 # Output token budget (not the context window).
-# grok-4.5 supports up to 32 768 output tokens; 16 384 is a safe default.
+# grok-4 / grok-4.x support large contexts; 8192-16384 is a safe default for output.
 default_max_tokens = 16384
 timeout_secs = 300
 max_retries = 5
@@ -70,7 +70,7 @@ update_check_hours = 24
 [ui.interactive.key_bindings]
 
 [model]
-name = "grok-4.5"
+name = "grok-4"
 max_session_turns = 200
 summarize_tool_output = false
 compression_threshold = 0.0

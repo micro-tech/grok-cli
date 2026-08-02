@@ -9,7 +9,10 @@ use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
 use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
-use std::sync::{atomic::{AtomicUsize, Ordering}, Mutex};
+use std::sync::Mutex;
+
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 #[cfg(test)]
 static DISK_READ_COUNT: AtomicUsize = AtomicUsize::new(0);

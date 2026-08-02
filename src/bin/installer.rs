@@ -380,7 +380,12 @@ fn setup_session_dna(root_dir: &Path) {
             return;
         }
 
-        let source_dna = root_dir.join("session_dna.json");
+        // SEC-5: Prefer .grok/session_dna.json (VCS-safe) over bare session_dna.json in root
+        let source_dna = if root_dir.join(".grok").join("session_dna.json").exists() {
+            root_dir.join(".grok").join("session_dna.json")
+        } else {
+            root_dir.join("session_dna.json")
+        };
         let target_dna = grok_cli_dir.join("session_dna.json");
 
         if source_dna.exists() {
@@ -389,7 +394,7 @@ fn setup_session_dna(root_dir: &Path) {
                 Err(e) => eprintln!("Failed to install session_dna.json: {}", e),
             }
         } else {
-            println!("No session_dna.json found in project root, skipping Session DNA setup.");
+            println!("No session_dna.json found in project root (checked .grok/ too), skipping Session DNA setup.");
         }
     } else {
         eprintln!("Failed to locate home directory for Session DNA setup.");

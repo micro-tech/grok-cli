@@ -80,7 +80,6 @@ fn translate_powershell_and_chain(cmd: &str) -> String {
 pub async fn run_shell_command(
     command: &str,
     security: &SecurityPolicy,
-    _timeout_secs: u64,
 ) -> Result<String> {
     security.validate_shell_command(command)?;
 
@@ -167,7 +166,7 @@ mod tests {
     #[tokio::test]
     async fn echo_command_succeeds() {
         let policy = SecurityPolicy::new();
-        let result = run_shell_command("echo hello", &policy, 0).await;
+        let result = run_shell_command("echo hello", &policy).await;
         assert!(result.is_ok(), "echo should succeed: {:?}", result);
         let out = result.unwrap();
         assert!(
@@ -181,7 +180,7 @@ mod tests {
     async fn blocked_command_is_rejected() {
         let policy = SecurityPolicy::new();
         // "rm -rf" is on the denylist; must be rejected before spawning.
-        let result = run_shell_command("rm -rf /tmp/should_not_exist", &policy, 0).await;
+        let result = run_shell_command("rm -rf /tmp/should_not_exist", &policy).await;
         assert!(result.is_err(), "dangerous command should be blocked");
     }
 
@@ -200,7 +199,6 @@ mod tests {
         let result = run_shell_command(
             "cmd /c exit 1 && echo SHOULD_NOT_APPEAR_IN_OUTPUT",
             &policy,
-            0,
         )
         .await;
 
@@ -217,7 +215,7 @@ mod tests {
     async fn windows_and_chain_runs_second_on_success() {
         let policy = SecurityPolicy::new();
         let result =
-            run_shell_command("cmd /c exit 0 && echo CHAIN_SUCCESS_MARKER", &policy, 0).await;
+            run_shell_command("cmd /c exit 0 && echo CHAIN_SUCCESS_MARKER", &policy).await;
 
         assert!(result.is_ok(), "successful chain should succeed");
         let out = result.unwrap();

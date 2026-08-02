@@ -130,10 +130,11 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                     let command = args["command"]
                         .as_str()
                         .ok_or_else(|| anyhow!("Missing: command"))?;
-                    // Callers may inject a project-specific timeout via args["timeout_secs"];
-                    // fall back to 0 which tells shell_tools to use its 300 s built-in default.
-                    let timeout_secs = args["timeout_secs"].as_u64().unwrap_or(0);
-                    shell_tools::run_shell_command(command, policy, timeout_secs).await
+                    // Note: timeout is now derived exclusively from SecurityPolicy + GROK_SHELL_TIMEOUT_SECS.
+                    // The optional "timeout_secs" arg is accepted for backward compat in the schema
+                    // but is ignored (COR-6 cleanup).
+                    let _ = args["timeout_secs"].as_u64(); // consume if present
+                    shell_tools::run_shell_command(command, policy).await
                 }
 
                 // ── Web ─────────────────────────────────────────────────────

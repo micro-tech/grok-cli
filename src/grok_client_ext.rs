@@ -10,6 +10,7 @@ use grok_api::{
 use serde_json::Value;
 
 use crate::config::RateLimitConfig;
+use crate::utils::rate_limiter::UsageStats;
 
 /// Extended Grok client that wraps grok_api::GrokClient with additional methods
 #[derive(Clone, Debug)]
@@ -48,7 +49,9 @@ impl GrokClient {
         })
     }
 
-    /// Set rate limit configuration (for compatibility - currently a no-op)
+    /// Set rate limit configuration.
+    /// When present, chat methods will enforce max_requests_per_minute and max_tokens_per_minute
+    /// using the UsageStats token-bucket style limiter before sending requests.
     pub fn with_rate_limits(mut self, config: RateLimitConfig) -> Self {
         self.rate_limit_config = Some(config);
         self
@@ -134,6 +137,19 @@ impl GrokClient {
                 }
             })
             .collect();
+
+        // === Rate limit enforcement (COR-5) ===
+        // If RateLimitConfig was provided via with_rate_limits(), enforce before the call.
+        // We use a conservative token estimate based on prompt size.
+        if let Some(ref cfg) = self.rate_limit_config {
+            let prompt_chars: usize = messages.iter().map(|v| v.to_string().len()).sum();
+            let estimated_tokens: u32 = ((prompt_chars / 3) as u32).saturating_add(600); // rough prompt + response headroom
+
+            let mut stats = UsageStats::load().unwrap_or_default();
+            if let Err(msg) = stats.check_limit(cfg, estimated_tokens) {
+                return Err(anyhow::anyhow!("Rate limit exceeded: {}", msg));
+            }
+        }
 
         let mut request = self
             .inner
