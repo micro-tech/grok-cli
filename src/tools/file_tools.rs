@@ -337,14 +337,18 @@ pub async fn list_code_definitions(path: &str, ctx: &crate::tools::ToolContext) 
 /// - Pre-write validation
 /// - Dry-run support
 /// - Suspicious write rejection
+///
+/// Standardized on `&ToolContext` (259.6) for session_id audit correlation.
 pub async fn write_file(
     path: &str,
     content: &str,
-    security: &SecurityPolicy,
+    ctx: &crate::tools::ToolContext,
     dry_run: bool,
 ) -> Result<String> {
+    let security = &ctx.policy;
+
     // ── Safety Hook: Pre-write validation ────────────────────────────────
-    let ctx = WriteContext {
+    let write_ctx = WriteContext {
         path: Path::new(path),
         operation: "write",
         proposed_content: Some(content),
@@ -352,12 +356,11 @@ pub async fn write_file(
         session_dna: None,
     };
 
-    match on_before_write_file(&ctx) {
+    match on_before_write_file(&write_ctx) {
         SafetyDecision::Block(reason) => return Err(anyhow!(reason)),
         SafetyDecision::RequireConfirmation(msg) => {
             // SECURITY FIX (SEC-2): Previously this was a no-op (just a warn).
             // Now we properly block the write until confirmation is implemented.
-            // TODO: Wire up real interactive prompt via ACP/CLI when available.
             return Err(anyhow!("Safety confirmation required: {}", msg));
         }
         _ => {}
@@ -459,7 +462,9 @@ pub async fn replace(
     match on_before_write_file(&write_ctx) {
         SafetyDecision::Block(reason) => return Err(anyhow!(reason)),
         SafetyDecision::RequireConfirmation(msg) => {
-            tracing::warn!("Safety confirmation required: {}", msg);
+            // SECURITY FIX (remaining part of SEC-2): Make replace() behave exactly like write_file.
+            // Previously it only logged a warning and continued. Now it properly blocks the operation.
+            return Err(anyhow!("Safety confirmation required: {}", msg));
         }
         _ => {}
     }

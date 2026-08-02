@@ -88,7 +88,8 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                     let content = args["content"]
                         .as_str()
                         .ok_or_else(|| anyhow!("Missing: content"))?;
-                    file_tools::write_file(path, content, policy, false).await
+                    // 259.6: standardized on &ToolContext (for session_id audit)
+                    file_tools::write_file(path, content, ctx, false).await
                 }
                 "replace" => {
                     let path = args["path"]
@@ -1641,10 +1642,34 @@ mod tests {
         }
     }
 
-    /// TEST-2: End-to-end round-trip through execute_tool dispatch.
+    /// TEST-2: End-to-end round-trip through execute_tool dispatch (Task 258).
     ///
-    /// Exercises the critical path: execute_tool → arbitration → actual tool impl.
-    /// Uses an isolated TempDir so no real filesystem is touched.
+    /// **Purpose**
+    /// This integration-style unit test exercises the **critical dispatch path**:
+    ///     execute_tool(name, args, ctx)
+    ///         → tool_arbitration::arbitrate_tool_call()
+    ///         → match arm that calls the real tool implementation
+    ///
+    /// It verifies the full round-trip for:
+    /// - A successful write (creates file on disk via the real `write_file` impl)
+    /// - A successful read that returns the exact bytes written
+    /// - Proper handling of an unknown tool (rejection path)
+    /// - Proper handling of a known tool with missing required arguments
+    ///
+    /// **Isolation**
+    /// Uses `tempfile::TempDir` + `SecurityPolicy::with_working_directory` so that
+    /// all file operations stay inside an ephemeral directory. No real user files
+    /// or network calls are performed.
+    ///
+    /// **Error checking**
+    /// Every dispatch result is inspected. Both the `Result` and the string
+    /// content (for structured arbitration responses) are asserted with clear
+    /// messages so a regression in any layer produces an obvious failure.
+    ///
+    /// **Coverage**
+    /// This test is automatically run by `cargo test`. It covers the happy path
+    /// through the registry, the two main arbitration decision branches that
+    /// reach tool code, and the error/rejection paths.
     #[tokio::test]
     async fn execute_tool_round_trip_write_read_unknown_missing() {
         let dir = tempfile::TempDir::new().unwrap();
@@ -1659,7 +1684,8 @@ mod tests {
             .to_string_lossy()
             .to_string();
 
-        // (2) write_file via dispatch — file must be created on disk
+        // ── Happy path: write_file via dispatch ─────────────────────────────
+        // The file must be created on disk by the real implementation.
         let write_args = serde_json::json!({
             "path": test_file,
             "content": "hello from TEST-2 round-trip"
@@ -1667,25 +1693,39 @@ mod tests {
         let write_result = execute_tool("write_file", &write_args, &ctx).await;
         assert!(
             write_result.is_ok(),
-            "write_file dispatch failed: {:?}",
+            "write_file dispatch must succeed, got error: {:?}",
             write_result.err()
         );
-        let on_disk = std::fs::read_to_string(&test_file).expect("file should exist after write");
-        assert_eq!(on_disk, "hello from TEST-2 round-trip");
+        let on_disk = std::fs::read_to_string(&test_file)
+            .expect("file must exist on disk after successful write_file dispatch");
+        assert_eq!(
+            on_disk, "hello from TEST-2 round-trip",
+            "written content must match exactly"
+        );
 
-        // (3) read_file via dispatch — content must match exactly
+        // ── Happy path: read_file via dispatch ──────────────────────────────
+        // Must return the exact content that was just written.
         let read_args = serde_json::json!({ "path": test_file });
         let read_result = execute_tool("read_file", &read_args, &ctx).await;
+        assert!(
+            read_result.is_ok(),
+            "read_file dispatch must succeed: {:?}",
+            read_result.err()
+        );
         assert_eq!(
             read_result.unwrap(),
             "hello from TEST-2 round-trip",
-            "read_file after write_file must return exact content"
+            "read_file after write_file must return the exact bytes that were written"
         );
 
-        // (4) unknown tool — arbitration now returns a structured Ok with error
-        // (instead of hard Err) for consistency with Reject/NeedMoreInfo paths.
-        // We accept either Err or an Ok that signals rejection/unknown.
-        let unknown_result = execute_tool("this_tool_does_not_exist_12345", &serde_json::json!({}), &ctx).await;
+        // ── Error / rejection path: unknown tool ────────────────────────────
+        // Arbitration (or the final match arm) must produce a clear error.
+        let unknown_result = execute_tool(
+            "this_tool_does_not_exist_12345",
+            &serde_json::json!({}),
+            &ctx,
+        )
+        .await;
         let unknown_str = match &unknown_result {
             Ok(s) => s.clone(),
             Err(e) => e.to_string(),
@@ -1697,21 +1737,21 @@ mod tests {
                 || unknown_str.contains("tool_rejected")
                 || unknown_str.contains("no implementation")
                 || unknown_str.contains("declared in the registry"),
-            "unknown tool should produce error or structured rejection, got: {}",
+            "unknown tool must produce an error or a structured rejection message, got: {}",
             unknown_str
         );
 
-        // (5) known tool but missing required argument.
-        // Arbitration now returns a structured Ok (NeedMoreInfo) instead of Err.
-        // This is the intended behavior after the unified arbitration layer.
+        // ── Error path: known tool with missing required argument ───────────
+        // write_file requires "content". Arbitration should return a
+        // structured response (NeedMoreInfo) instead of a hard panic or silent fail.
         let missing_arg_args = serde_json::json!({
             "path": test_file
-            // deliberately omit "content" for write_file
+            // "content" deliberately omitted
         });
         let missing_result = execute_tool("write_file", &missing_arg_args, &ctx).await;
         assert!(
             missing_result.is_ok(),
-            "arbitration for missing args should return Ok with structured error info"
+            "arbitration for missing args must return Ok( structured error ) rather than hard Err"
         );
         let missing_str = missing_result.unwrap().to_lowercase();
         assert!(
@@ -1721,7 +1761,7 @@ mod tests {
                 || missing_str.contains("arguments")
                 || missing_str.contains("needmoreinfo")
                 || missing_str.contains("error"),
-            "structured response for missing required arg should mention the problem, got: {}",
+            "structured response for missing required arg must mention the problem, got: {}",
             missing_str
         );
     }

@@ -146,16 +146,15 @@ pub async fn run_shell_command(
             command = command,
             "shell_tools: command exited with non-zero status"
         );
-    }
-
-    if output.status.success() {
-        Ok(format!("Stdout: {}\nStderr: {}", stdout, stderr))
-    } else {
-        Ok(format!(
+        // COR-10: Return Err on non-zero exit so callers (workflows, agents, tests)
+        // can distinguish success from failure and propagate errors properly.
+        return Err(anyhow!(
             "Command failed with code {}:\nStdout: {}\nStderr: {}",
             output.status, stdout, stderr
-        ))
+        ));
     }
+
+    Ok(format!("Stdout: {}\nStderr: {}", stdout, stderr))
 }
 
 #[cfg(test)]
@@ -173,6 +172,27 @@ mod tests {
             out.contains("hello"),
             "output should contain 'hello': {}",
             out
+        );
+    }
+
+    #[tokio::test]
+    async fn non_zero_exit_returns_err_cor10() {
+        let policy = SecurityPolicy::new();
+        // Cross-platform failing command
+        #[cfg(target_os = "windows")]
+        let cmd = "cmd /c exit 1";
+        #[cfg(not(target_os = "windows"))]
+        let cmd = "false";
+
+        let result = run_shell_command(cmd, &policy).await;
+        assert!(result.is_err(), "non-zero exit must return Err (COR-10)");
+        let err = result.unwrap_err().to_string();
+        assert!(
+            err.to_lowercase().contains("failed with code")
+                || err.contains("exit")
+                || err.contains("1"),
+            "error message should indicate failure, got: {}",
+            err
         );
     }
 
@@ -196,17 +216,27 @@ mod tests {
     async fn windows_and_chain_stops_on_failure() {
         let policy = SecurityPolicy::new();
         // First part fails (exit 1), second part must NOT execute.
+        // COR-10: non-zero exit now returns Err (with the failure message inside).
         let result = run_shell_command(
             "cmd /c exit 1 && echo SHOULD_NOT_APPEAR_IN_OUTPUT",
             &policy,
         )
         .await;
 
-        let out = result.unwrap_or_default();
         assert!(
-            !out.contains("SHOULD_NOT_APPEAR_IN_OUTPUT"),
-            "second command after && must not run when first fails. Got: {}",
-            out
+            result.is_err(),
+            "failing command must return Err (COR-10)"
+        );
+        let err = result.unwrap_err().to_string();
+        assert!(
+            !err.contains("SHOULD_NOT_APPEAR_IN_OUTPUT"),
+            "second command after && must not run when first fails. Got error: {}",
+            err
+        );
+        assert!(
+            err.contains("failed with code") || err.contains("exit 1"),
+            "error should mention failure code, got: {}",
+            err
         );
     }
 

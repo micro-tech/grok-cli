@@ -34,9 +34,9 @@ pub fn track_event(event: &str, properties: Value) {
         "properties": properties
     });
 
-    if let Some(path) = &state.log_file
-        && let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path)
-    {
-        let _ = writeln!(file, "{}", log_entry);
+    if let Some(path) = &state.log_file {
+        if let Ok(mut file) = OpenOptions::new().create(true).append(true).open(path) {
+            let _ = writeln!(file, "{}", log_entry);
+        }
     }
 }

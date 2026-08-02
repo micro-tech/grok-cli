@@ -766,13 +766,13 @@ impl Config {
         }
 
         // Validate ACP port range
-        if let Some(port) = self.acp.default_port
-            && port < 1024
-        {
-            warn!(
-                "ACP port {} is below 1024, may require elevated privileges",
-                port
-            );
+        if let Some(port) = self.acp.default_port {
+            if port < 1024 {
+                warn!(
+                    "ACP port {} is below 1024, may require elevated privileges",
+                    port
+                );
+            }
         }
 
         Ok(())

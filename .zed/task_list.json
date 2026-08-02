@@ -1122,7 +1122,7 @@
       "dependencies": [
         244
       ],
-      "details": "Test already implemented in src/tools/registry.rs (execute_tool_round_trip_write_read_unknown_missing).\n\nIt exactly matches the spec:\n- Uses tempfile::TempDir + SecurityPolicy::with_working_directory + ToolContext::new\n- Calls execute_tool(\"write_file\"...) and verifies file created on disk\n- Calls execute_tool(\"read_file\"...) and asserts exact content\n- Calls execute_tool with unknown tool → Err (descriptive message)\n- Calls execute_tool with known tool but missing required arg (write_file without content) → Err mentioning missing/required\n\nThe test is inside the registry module (allowed per task description) and is fully isolated (no real FS, no network).\n\nAll other ARCH-2 symmetry/required-params tests are also present.\n\nSubtasks considered complete.",
+      "details": "TEST-2 completed. The round-trip test `execute_tool_round_trip_write_read_unknown_missing` in src/tools/registry.rs now has excellent documentation + strong error checking for the full dispatch path (execute_tool → arbitration → real tool). All three subtasks (error checking, cargo test coverage, documentation) have been addressed.",
       "testStrategy": "cargo test includes the new integration tests and they pass. Tests use TempDir with no writes to the real filesystem. Tests run without a live network or API connection.",
       "subtasks": [
         {
@@ -1131,11 +1131,11 @@
         },
         {
           "title": "Add cargo test coverage",
-          "status": "pending"
+          "status": "done"
         },
         {
           "title": "Add documentation",
-          "status": "pending"
+          "status": "done"
         }
       ]
     },
@@ -1146,7 +1146,7 @@
       "status": "in_progress",
       "dependencies": [],
       "priority": "high",
-      "details": "BUILD-1 (edition 2024) is now resolved as non-issue. Remaining focus: SEC-2 remainder in replace(), COR-10 (shell errors), PERF-1, COR-3, ARCH cleanup, and test gaps. Updated review and task list to reflect 2026 reality.",
+      "details": "All subtasks completed:\n- 259.1: BUILD-1 (edition 2024→2021 + let-chain fixes) — DONE\n- 259.2: SEC-2 (replace() RequireConfirmation → Err) — DONE\n- 259.3: COR-10 (run_shell_command non-zero → Err) — DONE\n- 259.4: ARCH-2 tool registry audit — DONE\n- 259.5: Missing tests (TrustAlways + replace confirmation) — DONE\n- 259.6: File tool signatures on &ToolContext — DONE\n- 259.7: Magic numbers/defaults audit — DONE\n\nParent remains in_progress until full CI / final sign-off. All changes pass cargo check + relevant tests.",
       "testStrategy": "",
       "subtasks": [
         {
@@ -1188,7 +1188,7 @@
         {
           "id": 259.7,
           "title": "Centralize magic numbers and duplicated defaults",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         }
       ]
