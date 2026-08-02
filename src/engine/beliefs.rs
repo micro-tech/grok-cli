@@ -210,8 +210,13 @@ impl EngineBeliefs {
     /// Return the current belief score for a named tool, optionally adjusted by DNA.
     ///
     /// If `dna_tool_weight` is provided, the base score is multiplied by it.
-    pub fn tool_score(&self, tool_name: &str, dna: Option<&crate::session::dna::SessionDna>) -> f32 {
-        let base = self.tool_beliefs
+    pub fn tool_score(
+        &self,
+        tool_name: &str,
+        dna: Option<&crate::session::dna::SessionDna>,
+    ) -> f32 {
+        let base = self
+            .tool_beliefs
             .get(tool_name)
             .map(|b| b.score)
             .unwrap_or(0.0);

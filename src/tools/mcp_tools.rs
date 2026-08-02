@@ -180,7 +180,14 @@ pub async fn mcp_call_connected(
     let result = client
         .call_tool(server_name, tool_name, arguments)
         .await
-        .map_err(|e| anyhow!("MCP tool '{}' on server '{}' failed: {}", tool_name, server_name, e))?;
+        .map_err(|e| {
+            anyhow!(
+                "MCP tool '{}' on server '{}' failed: {}",
+                tool_name,
+                server_name,
+                e
+            )
+        })?;
 
     serde_json::to_string_pretty(&result)
         .map_err(|e| anyhow!("Failed to serialise MCP result: {}", e))
@@ -251,7 +258,9 @@ mod tests {
                 .expect("failed to run cargo build for test server");
 
             if !build_status.success() {
-                panic!("Could not build mcp_test_echo test server. Run `cargo build --bin mcp_test_echo` manually.");
+                panic!(
+                    "Could not build mcp_test_echo test server. Run `cargo build --bin mcp_test_echo` manually."
+                );
             }
         }
 
@@ -267,7 +276,11 @@ mod tests {
         )
         .await;
 
-        assert!(result.is_ok(), "stateless mcp_call failed: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "stateless mcp_call failed: {:?}",
+            result.err()
+        );
 
         let output = result.unwrap();
         // The echo server returns something like: ECHO: {"message":"hello stateless world"}

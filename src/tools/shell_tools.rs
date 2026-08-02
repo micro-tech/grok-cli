@@ -48,10 +48,7 @@ fn translate_powershell_and_chain(cmd: &str) -> String {
             result.push_str(trimmed);
         } else {
             // After previous command, only run this one if exit code was 0.
-            result.push_str(&format!(
-                "; if ($LASTEXITCODE -eq 0) {{ {} }}",
-                trimmed
-            ));
+            result.push_str(&format!("; if ($LASTEXITCODE -eq 0) {{ {} }}", trimmed));
         }
     }
     result
@@ -219,12 +216,8 @@ mod tests {
     #[tokio::test]
     async fn windows_and_chain_runs_second_on_success() {
         let policy = SecurityPolicy::new();
-        let result = run_shell_command(
-            "cmd /c exit 0 && echo CHAIN_SUCCESS_MARKER",
-            &policy,
-            0,
-        )
-        .await;
+        let result =
+            run_shell_command("cmd /c exit 0 && echo CHAIN_SUCCESS_MARKER", &policy, 0).await;
 
         assert!(result.is_ok(), "successful chain should succeed");
         let out = result.unwrap();

@@ -10,7 +10,8 @@ use serde_json::Value;
 pub fn schema_hash(schema: &Value) -> u64 {
     // Very lightweight hash — in production you'd use a proper hasher.
     let s = schema.to_string();
-    s.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64))
+    s.bytes()
+        .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64))
 }
 
 /// Prune tools that are not in the allowed list.

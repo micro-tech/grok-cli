@@ -38,9 +38,9 @@ pub struct GraphNode {
     pub id: NodeId,
     pub kind: NodeKind,
     pub name: String,
-    pub path: String,                    // e.g. "crate::module::MyStruct"
+    pub path: String, // e.g. "crate::module::MyStruct"
     pub file_path: PathBuf,
-    pub span: (usize, usize),            // byte offsets in file
+    pub span: (usize, usize), // byte offsets in file
     pub doc_comment: Option<String>,
     pub signature: Option<String>,
     pub visibility: Visibility,
@@ -49,7 +49,12 @@ pub struct GraphNode {
 }
 
 impl GraphNode {
-    pub fn new(kind: NodeKind, name: impl Into<String>, path: impl Into<String>, file_path: PathBuf) -> Self {
+    pub fn new(
+        kind: NodeKind,
+        name: impl Into<String>,
+        path: impl Into<String>,
+        file_path: PathBuf,
+    ) -> Self {
         Self {
             id: Uuid::new_v4(),
             kind,

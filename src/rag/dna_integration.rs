@@ -8,10 +8,7 @@ use crate::rag::config::TgsRagConfig;
 
 /// Adjusts TGS-RAG config based on Session DNA preferences.
 /// This is a lightweight integration point.
-pub fn apply_dna_preferences(
-    base_config: TgsRagConfig,
-    verbosity: Option<&str>,
-) -> TgsRagConfig {
+pub fn apply_dna_preferences(base_config: TgsRagConfig, verbosity: Option<&str>) -> TgsRagConfig {
     let mut config = base_config;
 
     if let Some(v) = verbosity {

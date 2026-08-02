@@ -115,22 +115,18 @@ pub async fn web_search(query: &str, _ctx: &ToolContext) -> Result<String> {
 pub async fn web_fetch(url: &str, _ctx: &ToolContext) -> Result<String> {
     const MAX_RETRIES: u32 = 3;
     for attempt in 0..=MAX_RETRIES {
-        let send_result = HTTP_CLIENT
-            .get(url)
-            .send()
-            .await
-            .map_err(|e| {
-                anyhow!(
-                    "Failed to fetch URL '{}': {}\n\
+        let send_result = HTTP_CLIENT.get(url).send().await.map_err(|e| {
+            anyhow!(
+                "Failed to fetch URL '{}': {}\n\
                     This could be due to:\n\
                     - Network connectivity issues (Starlink handover?)\n\
                     - Invalid URL\n\
                     - Server not responding\n\
                     - Firewall/proxy blocking the request",
-                    url,
-                    e
-                )
-            });
+                url,
+                e
+            )
+        });
 
         match send_result {
             Ok(response) => {

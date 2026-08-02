@@ -6,12 +6,12 @@ use uuid::Uuid;
 /// Kind of relationship between two nodes.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum EdgeKind {
-    Contains,      // module contains item
-    Imports,       // use / extern crate
-    Calls,         // function call
-    Implements,    // impl Trait for Type
-    Inherits,      // struct field type, enum variant, supertrait
-    References,    // any other reference (type use, etc.)
+    Contains,   // module contains item
+    Imports,    // use / extern crate
+    Calls,      // function call
+    Implements, // impl Trait for Type
+    Inherits,   // struct field type, enum variant, supertrait
+    References, // any other reference (type use, etc.)
 }
 
 /// An edge in the semantic entity graph.

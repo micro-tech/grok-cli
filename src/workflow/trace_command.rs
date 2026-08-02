@@ -11,10 +11,10 @@
 //! - ACP sessions (returns nice markdown/text)
 //! - Pure CLI interactive (can launch the rich ratatui viewer)
 
+use crate::workflow::WorkflowTrace;
 use crate::workflow::persistence::{
     list_traces, load_latest_trace, load_trace, trace_file_summary,
 };
-use crate::workflow::WorkflowTrace;
 
 /// Handle the `/trace` command. Returns a human-readable response string.
 ///
@@ -38,7 +38,8 @@ async fn handle_last() -> String {
             if is_interactive_terminal() {
                 match crate::display::run_workflow_viewer(trace.clone()).await {
                     Ok(()) => {
-                        return "✅ Opened workflow trace viewer. Press q or Esc to return.".to_string();
+                        return "✅ Opened workflow trace viewer. Press q or Esc to return."
+                            .to_string();
                     }
                     Err(e) => {
                         // Fall through to text rendering
@@ -48,26 +49,19 @@ async fn handle_last() -> String {
             }
 
             // Text fallback (works everywhere)
-            format!(
-                "## Latest Workflow Trace\n\n{}",
-                format_trace_text(&trace)
-            )
+            format!("## Latest Workflow Trace\n\n{}", format_trace_text(&trace))
         }
-        Ok(None) => {
-            "No workflow traces found yet.\n\n\
+        Ok(None) => "No workflow traces found yet.\n\n\
              Traces are automatically saved when you run validation workflows \
              (e.g. code generation followed by cargo check/clippy/test)."
-                .to_string()
-        }
+            .to_string(),
         Err(e) => format!("❌ Failed to load latest trace: {}", e),
     }
 }
 
 fn handle_list() -> String {
     match list_traces() {
-        Ok(traces) if traces.is_empty() => {
-            "No saved workflow traces yet.".to_string()
-        }
+        Ok(traces) if traces.is_empty() => "No saved workflow traces yet.".to_string(),
         Ok(traces) => {
             let mut out = String::from("## Saved Workflow Traces (newest first)\n\n");
             for (i, path) in traces.iter().take(25).enumerate() {
@@ -85,12 +79,10 @@ fn handle_list() -> String {
 
 async fn handle_json() -> String {
     match load_latest_trace() {
-        Ok(Some(trace)) => {
-            match serde_json::to_string_pretty(&trace) {
-                Ok(json) => format!("```json\n{}\n```", json),
-                Err(e) => format!("❌ Failed to serialize trace: {}", e),
-            }
-        }
+        Ok(Some(trace)) => match serde_json::to_string_pretty(&trace) {
+            Ok(json) => format!("```json\n{}\n```", json),
+            Err(e) => format!("❌ Failed to serialize trace: {}", e),
+        },
         Ok(None) => "No trace available for JSON dump.".to_string(),
         Err(e) => format!("❌ Error: {}", e),
     }
@@ -172,7 +164,11 @@ fn format_trace_text(trace: &WorkflowTrace) -> String {
                     truncate(code, 400)
                 ));
             }
-            crate::workflow::WorkflowStep::ToolRun { tool, output, success } => {
+            crate::workflow::WorkflowStep::ToolRun {
+                tool,
+                output,
+                success,
+            } => {
                 let icon = if *success { "✅" } else { "❌" };
                 out.push_str(&format!(
                     "**{}.** {} Tool: `{}`\n\n```\n{}\n```\n\n",
@@ -206,7 +202,11 @@ fn format_trace_text(trace: &WorkflowTrace) -> String {
     if let Some(passed) = trace.last_decision_passed() {
         out.push_str(&format!(
             "---\n**Final result:** {}\n",
-            if passed { "All steps passed" } else { "Some steps failed" }
+            if passed {
+                "All steps passed"
+            } else {
+                "Some steps failed"
+            }
         ));
     }
 

@@ -42,6 +42,7 @@ pub mod agent_tools;
 pub mod ai_tools;
 pub mod discovery_tools;
 pub mod file_tools;
+pub mod image;
 pub mod lsp_tools;
 pub mod mcp_tools;
 pub mod memory_tools;
@@ -59,13 +60,12 @@ pub mod tool_arbitration;
 pub mod tool_context;
 pub mod tool_error;
 pub mod web_tools;
-pub mod image;
 
 // ── Core re-exports ───────────────────────────────────────────────────────────
 
 pub use registry::{
-    execute_tool, get_available_tool_definitions, get_full_tool_definitions, get_required_parameters,
-    get_tool_definitions,
+    execute_tool, get_available_tool_definitions, get_full_tool_definitions,
+    get_required_parameters, get_tool_definitions,
 };
 pub use tool_context::ToolContext;
 pub use tool_error::ToolError;
@@ -89,7 +89,7 @@ pub use web_tools::{is_web_search_configured, web_fetch, web_search};
 // ── Memory ────────────────────────────────────────────────────────────────────
 
 pub use memory_tools::save_memory;
-pub use okf_tools::{okf_lookup, okf_get};
+pub use okf_tools::{okf_get, okf_lookup};
 
 // ── Task management ───────────────────────────────────────────────────────────
 
@@ -123,7 +123,10 @@ pub use discovery_tools::{cron_create, remote_trigger, tool_search};
 
 // ── Image / Vision ────────────────────────────────────────────────────────────
 
-pub use image::{extract_image_from_message, is_image_path, is_image_url, prepare_image_content, print_image_attached_feedback};
+pub use image::{
+    extract_image_from_message, is_image_path, is_image_url, prepare_image_content,
+    print_image_attached_feedback,
+};
 
 // ── Vision support ────────────────────────────────────────────────────────────
 

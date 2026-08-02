@@ -18,7 +18,10 @@ impl IntentValidator {
         }
 
         if lower.contains("make it better") {
-            return Err("What specifically should be improved? (performance, readability, etc.)".to_string());
+            return Err(
+                "What specifically should be improved? (performance, readability, etc.)"
+                    .to_string(),
+            );
         }
 
         Ok(())

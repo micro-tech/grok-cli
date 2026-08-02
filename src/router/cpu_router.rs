@@ -294,7 +294,11 @@ impl CpuRouter {
             let has_tool_calls = !tool_calls.is_empty();
 
             // Record LLM output on first response that has content
-            if workflow.steps.iter().all(|s| !matches!(s, WorkflowStep::LlmGeneratedCode(_))) {
+            if workflow
+                .steps
+                .iter()
+                .all(|s| !matches!(s, WorkflowStep::LlmGeneratedCode(_)))
+            {
                 if let Some(text) = &resp.text {
                     if !text.trim().is_empty() {
                         workflow.push(WorkflowStep::LlmGeneratedCode(text.clone()));
@@ -327,8 +331,8 @@ impl CpuRouter {
 
             // Execute tools and record each as ToolRun
             for tool_call in &tool_calls {
-                let args: serde_json::Value =
-                    serde_json::from_str(&tool_call.function.arguments).unwrap_or(serde_json::Value::Null);
+                let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)
+                    .unwrap_or(serde_json::Value::Null);
 
                 let outcome =
                     crate::tools::registry::execute_tool(&tool_call.function.name, &args, context)

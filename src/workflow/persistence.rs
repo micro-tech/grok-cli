@@ -45,8 +45,8 @@ pub fn save_trace(trace: &WorkflowTrace) -> Result<PathBuf> {
     let filename = format!("workflow-{}.json", timestamp);
     let path = dir.join(&filename);
 
-    let json = serde_json::to_string_pretty(trace)
-        .context("Failed to serialize WorkflowTrace to JSON")?;
+    let json =
+        serde_json::to_string_pretty(trace).context("Failed to serialize WorkflowTrace to JSON")?;
 
     fs::write(&path, json)
         .with_context(|| format!("Failed to write workflow trace to {:?}", path))?;
@@ -84,10 +84,10 @@ pub fn list_traces() -> Result<Vec<PathBuf>> {
         .filter_map(|entry| entry.ok())
         .map(|entry| entry.path())
         .filter(|p| {
-            p.extension()
-                .map_or(false, |ext| ext == "json")
-                && p.file_name()
-                    .map_or(false, |name| name.to_string_lossy().starts_with("workflow-"))
+            p.extension().map_or(false, |ext| ext == "json")
+                && p.file_name().map_or(false, |name| {
+                    name.to_string_lossy().starts_with("workflow-")
+                })
         })
         .collect();
 
@@ -128,14 +128,18 @@ mod tests {
     fn make_sample_trace() -> WorkflowTrace {
         let mut trace = WorkflowTrace::new();
         trace.push(WorkflowStep::UserPrompt("fix the tests".into()));
-        trace.push(WorkflowStep::LlmGeneratedCode("fn main() { println!(\"hi\"); }".into()));
+        trace.push(WorkflowStep::LlmGeneratedCode(
+            "fn main() { println!(\"hi\"); }".into(),
+        ));
         trace.push(WorkflowStep::ToolRun {
             tool: "cargo check".into(),
             output: "error: ...".into(),
             success: false,
         });
         trace.push(WorkflowStep::Decision { passed: false });
-        trace.push(WorkflowStep::ReturnedToLlm("please fix the compile error".into()));
+        trace.push(WorkflowStep::ReturnedToLlm(
+            "please fix the compile error".into(),
+        ));
         trace
     }
 
@@ -175,8 +179,9 @@ mod tests {
             .map(|e| e.path())
             .filter(|p| {
                 p.extension().map_or(false, |ext| ext == "json")
-                    && p.file_name()
-                        .map_or(false, |name| name.to_string_lossy().starts_with("workflow-"))
+                    && p.file_name().map_or(false, |name| {
+                        name.to_string_lossy().starts_with("workflow-")
+                    })
             })
             .collect();
 

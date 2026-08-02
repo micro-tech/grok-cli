@@ -185,7 +185,9 @@ impl MemoryStore {
         // We spawn a small runtime in a thread to safely block on the async config load.
         let okf_knowledge: Vec<crate::knowledge::OkfBundle> = std::thread::spawn(|| {
             let rt = tokio::runtime::Runtime::new().ok()?;
-            let cfg = rt.block_on(crate::config::Config::load_hierarchical()).ok()?;
+            let cfg = rt
+                .block_on(crate::config::Config::load_hierarchical())
+                .ok()?;
             if cfg.okf.enabled {
                 Some(crate::tools::okf_tools::load_okf_from_config(&cfg))
             } else {
@@ -200,7 +202,8 @@ impl MemoryStore {
         // ── Short-term memory + system prompt ─────────────────────────────────
         let mut short_term = ShortTermMemory::new();
 
-        let system_prompt = build_system_prompt(base_system_prompt, &working, &long_term, &okf_knowledge);
+        let system_prompt =
+            build_system_prompt(base_system_prompt, &working, &long_term, &okf_knowledge);
         if !system_prompt.trim().is_empty() {
             short_term.push_system(&system_prompt);
         }
@@ -437,7 +440,8 @@ impl MemoryStore {
         let changed = self.working.reload()?;
 
         if changed {
-            let new_prompt = build_system_prompt(None, &self.working, &self.long_term, &self.okf_knowledge);
+            let new_prompt =
+                build_system_prompt(None, &self.working, &self.long_term, &self.okf_knowledge);
             if !new_prompt.trim().is_empty() {
                 self.short_term.push_system(&new_prompt);
             }
@@ -518,7 +522,11 @@ impl MemoryStore {
 
     /// Search across all loaded OKF bundles (the Knowledge OS).
     /// This is the high-level API used by the `/okf` slash command and tools.
-    pub fn search_okf(&self, query: &str, max_results: usize) -> Vec<&crate::knowledge::OkfConcept> {
+    pub fn search_okf(
+        &self,
+        query: &str,
+        max_results: usize,
+    ) -> Vec<&crate::knowledge::OkfConcept> {
         if query.trim().is_empty() || self.okf_knowledge.is_empty() {
             return vec![];
         }
@@ -648,16 +656,16 @@ fn build_system_prompt(
                     format!(" ({})", concept.r#type)
                 };
                 let short_desc = if !concept.description.is_empty() {
-                    format!(" — {}", concept.description.chars().take(90).collect::<String>())
+                    format!(
+                        " — {}",
+                        concept.description.chars().take(90).collect::<String>()
+                    )
                 } else {
                     String::new()
                 };
                 okf_lines.push(format!(
                     "- **{}**{}: {}{}",
-                    concept.title,
-                    type_info,
-                    concept.id,
-                    short_desc
+                    concept.title, type_info, concept.id, short_desc
                 ));
                 concept_count += 1;
             }

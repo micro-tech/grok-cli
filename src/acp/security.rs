@@ -28,9 +28,7 @@ fn is_windows_drive_absolute(path: &Path) -> bool {
     let s = path.to_string_lossy();
     let bytes = s.as_bytes();
     // X: or X:\ or X:/
-    bytes.len() >= 2
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
 impl SecurityPolicy {

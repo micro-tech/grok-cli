@@ -29,7 +29,10 @@ impl Bm25Index {
             let t = token.to_lowercase();
             let count = freqs.entry(t.clone()).or_insert(0);
             *count += 1;
-            self.index.entry(t).or_default().insert(doc_id.clone(), *count);
+            self.index
+                .entry(t)
+                .or_default()
+                .insert(doc_id.clone(), *count);
         }
 
         // update average doc length

@@ -1086,12 +1086,10 @@ async fn handle_builtin_result(
                 }
             }
         }
-        BuiltinResult::ForceCompress => {
-            match agent.force_compress(session_id).await {
-                Ok(msg) => msg,
-                Err(e) => format!("❌ Forced compression failed: {}", e),
-            }
-        }
+        BuiltinResult::ForceCompress => match agent.force_compress(session_id).await {
+            Ok(msg) => msg,
+            Err(e) => format!("❌ Forced compression failed: {}", e),
+        },
     }
 }
 

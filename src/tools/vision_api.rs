@@ -5,7 +5,7 @@
 
 use crate::tools::image::prepare_image_content;
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Create a user message that includes both text and an image.
 /// This is the format expected by most vision APIs (including xAI/Grok).
@@ -37,9 +37,11 @@ pub fn create_vision_message(text: &str, image_path_or_url: &str) -> Result<Valu
 pub fn message_has_image(msg: &Value) -> bool {
     if let Some(content) = msg.get("content") {
         if content.is_array() {
-            return content.as_array().unwrap().iter().any(|part| {
-                part.get("type").and_then(|t| t.as_str()) == Some("image_url")
-            });
+            return content
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|part| part.get("type").and_then(|t| t.as_str()) == Some("image_url"));
         }
     }
     false
@@ -61,6 +63,9 @@ mod tests {
         assert_eq!(content[0]["type"], "text");
         assert_eq!(content[0]["text"], "describe this");
         assert_eq!(content[1]["type"], "image_url");
-        assert_eq!(content[1]["image_url"]["url"], "https://example.com/test.png");
+        assert_eq!(
+            content[1]["image_url"]["url"],
+            "https://example.com/test.png"
+        );
     }
 }

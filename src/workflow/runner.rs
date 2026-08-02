@@ -13,10 +13,7 @@ use std::process::Command;
 ///
 /// Note: This is a demonstration for Task 232. Production use should integrate
 /// with the existing shell tool security policy and the main tool loop.
-pub fn run_cargo_validation_workflow(
-    user_prompt: &str,
-    generated_code: &str,
-) -> WorkflowTrace {
+pub fn run_cargo_validation_workflow(user_prompt: &str, generated_code: &str) -> WorkflowTrace {
     let mut trace = WorkflowTrace::new();
 
     trace.push(WorkflowStep::UserPrompt(user_prompt.to_string()));
@@ -76,7 +73,11 @@ edition = "2021"
     // 2. cargo clippy (only if check passed, to save time)
     let mut clippy_ok = true;
     if check_ok {
-        clippy_ok = run_and_record(&mut trace, "cargo clippy", &["clippy", "--", "-D", "warnings"]);
+        clippy_ok = run_and_record(
+            &mut trace,
+            "cargo clippy",
+            &["clippy", "--", "-D", "warnings"],
+        );
     } else {
         trace.push(WorkflowStep::ToolRun {
             tool: "cargo clippy".to_string(),
@@ -140,10 +141,30 @@ fn main() {
         let trace = run_cargo_validation_workflow("make a hello program", code);
 
         // Should have recorded the main stages
-        assert!(trace.steps.iter().any(|s| matches!(s, WorkflowStep::UserPrompt(_))));
-        assert!(trace.steps.iter().any(|s| matches!(s, WorkflowStep::LlmGeneratedCode(_))));
-        assert!(trace.steps.iter().any(|s| matches!(s, WorkflowStep::ToolRun { .. })));
-        assert!(trace.steps.iter().any(|s| matches!(s, WorkflowStep::Decision { .. })));
+        assert!(
+            trace
+                .steps
+                .iter()
+                .any(|s| matches!(s, WorkflowStep::UserPrompt(_)))
+        );
+        assert!(
+            trace
+                .steps
+                .iter()
+                .any(|s| matches!(s, WorkflowStep::LlmGeneratedCode(_)))
+        );
+        assert!(
+            trace
+                .steps
+                .iter()
+                .any(|s| matches!(s, WorkflowStep::ToolRun { .. }))
+        );
+        assert!(
+            trace
+                .steps
+                .iter()
+                .any(|s| matches!(s, WorkflowStep::Decision { .. }))
+        );
 
         // The last decision should be recorded
         assert!(trace.last_decision_passed().is_some());

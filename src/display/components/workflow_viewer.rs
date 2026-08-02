@@ -110,8 +110,7 @@ impl WorkflowViewerApp {
     }
 
     fn selected_step(&self) -> Option<&WorkflowStep> {
-        self.selected_index()
-            .and_then(|i| self.trace.steps.get(i))
+        self.selected_index().and_then(|i| self.trace.steps.get(i))
     }
 }
 
@@ -151,9 +150,9 @@ fn ui(frame: &mut ratatui::Frame, app: &mut WorkflowViewerApp) {
     let chunks = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3),  // Header
-            Constraint::Min(10),    // Main area (timeline + detail)
-            Constraint::Length(3),  // Footer / legend
+            Constraint::Length(3), // Header
+            Constraint::Min(10),   // Main area (timeline + detail)
+            Constraint::Length(3), // Footer / legend
         ])
         .split(frame.area());
 
@@ -191,7 +190,11 @@ fn ui(frame: &mut ratatui::Frame, app: &mut WorkflowViewerApp) {
                 Style::default().fg(color)
             };
 
-            let prefix = if app.expanded.contains(&idx) { "▾" } else { "▸" };
+            let prefix = if app.expanded.contains(&idx) {
+                "▾"
+            } else {
+                "▸"
+            };
 
             let content = Line::from(vec![
                 Span::styled(format!("{:02} ", idx), Style::default().fg(Color::Gray)),
@@ -207,11 +210,7 @@ fn ui(frame: &mut ratatui::Frame, app: &mut WorkflowViewerApp) {
         .collect();
 
     let list = List::new(items)
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title(" Timeline "),
-        )
+        .block(Block::default().borders(Borders::ALL).title(" Timeline "))
         .highlight_style(Style::default().bg(Color::DarkGray))
         .highlight_symbol("▶ ");
 
@@ -228,9 +227,7 @@ fn ui(frame: &mut ratatui::Frame, app: &mut WorkflowViewerApp) {
         Paragraph::new("No step selected").style(Style::default().fg(Color::Gray))
     };
 
-    let detail_widget = detail_content
-        .block(detail_block)
-        .wrap(Wrap { trim: true });
+    let detail_widget = detail_content.block(detail_block).wrap(Wrap { trim: true });
 
     frame.render_widget(detail_widget, main_chunks[1]);
 
@@ -246,16 +243,12 @@ fn ui(frame: &mut ratatui::Frame, app: &mut WorkflowViewerApp) {
 /// Returns (icon, color, short summary) for a step in the timeline.
 fn step_summary(step: &WorkflowStep) -> (String, Color, String) {
     match step {
-        WorkflowStep::UserPrompt(p) => {
-            ("👤".to_string(), Color::Blue, truncate(p, 45))
-        }
-        WorkflowStep::LlmGeneratedCode(code) => {
-            (
-                "📝".to_string(),
-                Color::Yellow,
-                format!("code ({} bytes)", code.len()),
-            )
-        }
+        WorkflowStep::UserPrompt(p) => ("👤".to_string(), Color::Blue, truncate(p, 45)),
+        WorkflowStep::LlmGeneratedCode(code) => (
+            "📝".to_string(),
+            Color::Yellow,
+            format!("code ({} bytes)", code.len()),
+        ),
         WorkflowStep::ToolRun { tool, success, .. } => {
             let icon = if *success { "✓" } else { "✗" };
             let color = if *success { Color::Green } else { Color::Red };
@@ -270,9 +263,7 @@ fn step_summary(step: &WorkflowStep) -> (String, Color, String) {
         WorkflowStep::ReturnedToLlm(reason) => {
             ("🔄".to_string(), Color::Magenta, truncate(reason, 40))
         }
-        WorkflowStep::ReturnedToUser(msg) => {
-            ("✅".to_string(), Color::Cyan, truncate(msg, 40))
-        }
+        WorkflowStep::ReturnedToUser(msg) => ("✅".to_string(), Color::Cyan, truncate(msg, 40)),
     }
 }
 
@@ -280,15 +271,26 @@ fn step_summary(step: &WorkflowStep) -> (String, Color, String) {
 fn render_step_detail(step: &WorkflowStep, full: bool) -> Paragraph<'static> {
     match step {
         WorkflowStep::UserPrompt(prompt) => Paragraph::new(vec![
-            Line::from(Span::styled("User Prompt", Style::default().fg(Color::Blue).add_modifier(Modifier::BOLD))),
+            Line::from(Span::styled(
+                "User Prompt",
+                Style::default()
+                    .fg(Color::Blue)
+                    .add_modifier(Modifier::BOLD),
+            )),
             Line::from(""),
-            Line::from(if full { prompt.clone() } else { truncate(prompt, 500) }),
+            Line::from(if full {
+                prompt.clone()
+            } else {
+                truncate(prompt, 500)
+            }),
         ]),
 
         WorkflowStep::LlmGeneratedCode(code) => {
             let header = Span::styled(
                 "LLM Generated Code",
-                Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Yellow)
+                    .add_modifier(Modifier::BOLD),
             );
             let body = if full {
                 code.clone()
@@ -306,8 +308,16 @@ fn render_step_detail(step: &WorkflowStep, full: bool) -> Paragraph<'static> {
             ])
         }
 
-        WorkflowStep::ToolRun { tool, output, success } => {
-            let status = if *success { "✓ SUCCESS" } else { "✗ FAILED" };
+        WorkflowStep::ToolRun {
+            tool,
+            output,
+            success,
+        } => {
+            let status = if *success {
+                "✓ SUCCESS"
+            } else {
+                "✗ FAILED"
+            };
             let color = if *success { Color::Green } else { Color::Red };
 
             let header = Span::styled(
@@ -321,11 +331,7 @@ fn render_step_detail(step: &WorkflowStep, full: bool) -> Paragraph<'static> {
                 truncate(output, 1200)
             };
 
-            Paragraph::new(vec![
-                Line::from(header),
-                Line::from(""),
-                Line::from(body),
-            ])
+            Paragraph::new(vec![Line::from(header), Line::from(""), Line::from(body)])
         }
 
         WorkflowStep::Decision { passed } => {
@@ -349,7 +355,9 @@ fn render_step_detail(step: &WorkflowStep, full: bool) -> Paragraph<'static> {
         WorkflowStep::ReturnedToLlm(reason) => Paragraph::new(vec![
             Line::from(Span::styled(
                 "Returned to LLM for Fix",
-                Style::default().fg(Color::Magenta).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Magenta)
+                    .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from(reason.clone()),
@@ -358,7 +366,9 @@ fn render_step_detail(step: &WorkflowStep, full: bool) -> Paragraph<'static> {
         WorkflowStep::ReturnedToUser(msg) => Paragraph::new(vec![
             Line::from(Span::styled(
                 "Returned to User / Editor",
-                Style::default().fg(Color::Cyan).add_modifier(Modifier::BOLD),
+                Style::default()
+                    .fg(Color::Cyan)
+                    .add_modifier(Modifier::BOLD),
             )),
             Line::from(""),
             Line::from(msg.clone()),

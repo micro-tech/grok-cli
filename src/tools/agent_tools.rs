@@ -176,12 +176,7 @@ pub async fn run_agent_session(
     // This records the full trace (UserPrompt, LlmGeneratedCode, ToolRun, Decision, etc.)
     // without changing the observable behavior for callers.
     let (resp, trace) = router
-        .route_with_workflow_trace(
-            req,
-            &tool_context,
-            config.max_tool_iterations,
-            Some(&task),
-        )
+        .route_with_workflow_trace(req, &tool_context, config.max_tool_iterations, Some(&task))
         .await
         .map_err(|e| anyhow!("Sub-agent tool loop failed: {}", e))?;
 

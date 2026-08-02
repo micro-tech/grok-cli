@@ -3,7 +3,7 @@
 //! Exposes Grok-CLI's tools as an MCP server endpoint over the ACP transport.
 //! This allows any MCP client to discover and invoke the 32+ LLM-callable tools.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Returns an MCP-compatible tool list for the current agent.
 pub fn get_mcp_tool_list() -> Value {

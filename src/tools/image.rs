@@ -3,7 +3,7 @@
 //! Provides utilities for detecting, validating, and preparing images
 //! (local files + URLs) to be sent to vision-capable models.
 
-use anyhow::{bail, Result};
+use anyhow::{Result, bail};
 use base64::Engine;
 use std::path::Path;
 
@@ -64,8 +64,7 @@ pub fn prepare_image_content(path_or_url: &str) -> Result<String> {
 /// 3. Unquoted path-like tokens without spaces (`./diagram.png`, `C:\a\b.webp`)
 pub fn extract_image_from_message(message: &str) -> Option<String> {
     // URLs first — most specific, no ambiguity with surrounding prose.
-    let url_re =
-        regex::Regex::new(r#"(?i)(https?://[^\s]+\.(?:png|jpe?g|webp|gif))"#).ok()?;
+    let url_re = regex::Regex::new(r#"(?i)(https?://[^\s]+\.(?:png|jpe?g|webp|gif))"#).ok()?;
     if let Some(m) = url_re.find(message) {
         let path = m.as_str();
         if is_image_url(path) {
@@ -74,8 +73,7 @@ pub fn extract_image_from_message(message: &str) -> Option<String> {
     }
 
     // Quoted paths may contain spaces / parentheses.
-    let quoted_re =
-        regex::Regex::new(r#"(?i)"([^"]+\.(?:png|jpe?g|webp|gif))""#).ok()?;
+    let quoted_re = regex::Regex::new(r#"(?i)"([^"]+\.(?:png|jpe?g|webp|gif))""#).ok()?;
     if let Some(caps) = quoted_re.captures(message) {
         if let Some(m) = caps.get(1) {
             let path = m.as_str().trim();

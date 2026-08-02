@@ -22,7 +22,7 @@ use std::collections::HashSet;
 
 use thiserror::Error;
 
-use crate::rpl::schema::{ReasoningTrace, RPL_SCHEMA_VERSION};
+use crate::rpl::schema::{RPL_SCHEMA_VERSION, ReasoningTrace};
 
 // ---------------------------------------------------------------------------
 // Error type

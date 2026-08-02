@@ -1,4 +1,4 @@
-﻿use anyhow::{Result, anyhow};
+use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 
 use crate::tools::tool_arbitration::{self, ArbitrationDecision};
@@ -526,9 +526,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                     crate::tools::okf_tools::okf_lookup(query, max_results)
                 }
                 "okf_get" => {
-                    let id = args["id"]
-                        .as_str()
-                        .ok_or_else(|| anyhow!("Missing: id"))?;
+                    let id = args["id"].as_str().ok_or_else(|| anyhow!("Missing: id"))?;
                     crate::tools::okf_tools::okf_get(id)
                 }
                 "okf_create" => {
@@ -540,9 +538,11 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                         .as_str()
                         .ok_or_else(|| anyhow!("Missing: body"))?;
                     let description = args["description"].as_str();
-                    let tags: Option<Vec<String>> = args["tags"]
-                        .as_array()
-                        .map(|a| a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect());
+                    let tags: Option<Vec<String>> = args["tags"].as_array().map(|a| {
+                        a.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    });
                     let resource = args["resource"].as_str();
                     let id = args["id"].as_str();
 
@@ -616,18 +616,19 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
     // The list is small and stable.
     static NAMES: std::sync::OnceLock<Vec<&'static str>> = std::sync::OnceLock::new();
 
-    NAMES.get_or_init(|| {
-        get_full_tool_definitions()
-            .iter()
-            .filter_map(|v| {
-                v.get("function")
-                    .and_then(|f| f.get("name"))
-                    .and_then(|n| n.as_str())
-                    .map(|s| s.to_owned().leak() as &'static str)  // leak is fine for static tool names
-            })
-            .collect()
-    })
-    .clone()
+    NAMES
+        .get_or_init(|| {
+            get_full_tool_definitions()
+                .iter()
+                .filter_map(|v| {
+                    v.get("function")
+                        .and_then(|f| f.get("name"))
+                        .and_then(|n| n.as_str())
+                        .map(|s| s.to_owned().leak() as &'static str) // leak is fine for static tool names
+                })
+                .collect()
+        })
+        .clone()
 }
 
 /// Returns full OpenAI-style JSON tool schemas for every registered tool.
@@ -1572,7 +1573,10 @@ mod tests {
                 .and_then(|f| f.get("name"))
                 .and_then(|n| n.as_str())
                 .unwrap_or("<missing>");
-            assert_eq!(def_name, *name, "Name in full definition does not match name list");
+            assert_eq!(
+                def_name, *name,
+                "Name in full definition does not match name list"
+            );
         }
     }
 

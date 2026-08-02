@@ -11,10 +11,12 @@ pub mod runner;
 pub mod trace;
 pub mod trace_command;
 
-pub use okf::{buffered_trace_count, forward_workflow_trace, maybe_forward_trace, trigger_okf_flush};
+pub use okf::{
+    buffered_trace_count, forward_workflow_trace, maybe_forward_trace, trigger_okf_flush,
+};
 pub use persistence::{
-    ensure_workflows_dir, list_traces, load_latest_trace, load_trace, save_trace, trace_file_summary,
-    workflows_dir,
+    ensure_workflows_dir, list_traces, load_latest_trace, load_trace, save_trace,
+    trace_file_summary, workflows_dir,
 };
 pub use runner::run_cargo_validation_workflow;
 pub use trace::{WorkflowStep, WorkflowTrace};

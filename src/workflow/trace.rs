@@ -64,7 +64,11 @@ impl WorkflowTrace {
                 WorkflowStep::LlmGeneratedCode(code) => {
                     println!("{i:02}: LlmGeneratedCode ({} bytes)", code.len());
                 }
-                WorkflowStep::ToolRun { tool, output, success } => {
+                WorkflowStep::ToolRun {
+                    tool,
+                    output,
+                    success,
+                } => {
                     let status = if *success { "✓" } else { "✗" };
                     println!(
                         "{i:02}: ToolRun {} {}  ({} bytes output)",

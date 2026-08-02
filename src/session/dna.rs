@@ -136,9 +136,13 @@ impl SessionDna {
     /// Returns a weight multiplier for skill scoring (Skill Arbitration 2.0).
     pub fn get_skill_weight(&self, skill_name: &str) -> f32 {
         let base = 1.0;
-        let style_boost = if self.coding_style.to_lowercase().contains("concise") && skill_name.to_lowercase().contains("refactor") {
+        let style_boost = if self.coding_style.to_lowercase().contains("concise")
+            && skill_name.to_lowercase().contains("refactor")
+        {
             1.3
-        } else { 1.0 };
+        } else {
+            1.0
+        };
 
         let risk_boost = match self.risk_tolerance.as_str() {
             "high" if skill_name.to_lowercase().contains("shell") => 1.4,
@@ -160,7 +164,11 @@ impl SessionDna {
 
     /// Returns the current operating mode inferred from DNA.
     pub fn get_mode(&self) -> &'static str {
-        if self.tool_preferences.iter().any(|t| t.contains("shell") || t.contains("command")) {
+        if self
+            .tool_preferences
+            .iter()
+            .any(|t| t.contains("shell") || t.contains("command"))
+        {
             return "shell";
         }
         if self.verbosity == "high" || self.tone.contains("research") {

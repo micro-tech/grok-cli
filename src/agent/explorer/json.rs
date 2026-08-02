@@ -1,7 +1,7 @@
 //! JSON parsing helpers for Explorer mode output.
 
-use anyhow::{anyhow, Result};
 use crate::agent::explorer::evidence::RepoEvidence;
+use anyhow::{Result, anyhow};
 
 /// Parse raw LLM text into `RepoEvidence`.
 /// Accepts either a clean JSON object or a fenced ```json block.

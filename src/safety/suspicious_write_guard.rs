@@ -25,7 +25,10 @@ impl SuspiciousWriteGuard {
         }
 
         // Binary junk (simple heuristic)
-        let non_printable = content.bytes().filter(|b| *b < 32 && *b != 9 && *b != 10 && *b != 13).count();
+        let non_printable = content
+            .bytes()
+            .filter(|b| *b < 32 && *b != 9 && *b != 10 && *b != 13)
+            .count();
         if non_printable > content.len() / 8 {
             return Err(SafetyError::BinaryJunk);
         }
@@ -35,12 +38,16 @@ impl SuspiciousWriteGuard {
             match ext {
                 "json" => {
                     if serde_json::from_str::<serde_json::Value>(content).is_err() {
-                        return Err(SafetyError::InvalidSyntax { format: "JSON".into() });
+                        return Err(SafetyError::InvalidSyntax {
+                            format: "JSON".into(),
+                        });
                     }
                 }
                 "toml" | "yaml" | "yml" => {
                     if content.trim().is_empty() {
-                        return Err(SafetyError::InvalidSyntax { format: ext.to_string() });
+                        return Err(SafetyError::InvalidSyntax {
+                            format: ext.to_string(),
+                        });
                     }
                 }
                 _ => {}

@@ -17,8 +17,8 @@ use std::collections::HashMap;
 
 use crate::bayes::belief_graph::BeliefGraph;
 use crate::bayes::likelihoods::{
-    likelihood_from_model_confidence, likelihood_from_text, likelihood_from_tool_failure,
-    DEFAULT_INTENT_LIKELIHOOD_WEIGHT,
+    DEFAULT_INTENT_LIKELIHOOD_WEIGHT, likelihood_from_model_confidence, likelihood_from_text,
+    likelihood_from_tool_failure,
 };
 use crate::bayes::priors::{default_priors, priors_from_config};
 use crate::bayes::updater::bayes_update;

@@ -4,8 +4,8 @@
 //! Validates diffs, checks dangerous patterns, compares with SessionDNA
 //! failure modes, requests confirmation on high risk, and blocks insane actions.
 
-use std::path::Path;
 use serde_json::Value;
+use std::path::Path;
 
 /// Result of the pre-write safety check
 #[derive(Debug, Clone)]
@@ -42,9 +42,7 @@ pub fn on_before_write_file(ctx: &WriteContext) -> SafetyDecision {
             .filter(|b| *b < 9 || (*b > 13 && *b < 32) || *b == 127)
             .count();
         if non_printable > content.len() / 10 {
-            return SafetyDecision::Block(
-                "Content appears to contain binary junk".to_string(),
-            );
+            return SafetyDecision::Block("Content appears to contain binary junk".to_string());
         }
 
         // JSON validity check for .json files
@@ -62,7 +60,8 @@ pub fn on_before_write_file(ctx: &WriteContext) -> SafetyDecision {
         if let Some(failures) = dna.get("repeated_file_write_failures") {
             if failures.as_u64().unwrap_or(0) > 3 {
                 return SafetyDecision::RequireConfirmation(
-                    "SessionDNA shows repeated write failures. Confirm before proceeding.".to_string(),
+                    "SessionDNA shows repeated write failures. Confirm before proceeding."
+                        .to_string(),
                 );
             }
         }
@@ -70,9 +69,10 @@ pub fn on_before_write_file(ctx: &WriteContext) -> SafetyDecision {
 
     // 3. High-risk operations require confirmation
     if ctx.operation == "delete" {
-        return SafetyDecision::RequireConfirmation(
-            format!("About to DELETE {}. Confirm?", ctx.path.display()),
-        );
+        return SafetyDecision::RequireConfirmation(format!(
+            "About to DELETE {}. Confirm?",
+            ctx.path.display()
+        ));
     }
 
     SafetyDecision::Allow

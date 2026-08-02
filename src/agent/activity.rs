@@ -10,9 +10,8 @@ use tokio::sync::mpsc::UnboundedSender;
 
 use crate::acp::protocol::{AgentActivityStatus, AgentActivityUpdate, SessionUpdate};
 
-static ACTIVITY_SENDER: Lazy<
-    std::sync::RwLock<Option<Arc<UnboundedSender<SessionUpdate>>>>,
-> = Lazy::new(|| std::sync::RwLock::new(None));
+static ACTIVITY_SENDER: Lazy<std::sync::RwLock<Option<Arc<UnboundedSender<SessionUpdate>>>>> =
+    Lazy::new(|| std::sync::RwLock::new(None));
 
 /// Register the ACP event sender so agent tools can emit activity updates.
 pub fn set_activity_sender(sender: UnboundedSender<SessionUpdate>) {

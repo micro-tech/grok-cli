@@ -226,8 +226,8 @@ impl Backend for GrokBackend {
                         raw,
                         model: req.model.clone(),
                         usage: None,
-                            thinking_content,
-                        });
+                        thinking_content,
+                    });
                 }
 
                 Err(e) => {

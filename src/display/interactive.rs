@@ -1009,7 +1009,9 @@ async fn handle_special_commands(
                         };
                         // Store the image reference in the next user message
                         session.add_conversation_item("user", &msg, None);
-                        println!("📎 Image attached. The next message you send will include the image.");
+                        println!(
+                            "📎 Image attached. The next message you send will include the image."
+                        );
                     }
                     Err(e) => println!("❌ {}", e),
                 }

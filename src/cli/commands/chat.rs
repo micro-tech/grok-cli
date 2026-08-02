@@ -362,7 +362,10 @@ async fn handle_interactive_chat(
 
                         for tool_call in tool_calls {
                             if let Err(e) = execute_tool_call(tool_call, &security).await {
-                                println!("{}", format_error(&format!("Tool execution failed: {}", e)));
+                                println!(
+                                    "{}",
+                                    format_error(&format!("Tool execution failed: {}", e))
+                                );
                             } else {
                                 if enable_bayesian_router {
                                     router.learn_from_tool(&tool_call.function.name);
@@ -595,16 +598,24 @@ fn handle_interactive_command(
                         }
                         slash_commands::BuiltinResult::ShowOkf(query) => {
                             let text = if query.trim().is_empty() {
-                                crate::tools::okf_lookup("", None).unwrap_or_else(|e| format!("Error: {}", e))
+                                crate::tools::okf_lookup("", None)
+                                    .unwrap_or_else(|e| format!("Error: {}", e))
                             } else {
-                                crate::tools::okf_lookup(&query, Some(8)).unwrap_or_else(|e| format!("Error: {}", e))
+                                crate::tools::okf_lookup(&query, Some(8))
+                                    .unwrap_or_else(|e| format!("Error: {}", e))
                             };
                             println!("{}", text);
                         }
                         slash_commands::BuiltinResult::ForceCompress => {
-                            println!("⚠️  /compress is only fully supported in ACP sessions (Zed, etc.).");
-                            println!("   In pure CLI mode it is not connected to a real session context.");
-                            println!("   Start an ACP session or use a long conversation + the auto-compress path instead.");
+                            println!(
+                                "⚠️  /compress is only fully supported in ACP sessions (Zed, etc.)."
+                            );
+                            println!(
+                                "   In pure CLI mode it is not connected to a real session context."
+                            );
+                            println!(
+                                "   Start an ACP session or use a long conversation + the auto-compress path instead."
+                            );
                         }
                     }
                     return Ok(Some(CommandResult::Continue));

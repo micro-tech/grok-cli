@@ -3,7 +3,7 @@
 //! This module builds and emits rich `session/update` events that Zed
 //! renders as a beautiful bottom status bar + native thinking blocks.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Compact status line shown at the bottom of the ACP session.

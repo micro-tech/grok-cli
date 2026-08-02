@@ -3,10 +3,10 @@
 //! Every function takes a [`SecurityPolicy`] reference so the ACP layer can
 //! keep calling them with the same signature it already uses.
 
-use crate::safety::pre_write_hook::{on_before_write_file, SafetyDecision, WriteContext};
-use crate::safety::{SuspiciousWriteGuard};
 use crate::acp::security::{PathAccessType, SecurityPolicy};
 use crate::cli::approval::{ApprovalDecision, prompt_external_access_approval};
+use crate::safety::SuspiciousWriteGuard;
+use crate::safety::pre_write_hook::{SafetyDecision, WriteContext, on_before_write_file};
 use crate::security::audit::{AuditLogger, create_access_log};
 use anyhow::{Result, anyhow};
 use glob::glob;
@@ -487,7 +487,9 @@ pub async fn replace(
     }
 
     // ── Suspicious write guard on final content ──────────────────────────
-    if let Err(e) = SuspiciousWriteGuard::check(content.len(), new_content.len(), &new_content, None) {
+    if let Err(e) =
+        SuspiciousWriteGuard::check(content.len(), new_content.len(), &new_content, None)
+    {
         return Err(anyhow!(e));
     }
 
@@ -495,8 +497,7 @@ pub async fn replace(
     if dry_run {
         return Ok(format!(
             "[DRY RUN] Would replace {} occurrence(s) in {}",
-            occurrences,
-            path
+            occurrences, path
         ));
     }
 
@@ -761,9 +762,16 @@ mod tests {
             .unwrap();
 
         // Search string uses LF only — this was previously failing.
-        replace(path_str, "line one\nline two", "replaced", None, &security, false)
-            .await
-            .unwrap();
+        replace(
+            path_str,
+            "line one\nline two",
+            "replaced",
+            None,
+            &security,
+            false,
+        )
+        .await
+        .unwrap();
 
         let written = tokio::fs::read_to_string(&path).await.unwrap();
         // Result must still use CRLF and contain the replacement.

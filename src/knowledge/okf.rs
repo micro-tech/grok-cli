@@ -107,7 +107,12 @@ impl OkfBundle {
         })
     }
 
-    fn walk_dir(base: &Path, dir: &Path, out: &mut Vec<OkfConcept>, bundle_name: &str) -> Result<()> {
+    fn walk_dir(
+        base: &Path,
+        dir: &Path,
+        out: &mut Vec<OkfConcept>,
+        bundle_name: &str,
+    ) -> Result<()> {
         for entry in fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
@@ -132,20 +137,16 @@ impl OkfBundle {
         let (frontmatter, body) = split_frontmatter(&raw);
 
         let fm: FrontMatter = if let Some(yaml) = frontmatter {
-            serde_yaml::from_str(&yaml)
-                .with_context(|| format!("Failed to parse YAML frontmatter in {}", path.display()))?
+            serde_yaml::from_str(&yaml).with_context(|| {
+                format!("Failed to parse YAML frontmatter in {}", path.display())
+            })?
         } else {
             FrontMatter::default()
         };
 
-        let rel_path = path.strip_prefix(base)
-            .unwrap_or(path)
-            .with_extension("");
+        let rel_path = path.strip_prefix(base).unwrap_or(path).with_extension("");
 
-        let id = rel_path
-            .to_string_lossy()
-            .replace('\\', "/")
-            .to_string();
+        let id = rel_path.to_string_lossy().replace('\\', "/").to_string();
 
         let title = fm.title.clone().unwrap_or_else(|| {
             path.file_stem()
@@ -179,11 +180,7 @@ impl OkfBundle {
             .iter()
             .filter_map(|c| {
                 let score = score_concept(c, &q);
-                if score > 0.0 {
-                    Some((c, score))
-                } else {
-                    None
-                }
+                if score > 0.0 { Some((c, score)) } else { None }
             })
             .collect();
 
@@ -321,8 +318,8 @@ pub fn load_okf_bundles(bundle_dirs: &[PathBuf]) -> Result<Vec<OkfBundle>> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
     use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn parses_frontmatter_and_body() {

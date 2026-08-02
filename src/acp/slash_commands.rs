@@ -259,7 +259,11 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         "/init" => Some(SlashCommand::Init),
 
         "/trace" => {
-            let sub = if args.is_empty() { "last".to_string() } else { args };
+            let sub = if args.is_empty() {
+                "last".to_string()
+            } else {
+                args
+            };
             Some(SlashCommand::Trace { subcommand: sub })
         }
 
@@ -723,9 +727,7 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
                 ))),
             }
         }
-        SlashCommand::Trace { subcommand } => {
-            Some(BuiltinResult::ShowTrace(subcommand.clone()))
-        }
+        SlashCommand::Trace { subcommand } => Some(BuiltinResult::ShowTrace(subcommand.clone())),
         SlashCommand::Okf { query } => Some(BuiltinResult::ShowOkf(query.clone())),
         SlashCommand::Compress => Some(BuiltinResult::ForceCompress),
         _ => None, // AI-assisted command
@@ -897,7 +899,10 @@ pub fn format_model_list() -> String {
         ("grok-4.3", "Grok 4.3 (1M context)"),
         ("grok-3", "Grok 3"),
         ("grok-3-mini", "Grok 3 mini (fast & lightweight)"),
-        ("grok-coder", "Specialized coding model (fast iteration & edits)"),
+        (
+            "grok-coder",
+            "Specialized coding model (fast iteration & edits)",
+        ),
         ("grok-2-vision-1212", "Vision-enabled model"),
         ("grok-2", "Grok 2 (previous generation)"),
     ];
@@ -914,8 +919,13 @@ pub fn format_model_list() -> String {
     }
 
     lines.push(String::new());
-    lines.push("Example: `/model grok-4` — switches the current session to the latest Grok 4.".to_string());
-    lines.push("Tip: You can also pass a specific variant (e.g. grok-4.3 for 1M context, grok-3-mini).".to_string());
+    lines.push(
+        "Example: `/model grok-4` — switches the current session to the latest Grok 4.".to_string(),
+    );
+    lines.push(
+        "Tip: You can also pass a specific variant (e.g. grok-4.3 for 1M context, grok-3-mini)."
+            .to_string(),
+    );
 
     lines.join("\n")
 }
@@ -1476,7 +1486,9 @@ mod tests {
     fn test_parse_okf_empty() {
         assert_eq!(
             parse_slash_command("/okf"),
-            Some(SlashCommand::Okf { query: String::new() })
+            Some(SlashCommand::Okf {
+                query: String::new()
+            })
         );
     }
 
@@ -1498,11 +1510,13 @@ mod tests {
 
     #[test]
     fn test_okf_is_builtin() {
-        let result = handle_builtin(&SlashCommand::Okf { query: String::new() });
+        let result = handle_builtin(&SlashCommand::Okf {
+            query: String::new(),
+        });
         assert!(matches!(result, Some(BuiltinResult::ShowOkf(_))));
 
         let result2 = handle_builtin(&SlashCommand::Okf {
-            query: "orders".to_string()
+            query: "orders".to_string(),
         });
         match result2 {
             Some(BuiltinResult::ShowOkf(q)) => assert_eq!(q, "orders"),
@@ -1513,11 +1527,18 @@ mod tests {
     #[test]
     fn test_okf_no_ai_prompt() {
         // /okf must be handled as builtin, never sent to the model via command_to_prompt
-        assert!(command_to_prompt(&SlashCommand::Okf { query: String::new() }).is_none());
-        assert!(command_to_prompt(&SlashCommand::Okf {
-            query: "foo".to_string()
-        })
-        .is_none());
+        assert!(
+            command_to_prompt(&SlashCommand::Okf {
+                query: String::new()
+            })
+            .is_none()
+        );
+        assert!(
+            command_to_prompt(&SlashCommand::Okf {
+                query: "foo".to_string()
+            })
+            .is_none()
+        );
     }
 
     #[test]

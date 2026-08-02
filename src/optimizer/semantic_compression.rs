@@ -16,7 +16,9 @@ impl SemanticCompressor {
 
     /// Simple hash-based semantic deduplication.
     pub fn is_duplicate(&mut self, text: &str) -> bool {
-        let hash = text.bytes().fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
+        let hash = text
+            .bytes()
+            .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
         !self.seen.insert(hash)
     }
 
@@ -25,7 +27,11 @@ impl SemanticCompressor {
         if text.len() <= max_len {
             text.to_string()
         } else {
-            format!("{}… [{} chars]", &text[..max_len.saturating_sub(10)], text.len())
+            format!(
+                "{}… [{} chars]",
+                &text[..max_len.saturating_sub(10)],
+                text.len()
+            )
         }
     }
 }

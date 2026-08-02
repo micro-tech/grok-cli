@@ -413,12 +413,12 @@ impl GrokAcpAgent {
     fn create_capabilities() -> GrokAgentCapabilities {
         GrokAgentCapabilities {
             models: vec![
-                "grok-4".to_string(),           // Current flagship
+                "grok-4".to_string(), // Current flagship
                 "grok-4-latest".to_string(),
-                "grok-4.3".to_string(),         // 1M context variant
+                "grok-4.3".to_string(), // 1M context variant
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
-                "grok-coder".to_string(),       // Specialized coding model
+                "grok-coder".to_string(), // Specialized coding model
                 "grok-2-vision-1212".to_string(),
                 "grok-2".to_string(),
             ],
@@ -1191,9 +1191,9 @@ impl GrokAcpAgent {
                 if self.config.acp.stream_thinking {
                     if let Some(sender) = &event_sender {
                         let blk = crate::acp::protocol::ThinkingBlockUpdate::new(tc, false);
-                        let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(
-                            blk,
-                        ));
+                        let _ = sender.send(
+                            crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk),
+                        );
                     }
                 }
             }
@@ -1428,8 +1428,11 @@ impl GrokAcpAgent {
                         let (tx, rx) = oneshot::channel();
                         if bridge.outbound.send((req_id, params, tx)).is_ok() {
                             let timeout_secs = self.config.acp.permission_timeout_secs;
-                            match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx)
-                                .await
+                            match tokio::time::timeout(
+                                std::time::Duration::from_secs(timeout_secs),
+                                rx,
+                            )
+                            .await
                             {
                                 Ok(Ok(outcome)) => {
                                     if outcome.is_cancelled() {
@@ -1642,9 +1645,9 @@ impl GrokAcpAgent {
                             ),
                             messages.len(),
                         );
-                        let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
-                            usage,
-                        ));
+                        let _ = sender.send(
+                            crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage),
+                        );
                     }
                 }
                 // ── Phase 3: Final sync (brief write lock) ──────────────────────────
@@ -2190,7 +2193,8 @@ impl GrokAcpAgent {
         }
 
         let compress_count = ((non_system_indices.len() as f64
-            * self.config.acp.compression_chunk_ratio as f64) as usize)
+            * self.config.acp.compression_chunk_ratio as f64)
+            as usize)
             .max(4)
             .min(non_system_indices.len());
 
@@ -2210,7 +2214,8 @@ impl GrokAcpAgent {
 
         match crate::memory::context_compressor::compress(&to_compress, &router, &model).await {
             Ok((summary, key_facts)) => {
-                let mut archive = crate::memory::context_archive::ContextArchive::for_session(&session_id.0)?;
+                let mut archive =
+                    crate::memory::context_archive::ContextArchive::for_session(&session_id.0)?;
 
                 let chunk_id = archive.next_chunk_id();
                 let chunk = crate::memory::context_archive::ContextChunk {
@@ -2251,11 +2256,7 @@ impl GrokAcpAgent {
                      - Tokens saved: **~{}**\n\
                      - Summary: {}\n\n\
                      Use `/archives` to see all chunks or `/recall {}` to restore.",
-                    chunk.message_count,
-                    chunk_id,
-                    tokens_saved,
-                    summary,
-                    chunk_id
+                    chunk.message_count, chunk_id, tokens_saved, summary, chunk_id
                 ))
             }
             Err(e) => {
@@ -2800,7 +2801,11 @@ mod tests {
     fn test_session_config_default() {
         let config = SessionConfig::default();
         // Default should now be the current grok-4 flagship (or a 4.x variant)
-        assert!(config.model.starts_with("grok-4"), "default model should be a grok-4 variant, got {}", config.model);
+        assert!(
+            config.model.starts_with("grok-4"),
+            "default model should be a grok-4 variant, got {}",
+            config.model
+        );
         assert_eq!(config.temperature, 0.5);
         // grok-4.x models support higher output token limits; default 16_384 kept for compatibility
         assert_eq!(config.max_tokens, 16_384);

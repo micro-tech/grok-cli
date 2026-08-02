@@ -7,7 +7,7 @@
 //! It works in both legacy handshake mode and pure stateless (_meta) mode.
 //! Used by integration tests for MCP 2026 stateless changes.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{self, BufRead, Write};
 
 fn main() {
@@ -68,7 +68,8 @@ fn main() {
 
                 if tool_name == "echo" {
                     let args = params.get("arguments").cloned().unwrap_or(json!({}));
-                    let echo_text = format!("ECHO: {}", serde_json::to_string(&args).unwrap_or_default());
+                    let echo_text =
+                        format!("ECHO: {}", serde_json::to_string(&args).unwrap_or_default());
                     json!({
                         "jsonrpc": "2.0",
                         "id": id,

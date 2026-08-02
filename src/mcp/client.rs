@@ -40,7 +40,12 @@ impl McpClient {
 
     pub async fn connect(&mut self, name: &str, config: &McpServerConfig) -> Result<()> {
         match config {
-            McpServerConfig::Stdio { command, args, env, use_legacy_handshake } => {
+            McpServerConfig::Stdio {
+                command,
+                args,
+                env,
+                use_legacy_handshake,
+            } => {
                 info!(
                     "Connecting to MCP server '{}' via stdio: {} {:?} (legacy_handshake={})",
                     name, command, args, use_legacy_handshake
@@ -132,7 +137,10 @@ impl McpClient {
 
         // 2. Check for JSON-RPC level error
         if let Some(err) = response.get("error") {
-            return Err(anyhow!("MCP server returned error during initialize: {}", err));
+            return Err(anyhow!(
+                "MCP server returned error during initialize: {}",
+                err
+            ));
         }
 
         // 3. Must contain a "result" object

@@ -17,7 +17,8 @@ pub struct ContextEngine {
 impl ContextEngine {
     pub fn new(max_tokens: u32) -> Self {
         // Fall back to a safe default if construction fails
-        let budget = ContextBudget::new(max_tokens).unwrap_or_else(|_| ContextBudget::new(8192).unwrap());
+        let budget =
+            ContextBudget::new(max_tokens).unwrap_or_else(|_| ContextBudget::new(8192).unwrap());
         Self {
             budget,
             session: SessionManager::new(max_tokens),
@@ -44,8 +45,15 @@ impl ContextEngine {
     }
 
     /// Decide whether to use delta prompting for the next turn.
-    pub fn decide_delta(&self, previous: Option<&str>, current: &str, system_changed: bool) -> PromptDelta {
-        should_use_delta(previous, current, system_changed).unwrap_or_else(|_| PromptDelta::Full { content: current.to_string() })
+    pub fn decide_delta(
+        &self,
+        previous: Option<&str>,
+        current: &str,
+        system_changed: bool,
+    ) -> PromptDelta {
+        should_use_delta(previous, current, system_changed).unwrap_or_else(|_| PromptDelta::Full {
+            content: current.to_string(),
+        })
     }
 }
 

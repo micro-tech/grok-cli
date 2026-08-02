@@ -125,14 +125,22 @@ pub fn format_rules_for_prompt(rules: &[RuleFile]) -> String {
     if has_global {
         output.push_str("### Global Rules\n\n");
         for rule in rules.iter().filter(|r| r.source == RuleSource::Global) {
-            output.push_str(&format!("**{}**\n{}\n\n", rule.filename, rule.content.trim()));
+            output.push_str(&format!(
+                "**{}**\n{}\n\n",
+                rule.filename,
+                rule.content.trim()
+            ));
         }
     }
 
     if has_project {
         output.push_str("### Project Rules\n\n");
         for rule in rules.iter().filter(|r| r.source == RuleSource::Project) {
-            output.push_str(&format!("**{}**\n{}\n\n", rule.filename, rule.content.trim()));
+            output.push_str(&format!(
+                "**{}**\n{}\n\n",
+                rule.filename,
+                rule.content.trim()
+            ));
         }
     }
 

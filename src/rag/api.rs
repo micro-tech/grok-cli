@@ -1,11 +1,11 @@
 //! TGS-RAG public API.
 
-use crate::rag::graph::{GraphNode, ProjectGraph};
-use crate::rag::retrieval::hybrid::HybridRetriever;
-use crate::rag::retrieval::graph_expansion::expand_with_neighbors;
-use crate::rag::retrieval::reranker::rerank;
 use crate::rag::compression::compress_context;
 use crate::rag::config::TgsRagConfig;
+use crate::rag::graph::{GraphNode, ProjectGraph};
+use crate::rag::retrieval::graph_expansion::expand_with_neighbors;
+use crate::rag::retrieval::hybrid::HybridRetriever;
+use crate::rag::retrieval::reranker::rerank;
 
 /// High-level TGS-RAG engine.
 pub struct TgsRag {

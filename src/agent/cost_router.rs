@@ -46,12 +46,7 @@ impl Default for CostProfile {
 
 impl CostProfile {
     /// Create a new cost profile with explicit values.
-    pub fn new(
-        input_tokens: u32,
-        output_tokens: u32,
-        complexity: f32,
-        long_context: bool,
-    ) -> Self {
+    pub fn new(input_tokens: u32, output_tokens: u32, complexity: f32, long_context: bool) -> Self {
         Self {
             estimated_input_tokens: input_tokens,
             estimated_output_tokens: output_tokens,

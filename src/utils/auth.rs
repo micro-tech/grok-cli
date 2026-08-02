@@ -1,4 +1,4 @@
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use colored::*;
 use tracing::error;
 
@@ -37,7 +37,9 @@ pub fn require_api_key(
         "--api-key".yellow()
     );
 
-    Err(anyhow!("No API key provided. Set GROK_API_KEY environment variable or use --api-key option"))
+    Err(anyhow!(
+        "No API key provided. Set GROK_API_KEY environment variable or use --api-key option"
+    ))
 }
 
 #[cfg(test)]

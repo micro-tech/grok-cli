@@ -4,22 +4,22 @@
 //! intent validation, suspicious write rejection, DNA-aware safety, and
 //! tool health monitoring.
 
-pub mod pre_write_hook;
-pub mod dry_run;
 pub mod diff_validator;
-pub mod intent_validator;
-pub mod suspicious_write_guard;
 pub mod dna_safety;
-pub mod tool_health_monitor;
+pub mod dry_run;
 pub mod error;
+pub mod intent_validator;
+pub mod pre_write_hook;
+pub mod suspicious_write_guard;
 #[cfg(test)]
 pub mod tests;
+pub mod tool_health_monitor;
 
-pub use pre_write_hook::{on_before_write_file, SafetyDecision, WriteContext};
-pub use dry_run::DryRunContext;
 pub use diff_validator::DiffValidator;
-pub use intent_validator::IntentValidator;
-pub use suspicious_write_guard::SuspiciousWriteGuard;
 pub use dna_safety::DnaSafetyController;
-pub use tool_health_monitor::ToolHealthMonitor;
+pub use dry_run::DryRunContext;
 pub use error::SafetyError;
+pub use intent_validator::IntentValidator;
+pub use pre_write_hook::{SafetyDecision, WriteContext, on_before_write_file};
+pub use suspicious_write_guard::SuspiciousWriteGuard;
+pub use tool_health_monitor::ToolHealthMonitor;

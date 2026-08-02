@@ -6,10 +6,10 @@
 //! These bundles are also loaded automatically at session start
 //! (see MemoryStore + knowledge loading) to act as the "Knowledge OS".
 
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 
 use crate::config::Config;
-use crate::knowledge::okf::{load_okf_bundles, OkfBundle, OkfConcept};
+use crate::knowledge::okf::{OkfBundle, OkfConcept, load_okf_bundles};
 use chrono;
 use reqwest::Client;
 use std::path::PathBuf;
@@ -114,8 +114,7 @@ pub fn okf_lookup(query: &str, max_results: Option<usize>) -> Result<String> {
     let bundles = get_okf_bundles(None);
 
     if bundles.is_empty() {
-        return Ok(
-            "No OKF knowledge bundles are currently loaded.\n\n\
+        return Ok("No OKF knowledge bundles are currently loaded.\n\n\
              To use OKF knowledge:\n\
              1. Set `okf.enabled = true` in your config.\n\
              2. Add directories to `okf.knowledge_bundles`.\n\
@@ -126,8 +125,8 @@ pub fn okf_lookup(query: &str, max_results: Option<usize>) -> Result<String> {
              title: Weekly Active Users\n\
              ---\n\
              # Definition\n\
-             ...".to_string(),
-        );
+             ..."
+        .to_string());
     }
 
     let mut all_results: Vec<(OkfConcept, f32)> = Vec::new();
@@ -144,10 +143,7 @@ pub fn okf_lookup(query: &str, max_results: Option<usize>) -> Result<String> {
     all_results.truncate(max);
 
     if all_results.is_empty() {
-        return Ok(format!(
-            "No OKF concepts matched query: \"{}\"",
-            query
-        ));
+        return Ok(format!("No OKF concepts matched query: \"{}\"", query));
     }
 
     let mut output = format!(
@@ -161,7 +157,11 @@ pub fn okf_lookup(query: &str, max_results: Option<usize>) -> Result<String> {
             "### {}. {}  (type: {})\n",
             i + 1,
             concept.title,
-            if concept.r#type.is_empty() { "Concept" } else { &concept.r#type }
+            if concept.r#type.is_empty() {
+                "Concept"
+            } else {
+                &concept.r#type
+            }
         ));
 
         if !concept.description.is_empty() {
@@ -176,11 +176,17 @@ pub fn okf_lookup(query: &str, max_results: Option<usize>) -> Result<String> {
             output.push_str(&format!("**Tags**: {}\n", concept.tags.join(", ")));
         }
 
-        output.push_str(&format!("**Source**: {} (bundle: {})\n\n", concept.id, concept.bundle_name));
+        output.push_str(&format!(
+            "**Source**: {} (bundle: {})\n\n",
+            concept.id, concept.bundle_name
+        ));
 
         // Include a useful chunk of the body
         let body_preview = if concept.body.len() > 1200 {
-            format!("{}...\n\n(Use more specific query or `okf_get` for full content)", &concept.body[..1200])
+            format!(
+                "{}...\n\n(Use more specific query or `okf_get` for full content)",
+                &concept.body[..1200]
+            )
         } else {
             concept.body.clone()
         };
@@ -232,21 +238,21 @@ pub async fn okf_create(
     let cfg = crate::config::Config::load_hierarchical().await?;
 
     if !cfg.okf.enabled {
-        return Err(anyhow!("OKF is disabled. Set `okf.enabled = true` in config."));
+        return Err(anyhow!(
+            "OKF is disabled. Set `okf.enabled = true` in config."
+        ));
     }
 
-    let id = explicit_id
-        .map(|s| s.to_string())
-        .unwrap_or_else(|| {
-            // Generate a clean ID from title + type
-            let slug = title
-                .to_lowercase()
-                .replace(|c: char| !c.is_alphanumeric() && c != '-', "-")
-                .trim_matches('-')
-                .to_string();
-            let type_slug = r#type.to_lowercase().replace(' ', "-");
-            format!("{}/{}", type_slug, slug)
-        });
+    let id = explicit_id.map(|s| s.to_string()).unwrap_or_else(|| {
+        // Generate a clean ID from title + type
+        let slug = title
+            .to_lowercase()
+            .replace(|c: char| !c.is_alphanumeric() && c != '-', "-")
+            .trim_matches('-')
+            .to_string();
+        let type_slug = r#type.to_lowercase().replace(' ', "-");
+        format!("{}/{}", type_slug, slug)
+    });
 
     let concept = OkfConcept {
         id: id.clone(),
@@ -263,7 +269,9 @@ pub async fn okf_create(
 
     // Try remote first if configured
     if let Some(remote) = &cfg.okf.remote_url {
-        match push_concept_to_remote(&concept, remote, &cfg.okf.default_bundle, &cfg.okf.api_key).await {
+        match push_concept_to_remote(&concept, remote, &cfg.okf.default_bundle, &cfg.okf.api_key)
+            .await
+        {
             Ok(_) => {
                 // Invalidate cache so future lookups see the new concept
                 let cache = get_okf_cache();
@@ -275,7 +283,10 @@ pub async fn okf_create(
                 ));
             }
             Err(e) => {
-                tracing::warn!("Failed to push to remote OKF server: {}. Falling back to local.", e);
+                tracing::warn!(
+                    "Failed to push to remote OKF server: {}. Falling back to local.",
+                    e
+                );
             }
         }
     }
@@ -300,9 +311,7 @@ async fn push_concept_to_remote(
     bundle: &str,
     api_key: &Option<String>,
 ) -> Result<()> {
-    let client = Client::builder()
-        .timeout(Duration::from_secs(15))
-        .build()?;
+    let client = Client::builder().timeout(Duration::from_secs(15)).build()?;
 
     let url = format!(
         "{}/bundles/{}/concepts",

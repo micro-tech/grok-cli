@@ -92,7 +92,10 @@ async fn show_settings_ui(config: &Config) -> Result<()> {
                 println!("{}", format_warning("Invalid selection. Please try again."));
             }
         } else {
-            println!("{}", format_warning("Invalid input. Please enter a number or 'q'."));
+            println!(
+                "{}",
+                format_warning("Invalid input. Please enter a number or 'q'.")
+            );
         }
         println!();
     }
@@ -252,7 +255,10 @@ pub async fn edit_single_setting(setting: &SettingDefinition, config: &Config) -
         SettingType::Number => edit_number_setting(setting)?,
         SettingType::Array => edit_array_setting(setting)?,
         SettingType::Object => {
-            println!("{}", format_warning("Object settings must be edited manually in the config file."));
+            println!(
+                "{}",
+                format_warning("Object settings must be edited manually in the config file.")
+            );
             return Ok(());
         }
     };
@@ -270,10 +276,16 @@ pub async fn edit_single_setting(setting: &SettingDefinition, config: &Config) -
         // Save the config
         updated_config.save(None).await?;
 
-        println!("{}", format_success(&format!("Updated {} = {}", setting.key, new_value)));
+        println!(
+            "{}",
+            format_success(&format!("Updated {} = {}", setting.key, new_value))
+        );
 
         if setting.requires_restart {
-            println!("{}", format_warning("⚠️  This setting requires a restart to take effect."));
+            println!(
+                "{}",
+                format_warning("⚠️  This setting requires a restart to take effect.")
+            );
         }
     } else {
         println!("{}", format_info("No changes made."));
@@ -303,7 +315,10 @@ fn edit_boolean_setting(setting: &SettingDefinition) -> Result<String> {
         "2" => Ok("false".to_string()),
         "3" => Ok(setting.current_value.clone()),
         _ => {
-            println!("{}", format_warning("Invalid selection, keeping current value."));
+            println!(
+                "{}",
+                format_warning("Invalid selection, keeping current value.")
+            );
             Ok(setting.current_value.clone())
         }
     }
@@ -341,7 +356,10 @@ fn edit_number_setting(setting: &SettingDefinition) -> Result<String> {
         if input.parse::<f64>().is_ok() {
             Ok(input.to_string())
         } else {
-            println!("{}", format_warning("Invalid number format, keeping current value."));
+            println!(
+                "{}",
+                format_warning("Invalid number format, keeping current value.")
+            );
             Ok(setting.current_value.clone())
         }
     }
@@ -388,7 +406,10 @@ async fn edit_settings_interactive(config: &Config) -> Result<()> {
 async fn reset_settings(category: Option<String>) -> Result<()> {
     match category {
         Some(cat) => {
-            println!("{}", format_info(&format!("Resetting {} settings to defaults...", cat)));
+            println!(
+                "{}",
+                format_info(&format!("Resetting {} settings to defaults...", cat))
+            );
 
             if !confirm(&format!(
                 "This will reset all {} settings to their default values. Continue?",
@@ -421,7 +442,10 @@ async fn reset_settings(category: Option<String>) -> Result<()> {
             }
 
             current_config.save(None).await?;
-            println!("{}", format_success(&format!("{} settings reset to defaults.", cat)));
+            println!(
+                "{}",
+                format_success(&format!("{} settings reset to defaults.", cat))
+            );
         }
         None => {
             println!("{}", format_info("Resetting ALL settings to defaults..."));
@@ -443,7 +467,10 @@ async fn reset_settings(category: Option<String>) -> Result<()> {
 async fn export_settings(config: &Config, path: Option<String>) -> Result<()> {
     let export_path = path.unwrap_or_else(|| "grok-settings-export.toml".to_string());
 
-    println!("{}", format_info(&format!("Exporting settings to: {}", export_path)));
+    println!(
+        "{}",
+        format_info(&format!("Exporting settings to: {}", export_path))
+    );
 
     let toml_content =
         toml::to_string_pretty(config).map_err(|e| anyhow!("Failed to serialize config: {}", e))?;
@@ -451,13 +478,19 @@ async fn export_settings(config: &Config, path: Option<String>) -> Result<()> {
     std::fs::write(&export_path, toml_content)
         .map_err(|e| anyhow!("Failed to write export file: {}", e))?;
 
-    println!("{}", format_success(&format!("Settings exported to: {}", export_path)));
+    println!(
+        "{}",
+        format_success(&format!("Settings exported to: {}", export_path))
+    );
     Ok(())
 }
 
 /// Import settings from a file
 async fn import_settings(path: String) -> Result<()> {
-    println!("{}", format_info(&format!("Importing settings from: {}", path)));
+    println!(
+        "{}",
+        format_info(&format!("Importing settings from: {}", path))
+    );
 
     if !std::path::Path::new(&path).exists() {
         return Err(anyhow!("Import file not found: {}", path));
