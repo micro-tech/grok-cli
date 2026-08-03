@@ -15,17 +15,13 @@ fn main() {
     let mut stdout = io::stdout();
 
     for line in stdin.lock().lines() {
-        let line = match line {
-            Ok(l) => l,
-            Err(_) => break,
-        };
+        let Ok(line) = line else { break };
         if line.trim().is_empty() {
             continue;
         }
 
-        let request: Value = match serde_json::from_str(&line) {
-            Ok(v) => v,
-            Err(_) => continue,
+        let Ok(request): Result<Value, _> = serde_json::from_str(&line) else {
+            continue;
         };
 
         let id = request.get("id").cloned().unwrap_or(json!(null));

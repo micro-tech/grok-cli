@@ -4,14 +4,14 @@
 //! `spawn_agent`, `fork_agent`, `join_agents`, etc. can emit
 //! `AgentActivityUpdate` events without needing a direct reference.
 
-use once_cell::sync::Lazy;
 use std::sync::Arc;
+use std::sync::LazyLock;
 use tokio::sync::mpsc::UnboundedSender;
 
 use crate::acp::protocol::{AgentActivityStatus, AgentActivityUpdate, SessionUpdate};
 
-static ACTIVITY_SENDER: Lazy<std::sync::RwLock<Option<Arc<UnboundedSender<SessionUpdate>>>>> =
-    Lazy::new(|| std::sync::RwLock::new(None));
+static ACTIVITY_SENDER: LazyLock<std::sync::RwLock<Option<Arc<UnboundedSender<SessionUpdate>>>>> =
+    LazyLock::new(|| std::sync::RwLock::new(None));
 
 /// Register the ACP event sender so agent tools can emit activity updates.
 pub fn set_activity_sender(sender: UnboundedSender<SessionUpdate>) {

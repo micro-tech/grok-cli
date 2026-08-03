@@ -172,14 +172,13 @@ impl SecurityPolicy {
             }
         }
 
-        if abs.exists() {
-            if let Ok(canonical) = abs.canonicalize() {
+        if abs.exists()
+            && let Ok(canonical) = abs.canonicalize() {
                 if suffix.as_os_str().is_empty() {
                     return Ok(canonical);
                 }
                 return Ok(canonical.join(suffix));
             }
-        }
 
         // Final fallback — at least give an absolute path under the working dir.
         // is_internal_path will still compare against trusted directories.
@@ -193,9 +192,8 @@ impl SecurityPolicy {
     /// Check if a path is within internal project boundaries
     pub fn is_internal_path<P: AsRef<Path>>(&self, path: P) -> bool {
         // Resolve the path first
-        let resolved = match self.resolve_path(path) {
-            Ok(p) => p,
-            Err(_) => return false,
+        let Ok(resolved) = self.resolve_path(path) else {
+            return false;
         };
 
         // If no trusted directories are set, everything is untrusted (deny by default)

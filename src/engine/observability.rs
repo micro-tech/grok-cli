@@ -388,21 +388,19 @@ impl Default for EngineObserver {
 pub fn is_safe_to_log(state: &ReasoningEngineState) -> bool {
     let redaction = RedactionConfig::default_rules();
 
-    if let Some(goal) = &state.goal {
-        if redaction.apply_all(goal) != *goal {
+    if let Some(goal) = &state.goal
+        && redaction.apply_all(goal) != *goal {
             return false;
         }
-    }
 
     for step in &state.plan {
         if redaction.apply_all(&step.description) != step.description {
             return false;
         }
-        if let Some(result) = &step.result {
-            if redaction.apply_all(result) != *result {
+        if let Some(result) = &step.result
+            && redaction.apply_all(result) != *result {
                 return false;
             }
-        }
     }
 
     true

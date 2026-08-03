@@ -151,7 +151,7 @@ impl RplLayer {
     /// * `tool_name`        – The registered name of the tool being evaluated.
     /// * `selected`         – Whether this tool was chosen for execution.
     /// * `relevance_score`  – Optional score (0.0–1.0). If `None`, defaults to
-    ///                        1.0 when `selected`, else 0.0.
+    ///   1.0 when `selected`, else 0.0.
     /// * `reason`           – Optional explanation for the selection decision.
     pub fn on_tool_selection(
         &self,
@@ -168,8 +168,7 @@ impl RplLayer {
 
         // Preserve caller-provided score when meaningful; otherwise fall back
         // to the simple selected/not-selected default.
-        let relevance_score =
-            relevance_score.unwrap_or_else(|| if selected { 1.0_f32 } else { 0.0_f32 });
+        let relevance_score = relevance_score.unwrap_or(if selected { 1.0_f32 } else { 0.0_f32 });
 
         let eval = ToolEvaluation {
             tool_name: tool_name.to_string(),

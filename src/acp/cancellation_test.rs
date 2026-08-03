@@ -15,13 +15,13 @@ mod tests {
             let agent = GrokAcpAgent::new(config, None).await.unwrap();
 
             let flag = agent.get_cancellation_flag("test-sess").await;
-            assert!(!flag.load(Ordering::SeqCst));
+            assert!(!flag.load(Ordering::Acquire));
 
             agent.cancel_session("test-sess").await;
-            assert!(flag.load(Ordering::SeqCst));
+            assert!(flag.load(Ordering::Acquire));
 
             agent.clear_cancellation_flag("test-sess").await;
-            assert!(!flag.load(Ordering::SeqCst));
+            assert!(!flag.load(Ordering::Acquire));
         });
     }
 }

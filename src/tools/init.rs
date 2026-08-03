@@ -23,7 +23,7 @@
 
 use anyhow::Result;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 /// Items copied from the global CONFIG directory (`%APPDATA%\grok-cli` on Windows).
 /// `config.toml` lives here, not in the data directory.
@@ -147,8 +147,8 @@ pub fn run_init(force: bool) -> Result<String> {
 /// Records the outcome in one of the three output vectors.
 fn copy_item(
     item: &str,
-    src_base: &PathBuf,
-    dst_base: &PathBuf,
+    src_base: &Path,
+    dst_base: &Path,
     force: bool,
     copied: &mut Vec<String>,
     skipped: &mut Vec<String>,
@@ -195,10 +195,10 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
         let dst_path = dst.join(entry.file_name());
 
         // Never copy system-only items regardless of nesting depth.
-        if let Some(name) = src_path.file_name().and_then(|n| n.to_str()) {
-            if SKIP_ITEMS.contains(&name) {
-                continue;
-            }
+        if let Some(name) = src_path.file_name().and_then(|n| n.to_str())
+            && SKIP_ITEMS.contains(&name)
+        {
+            continue;
         }
 
         if src_path.is_dir() {
@@ -212,7 +212,7 @@ fn copy_dir_recursive(src: &PathBuf, dst: &PathBuf) -> Result<()> {
 }
 
 /// Ensure `.grok/` appears in the project's `.gitignore`.
-fn update_gitignore(cwd: &PathBuf) -> Result<()> {
+fn update_gitignore(cwd: &Path) -> Result<()> {
     let gitignore = cwd.join(".gitignore");
     let entry = ".grok/\n";
 

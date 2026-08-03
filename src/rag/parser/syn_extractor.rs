@@ -15,9 +15,8 @@ impl SynExtractor {
 
     /// Parse source and return a list of top-level item names and kinds.
     pub fn extract_entities(&self, source: &str) -> Vec<(String, String)> {
-        let ast: File = match parse_file(source) {
-            Ok(f) => f,
-            Err(_) => return vec![],
+        let Ok(ast) = parse_file(source) else {
+            return vec![];
         };
 
         let mut entities = Vec::new();

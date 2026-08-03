@@ -213,10 +213,10 @@ pub async fn handle_skills_command(command: SkillsCommand) -> Result<()> {
                             println!("  {} {}", "Dependencies:".bright_white(), deps.join(", "));
                         }
 
-                        if let Some(manifest) = &entry.manifest {
-                            if let Some(min_ver) = &manifest.min_grok_version {
-                                println!("  {} {}", "Min grok version:".bright_white(), min_ver);
-                            }
+                        if let Some(manifest) = &entry.manifest
+                            && let Some(min_ver) = &manifest.min_grok_version
+                        {
+                            println!("  {} {}", "Min grok version:".bright_white(), min_ver);
                         }
 
                         // SKILL.md config extras

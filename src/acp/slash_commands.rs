@@ -995,10 +995,10 @@ pub fn format_diagnostics_text() -> String {
 /// `session_id` is `None` when called from `handle_builtin` (the ACP caller
 /// will supply it); pass `Some(id)` to load live data for a specific session.
 pub fn format_archives_text(session_id: Option<&str>) -> String {
-    let sid = match session_id {
-        Some(s) => s.to_string(),
-        None => return "📦 **Context Archives**\n\n_(session ID required to list archives — use `/archives` from within a session)_".to_string(),
+    let Some(sid) = session_id else {
+        return "📦 **Context Archives**\n\n_(session ID required to list archives — use `/archives` from within a session)_".to_string();
     };
+    let sid = sid.to_string();
 
     match crate::memory::context_archive::ContextArchive::for_session(&sid) {
         Err(e) => format!("❌ Could not open archive: {}", e),

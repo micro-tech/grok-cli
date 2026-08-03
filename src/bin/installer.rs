@@ -28,12 +28,13 @@ fn get_version(root_dir: &Path) -> String {
     if let Ok(content) = fs::read_to_string(&cargo_toml) {
         for line in content.lines() {
             let trimmed = line.trim();
-            if trimmed.starts_with("version") && trimmed.contains('=') {
-                if let Some(v) = trimmed.split('=').nth(1) {
-                    let v = v.trim().trim_matches('"').trim_matches('\'');
-                    if !v.is_empty() {
-                        return v.to_string();
-                    }
+            if trimmed.starts_with("version")
+                && trimmed.contains('=')
+                && let Some(v) = trimmed.split('=').nth(1)
+            {
+                let v = v.trim().trim_matches('"').trim_matches('\'');
+                if !v.is_empty() {
+                    return v.to_string();
                 }
             }
         }
@@ -394,7 +395,9 @@ fn setup_session_dna(root_dir: &Path) {
                 Err(e) => eprintln!("Failed to install session_dna.json: {}", e),
             }
         } else {
-            println!("No session_dna.json found in project root (checked .grok/ too), skipping Session DNA setup.");
+            println!(
+                "No session_dna.json found in project root (checked .grok/ too), skipping Session DNA setup."
+            );
         }
     } else {
         eprintln!("Failed to locate home directory for Session DNA setup.");
@@ -571,12 +574,9 @@ fn create_shortcut(target_exe: &Path) {
 ///   their edits are preserved.
 /// - Prints a summary line for each file.
 fn setup_agent_presets(root_dir: &Path) {
-    let home_dir = match dirs::home_dir() {
-        Some(h) => h,
-        None => {
-            eprintln!("setup_agent_presets: could not locate home directory");
-            return;
-        }
+    let Some(home_dir) = dirs::home_dir() else {
+        eprintln!("setup_agent_presets: could not locate home directory");
+        return;
     };
 
     let agents_dst = home_dir.join(".grok-cli").join("agents");
@@ -616,9 +616,8 @@ fn setup_agent_presets(root_dir: &Path) {
             continue;
         }
 
-        let filename = match src_path.file_name() {
-            Some(n) => n,
-            None => continue,
+        let Some(filename) = src_path.file_name() else {
+            continue;
         };
         let dst_path = agents_dst.join(filename);
 

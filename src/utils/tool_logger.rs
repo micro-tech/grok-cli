@@ -45,7 +45,7 @@
 //! Success entries are buffered (no forced flush) to keep I/O overhead low.
 
 use chrono::Utc;
-use once_cell::sync::OnceCell;
+use std::sync::OnceLock;
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -61,7 +61,7 @@ use std::{
 ///
 /// `None` means the file could not be opened; we silently skip writes rather
 /// than panicking so the CLI always stays functional.
-static LOG_FILE: OnceCell<Mutex<Option<fs::File>>> = OnceCell::new();
+static LOG_FILE: OnceLock<Mutex<Option<fs::File>>> = OnceLock::new();
 
 /// Maximum number of bytes to print from a single argument payload.
 /// Keeps the log readable even when the LLM sends huge `content` fields.
@@ -105,8 +105,8 @@ fn with_file<F: FnOnce(&mut fs::File)>(f: F) {
         let path = default_log_path();
 
         // Ensure the `.grok/logs/` directory exists.
-        if let Some(parent) = path.parent() {
-            if let Err(e) = fs::create_dir_all(parent) {
+        if let Some(parent) = path.parent()
+            && let Err(e) = fs::create_dir_all(parent) {
                 tracing::warn!(
                     path = %parent.display(),
                     error = %e,
@@ -114,7 +114,6 @@ fn with_file<F: FnOnce(&mut fs::File)>(f: F) {
                 );
                 return Mutex::new(None);
             }
-        }
 
         match OpenOptions::new().create(true).append(true).open(&path) {
             Ok(file) => {

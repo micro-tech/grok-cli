@@ -96,11 +96,11 @@ impl AgentManager {
     /// Cancel a running sub-agent
     pub async fn cancel(&self, id: &str) {
         let mut agents = self.agents.write().await;
-        if let Some(agent) = agents.get_mut(id) {
-            if agent.status == AgentStatus::Running {
-                agent.status = AgentStatus::Cancelled;
-                agent.completed_at = Some(Utc::now());
-            }
+        if let Some(agent) = agents.get_mut(id)
+            && agent.status == AgentStatus::Running
+        {
+            agent.status = AgentStatus::Cancelled;
+            agent.completed_at = Some(Utc::now());
         }
     }
 

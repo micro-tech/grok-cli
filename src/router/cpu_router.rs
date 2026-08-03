@@ -298,13 +298,10 @@ impl CpuRouter {
                 .steps
                 .iter()
                 .all(|s| !matches!(s, WorkflowStep::LlmGeneratedCode(_)))
-            {
-                if let Some(text) = &resp.text {
-                    if !text.trim().is_empty() {
+                && let Some(text) = &resp.text
+                    && !text.trim().is_empty() {
                         workflow.push(WorkflowStep::LlmGeneratedCode(text.clone()));
                     }
-                }
-            }
 
             let assistant_msg = resp.into_message_with_finish_reason().message;
             if let Ok(v) = serde_json::to_value(&assistant_msg) {

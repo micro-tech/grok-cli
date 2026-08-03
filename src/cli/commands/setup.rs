@@ -209,8 +209,8 @@ fn read_masked() -> Result<String> {
 
     let result: Result<String> = loop {
         // poll with a short timeout so we don't spin forever
-        if event::poll(Duration::from_millis(200))? {
-            if let Event::Key(KeyEvent {
+        if event::poll(Duration::from_millis(200))?
+            && let Event::Key(KeyEvent {
                 code, modifiers, ..
             }) = event::read()?
             {
@@ -241,7 +241,6 @@ fn read_masked() -> Result<String> {
                     _ => {}
                 }
             }
-        }
     };
 
     // Always restore terminal before returning, even on error.

@@ -553,7 +553,10 @@ impl Config {
 
     /// Get system-level config path (legacy TOML).
     /// Currently unused in favor of `default_config_path()`.
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "superseded by default_config_path(); retained for potential future use"
+    )]
     fn get_system_config_path() -> Result<PathBuf> {
         let home_dir =
             dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
@@ -766,14 +769,13 @@ impl Config {
         }
 
         // Validate ACP port range
-        if let Some(port) = self.acp.default_port {
-            if port < 1024 {
+        if let Some(port) = self.acp.default_port
+            && port < 1024 {
                 warn!(
                     "ACP port {} is below 1024, may require elevated privileges",
                     port
                 );
             }
-        }
 
         Ok(())
     }

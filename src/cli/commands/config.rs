@@ -554,10 +554,10 @@ async fn validate_config() -> Result<()> {
             // Check ACP settings
             if config.acp.enabled {
                 println!("{}", format_info("ACP (Zed integration) is enabled"));
-                if let Some(port) = config.acp.default_port {
-                    if port < 1024 {
-                        warnings.push(format!("ACP port {} may require elevated privileges", port));
-                    }
+                if let Some(port) = config.acp.default_port
+                    && port < 1024
+                {
+                    warnings.push(format!("ACP port {} may require elevated privileges", port));
                 }
             }
 

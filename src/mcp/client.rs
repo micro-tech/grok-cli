@@ -16,7 +16,10 @@ pub struct McpClient {
 }
 
 struct ServerConnection {
-    #[allow(dead_code)] // must be kept alive — dropping it would kill the child process
+    #[expect(
+        dead_code,
+        reason = "must be kept alive — dropping it would kill the child process"
+    )]
     process: Child,
     stdin: Mutex<ChildStdin>,
     reader: Mutex<BufReader<ChildStdout>>,
@@ -169,11 +172,10 @@ impl McpClient {
         }
 
         // 6. Optional but recommended: check serverInfo
-        if let Some(server_info) = result.get("serverInfo") {
-            if let Some(name) = server_info.get("name").and_then(|v| v.as_str()) {
+        if let Some(server_info) = result.get("serverInfo")
+            && let Some(name) = server_info.get("name").and_then(|v| v.as_str()) {
                 debug!("Connected to MCP server: {}", name);
             }
-        }
 
         Ok(())
     }
@@ -215,22 +217,20 @@ impl McpClient {
 
         // Phase 0: For 2026+ stateless mode, inject client info via _meta
         // instead of relying on a prior initialize handshake.
-        if !connection.use_legacy_handshake {
-            if let Some(obj) = msg.as_object_mut() {
+        if !connection.use_legacy_handshake
+            && let Some(obj) = msg.as_object_mut() {
                 obj.insert("_meta".to_string(), self.client_meta());
             }
-        }
 
         self.send_message(connection, &msg).await?;
         let response = self.read_response(connection).await?;
 
         // Parse response
-        if let Some(result) = response.get("result") {
-            if let Some(tools_val) = result.get("tools") {
+        if let Some(result) = response.get("result")
+            && let Some(tools_val) = result.get("tools") {
                 let tools: Vec<Tool> = serde_json::from_value(tools_val.clone())?;
                 return Ok(tools);
             }
-        }
 
         Ok(Vec::new())
     }
@@ -257,11 +257,10 @@ impl McpClient {
         });
 
         // Phase 0 (2026 readiness): inject client info via _meta when using stateless mode
-        if !connection.use_legacy_handshake {
-            if let Some(obj) = msg.as_object_mut() {
+        if !connection.use_legacy_handshake
+            && let Some(obj) = msg.as_object_mut() {
                 obj.insert("_meta".to_string(), self.client_meta());
             }
-        }
 
         self.send_message(connection, &msg).await?;
         let response = self.read_response(connection).await?;
@@ -309,11 +308,10 @@ impl McpClient {
             "params": {}
         });
 
-        if !connection.use_legacy_handshake {
-            if let Some(obj) = msg.as_object_mut() {
+        if !connection.use_legacy_handshake
+            && let Some(obj) = msg.as_object_mut() {
                 obj.insert("_meta".to_string(), self.client_meta());
             }
-        }
 
         self.send_message(connection, &msg).await?;
         let response = self.read_response(connection).await?;

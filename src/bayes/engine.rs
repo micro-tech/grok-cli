@@ -114,6 +114,10 @@ impl BayesianEngine {
         )
     }
 
+    #[expect(
+        clippy::too_many_arguments,
+        reason = "all parameters are distinct threshold/rate values; a builder struct would add complexity without clarity"
+    )]
     fn from_priors(
         priors: HashMap<String, f32>,
         clarification_threshold: f32,

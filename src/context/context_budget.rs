@@ -25,11 +25,7 @@ impl ContextBudget {
 
     pub fn remaining(&self) -> u32 {
         let used = self.counter.total();
-        if used >= self.max_tokens {
-            0
-        } else {
-            self.max_tokens - used
-        }
+        self.max_tokens.saturating_sub(used)
     }
 
     pub fn should_use_delta(&self) -> bool {

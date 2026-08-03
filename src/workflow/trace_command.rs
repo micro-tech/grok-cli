@@ -109,14 +109,11 @@ async fn handle_specific(id_or_prefix: &str) -> String {
                 Ok(trace) => {
                     if is_interactive_terminal() {
                         // Launch viewer for the specific trace
-                        match crate::display::run_workflow_viewer(trace.clone()).await {
-                            Ok(()) => {
-                                return format!(
-                                    "✅ Opened trace {} in viewer.",
-                                    trace_file_summary(path)
-                                );
-                            }
-                            Err(_) => {}
+                        if let Ok(()) = crate::display::run_workflow_viewer(trace.clone()).await {
+                            return format!(
+                                "✅ Opened trace {} in viewer.",
+                                trace_file_summary(path)
+                            );
                         }
                     }
                     format!(

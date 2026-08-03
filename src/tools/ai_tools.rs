@@ -1,13 +1,13 @@
 use crate::tools::ToolContext;
 use anyhow::Result;
-use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::sync::RwLock;
 
 /// Simple in-memory registry for AI-generated / dynamic tools.
-static DYNAMIC_TOOLS: Lazy<RwLock<HashMap<String, String>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
+static DYNAMIC_TOOLS: LazyLock<RwLock<HashMap<String, String>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 /// Register a new dynamic tool (name + description).
 /// This can be called by code generators or plugins.

@@ -46,26 +46,23 @@ pub fn on_before_write_file(ctx: &WriteContext) -> SafetyDecision {
         }
 
         // JSON validity check for .json files
-        if ctx.path.extension().map_or(false, |e| e == "json") {
-            if serde_json::from_str::<Value>(content).is_err() {
+        if ctx.path.extension().is_some_and(|e| e == "json")
+            && serde_json::from_str::<Value>(content).is_err() {
                 return SafetyDecision::Block(
                     "Target is .json but content is not valid JSON".to_string(),
                 );
             }
-        }
     }
 
     // 2. Compare with SessionDNA failure modes (if available)
-    if let Some(dna) = ctx.session_dna {
-        if let Some(failures) = dna.get("repeated_file_write_failures") {
-            if failures.as_u64().unwrap_or(0) > 3 {
+    if let Some(dna) = ctx.session_dna
+        && let Some(failures) = dna.get("repeated_file_write_failures")
+            && failures.as_u64().unwrap_or(0) > 3 {
                 return SafetyDecision::RequireConfirmation(
                     "SessionDNA shows repeated write failures. Confirm before proceeding."
                         .to_string(),
                 );
             }
-        }
-    }
 
     // 3. High-risk operations require confirmation
     if ctx.operation == "delete" {

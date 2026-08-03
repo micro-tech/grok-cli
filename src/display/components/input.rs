@@ -4,13 +4,13 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, rea
 use crossterm::style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor};
 use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::{ExecutableCommand, QueueableCommand};
-use once_cell::sync::Lazy;
 use regex::Regex;
 use std::io::{Write, stdout};
+use std::sync::LazyLock;
 
 /// ANSI escape sequence pattern — compiled once, reused on every render tick.
-static RE_ANSI: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\x1b\[[0-9;]*m").expect("BUG: invalid static RE_ANSI pattern"));
+static RE_ANSI: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*m").expect("BUG: invalid static RE_ANSI pattern"));
 
 pub struct Suggestion {
     pub text: String,
@@ -245,17 +245,15 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
             kind,
             ..
         }) = read()?
-        {
-            if kind == KeyEventKind::Press {
+            && kind == KeyEventKind::Press {
                 match code {
                     KeyCode::Enter => {
-                        if let Some(idx) = suggestion_index {
-                            if !filtered_suggestions.is_empty() {
+                        if let Some(idx) = suggestion_index
+                            && !filtered_suggestions.is_empty() {
                                 buffer = filtered_suggestions[idx].text.clone();
                                 // Select and break
                                 break;
                             }
-                        }
                         if !buffer.is_empty() {
                             break;
                         }
@@ -302,13 +300,12 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
                         }
                     }
                     KeyCode::Tab => {
-                        if let Some(idx) = suggestion_index {
-                            if !filtered_suggestions.is_empty() {
+                        if let Some(idx) = suggestion_index
+                            && !filtered_suggestions.is_empty() {
                                 buffer = filtered_suggestions[idx].text.clone();
                                 cursor_pos = buffer.len();
                                 // Don't break, just fill
                             }
-                        }
                     }
                     KeyCode::Esc => {
                         suggestion_index = None;
@@ -316,7 +313,6 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
                     _ => {}
                 }
             }
-        }
     }
 
     // Cleanup

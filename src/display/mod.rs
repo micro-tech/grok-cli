@@ -19,7 +19,10 @@ pub mod tips;
 pub use components::workflow_viewer::run_workflow_viewer;
 
 // Re-export commonly used items
-#[allow(deprecated)]
+#[expect(
+    deprecated,
+    reason = "re-exported for backward compatibility; I/O print functions pending binary-crate migration"
+)]
 pub use ascii_art::print_grok_logo;
 pub use ascii_art::{format_grok_logo, get_logo_for_width};
 
@@ -27,7 +30,10 @@ pub use banner::{
     BannerConfig, BannerType, clear_current_line, format_banner, format_directory_recommendation,
     format_welcome_banner,
 };
-#[allow(deprecated)]
+#[expect(
+    deprecated,
+    reason = "re-exported for backward compatibility; I/O print functions pending binary-crate migration"
+)]
 pub use banner::{print_banner, print_directory_recommendation, print_welcome_banner};
 pub use tips::{get_random_tip, get_random_tips};
 

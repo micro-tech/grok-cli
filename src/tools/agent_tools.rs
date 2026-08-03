@@ -13,8 +13,8 @@ use tracing::{error, info, warn};
 
 // ── Global shared AgentManager (Task 127) ─────────────────────────────────────
 
-static AGENT_MANAGER: once_cell::sync::Lazy<Arc<AgentManager>> =
-    once_cell::sync::Lazy::new(AgentManager::new);
+static AGENT_MANAGER: std::sync::LazyLock<Arc<AgentManager>> =
+    std::sync::LazyLock::new(AgentManager::new);
 
 /// Returns the global shared AgentManager instance.
 pub fn get_agent_manager() -> Arc<AgentManager> {
@@ -83,10 +83,10 @@ pub async fn run_agent_session(
         }
     } else {
         for dir in &effective_dirs {
-            if !dir.exists() {
-                if let Err(e) = std::fs::create_dir_all(dir) {
-                    warn!("run_agent_session: sandbox dir creation failed: {}", e);
-                }
+            if !dir.exists()
+                && let Err(e) = std::fs::create_dir_all(dir)
+            {
+                warn!("run_agent_session: sandbox dir creation failed: {}", e);
             }
             policy.add_trusted_directory(dir);
         }
@@ -300,7 +300,7 @@ pub async fn spawn_agent_configured(
             config.model,
             config.tool_count(),
             config.trusted_dirs.len(),
-            &task.chars().take(60).collect::<String>()
+            task.chars().take(60).collect::<String>()
         ),
     );
     info!(
@@ -660,8 +660,8 @@ pub async fn fork_agent(tasks: Vec<String>) -> Result<String> {
     info!(count = total, "fork_agent: launching parallel sub-agents");
 
     // ── Phase 1: register all agents + launch tokio tasks ────────────────────────
-    let mut handles: Vec<(String, tokio::task::JoinHandle<(String, Result<String>)>)> =
-        Vec::with_capacity(total);
+    type AgentHandle = (String, tokio::task::JoinHandle<(String, Result<String>)>);
+    let mut handles: Vec<AgentHandle> = Vec::with_capacity(total);
 
     for task in &tasks {
         let agent_id = manager
@@ -672,7 +672,7 @@ pub async fn fork_agent(tasks: Vec<String>) -> Result<String> {
             &agent_id,
             None,
             crate::acp::protocol::AgentActivityStatus::Forked,
-            format!("Forked: {}", &task.chars().take(80).collect::<String>()),
+            format!("Forked: {}", task.chars().take(80).collect::<String>()),
         );
         info!(agent_id = %agent_id, task = %task, "fork_agent: spawning task");
 
@@ -897,7 +897,7 @@ pub async fn delegate_plan_step(task: &str, parent_id: Option<&str>) -> Result<S
         crate::acp::protocol::AgentActivityStatus::Spawned,
         format!(
             "Delegated plan step: {}",
-            &task.chars().take(80).collect::<String>()
+            task.chars().take(80).collect::<String>()
         ),
     );
     info!(

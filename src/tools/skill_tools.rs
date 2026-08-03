@@ -38,46 +38,40 @@ pub fn execute_skill(skill_name: &str, input: &str) -> Result<String> {
         );
     }
 
-    let skills_dir = match get_default_skills_dir() {
-        Some(d) => d,
-        None => {
-            tracing::warn!(
-                "skill_tools::execute_skill: cannot determine skills directory (HOME not set?)"
-            );
-            return Err(anyhow!("Cannot determine skills directory (HOME not set?)"));
-        }
+    let Some(skills_dir) = get_default_skills_dir() else {
+        tracing::warn!(
+            "skill_tools::execute_skill: cannot determine skills directory (HOME not set?)"
+        );
+        return Err(anyhow!("Cannot determine skills directory (HOME not set?)"));
     };
 
-    let skill = match find_skill(skill_name, &skills_dir) {
-        Some(s) => s,
-        None => {
-            tracing::warn!(
-                skill_name = skill_name,
-                skills_dir = %skills_dir.display(),
-                "skill_tools::execute_skill: skill not found"
-            );
-            // Build a helpful error listing available skills
-            let available = list_skills(&skills_dir)
-                .map(|skills| {
-                    if skills.is_empty() {
-                        "No skills installed.".to_string()
-                    } else {
-                        skills
-                            .iter()
-                            .map(|s| format!("  - {} ({})", s.config.name, s.config.description))
-                            .collect::<Vec<_>>()
-                            .join("\n")
-                    }
-                })
-                .unwrap_or_else(|_| "Could not list skills.".to_string());
+    let Some(skill) = find_skill(skill_name, &skills_dir) else {
+        tracing::warn!(
+            skill_name = skill_name,
+            skills_dir = %skills_dir.display(),
+            "skill_tools::execute_skill: skill not found"
+        );
+        // Build a helpful error listing available skills
+        let available = list_skills(&skills_dir)
+            .map(|skills| {
+                if skills.is_empty() {
+                    "No skills installed.".to_string()
+                } else {
+                    skills
+                        .iter()
+                        .map(|s| format!("  - {} ({})", s.config.name, s.config.description))
+                        .collect::<Vec<_>>()
+                        .join("\n")
+                }
+            })
+            .unwrap_or_else(|_| "Could not list skills.".to_string());
 
-            return Err(anyhow!(
-                "Skill '{}' not found in {}.\n\nAvailable skills:\n{}",
-                skill_name,
-                skills_dir.display(),
-                available
-            ));
-        }
+        return Err(anyhow!(
+            "Skill '{}' not found in {}.\n\nAvailable skills:\n{}",
+            skill_name,
+            skills_dir.display(),
+            available
+        ));
     };
 
     // Format the skill context for consumption by the LLM

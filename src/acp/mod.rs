@@ -7,8 +7,8 @@ use crate::acp::protocol::SessionId;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
@@ -147,7 +147,7 @@ struct SessionData {
     /// or when a full tool-using code workflow completes.
     ///
     /// Kept (and read in save/restore paths) rather than removed.
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "reserved for future use")]
     last_workflow_trace: Option<crate::workflow::WorkflowTrace>,
 }
 
@@ -344,7 +344,7 @@ impl GrokAcpAgent {
         let flag = flags
             .entry(session_id.to_string())
             .or_insert_with(|| Arc::new(AtomicBool::new(false)));
-        flag.store(true, Ordering::SeqCst);
+        flag.store(true, Ordering::Release);
         info!("Cancellation requested for session {}", session_id);
     }
 
@@ -360,9 +360,9 @@ impl GrokAcpAgent {
 
     /// Clears the cancellation flag for a session (resets it to false).
     pub async fn clear_cancellation_flag(&self, session_id: &str) {
-        let mut flags = self.cancellation_flags.write().await;
+        let flags = self.cancellation_flags.write().await;
         if let Some(flag) = flags.get(session_id) {
-            flag.store(false, Ordering::SeqCst);
+            flag.store(false, Ordering::Release);
         }
     }
 
@@ -371,7 +371,7 @@ impl GrokAcpAgent {
         let flags = self.cancellation_flags.read().await;
         flags
             .get(session_id)
-            .map(|f| f.load(Ordering::SeqCst))
+            .map(|f| f.load(Ordering::Acquire))
             .unwrap_or(false)
     }
 
@@ -390,13 +390,11 @@ impl GrokAcpAgent {
     /// on first use if an API key is configured.  This keeps `new()` fast
     /// for ACP stdio startup.
     fn get_router(&self) -> Result<AppRouter> {
-        if self.router.get().is_none() {
-            if let Some(ref api_key) = self.config.api_key {
-                if let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs) {
+        if self.router.get().is_none()
+            && let Some(ref api_key) = self.config.api_key
+                && let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs) {
                     let _ = self.router.set(r);
                 }
-            }
-        }
 
         self.router.get().cloned().ok_or_else(|| {
             anyhow!(
@@ -595,13 +593,12 @@ impl GrokAcpAgent {
             .messages
             .iter_mut()
             .find(|m| m["role"] == "system")
+            && let Some(content) = sys_msg["content"].as_str()
         {
-            if let Some(content) = sys_msg["content"].as_str() {
-                let mut prompt = content.to_string();
-                dna.inject_into_prompt(&mut prompt);
-                prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
-                sys_msg["content"] = serde_json::Value::String(prompt);
-            }
+            let mut prompt = content.to_string();
+            dna.inject_into_prompt(&mut prompt);
+            prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
+            sys_msg["content"] = serde_json::Value::String(prompt);
         } else {
             let mut prompt = String::new();
             dna.inject_into_prompt(&mut prompt);
@@ -1244,14 +1241,13 @@ impl GrokAcpAgent {
                 let think_tokens = tc.len() / 4;
                 debug!("🧠 Thinking trace received: ~{} tokens", think_tokens);
 
-                if self.config.acp.stream_thinking {
-                    if let Some(sender) = &event_sender {
+                if self.config.acp.stream_thinking
+                    && let Some(sender) = &event_sender {
                         let blk = crate::acp::protocol::ThinkingBlockUpdate::new(tc, false);
                         let _ = sender.send(
                             crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk),
                         );
                     }
-                }
             }
 
             // Add assistant response to history
@@ -1281,14 +1277,13 @@ impl GrokAcpAgent {
                 // Prepend thinking block if present — now using structured format
                 let final_response = if let Some(tc) = thinking_content {
                     // Emit final structured thinking block
-                    if self.config.acp.stream_thinking {
-                        if let Some(sender) = &event_sender {
+                    if self.config.acp.stream_thinking
+                        && let Some(sender) = &event_sender {
                             let blk = crate::acp::protocol::ThinkingBlockUpdate::new(&tc, true);
                             let _ = sender.send(
                                 crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk),
                             );
                         }
-                    }
 
                     // Still return a nice markdown version for non-Zed clients
                     format!(
@@ -1470,8 +1465,8 @@ impl GrokAcpAgent {
                 let needs_permission = self.config.acp.require_permission
                     && !local_always_allow.contains(function_name.as_str())
                     && !newly_always_allowed.contains(function_name);
-                if needs_permission {
-                    if let Some(bridge) = &permission_bridge {
+                if needs_permission
+                    && let Some(bridge) = &permission_bridge {
                         let req_id = uuid::Uuid::new_v4().to_string();
 
                         let params = RequestPermissionParams::new(
@@ -1516,7 +1511,6 @@ impl GrokAcpAgent {
                             }
                         }
                     }
-                }
                 // --- END PERMISSION GATE ---
 
                 // Route ALL tool calls through the unified registry + arbitration layer.
@@ -1644,8 +1638,8 @@ impl GrokAcpAgent {
             }
 
             // Emit context usage after each iteration (Task 130)
-            if self.config.acp.show_context_usage {
-                if let Some(sender) = &event_sender {
+            if self.config.acp.show_context_usage
+                && let Some(sender) = &event_sender {
                     let usage = crate::acp::protocol::ContextUsageUpdate::new(
                         estimate_tokens(&messages),
                         model_context_budget(
@@ -1679,7 +1673,6 @@ impl GrokAcpAgent {
                     };
                     self.emit_status_bar(Some(sender), &status_state);
                 }
-            }
 
             // Post-tool-loop guard: if the model signalled "stop" alongside
             // tool calls, return now instead of spinning up a redundant extra
@@ -1690,8 +1683,8 @@ impl GrokAcpAgent {
                     loop_count
                 );
                 // Emit context usage
-                if self.config.acp.show_context_usage {
-                    if let Some(sender) = &event_sender {
+                if self.config.acp.show_context_usage
+                    && let Some(sender) = &event_sender {
                         let usage = crate::acp::protocol::ContextUsageUpdate::new(
                             estimate_tokens(&messages),
                             model_context_budget(
@@ -1705,7 +1698,6 @@ impl GrokAcpAgent {
                             crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage),
                         );
                     }
-                }
                 // ── Phase 3: Final sync (brief write lock) ──────────────────────────
                 {
                     let mut sessions = self.sessions.write().await;
@@ -1914,7 +1906,7 @@ impl GrokAcpAgent {
     }
 
     pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
-        &self.capabilities()
+        self.capabilities()
     }
 
     /// Emit the dynamic status bar + token meter (Task 164)
@@ -2779,9 +2771,9 @@ fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
                 // Array-of-content-blocks form used by some providers
                 Value::Array(blocks) => {
                     for block in blocks.iter_mut() {
-                        if let Some(text_val) = block.get_mut("text") {
-                            if let Some(s) = text_val.as_str() {
-                                if s.len() > max_chars {
+                        if let Some(text_val) = block.get_mut("text")
+                            && let Some(s) = text_val.as_str()
+                                && s.len() > max_chars {
                                     let mut end = max_chars;
                                     while !s.is_char_boundary(end) {
                                         end -= 1;
@@ -2793,8 +2785,6 @@ fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
                                         truncated, max_chars
                                     ));
                                 }
-                            }
-                        }
                     }
                 }
                 _ => {}

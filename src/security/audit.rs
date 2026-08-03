@@ -159,13 +159,12 @@ impl AuditLogger {
 
         // Lazy directory creation: only create when we are actually going to write.
         // This ensures new(false) and test constructions have zero FS side-effects.
-        if let Some(parent) = self.log_file_path.parent() {
-            if !parent.exists() {
+        if let Some(parent) = self.log_file_path.parent()
+            && !parent.exists() {
                 fs::create_dir_all(parent)
                     .map_err(|e| anyhow!("Failed to create audit log directory: {}", e))?;
                 info!("Created audit log directory: {:?}", parent);
             }
-        }
 
         // Serialize to JSON
         let json = serde_json::to_string(&log)
@@ -224,7 +223,11 @@ impl AuditLogger {
 
         let cache = self.cache.lock().unwrap();
         // Cache stores oldest-first; take last N then reverse for most-recent-first
-        let start = if cache.len() > count { cache.len() - count } else { 0 };
+        let start = if cache.len() > count {
+            cache.len() - count
+        } else {
+            0
+        };
         let mut recent: Vec<_> = cache[start..].to_vec();
         recent.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
         recent.truncate(count);
@@ -265,7 +268,7 @@ impl AuditLogger {
         }
 
         #[cfg(test)]
-        DISK_READ_COUNT.fetch_add(1, Ordering::SeqCst);
+        DISK_READ_COUNT.fetch_add(1, Ordering::Relaxed);
 
         let file = File::open(&self.log_file_path)
             .map_err(|e| anyhow!("Failed to open audit log file: {}", e))?;
@@ -344,10 +347,7 @@ impl AuditLogger {
                     || log.decision == "approved_always"
             })
             .count();
-        let denied = cache
-            .iter()
-            .filter(|log| log.decision == "denied")
-            .count();
+        let denied = cache.iter().filter(|log| log.decision == "denied").count();
 
         Ok((total, allowed, denied))
     }
@@ -413,11 +413,10 @@ impl AuditLogger {
 impl Drop for AuditLogger {
     fn drop(&mut self) {
         // Best-effort flush of any buffered data on drop.
-        if let Ok(mut guard) = self.writer.lock() {
-            if let Some(writer) = guard.as_mut() {
+        if let Ok(mut guard) = self.writer.lock()
+            && let Some(writer) = guard.as_mut() {
                 let _ = writer.flush();
             }
-        }
     }
 }
 
@@ -655,7 +654,7 @@ mod tests {
 
         // Reset the test-only disk read counter
         #[cfg(test)]
-        DISK_READ_COUNT.store(0, Ordering::SeqCst);
+        DISK_READ_COUNT.store(0, Ordering::Relaxed);
 
         // Second call must NOT read from disk again
         let (total, _, _) = logger.get_statistics().unwrap();
@@ -663,7 +662,7 @@ mod tests {
 
         #[cfg(test)]
         {
-            let reads = DISK_READ_COUNT.load(Ordering::SeqCst);
+            let reads = DISK_READ_COUNT.load(Ordering::Relaxed);
             assert_eq!(reads, 0, "expected no additional disk read on cache hit");
         }
     }

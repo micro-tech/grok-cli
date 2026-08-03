@@ -153,9 +153,9 @@ async fn run_app(terminal: &mut Tui, app: &mut SettingsApp) -> Result<()> {
     loop {
         terminal.draw(|f| ui(f, app))?;
 
-        if event::poll(Duration::from_millis(100))? {
-            if let Event::Key(key) = event::read()? {
-                if key.kind == KeyEventKind::Press {
+        if event::poll(Duration::from_millis(100))?
+            && let Event::Key(key) = event::read()?
+                && key.kind == KeyEventKind::Press {
                     match app.mode {
                         EditMode::View => match key.code {
                             KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
@@ -180,8 +180,6 @@ async fn run_app(terminal: &mut Tui, app: &mut SettingsApp) -> Result<()> {
                         },
                     }
                 }
-            }
-        }
         if app.should_quit {
             return Ok(());
         }

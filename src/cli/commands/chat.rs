@@ -125,8 +125,8 @@ async fn handle_single_chat(
         Ok(response_with_finish) => {
             let response = response_with_finish.message;
             // Handle tool calls if present
-            if let Some(tool_calls) = &response.tool_calls {
-                if !tool_calls.is_empty() {
+            if let Some(tool_calls) = &response.tool_calls
+                && !tool_calls.is_empty() {
                     println!("{}", format_info("Executing requested operations..."));
                     let mut security = SecurityPolicy::new();
                     security.add_trusted_directory(&env::current_dir()?);
@@ -137,7 +137,6 @@ async fn handle_single_chat(
                     println!("{}", format_success("All operations completed!"));
                     return Ok(());
                 }
-            }
 
             // Regular text response
             println!("{}", format_success("Response received!"));
@@ -356,32 +355,29 @@ async fn handle_interactive_chat(
                 spinner.finish_and_clear();
 
                 // Handle tool calls if present
-                if let Some(tool_calls) = &response_msg.tool_calls {
-                    if !tool_calls.is_empty() {
-                        println!("{}", "Grok is executing operations...".blue().dimmed());
+                if let Some(tool_calls) = &response_msg.tool_calls
+                    && !tool_calls.is_empty()
+                {
+                    println!("{}", "Grok is executing operations...".blue().dimmed());
 
-                        for tool_call in tool_calls {
-                            if let Err(e) = execute_tool_call(tool_call, &security).await {
-                                println!(
-                                    "{}",
-                                    format_error(&format!("Tool execution failed: {}", e))
-                                );
-                            } else {
-                                if enable_bayesian_router {
-                                    router.learn_from_tool(&tool_call.function.name);
-                                }
+                    for tool_call in tool_calls {
+                        if let Err(e) = execute_tool_call(tool_call, &security).await {
+                            println!("{}", format_error(&format!("Tool execution failed: {}", e)));
+                        } else {
+                            if enable_bayesian_router {
+                                router.learn_from_tool(&tool_call.function.name);
                             }
                         }
-
-                        // Add assistant's tool call response to history
-                        conversation_history.push(json!({
-                            "role": "assistant",
-                            "content": response_msg.content.clone(),
-                            "tool_calls": tool_calls
-                        }));
-
-                        continue;
                     }
+
+                    // Add assistant's tool call response to history
+                    conversation_history.push(json!({
+                        "role": "assistant",
+                        "content": response_msg.content.clone(),
+                        "tool_calls": tool_calls
+                    }));
+
+                    continue;
                 }
 
                 let response = content_to_string(response_msg.content.as_ref());
@@ -799,13 +795,11 @@ async fn handle_explorer_mode(client: AppRouter, query: &str, model: &str) -> Re
     ];
 
     // Only allow read/search tools in explorer mode
-    let allowed_tools = vec![
-        "fs_glob",
+    let allowed_tools = ["fs_glob",
         "fs_read",
         "fs_grep",
         "list_directory",
-        "search_file_content",
-    ];
+        "search_file_content"];
 
     let all_tools = tools::get_available_tool_definitions();
     let filtered_tools: Vec<serde_json::Value> = all_tools

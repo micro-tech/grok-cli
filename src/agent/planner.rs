@@ -109,16 +109,14 @@ impl Planner {
 
         // ── Optional Explorer run (Task 161/162) ─────────────────────────────
         let mut repo_evidence = None;
-        if intent.contains("edit") || intent.contains("refactor") || intent.contains("fix") {
-            if let Some(client) = client {
-                if let Ok(evidence) =
-                    crate::agent::explorer::run_explorer_mode(client, user_input, model).await
-                {
-                    repo_evidence = Some(serde_json::to_value(evidence)?);
-                    debug!("Planner: Explorer evidence collected");
-                }
+        if (intent.contains("edit") || intent.contains("refactor") || intent.contains("fix"))
+            && let Some(client) = client
+            && let Ok(evidence) =
+                crate::agent::explorer::run_explorer_mode(client, user_input, model).await
+            {
+                repo_evidence = Some(serde_json::to_value(evidence)?);
+                debug!("Planner: Explorer evidence collected");
             }
-        }
 
         // Boot the FSM.
         // ReasoningEngineState::new() takes no args; set goal with builder.

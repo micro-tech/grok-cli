@@ -458,8 +458,8 @@ fn detect_language_from_path(path: &str) -> Option<String> {
 /// Extract clean code from a response that might contain explanations
 fn extract_code_from_response(response: &str) -> String {
     // Try to find code blocks first
-    if let Some(start) = response.find("```") {
-        if let Some(end) = response[start + 3..].find("```") {
+    if let Some(start) = response.find("```")
+        && let Some(end) = response[start + 3..].find("```") {
             let code_block = &response[start + 3..start + 3 + end];
             // Remove language identifier from first line if present
             let lines: Vec<&str> = code_block.lines().collect();
@@ -475,7 +475,6 @@ fn extract_code_from_response(response: &str) -> String {
             }
             return code_block.trim().to_string();
         }
-    }
 
     // If no code blocks found, return the entire response
     response.trim().to_string()

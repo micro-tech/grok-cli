@@ -25,7 +25,7 @@ fn main() {
 
     for (filename, content) in markmaps {
         let path = Path::new(out_dir).join(filename);
-        fs::write(&path, content).expect(&format!("Failed to write {}", filename));
+        fs::write(&path, content).unwrap_or_else(|_| panic!("Failed to write {filename}"));
         println!("Generated: {}", path.display());
     }
 
@@ -41,7 +41,7 @@ fn skeleton(title: &str, sections: Vec<(&str, Vec<&str>)>) -> String {
         for item in items {
             out.push_str(&format!("- {}\n", item));
         }
-        out.push_str("\n");
+        out.push('\n');
     }
 
     out.push_str("## Dependencies\n- (to be filled)\n\n");

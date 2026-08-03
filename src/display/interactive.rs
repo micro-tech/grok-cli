@@ -304,8 +304,8 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
             context_path.display().to_string().bright_green()
         );
         // When hide_context_summary is false, show a short preview of the file
-        if !config.ui.hide_context_summary {
-            if let Ok(content) = std::fs::read_to_string(&context_path) {
+        if !config.ui.hide_context_summary
+            && let Ok(content) = std::fs::read_to_string(&context_path) {
                 let preview: Vec<&str> = content
                     .lines()
                     .filter(|l| !l.trim().is_empty())
@@ -320,12 +320,11 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
                     println!("      {}", truncated.dimmed());
                 }
             }
-        }
     }
 
     // Show available and active skills
-    if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
-        if let Ok(skills) = crate::skills::list_skills(&skills_dir) {
+    if let Some(skills_dir) = crate::skills::get_default_skills_dir()
+        && let Ok(skills) = crate::skills::list_skills(&skills_dir) {
             let total = skills.len();
             let active = session.active_skills.len();
             if total > 0 {
@@ -344,7 +343,6 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
                 }
             }
         }
-    }
 
     if let Some(system) = &session.system_prompt {
         let preview = if system.len() > 60 {
@@ -559,30 +557,29 @@ async fn run_interactive_loop(
     }
 
     // Auto-activate skills based on the user's message context.
-    if session.auto_skills_enabled {
-        if let Some(skills_dir) = crate::skills::get_default_skills_dir() {
-            if let Ok(available) = list_skills(&skills_dir) {
-                let engine = AutoActivationEngine::new();
-                let suggestions = engine.check(
-                    input,
-                    &session.current_directory,
-                    &available,
-                    &session.active_skills,
-                );
-                for m in suggestions {
-                    println!(
-                        "{} Auto-activating skill {} (confidence: {}%)",
-                        "🔧".bright_cyan(),
-                        m.skill_name.bright_yellow(),
-                        m.confidence
-                    );
-                    for reason in &m.reasons {
-                        println!("     {}", reason.dimmed());
-                    }
-                    // Activate via the existing helper so security validation runs.
-                    let _ = activate_skill(session, &m.skill_name);
-                }
+    if session.auto_skills_enabled
+        && let Some(skills_dir) = crate::skills::get_default_skills_dir()
+        && let Ok(available) = list_skills(&skills_dir)
+    {
+        let engine = AutoActivationEngine::new();
+        let suggestions = engine.check(
+            input,
+            &session.current_directory,
+            &available,
+            &session.active_skills,
+        );
+        for m in suggestions {
+            println!(
+                "{} Auto-activating skill {} (confidence: {}%)",
+                "🔧".bright_cyan(),
+                m.skill_name.bright_yellow(),
+                m.confidence
+            );
+            for reason in &m.reasons {
+                println!("     {}", reason.dimmed());
             }
+            // Activate via the existing helper so security validation runs.
+            let _ = activate_skill(session, &m.skill_name);
         }
     }
 
@@ -607,7 +604,7 @@ async fn run_interactive_loop(
 }
 
 /// Display the input prompt with proper cursor positioning
-#[allow(dead_code)]
+#[expect(dead_code, reason = "reserved for future use")]
 fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> Result<()> {
     let prompt = match config.prompt_style {
         PromptStyle::Simple => "> ".to_string(),
@@ -642,7 +639,7 @@ fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> R
 }
 
 /// Read user input from stdin with cursor cleanup
-#[allow(dead_code)]
+#[expect(dead_code, reason = "reserved for future use")]
 fn read_user_input() -> Result<String> {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
@@ -1356,31 +1353,31 @@ async fn send_to_grok(
             clear_current_line();
 
             // Handle tool calls if present
-            if let Some(tool_calls) = &response_msg.tool_calls {
-                if !tool_calls.is_empty() {
-                    println!("{}", "Grok is executing operations...".blue().bold());
-                    println!();
+            if let Some(tool_calls) = &response_msg.tool_calls
+                && !tool_calls.is_empty()
+            {
+                println!("{}", "Grok is executing operations...".blue().bold());
+                println!();
 
-                    for tool_call in tool_calls {
-                        if let Err(e) = execute_tool_call_interactive(tool_call, &security).await {
-                            eprintln!("  {} Tool execution failed: {}", "✗".red(), e);
-                        }
+                for tool_call in tool_calls {
+                    if let Err(e) = execute_tool_call_interactive(tool_call, &security).await {
+                        eprintln!("  {} Tool execution failed: {}", "✗".red(), e);
                     }
-
-                    println!();
-                    println!("{}", "All operations completed!".green().bold());
-                    println!();
-
-                    // Add assistant's response to history
-                    let content = content_to_string(response_msg.content.as_ref());
-                    let content = if content.is_empty() {
-                        "Operations completed.".to_string()
-                    } else {
-                        content
-                    };
-                    session.add_conversation_item("assistant", &content, None);
-                    return Ok(());
                 }
+
+                println!();
+                println!("{}", "All operations completed!".green().bold());
+                println!();
+
+                // Add assistant's response to history
+                let content = content_to_string(response_msg.content.as_ref());
+                let content = if content.is_empty() {
+                    "Operations completed.".to_string()
+                } else {
+                    content
+                };
+                session.add_conversation_item("assistant", &content, None);
+                return Ok(());
             }
 
             let content = content_to_string(response_msg.content.as_ref());

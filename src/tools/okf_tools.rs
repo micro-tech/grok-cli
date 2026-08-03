@@ -321,11 +321,10 @@ async fn push_concept_to_remote(
 
     let mut req = client.post(&url).json(concept);
 
-    if let Some(key) = api_key {
-        if !key.trim().is_empty() {
+    if let Some(key) = api_key
+        && !key.trim().is_empty() {
             req = req.bearer_auth(key.trim());
         }
-    }
 
     let resp = req.send().await?;
 

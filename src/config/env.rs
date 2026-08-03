@@ -29,62 +29,54 @@ impl Config {
             self.default_model = model;
         }
 
-        if let Ok(temp) = env::var("GROK_TEMPERATURE") {
-            if let Ok(temp_val) = temp.parse::<f32>() {
+        if let Ok(temp) = env::var("GROK_TEMPERATURE")
+            && let Ok(temp_val) = temp.parse::<f32>() {
                 self.default_temperature = temp_val;
             }
-        }
 
-        if let Ok(tokens) = env::var("GROK_MAX_TOKENS") {
-            if let Ok(tokens_val) = tokens.parse::<u32>() {
+        if let Ok(tokens) = env::var("GROK_MAX_TOKENS")
+            && let Ok(tokens_val) = tokens.parse::<u32>() {
                 self.default_max_tokens = tokens_val;
             }
-        }
 
         // Network configuration
-        if let Ok(timeout) = env::var("GROK_TIMEOUT") {
-            if let Ok(timeout_val) = timeout.parse::<u64>() {
+        if let Ok(timeout) = env::var("GROK_TIMEOUT")
+            && let Ok(timeout_val) = timeout.parse::<u64>() {
                 self.timeout_secs = timeout_val;
             }
-        }
 
-        if let Ok(retries) = env::var("GROK_MAX_RETRIES") {
-            if let Ok(retries_val) = retries.parse::<u32>() {
+        if let Ok(retries) = env::var("GROK_MAX_RETRIES")
+            && let Ok(retries_val) = retries.parse::<u32>() {
                 self.max_retries = retries_val;
             }
-        }
 
         if let Ok(val) = env::var("GROK_STARLINK_OPTIMIZATIONS") {
             self.network.starlink_optimizations = val.parse::<bool>().unwrap_or(true);
         }
 
-        if let Ok(delay) = env::var("GROK_BASE_RETRY_DELAY") {
-            if let Ok(delay_val) = delay.parse::<u64>() {
+        if let Ok(delay) = env::var("GROK_BASE_RETRY_DELAY")
+            && let Ok(delay_val) = delay.parse::<u64>() {
                 self.network.base_retry_delay = delay_val;
             }
-        }
 
-        if let Ok(delay) = env::var("GROK_MAX_RETRY_DELAY") {
-            if let Ok(delay_val) = delay.parse::<u64>() {
+        if let Ok(delay) = env::var("GROK_MAX_RETRY_DELAY")
+            && let Ok(delay_val) = delay.parse::<u64>() {
                 self.network.max_retry_delay = delay_val;
             }
-        }
 
         if let Ok(val) = env::var("GROK_HEALTH_MONITORING") {
             self.network.health_monitoring = val.parse::<bool>().unwrap_or(true);
         }
 
-        if let Ok(timeout) = env::var("GROK_CONNECT_TIMEOUT") {
-            if let Ok(timeout_val) = timeout.parse::<u64>() {
+        if let Ok(timeout) = env::var("GROK_CONNECT_TIMEOUT")
+            && let Ok(timeout_val) = timeout.parse::<u64>() {
                 self.network.connect_timeout = timeout_val;
             }
-        }
 
-        if let Ok(timeout) = env::var("GROK_READ_TIMEOUT") {
-            if let Ok(timeout_val) = timeout.parse::<u64>() {
+        if let Ok(timeout) = env::var("GROK_READ_TIMEOUT")
+            && let Ok(timeout_val) = timeout.parse::<u64>() {
                 self.network.read_timeout = timeout_val;
             }
-        }
 
         // UI configuration
         if let Ok(val) = env::var("GROK_COLORS") {
@@ -103,11 +95,10 @@ impl Config {
             self.ui.verbose_errors = val.parse::<bool>().unwrap_or(false);
         }
 
-        if let Ok(width) = env::var("GROK_TERMINAL_WIDTH") {
-            if let Ok(width_val) = width.parse::<usize>() {
+        if let Ok(width) = env::var("GROK_TERMINAL_WIDTH")
+            && let Ok(width_val) = width.parse::<usize>() {
                 self.ui.terminal_width = width_val;
             }
-        }
 
         // Disable colors if NO_COLOR is set
         if env::var("NO_COLOR").is_ok() {
@@ -127,17 +118,15 @@ impl Config {
             self.logging.log_file = Some(PathBuf::from(path));
         }
 
-        if let Ok(size) = env::var("GROK_MAX_FILE_SIZE_MB") {
-            if let Ok(size_val) = size.parse::<u64>() {
+        if let Ok(size) = env::var("GROK_MAX_FILE_SIZE_MB")
+            && let Ok(size_val) = size.parse::<u64>() {
                 self.logging.max_file_size_mb = size_val;
             }
-        }
 
-        if let Ok(count) = env::var("GROK_ROTATION_COUNT") {
-            if let Ok(count_val) = count.parse::<u32>() {
+        if let Ok(count) = env::var("GROK_ROTATION_COUNT")
+            && let Ok(count_val) = count.parse::<u32>() {
                 self.logging.rotation_count = count_val;
             }
-        }
 
         // ACP configuration
         if let Ok(val) = env::var("GROK_ACP_ENABLED") {
@@ -148,11 +137,10 @@ impl Config {
             self.acp.enabled = false;
         }
 
-        if let Ok(port) = env::var("GROK_ACP_PORT") {
-            if let Ok(port_val) = port.parse::<u16>() {
+        if let Ok(port) = env::var("GROK_ACP_PORT")
+            && let Ok(port_val) = port.parse::<u16>() {
                 self.acp.default_port = Some(port_val);
             }
-        }
 
         if let Ok(host) = env::var("GROK_ACP_BIND_HOST") {
             self.acp.bind_host = host;
@@ -166,11 +154,10 @@ impl Config {
             self.acp.dev_mode = val.parse::<bool>().unwrap_or(false);
         }
 
-        if let Ok(iterations) = env::var("GROK_ACP_MAX_TOOL_LOOP_ITERATIONS") {
-            if let Ok(iterations_val) = iterations.parse::<u32>() {
+        if let Ok(iterations) = env::var("GROK_ACP_MAX_TOOL_LOOP_ITERATIONS")
+            && let Ok(iterations_val) = iterations.parse::<u32>() {
                 self.acp.max_tool_loop_iterations = iterations_val;
             }
-        }
 
         // Telemetry configuration
         if let Ok(val) = env::var("GROK_TELEMETRY_ENABLED") {
@@ -188,11 +175,10 @@ impl Config {
         if let Ok(s) = env::var("GROK_OKF_SERVER") {
             self.okf.server = s;
         }
-        if let Ok(p) = env::var("GROK_OKF_PORT") {
-            if let Ok(port_val) = p.parse::<u16>() {
+        if let Ok(p) = env::var("GROK_OKF_PORT")
+            && let Ok(port_val) = p.parse::<u16>() {
                 self.okf.port = port_val;
             }
-        }
         if let Ok(key) = env::var("GROK_OKF_API_KEY") {
             self.okf.api_key = Some(key);
         }
@@ -202,11 +188,10 @@ impl Config {
         if let Ok(val) = env::var("GROK_OKF_USE_HTTPS") {
             self.okf.use_https = val.parse::<bool>().unwrap_or(false);
         }
-        if let Ok(t) = env::var("GROK_OKF_TIMEOUT") {
-            if let Ok(t_val) = t.parse::<u64>() {
+        if let Ok(t) = env::var("GROK_OKF_TIMEOUT")
+            && let Ok(t_val) = t.parse::<u64>() {
                 self.okf.timeout_secs = t_val;
             }
-        }
         if let Ok(val) = env::var("GROK_OKF_BUFFER_ON_FAILURE") {
             self.okf.buffer_on_failure = val.parse::<bool>().unwrap_or(true);
         }

@@ -43,13 +43,12 @@ impl SuspiciousWriteGuard {
                         });
                     }
                 }
-                "toml" | "yaml" | "yml" => {
-                    if content.trim().is_empty() {
+                "toml" | "yaml" | "yml"
+                    if content.trim().is_empty() => {
                         return Err(SafetyError::InvalidSyntax {
                             format: ext.to_string(),
                         });
                     }
-                }
                 _ => {}
             }
         }

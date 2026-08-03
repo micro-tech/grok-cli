@@ -30,15 +30,14 @@ pub fn prune_unused_tools(tools: Vec<Value>, keep: &[&str]) -> Vec<Value> {
 
 /// Lightweight schema compression (removes verbose descriptions if present).
 pub fn compress_schema(schema: &mut Value) -> ContextResult<()> {
-    if let Some(desc) = schema.get_mut("description") {
-        if let Some(s) = desc.as_str() {
-            if s.len() > 120 {
-                if s.len() > 200_000 {
-                    return Err(ContextError::PromptTooLarge);
-                }
-                *desc = Value::String(format!("{}…", &s[..117]));
-            }
+    if let Some(desc) = schema.get_mut("description")
+        && let Some(s) = desc.as_str()
+        && s.len() > 120
+    {
+        if s.len() > 200_000 {
+            return Err(ContextError::PromptTooLarge);
         }
+        *desc = Value::String(format!("{}\u{2026}", &s[..117]));
     }
     Ok(())
 }

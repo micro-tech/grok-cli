@@ -288,9 +288,8 @@ impl AutoActivationEngine {
     ) -> Vec<SkillMatch> {
         let mut matches = self.check(input, working_dir, available_skills, already_active);
 
-        let trace = match reasoning {
-            Some(t) => t,
-            None => return matches,
+        let Some(trace) = reasoning else {
+            return matches;
         };
 
         // Build a map of lowercased tool name → original tool name for all
@@ -308,12 +307,11 @@ impl AutoActivationEngine {
             let mut confidence = m.confidence as u32;
 
             // ── Tool-name keyword boost ──────────────────────────────────
-            if !selected_tools.is_empty() {
-                if let Some(skill) = available_skills
+            if !selected_tools.is_empty()
+                && let Some(skill) = available_skills
                     .iter()
                     .find(|s| s.config.name == m.skill_name)
-                {
-                    if let Some(auto_cfg) = skill.config.auto_activate.as_ref() {
+                    && let Some(auto_cfg) = skill.config.auto_activate.as_ref() {
                         'kw: for keyword in &auto_cfg.keywords {
                             let kw_lower = keyword.to_lowercase();
                             if let Some(orig_name) = selected_tools.get(&kw_lower) {
@@ -324,8 +322,6 @@ impl AutoActivationEngine {
                             }
                         }
                     }
-                }
-            }
 
             // ── Uncertainty penalty ──────────────────────────────────────
             if apply_penalty {
@@ -419,10 +415,9 @@ fn collect_extensions(dir: &Path) -> HashSet<String> {
         .filter_map(|e| e.ok())
     {
         if entry.file_type().is_file()
-            && let Some(ext) = entry.path().extension().and_then(|e| e.to_str())
-        {
-            exts.insert(ext.to_lowercase());
-        }
+            && let Some(ext) = entry.path().extension().and_then(|e| e.to_str()) {
+                exts.insert(ext.to_lowercase());
+            }
     }
 
     exts

@@ -17,13 +17,12 @@ pub async fn handle_tools_command(command: crate::ToolsAction) -> Result<()> {
             println!();
 
             for tool_json in crate::tools::registry::get_tool_definitions() {
-                if let Ok(v) = serde_json::from_str::<serde_json::Value>(tool_json) {
-                    if let Some(name) = v
+                if let Ok(v) = serde_json::from_str::<serde_json::Value>(tool_json)
+                    && let Some(name) = v
                         .get("function")
                         .and_then(|f| f.get("name"))
                         .and_then(|n| n.as_str())
-                    {
-                        if let Some(desc) = v
+                        && let Some(desc) = v
                             .get("function")
                             .and_then(|f| f.get("description"))
                             .and_then(|d| d.as_str())
@@ -35,8 +34,6 @@ pub async fn handle_tools_command(command: crate::ToolsAction) -> Result<()> {
                                 desc.dimmed()
                             );
                         }
-                    }
-                }
             }
 
             println!();

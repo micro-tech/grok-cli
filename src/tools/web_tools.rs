@@ -4,37 +4,37 @@
 //! Starlink satellite handover drops.
 
 use anyhow::{Result, anyhow};
-use once_cell::sync::Lazy;
 use regex::Regex;
+use std::sync::LazyLock;
 use tracing::warn;
 
 use crate::tools::ToolContext;
 
 // ── Compiled regex patterns (compiled once) ───────────────────────────────────
 
-static RE_SEARCH_RESULT: Lazy<Regex> = Lazy::new(|| {
+static RE_SEARCH_RESULT: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"(?s)class="result__body".*?class="result__a" href="([^"]+)">(.*?)</a>.*?class="result__snippet"[^>]*>(.*?)</a>"#)
         .expect("BUG: invalid static RE_SEARCH_RESULT pattern")
 });
 
-static RE_SEARCH_SIMPLE: Lazy<Regex> = Lazy::new(|| {
+static RE_SEARCH_SIMPLE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r#"class="result__a" href="([^"]+)">(.*?)</a>"#)
         .expect("BUG: invalid static RE_SEARCH_SIMPLE pattern")
 });
 
-static RE_STRIP_TAGS: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"<[^>]*>").expect("BUG: invalid static RE_STRIP_TAGS pattern"));
+static RE_STRIP_TAGS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"<[^>]*>").expect("BUG: invalid static RE_STRIP_TAGS pattern"));
 
 // ── Shared HTTP client (connection pooling + single initialization) ───────────
 
 /// Shared reqwest client used by all web tools.
 ///
-/// Created once via `once_cell::Lazy`. Provides connection reuse, keep-alive,
+/// Created once via `std::sync::LazyLock`. Provides connection reuse, keep-alive,
 /// and avoids the cost of new TCP/TLS handshakes on every request.
 /// Configured with a 30s timeout and a reasonable user-agent.
-static HTTP_CLIENT: Lazy<reqwest::Client> = Lazy::new(|| {
+static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
     #[cfg(test)]
-    CLIENT_CREATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+    CLIENT_CREATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 
     reqwest::Client::builder()
         .timeout(std::time::Duration::from_secs(30))
@@ -293,14 +293,14 @@ mod tests {
         // because it's a process-wide static Lazy, so we only assert that
         // repeated access does not increment the counter further).
         let _ = &*HTTP_CLIENT;
-        let count_after_first = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+        let count_after_first = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::Relaxed);
 
         // Second and third access must not create additional clients
         let _ = &*HTTP_CLIENT;
-        let count_after_second = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+        let count_after_second = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::Relaxed);
 
         let _ = &*HTTP_CLIENT;
-        let count_after_third = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::SeqCst);
+        let count_after_third = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::Relaxed);
 
         assert_eq!(
             count_after_first, count_after_second,

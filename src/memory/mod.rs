@@ -351,22 +351,20 @@ impl MemoryStore {
         trigger: skill_memory::SkillTrigger,
         project_hash: &str,
     ) {
-        if let Some(sm) = &mut self.skill_memory {
-            if let Err(e) =
+        if let Some(sm) = &mut self.skill_memory
+            && let Err(e) =
                 sm.record_activation(skill_name, trigger, project_hash, &self.session_id)
             {
                 warn!("MemoryStore: could not record skill activation — {e}");
             }
-        }
     }
 
     /// Record whether a skill was helpful this session.
     pub fn skill_outcome(&mut self, skill_name: &str, was_helpful: bool) {
         if let Some(sm) = &mut self.skill_memory
-            && let Err(e) = sm.record_outcome(skill_name, &self.session_id, was_helpful, None)
-        {
-            warn!("MemoryStore: could not record skill outcome — {e}");
-        }
+            && let Err(e) = sm.record_outcome(skill_name, &self.session_id, was_helpful, None) {
+                warn!("MemoryStore: could not record skill outcome — {e}");
+            }
     }
 
     /// Get suggested skills for the current project based on past history.

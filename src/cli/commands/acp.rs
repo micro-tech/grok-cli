@@ -367,9 +367,9 @@ where
                 let init = Arc::clone(&init_new);
                 async move {
                     // Auto-init if client skipped initialize (Gemini CLI)
-                    if !init.load(Ordering::SeqCst) {
+                    if !init.load(Ordering::Acquire) {
                         ensure_default_initialized(&agent, &mut false);
-                        init.store(true, Ordering::SeqCst);
+                        init.store(true, Ordering::Release);
                     }
                     // Convert crate's typed request → Value for our local handler.
                     // Note: the crate's NewSessionRequest requires 'cwd' in the
@@ -458,11 +458,10 @@ where
                     // Initialize (or restore) the session so that subsequent
                     // session/prompt calls have a valid session in the agent's
                     // sessions map and a live chat-logger session.
-                    if !sid.is_empty() {
-                        if let Err(e) = handle_session_load(&params, &agent).await {
+                    if !sid.is_empty()
+                        && let Err(e) = handle_session_load(&params, &agent).await {
                             warn!("session/load: session setup failed for '{}': {}", sid, e);
                         }
-                    }
 
                     // Build a LoadSessionResponse — try several JSON shapes
                     // since the crate type may be #[non_exhaustive].
@@ -642,7 +641,7 @@ async fn handle_session_prompt_v2(
 ) -> std::result::Result<(), agent_client_protocol::Error> {
     // Convert the crate's PromptRequest → our local type via JSON serde.
     let local_req: PromptRequest = serde_json::to_value(&req)
-        .and_then(|v| serde_json::from_value(v))
+        .and_then(serde_json::from_value)
         .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
 
     let session_id = SessionId::new(local_req.session_id.0.clone());
@@ -1537,13 +1536,11 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
                 .and_then(|v| v.as_str())
                 .unwrap_or("unnamed");
 
-            let command = match server_val.get("command").and_then(|v| v.as_str()) {
-                Some(c) => c.to_string(),
-                None => {
-                    warn!("MCP server '{}' missing 'command' field — skipping", name);
-                    continue;
-                }
+            let Some(cmd_val) = server_val.get("command").and_then(|v| v.as_str()) else {
+                warn!("MCP server '{}' missing 'command' field — skipping", name);
+                continue;
             };
+            let command = cmd_val.to_string();
 
             let args: Vec<String> = server_val
                 .get("args")
@@ -1765,16 +1762,14 @@ async fn handle_session_load(params: &Value, agent: &GrokAcpAgent) -> Result<()>
                 .and_then(|v| v.as_str())
                 .unwrap_or("unnamed");
 
-            let command = match server_val.get("command").and_then(|v| v.as_str()) {
-                Some(c) => c.to_string(),
-                None => {
-                    warn!(
-                        "session/load: MCP server '{}' missing 'command' — skipping",
-                        name
-                    );
-                    continue;
-                }
+            let Some(cmd_val) = server_val.get("command").and_then(|v| v.as_str()) else {
+                warn!(
+                    "session/load: MCP server '{}' missing 'command' — skipping",
+                    name
+                );
+                continue;
             };
+            let command = cmd_val.to_string();
 
             let args: Vec<String> = server_val
                 .get("args")
@@ -2162,7 +2157,7 @@ struct ModelInfo {
 
 /// Server statistics tracking
 #[derive(Debug, Default)]
-#[allow(dead_code)]
+#[expect(dead_code, reason = "reserved for future use")]
 struct ServerStats {
     connections: u64,
     active_connections: u64,

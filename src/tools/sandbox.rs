@@ -42,11 +42,10 @@ impl PluginSandbox {
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension() == Some(std::ffi::OsStr::new("rs")) {
-                if let Err(e) = self.compile_and_load(&path) {
+            if path.extension() == Some(std::ffi::OsStr::new("rs"))
+                && let Err(e) = self.compile_and_load(&path) {
                     tracing::error!("Failed to load {}: {}", path.display(), e);
                 }
-            }
         }
 
         Ok(())
@@ -109,7 +108,10 @@ impl PluginSandbox {
     }
 
     /// Stub: dynamic loading requires the `libloading` crate (currently disabled).
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "libloading is currently disabled; stub kept for future dynamic loading"
+    )]
     fn load_library(
         &self,
         _lib_path: &Path,
