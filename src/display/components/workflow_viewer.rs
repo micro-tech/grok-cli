@@ -118,20 +118,21 @@ async fn run_app(terminal: &mut Tui, app: &mut WorkflowViewerApp) -> Result<()> 
     loop {
         terminal.draw(|f| ui(f, app))?;
 
-        if event::poll(Duration::from_millis(100))?
-            && let Event::Key(key) = event::read()?
-            && key.kind == KeyEventKind::Press
-        {
-            match key.code {
-                KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                KeyCode::Down | KeyCode::Char('j') => app.next(),
-                KeyCode::Up | KeyCode::Char('k') => app.previous(),
-                KeyCode::Enter | KeyCode::Char(' ') => app.toggle_expand(),
-                KeyCode::Char('f') | KeyCode::Char('F') => {
-                    // Toggle full vs truncated detail
-                    app.show_full_detail = !app.show_full_detail;
+        if event::poll(Duration::from_millis(100))? {
+            if let Event::Key(key) = event::read()? {
+                if key.kind == KeyEventKind::Press {
+                    match key.code {
+                        KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                        KeyCode::Down | KeyCode::Char('j') => app.next(),
+                        KeyCode::Up | KeyCode::Char('k') => app.previous(),
+                        KeyCode::Enter | KeyCode::Char(' ') => app.toggle_expand(),
+                        KeyCode::Char('f') | KeyCode::Char('F') => {
+                            // Toggle full vs truncated detail
+                            app.show_full_detail = !app.show_full_detail;
+                        }
+                        _ => {}
+                    }
                 }
-                _ => {}
             }
         }
 

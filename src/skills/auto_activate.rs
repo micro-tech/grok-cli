@@ -308,19 +308,21 @@ impl AutoActivationEngine {
             let mut confidence = m.confidence as u32;
 
             // ── Tool-name keyword boost ──────────────────────────────────
-            if !selected_tools.is_empty()
-                && let Some(skill) = available_skills
+            if !selected_tools.is_empty() {
+                if let Some(skill) = available_skills
                     .iter()
                     .find(|s| s.config.name == m.skill_name)
-                && let Some(auto_cfg) = skill.config.auto_activate.as_ref()
-            {
-                'kw: for keyword in &auto_cfg.keywords {
-                    let kw_lower = keyword.to_lowercase();
-                    if let Some(orig_name) = selected_tools.get(&kw_lower) {
-                        confidence = confidence.saturating_add(15).min(100);
-                        m.reasons.push(format!("RPL tool match: {orig_name}"));
-                        // A single boost per skill is sufficient.
-                        break 'kw;
+                {
+                    if let Some(auto_cfg) = skill.config.auto_activate.as_ref() {
+                        'kw: for keyword in &auto_cfg.keywords {
+                            let kw_lower = keyword.to_lowercase();
+                            if let Some(orig_name) = selected_tools.get(&kw_lower) {
+                                confidence = confidence.saturating_add(15).min(100);
+                                m.reasons.push(format!("RPL tool match: {orig_name}"));
+                                // A single boost per skill is sufficient.
+                                break 'kw;
+                            }
+                        }
                     }
                 }
             }

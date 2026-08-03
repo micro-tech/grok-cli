@@ -235,9 +235,8 @@ impl SkillSecurityValidator {
             Ok(entries) => {
                 for entry in entries.flatten() {
                     let path = entry.path();
-                    if path.is_file()
-                        && let Some(ext) = path.extension()
-                    {
+                    if path.is_file() {
+                        if let Some(ext) = path.extension() {
                         let ext_str = ext.to_string_lossy();
 
                         // Check if it's an executable script

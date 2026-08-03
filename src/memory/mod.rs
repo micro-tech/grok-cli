@@ -351,11 +351,12 @@ impl MemoryStore {
         trigger: skill_memory::SkillTrigger,
         project_hash: &str,
     ) {
-        if let Some(sm) = &mut self.skill_memory
-            && let Err(e) =
+        if let Some(sm) = &mut self.skill_memory {
+            if let Err(e) =
                 sm.record_activation(skill_name, trigger, project_hash, &self.session_id)
-        {
-            warn!("MemoryStore: could not record skill activation — {e}");
+            {
+                warn!("MemoryStore: could not record skill activation — {e}");
+            }
         }
     }
 

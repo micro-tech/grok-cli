@@ -162,7 +162,8 @@ fn parse_summary_response(text: &str) -> (String, Vec<String>) {
             in_facts = false;
         } else if line.trim() == "FACTS:" {
             in_facts = true;
-        } else if in_facts && let Some(rest) = line.strip_prefix("- ") {
+        } else if in_facts {
+            if let Some(rest) = line.strip_prefix("- ") {
             facts.push(rest.trim().to_string());
         }
     }
