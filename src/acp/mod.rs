@@ -7,6 +7,7 @@ use crate::acp::protocol::SessionId;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
@@ -91,6 +92,10 @@ pub struct GrokAcpAgent {
     /// Tools discovered from connected MCP servers.
     /// Key = server name, Value = list of tools returned by `tools/list`.
     discovered_mcp_tools: Arc<RwLock<HashMap<String, Vec<crate::mcp::protocol::Tool>>>>,
+
+    /// Per-session cancellation flags (Task 221 - ACP cancellation).
+    /// Each session has an AtomicBool that can be set to true to request abort.
+    cancellation_flags: Arc<RwLock<HashMap<String, Arc<AtomicBool>>>>,
 }
 
 /// Session data for tracking conversation state
@@ -323,7 +328,51 @@ impl GrokAcpAgent {
             default_model,
             mcp_client: Arc::new(RwLock::new(crate::mcp::client::McpClient::new())),
             discovered_mcp_tools: Arc::new(RwLock::new(HashMap::new())),
+            cancellation_flags: Arc::new(RwLock::new(HashMap::new())),
         })
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Task 221: ACP Cancellation support
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Request cancellation for a session. Sets the AtomicBool so that
+    /// the running `handle_chat_completion` (or any long-running prompt)
+    /// can observe it and abort.
+    pub async fn cancel_session(&self, session_id: &str) {
+        let mut flags = self.cancellation_flags.write().await;
+        let flag = flags
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(false)));
+        flag.store(true, Ordering::SeqCst);
+        info!("Cancellation requested for session {}", session_id);
+    }
+
+    /// Returns the shared cancellation flag for a session.
+    /// Creates the flag (initially false) if it does not exist yet.
+    pub async fn get_cancellation_flag(&self, session_id: &str) -> Arc<AtomicBool> {
+        let mut flags = self.cancellation_flags.write().await;
+        flags
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(false)))
+            .clone()
+    }
+
+    /// Clears the cancellation flag for a session (resets it to false).
+    pub async fn clear_cancellation_flag(&self, session_id: &str) {
+        let mut flags = self.cancellation_flags.write().await;
+        if let Some(flag) = flags.get(session_id) {
+            flag.store(false, Ordering::SeqCst);
+        }
+    }
+
+    /// Returns true if a cancellation has been requested for this session.
+    pub async fn is_cancelled(&self, session_id: &str) -> bool {
+        let flags = self.cancellation_flags.read().await;
+        flags
+            .get(session_id)
+            .map(|f| f.load(Ordering::SeqCst))
+            .unwrap_or(false)
     }
 
     /// Return agent capabilities, computing them lazily on first access.
@@ -956,6 +1005,13 @@ impl GrokAcpAgent {
         let mut newly_always_allowed: Vec<String> = Vec::new();
 
         loop {
+            // Task 221: Check for cancellation request at the start of each iteration
+            if self.is_cancelled(&session_id.0).await {
+                self.clear_cancellation_flag(&session_id.0).await;
+                info!("🛑 Prompt cancelled for session {}", session_id.0);
+                return Ok("Request cancelled by user.".to_string());
+            }
+
             if loop_count >= max_loops {
                 let elapsed = start_time.elapsed();
                 error!(

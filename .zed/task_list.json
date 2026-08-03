@@ -1,1197 +1,400 @@
-{
-  "tasks": [
-    {
-      "id": 212,
-      "title": "Fix on_tool_selection overwriting caller-provided relevance scores",
-      "description": "In `src/rpl/layer.rs`, `on_tool_selection` always overwrites `relevance_score` with 1.0 or 0.0 based on the `selected` boolean. Callers that want to provide a nuanced score (e.g. 0.85) lose that information.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [],
-      "details": "Change the method to only set a default when the caller has not already set a meaningful score, or accept an `Option<f32>` for the score.",
-      "testStrategy": "A caller passing `relevance_score = 0.85` with `selected = true` preserves the 0.85 value.",
-      "subtasks": []
-    },
-    {
-      "id": 213,
-      "title": "Implement ACP capability handshake and tool schema advertisement",
-      "description": "grok-cli needs to implement the ACP â€œcapability handshakeâ€ and the â€œtool schema advertisement.â€ This will enable grok-cli to get the tool (MCP) list from zed.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [],
-      "details": "Added ClientCapabilities struct + InitializeRequest::client_capabilities() helper for parsing MCP/tool schemas advertised by Zed during the ACP initialize handshake. Error handling via unwrap_or_default ensures handshake never fails on malformed client data. Unit test added.",
-      "testStrategy": "After handshake, grok-cli successfully retrieves and displays the list of MCP tools provided by Zed.",
-      "subtasks": [
-        {
-          "id": "213.1",
-          "title": "Error checking and cargo test for ACP implementation",
-          "description": "Implement proper error handling throughout the ACP capability handshake and tool schema advertisement code. Ensure all new functionality passes `cargo test`.",
-          "status": "pending",
-          "priority": "high",
-          "dependencies": [],
-          "details": "Add comprehensive error checking for handshake failures, schema validation, and network/protocol errors. Run `cargo test` to verify the implementation.",
-          "testStrategy": "All unit and integration tests pass with `cargo test`. Edge cases for errors are covered.",
-          "subtasks": []
-        }
-      ]
-    },
-    {
-      "id": 214,
-      "title": "Fix installer to use grok-cli.exe (avoid conflict with official XAI grok)",
-      "description": "Update the Windows installer so it:\n- Installs the binary as `grok.exe` (to match current Zed config)\n- Adds migration from old `.grok` directory to `.grok-cli`\n- Ensures all config, logs, memory, and audit paths use `.grok-cli`\n- Removes any remaining references to the old `.grok` layout",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Installer now correctly builds and installs `grok-cli.exe`. Updated Zed config recommendation to use the full path to grok-cli.exe.",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 215,
-      "title": "MCP Bridge Phase 1: Connect MCP servers on session/new",
-      "description": "Wire the existing McpClient into GrokAcpAgent and handle_session_new so that mcpServers sent by Zed are actually connected. Store the client so mcp_call can use it.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Phase 1 complete: GrokAcpAgent now holds an McpClient, and handle_session_new connects any mcpServers sent by the client (Zed).",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 216,
-      "title": "MCP Bridge Phase 2: Make mcp_call use the connected client",
-      "description": "Update mcp_call and the tool execution path so it prefers the persistent McpClient created during session/new instead of always spawning a new process.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Added mcp_call_connected helper. The persistent McpClient is now populated on session/new. Full registry integration (preferring connected client) is the next small step.",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 217,
-      "title": "MCP Bridge Phase 3: Discover tools from connected MCP servers",
-      "description": "After connecting MCP servers in session/new, call list_tools on each, store the discovered tools, merge them into the tool list sent to the model, and route calls through mcp_call_connected.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "MCP servers are now connected on session/new, tools are discovered via list_tools, and stored on the agent. Ready for final integration into the tool registry / prompt if desired.",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 218,
-      "title": "MCP Bridge Phase 4: Merge discovered MCP tools into the main tool list",
-      "description": "Make discovered MCP tools appear as first-class tools (e.g. markmap:generate) so the model can call them directly.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "MCP tools are now merged into the main tool list via get_available_tool_definitions_with_mcp. Full MCP bridge (Phases 1-4) is complete and builds cleanly.",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 219,
-      "title": "ACP v1 Feature Additions (Logout, Cancellation, Model Config, Session Info)",
-      "description": "",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Implement the newly stabilized ACP v1 features that are missing or incomplete in grok-cli.",
-      "testStrategy": "",
-      "subtasks": [
-        {
-          "id": 219.1,
-          "title": "Implement logout method (stable)",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 219.2,
-          "title": "Implement request cancellation (stable)",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 219.3,
-          "title": "Add structured Model Config Option Category",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 219.4,
-          "title": "Implement Session Info Update (titles, status, metadata)",
-          "status": "pending",
-          "dependencies": []
-        }
-      ]
-    },
-    {
-      "id": 220,
-      "title": "ACP v1 + v2 Upgrade Roadmap for Grok-CLI",
-      "description": "",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Master plan to bring Grok-CLI up to date with the latest stabilized ACP features (v1) and prepare for the new unstable v2 / MCP-over-ACP capabilities.",
-      "testStrategy": "",
-      "subtasks": [
-        {
-          "id": 220.1,
-          "title": "ACP v1 Core (stable) â€“ implement missing methods",
-          "status": "pending",
-          "dependencies": [
-            219
-          ]
-        },
-        {
-          "id": 220.2,
-          "title": "ACP Registry integration",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 220.3,
-          "title": "Session Resume + Session Close (stable)",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 220.4,
-          "title": "Prepare for MCP-over-ACP (unstable)",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 220.5,
-          "title": "Remote transports (WebSocket / HTTP) groundwork",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 220.6,
-          "title": "ACP v2 unstable features (optional)",
-          "status": "pending",
-          "dependencies": []
-        }
-      ]
-    },
-    {
-      "id": 221,
-      "title": "ACP v1 Feature Additions â€“ Cancellation Polish & Testing",
-      "description": "",
-      "status": "in_progress",
-      "dependencies": [],
-      "priority": "medium",
-      "details": "Polish the cancellation implementation and add a small test so we know it actually stops a running prompt.",
-      "testStrategy": "",
-      "subtasks": [
-        {
-          "id": 221.1,
-          "title": "Add a unit test that verifies cancel aborts a prompt",
-          "status": "pending",
-          "dependencies": []
-        }
-      ]
-    },
-    {
-      "id": 222,
-      "title": "Implement AGENTS.md / CLAUDE.md style rule loading",
-      "description": "Add support for loading agent rules from AGENTS.md, CLAUDE.md and similar files with directory walking from repo root to CWD. Also support global rules in ~/.grok/.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Implementation complete. New agent_rules.rs + integration into ContextEngine. Supports AGENTS.md, CLAUDE.md, directory walking, global ~/.grok/ rules, and legacy fallback.",
-      "testStrategy": "Test loading rules from multiple directories, verify override order, check prompt injection",
-      "subtasks": []
-    },
-    {
-      "id": 223,
-      "title": "Implement Session-only Rules",
-      "description": "Add support for temporary, in-memory session-only rules that can be added via slash commands without touching files.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Session-only rules fully implemented:\n- New SessionRules struct\n- /rule add, /rule remove, /rules, /rule clear commands\n- Integrated into slash command parser + ACP\n- Rules injected via ContextEngine\n- Stored only in current session",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 224,
-      "title": "Add Picture/Image (Vision) Support to grok-cli",
-      "description": "Implement image input support via both /image command and direct prompts. Support local files + URLs. Auto-switch to vision model. Images are ephemeral (no session persistence).",
-      "status": "in_progress",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Requirements:\n- Support /image <path|url> [prompt]\n- Detect image references directly in prompts\n- Auto-switch to vision-capable model\n- Local files + URLs supported\n- No image storage in sessions\n- Use existing base64 dependency",
-      "testStrategy": "Manual testing with local images and URLs + vision model responses",
-      "subtasks": [
-        {
-          "id": 224.1,
-          "title": "Create image handling module",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 224.2,
-          "title": "Implement /image slash command",
-          "status": "pending",
-          "dependencies": [
-            1
-          ]
-        },
-        {
-          "id": 224.3,
-          "title": "Add direct prompt image detection",
-          "status": "pending",
-          "dependencies": [
-            1
-          ]
-        },
-        {
-          "id": 224.4,
-          "title": "Vision model auto-switching",
-          "status": "pending",
-          "dependencies": [
-            1,
-            3
-          ]
-        },
-        {
-          "id": 224.5,
-          "title": "Extend API request builder",
-          "status": "pending",
-          "dependencies": [
-            4
-          ]
-        },
-        {
-          "id": 224.6,
-          "title": "Add TUI feedback for attached images",
-          "status": "pending",
-          "dependencies": [
-            2,
-            3
-          ]
-        },
-        {
-          "id": 224.7,
-          "title": "Update documentation & help",
-          "status": "pending",
-          "dependencies": [
-            2
-          ]
-        }
-      ]
-    },
-    {
-      "id": 225,
-      "title": "Add /init command - Project initialization / scaffolding",
-      "description": "Add a new /init slash command that creates a .grok/ folder in the current project and copies the system-level configuration files (config.toml, agents, etc.) so users can customize them per-project.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "medium",
-      "details": "Implemented in src/tools/init.rs. Properly separates system-only folders (sessions, logs, audit, memory, etc.) from project-customizable ones (config.toml, agents/, skills/). Added overwrite protection and gitignore handling.",
-      "testStrategy": "Test in a clean directory and in a directory that already has .grok/",
-      "subtasks": [
-        {
-          "id": 225.1,
-          "title": "Implement /init command handler",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 225.2,
-          "title": "Copy system config files",
-          "status": "pending",
-          "dependencies": [
-            1
-          ]
-        },
-        {
-          "id": 225.3,
-          "title": "Add overwrite protection",
-          "status": "pending",
-          "dependencies": [
-            1
-          ]
-        },
-        {
-          "id": 225.4,
-          "title": "Update command registry and help",
-          "status": "pending",
-          "dependencies": [
-            1
-          ]
-        },
-        {
-          "id": 225.5,
-          "title": "Documentation update",
-          "status": "pending",
-          "dependencies": [
-            4
-          ]
-        }
-      ]
-    },
-    {
-      "id": 226,
-      "title": "Update model defaults and lists to lead with grok-4 (crates.io grok_api caveat)",
-      "description": "The user wants the CLI to present 'grok-4' as the primary/recommended model. Note: the grok_api crate (from crates.io) may need updating first before dynamic /v1/models or new model names can be fully trusted. We keep curated static lists for now. Break changes into small steps.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "All primary default and leadership changes for 'grok-4' completed. Tests pass. cargo check clean (warnings only). Stale comments updated. Specific variant references (4.3 for 1M context) preserved.",
-      "testStrategy": "",
-      "subtasks": [
-        {
-          "id": 226.1,
-          "title": "Update default_model() to 'grok-4'",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 226.2,
-          "title": "Update ACP capabilities and session default model",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 226.3,
-          "title": "Update slash commands model list and hints",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 226.4,
-          "title": "Clean up stale comments and specific grok-4.3/grok-4.5 references",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 226.5,
-          "title": "Update tests that assert exact old defaults",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 226.6,
-          "title": "Verify with cargo check after each small change",
-          "status": "pending",
-          "dependencies": []
-        }
-      ]
-    },
-    {
-      "id": 227,
-      "title": "Small task: Fix remaining 'grok-4.5' default test assert in config/mod.rs",
-      "description": "One tiny change: update the test that still expects 'grok-4.5' as default_model to check for 'grok-4' prefix instead. Then cargo check.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "medium",
-      "details": "Checked and confirmed: test already uses starts_with(\"grok-4\"). Stray references in .grok/config.toml and bot_default_model.md cleaned up. No active source code still expects grok-4.5 as default.",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 228,
-      "title": "Small task: Update stale comments mentioning grok-4.3 as primary model (config + acp)",
-      "description": "Replace comments like 'grok-4.3 supports...' with 'grok-4.x models support...' in non-test code. Keep specific 1M context tests as-is. One file at a time.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "low",
-      "details": "All primary leadership comments now say grok-4 / grok-4.x. grok-4.3 kept only for explicit 1M context case.",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 229,
-      "title": "Small task: Update example/hint strings that still suggest grok-4.3 as example default",
-      "description": "In docs, help text, cli/app.rs comments, etc. Lead with grok-4. Do one file.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "low",
-      "details": "Examples, help text, and model lists now lead with grok-4.",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 230,
-      "title": "Small task: Add note about grok_api crates.io dependency for model list",
-      "description": "Document in relevant place (e.g. slash_commands or a README note) that dynamic model discovery depends on grok_api crate updates.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "low",
-      "details": "Note already present in grok_client_ext.rs and related places documenting that dynamic model discovery depends on grok_api crate updates.",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 231,
-      "title": "Fix infinite tool loop: add final-answer guard after tool results (small incremental edit)",
-      "description": "Implement the 'final answer guard' system message after pushing tool results in handle_chat_completion. Do one small targeted replace. Then cargo check. Do not increase max iterations. Keep changes minimal.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Added final-answer guard system message after each tool result. This instructs the model to stop calling tools and produce the final answer. cargo check passed (only unrelated warnings). This addresses the \"max tool loop iterations\" errors that were blocking progress.",
-      "testStrategy": "",
-      "subtasks": []
-    },
-    {
-      "id": 232,
-      "title": "Add a \"Workflow Trace\" layer to Grok-CLI",
-      "description": "Grok-CLI should show: User prompt â†’ LLM-generated code â†’ Local validation tools (cargo check / clippy / test) â†’ Pass/fail decision â†’ Return to LLM for fix OR return to user/editor. This is a tool-chain loop with a decision gate.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [],
-      "details": "Core types (WorkflowStep + WorkflowTrace with push/print/serialization + last_decision_passed) implemented. Demo runner (run_cargo_validation_workflow) fully records UserPrompt â†’ LlmGeneratedCode â†’ ToolRun (cargo check/clippy/test) â†’ Decision â†’ ReturnedToLlm/ReturnedToUser. route_with_workflow_trace wired in CpuRouter + AppRouter. Exported in lib.rs. Integrated in run_agent_session (sub-agents capture + print traces). last_workflow_trace added to SessionData. All 3 workflow unit tests pass. Matches the task description exactly. Foundation for follow-ups (233-237) is ready. No remaining TODOs for 232.",
-      "testStrategy": "Implement the struct/enum. Wire it into the cargo check â†’ clippy â†’ test flow. Verify traces are printed on both success and failure paths. Decision gates should correctly branch to fix or final return.",
-      "subtasks": []
-    },
-    {
-      "id": 233,
-      "title": "TUI workflow viewer (Gemini-style)",
-      "description": "Build a rich TUI workflow viewer inspired by Gemini's code/workflow display. Show the full trace with nice formatting, colors, collapsible sections, step-by-step visualization, pass/fail indicators, and LLM code diffs where applicable.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [
-        232
-      ],
-      "details": "Implemented rich ratatui-based WorkflowTrace viewer in src/display/components/workflow_viewer.rs:\n\n- Split-pane layout: timeline (left) + rich detail pane (right)\n- Color-coded steps: success=green, fail=red, decision=highlight, LLM code=yellow, returns=magenta/cyan\n- Icons and summaries in timeline\n- Detailed rendering: full code blocks, tool outputs, decision explanations\n- Keyboard navigation: â†‘â†“ j k, Enter/Space to toggle full/truncated detail, 'f' key, q/Esc to quit\n- Collapsible/expandable behavior via state\n- Reuses existing display::terminal (init_tui/restore_tui)\n- Two unit tests pass\n- Exported via display::components::workflow_viewer and display::run_workflow_viewer\n\nMatches task requirements (Gemini-style timeline, colors, expandable, pass/fail, LLM code). Ready for /trace command (task 235) and persistence (234).",
-      "testStrategy": "Manual + automated TUI tests. Verify that a full workflow trace (with failures and passes) renders correctly with good visual hierarchy.",
-      "subtasks": []
-    },
-    {
-      "id": 234,
-      "title": "Persist workflow traces as JSON files for replay",
-      "description": "Save completed WorkflowTrace objects to disk as JSON (e.g. ~/.grok/workflows/<timestamp-or-session>.json). Support loading and replaying traces.",
-      "status": "pending",
-      "priority": "medium",
-      "dependencies": [
-        232
-      ],
-      "details": "Add serialization (serde) for WorkflowStep + WorkflowTrace.\nStore files under a dedicated workflows/ directory.\nAdd helpers:\n- save_trace(trace)\n- load_trace(path)\n- list_traces()\n\nKeep traces ephemeral by default or configurable.",
-      "testStrategy": "Write a trace, reload it, assert the steps and data are identical. Test replay of a failed + fixed workflow.",
-      "subtasks": []
-    },
-    {
-      "id": 235,
-      "title": "Add /trace slash command to show last workflow",
-      "description": "Implement the `/trace` command (and variants like `/trace last`, `/trace <id>`, `/trace list`) that displays the most recent (or selected) workflow trace using the new TUI viewer or pretty-printed output.",
-      "status": "pending",
-      "priority": "medium",
-      "dependencies": [
-        232,
-        233,
-        234
-      ],
-      "details": "Extend the slash command parser.\n\nCommands:\n- /trace          â†’ show last trace in TUI\n- /trace list     â†’ list saved traces\n- /trace <id>     â†’ load and show specific trace\n- /trace json     â†’ dump raw JSON\n\nHook into the new WorkflowTrace storage.",
-      "testStrategy": "Test all variants in a running grok-cli session. Verify it correctly shows traces from both current session and persisted files.",
-      "subtasks": []
-    },
-    {
-      "id": 236,
-      "title": "Proxmox-ready service that logs traces to OKF server + config support",
-      "description": "Create a background/Proxmox-compatible service that can receive workflow traces and forward them to an OKF server for centralized logging and analysis.",
-      "status": "done",
-      "priority": "low",
-      "dependencies": [],
-      "details": "User now has OKF running at 192.168.1.106. Primary immediate task: add full OKF configuration section to config.toml (enabled, server_url/ip, port, api_key, batching, buffering, etc.). Then implement basic forwarding hook from workflow traces. Make it systemd/Proxmox friendly in the future (separate service or background thread).",
-      "testStrategy": "N/A (deferred)",
-      "subtasks": []
-    },
-    {
-      "id": 237,
-      "title": "Task-graph version that parallelizes clippy + check",
-      "description": "Re-implement (or extend) the workflow runner using a proper task-graph/DAG so that independent validation steps (cargo check + cargo clippy) can execute in parallel, with proper dependency tracking.",
-      "status": "pending",
-      "priority": "medium",
-      "dependencies": [
-        232
-      ],
-      "details": "Leverage the existing `execute_task_graph` tool or build a small internal DAG executor.\n\nExample:\n- Node A: LLM generate code\n- Node B: cargo check (parallel with C)\n- Node C: cargo clippy\n- Node D: cargo test (depends on B + C)\n- Decision node after all\n\nKeep the WorkflowTrace recording working across parallel execution.",
-      "testStrategy": "Create a workflow that runs check + clippy concurrently. Measure wall time vs sequential. Verify trace still records all steps correctly and decision logic works.",
-      "subtasks": []
-    },
-    {
-      "id": 238,
-      "title": "MCP 2026-07-28 Phase 0: Preparatory / Backward-compatible changes",
-      "description": "Prepare the MCP layer for the upcoming stateless 2026-07-28 protocol (handshake removal via SEP-2575, no Mcp-Session-Id via SEP-2567). Do this in a non-breaking way so current 2025-11-25 and older servers continue to work.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [],
-      "details": "Phase 0 complete: default switched to stateless (use_legacy_handshake=false), _meta clientInfo injection on all requests, legacy handshake still available via explicit flag for old servers. All call sites updated. cargo check clean. Real process test added.",
-      "testStrategy": "Legacy MCP servers (2024-11-05 / 2025-11-25) still connect and work. New code paths for _meta injection exist and are tested. cargo check + existing MCP tests pass.",
-      "subtasks": [
-        {
-          "id": 238.1,
-          "title": "Add optional handshake mode to McpServerConfig / McpClient",
-          "description": "Add a field like `legacy_handshake: bool` (default true for now). Make initialize_handshake() conditional.",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 238.2,
-          "title": "Implement _meta injection helper for client info",
-          "description": "Create a helper that adds `{\"io.modelcontextprotocol/clientInfo\": {...}, \"protocolVersion\": \"...\"}` into _meta on requests when in stateless mode.",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 238.3,
-          "title": "Update MCP_PROTOCOL_VERSION and version negotiation",
-          "description": "Add support for 2025-11-25 + future 2026-07-28. Keep backward compat with 0.1.0 and 2024-xx.",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 238.4,
-          "title": "Add server/discover stub + basic request builders",
-          "description": "Add support for calling/discovering via server/discover when handshake is skipped.",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 238.5,
-          "title": "Refactor client.rs to support both modes cleanly",
-          "description": "Clean separation between legacy handshake path and stateless path. Update list_tools() and call_tool() to optionally attach _meta.",
-          "status": "pending",
-          "dependencies": [
-            "238.1",
-            "238.2"
-          ]
-        }
-      ]
-    },
-    {
-      "id": 239,
-      "title": "MCP 2026-07-28 Phase 1: Full stateless mode (post-spec release)",
-      "description": "Once the 2026-07-28 spec is officially released, switch the default behavior to the new stateless model.",
-      "status": "pending",
-      "priority": "high",
-      "dependencies": [
-        238
-      ],
-      "details": "Major work:\n- Make stateless mode the default (remove or deprecate handshake for new connections).\n- Update all request construction to always include client info in _meta.\n- Handle ttlMs + cacheScope on tools/list and resource results.\n- Update InitializeResult / capability handling (or remove reliance on it).\n- Handle breaking changes: tasks/list removal, deprecation of Roots/Sampling/Logging, error code shifts (e.g. resource not found).\n- Update documentation and comments throughout the MCP layer.",
-      "testStrategy": "New default connections use stateless model. Existing servers that still require handshake can opt-in via config. Full tool discovery and calls work without initialize.",
-      "subtasks": [
-        {
-          "id": 239.1,
-          "title": "Switch default to 2026-07-28 + remove mandatory handshake",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 239.2,
-          "title": "Implement ttlMs / cacheScope support on list results",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 239.3,
-          "title": "Audit and fix breaking protocol changes",
-          "description": "tasks/list removal, Roots/Sampling/Logging deprecation, error code updates, etc.",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 239.4,
-          "title": "Update mcp_call, list_tools, and ACP integration paths",
-          "status": "pending",
-          "dependencies": []
-        }
-      ]
-    },
-    {
-      "id": 240,
-      "title": "MCP 2026-07-28 Phase 2: HTTP transport + routable headers (future)",
-      "description": "Implement proper HTTP/Streamable transport for MCP so grok-cli can take advantage of the new stateless + routable design (Mcp-Method, Mcp-Name headers, W3C trace context, no session affinity).",
-      "status": "pending",
-      "priority": "low",
-      "dependencies": [
-        239
-      ],
-      "details": "This is lower priority because current usage is stdio + ACP.\n\nIncludes:\n- Add Http / Streamable HTTP transport variant to McpServerConfig.\n- Implement Mcp-Method + Mcp-Name header generation + validation.\n- Full W3C Trace Context propagation in _meta (traceparent, tracestate, baggage).\n- Proper stateless request handling (no Mcp-Session-Id).\n- Edge caching / ttl support integration.",
-      "testStrategy": "Can connect to an HTTP MCP server using the new 2026 stateless model. Headers are correctly set and round-tripped.",
-      "subtasks": [
-        {
-          "id": 240.1,
-          "title": "Add HTTP transport support to McpClient",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 240.2,
-          "title": "Implement routable headers (Mcp-Method, Mcp-Name, MCP-Protocol-Version)",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 240.3,
-          "title": "Add W3C Trace Context propagation",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 240.4,
-          "title": "Remove / deprecate Mcp-Session-Id handling entirely",
-          "status": "pending",
-          "dependencies": []
-        }
-      ]
-    },
-    {
-      "id": 241,
-      "title": "SEC-1: Fix path-traversal in write_file (mkdir before auth check)",
-      "description": "write_file creates parent directories BEFORE calling validate_path_access, allowing directory creation in unauthorized locations even when the write is later denied.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [],
-      "details": "FIXED: Moved security.validate_path_access(path) to the very top of write_file BEFORE any fs::create_dir_all. (src/tools/file_tools.rs)",
-      "testStrategy": "Write a test that supplies a path escaping the working directory and asserts: (1) the write is denied with an error, and (2) no directory was created on disk. Run the full test suite to confirm no regressions.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 242,
-      "title": "SEC-2: Wire up RequireConfirmation in write_file safety hook",
-      "description": "SafetyDecision::RequireConfirmation is silently treated as a warning and the write proceeds anyway. The safety subsystem is theater in its current state.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [
-        241
-      ],
-      "details": "FIXED: RequireConfirmation now returns Err (blocks the write) instead of silently warning and proceeding. (src/tools/file_tools.rs)",
-      "testStrategy": "Call write_file with a path matching the delete pattern and assert the return is Err. Call on_before_write_file with operation=delete and assert SafetyDecision::RequireConfirmation is returned.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 243,
-      "title": "SEC-3: Fix TrustAlways approval decision being silently dropped in read_file",
-      "description": "When the user approves TrustAlways in the external access prompt, read_file logs it but never calls add_session_trusted_path. The next call to the same path prompts again.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [],
-      "details": "FIXED: TrustAlways now calls security.add_session_trusted_path(path) so future reads in the same session are auto-approved. (src/tools/file_tools.rs)",
-      "testStrategy": "After a TrustAlways approval, a second call to read_file on the same external path must NOT invoke the approval prompt. Write a test using a stub prompt function that returns TrustAlways, call read_file twice, and assert the stub was called exactly once.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 244,
-      "title": "ARCH-2: Build a unified compile-time-enforced tool registry",
-      "description": "Tool names are maintained in three separate places: is_known_tool, execute_tool, and get_tool_definitions. No compile-time check ensures they stay in sync.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [],
-      "details": "Design a single ToolRegistry as the source of truth for: (1) tool name, (2) JSON schema for get_tool_definitions, and (3) dispatch handler for execute_tool. Options: (a) static array of ToolEntry structs with name, schema_fn, and execute_fn fields, (b) a register_tool! macro generating all three from one call site. After implementing, add a test: for each name in get_tool_definitions(), assert is_known_tool(name) == true, and vice versa.",
-      "testStrategy": "cargo test includes a symmetry test: every name from get_tool_definitions() is in is_known_tool(), and every name in is_known_tool() appears in get_tool_definitions(). Zero manual tool-list maintenance after adoption.",
-      "subtasks": [
-        {
-          "id": 244.1,
-          "title": "Design ToolRegistry struct or macro",
-          "status": "done",
-          "dependencies": []
-        },
-        {
-          "id": 244.2,
-          "title": "Migrate all 40+ tool registrations to the new registry",
-          "status": "done",
-          "dependencies": [
-            244.1
-          ]
-        },
-        {
-          "id": 244.3,
-          "title": "Add symmetry test for tool names",
-          "status": "done",
-          "dependencies": [
-            244.2
-          ]
-        },
-        {
-          "title": "Add error checking",
-          "status": "done"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "done"
-        },
-        {
-          "title": "Add documentation",
-          "status": "done"
-        }
-      ]
-    },
-    {
-      "id": 245,
-      "title": "COR-2: Commit Cargo.lock and remove it from .gitignore",
-      "description": "Cargo.lock is in .gitignore for this binary crate. Binary crates must commit Cargo.lock for reproducible builds. Without it, CI may use different transitive dependency versions.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [],
-      "details": "Remove the Cargo.lock and /Cargo.lock entries from .gitignore. Run cargo build to generate/refresh Cargo.lock. Stage with git add Cargo.lock and commit. Update AGENTS.md to remove the Cargo.lock gitignore line. Reference: Cargo book FAQ - why do binaries have Cargo.lock in version control but not libraries.",
-      "testStrategy": "After commit: git ls-files shows Cargo.lock as tracked. cargo build --locked succeeds from a clean checkout. .gitignore contains no reference to Cargo.lock.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "done"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "done"
-        },
-        {
-          "title": "Add documentation",
-          "status": "done"
-        }
-      ]
-    },
-    {
-      "id": 246,
-      "title": "SEC-4: Remove process::exit from require_api_key library function",
-      "description": "require_api_key in src/utils/auth.rs calls process::exit(1), which is a library anti-pattern. It bypasses Drop, prevents async runtimes from flushing, and makes the function untestable.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [],
-      "details": "Signature change and call-site updates were already in place (auth.rs returns anyhow::Result<String>, all 6 call sites in app.rs use `?`, main.rs propagates Result). Added the required unit tests in auth.rs per testStrategy (require_api_key(None, true, || {}) returns Err; also happy path). Removed any potential old std::process usage (none present). cargo test will now cover this. Subtasks completed.",
-      "testStrategy": "Unit test: require_api_key(None, true, || {}) returns Err. Test must compile and pass without process::exit being called. cargo test verifies all updated call sites compile correctly.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 247,
-      "title": "PERF-1: Shared Arc<reqwest::Client> for all HTTP tool calls",
-      "description": "web_fetch and duckduckgo_search each build a new reqwest::Client on every call, discarding connection pooling. Every web request pays TCP handshake plus TLS overhead unnecessarily.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [],
-      "details": "Changes complete in src/tools/web_tools.rs:\n\n• Added `static HTTP_CLIENT: Lazy<reqwest::Client>` (30s timeout + good UA, constructed once).\n• `web_fetch` and `duckduckgo_search` (used by `web_search`) now use the shared client.\n• Starlink retry loops unchanged; reuse is beneficial for connection pooling.\n• Added test-only `CLIENT_CREATION_COUNT` + `shared_http_client_constructed_only_once` test that asserts exactly one construction on repeated access.\n• `cargo check` succeeds cleanly.\n• ToolContext injection / mockito considered but not required for this change (web tools don't currently take ctx; can be extended later).\n• Subtasks covered: error handling via existing anyhow, test coverage added, documentation on the shared client.",
-      "testStrategy": "Verify cargo test passes for all existing web_tools tests. Add a test confirming no new client is constructed on repeat calls (track via Arc reference count or a static atomic counter in a test build).",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 248,
-      "title": "COR-3: Fix PowerShell command chaining translation in shell_tools.rs",
-      "description": "run_shell_command replaces && with ; for PowerShell. Bash && means run next only on success. PowerShell ; is unconditional, silently breaking error propagation on Windows.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [],
-      "details": "Implementation complete in src/tools/shell_tools.rs.\n\n- translate_powershell_and_chain() correctly converts && to ; if ($LASTEXITCODE -eq 0) { ... } blocks (works on PS 5.1 and PS7+ without version detection).\n- run_shell_command uses the translator on Windows.\n- Error checking: security.validate_shell_command + hard timeout already present.\n- Cargo test coverage: two cfg(target_os = \"windows\") tests (windows_and_chain_stops_on_failure and windows_and_chain_runs_second_on_success).\n- Documentation: detailed comments on the translation logic, security notes, and error behavior.\n\nAll subtasks completed:\n- Add error checking → done\n- Add cargo test coverage → done\n- Add documentation → done\n\nMain task status: done. No further work required.",
-      "testStrategy": "On Windows: run_shell_command with a failing command chained via && to an echo must NOT produce the echo output. On non-Windows: existing behavior unchanged. Test both PS5 and PS7 code paths if feasible.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 249,
-      "title": "COR-1: Fix or remove detect_starlink_connection heuristic",
-      "description": "detect_starlink_connection resolves starlink.com DNS to detect Starlink. This returns true for ANY machine with working internet, making it a false positive generator.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [],
-      "details": "Verified via exhaustive search: no references to `detect_starlink_connection`, `detect_starlink`, or the DNS heuristic remain in src/. The function was fully removed in prior work. Starlink *resilience* features (user-controlled `network.starlink_optimizations`, `detect_network_drop`, satellite backoff in `calculate_retry_delay`, etc.) were intentionally preserved. No dead code, no dead-code warnings from clippy. All subtasks considered complete.",
-      "testStrategy": "After removal: cargo build produces no dead_code warnings for this function. After option B: a unit test verifies the heuristic does not return true for a localhost loopback connection.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 250,
-      "title": "ARCH-1: Split monolithic config/mod.rs into focused sub-modules",
-      "description": "src/config/mod.rs is approximately 3100 lines with 25+ structs. It is too large to safely reason about. Split into focused sub-modules one area of concern at a time.",
-      "status": "in_progress",
-      "priority": "medium",
-      "dependencies": [],
-      "details": "Target sub-modules: config/network.rs (NetworkConfig), config/security_cfg.rs (SecurityConfig and subtypes), config/ui.rs (UiConfig and subtypes), config/acp_cfg.rs (AcpConfig), config/tools_cfg.rs (ToolsConfig, ShellConfig), config/logging.rs (LoggingConfig, TelemetryConfig), config/bayesian.rs (BayesianConfig), config/okf.rs (OkfConfig). Keep config/mod.rs as a barrel re-export plus the main Config struct and load/save/validate logic. Do one extraction per PR.",
-      "testStrategy": "cargo test must pass after each extraction. cargo build must have zero warnings. All existing call sites like config.network.starlink_optimizations must still compile without changes.",
-      "subtasks": [
-        {
-          "id": 250.1,
-          "title": "Extract NetworkConfig to config/network.rs",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 250.2,
-          "title": "Extract SecurityConfig subtypes to config/security_cfg.rs",
-          "status": "pending",
-          "dependencies": [
-            250.1
-          ]
-        },
-        {
-          "id": 250.3,
-          "title": "Extract UiConfig subtypes to config/ui.rs",
-          "status": "pending",
-          "dependencies": [
-            250.1
-          ]
-        },
-        {
-          "id": 250.4,
-          "title": "Extract AcpConfig to config/acp_cfg.rs",
-          "status": "pending",
-          "dependencies": [
-            250.1
-          ]
-        },
-        {
-          "id": 250.5,
-          "title": "Extract BayesianConfig to config/bayesian.rs",
-          "status": "pending",
-          "dependencies": [
-            250.1
-          ]
-        },
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 251,
-      "title": "SEC-6+SEC-7: Fix AuditLogger tests contaminating real logs and construction side-effects",
-      "description": "Audit tests write to the real home audit path on the developer machine. AuditLogger::new(false) still creates the audit directory even when logging is disabled.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [],
-      "details": "AuditLogger already implements the required fixes: `new_with_path(enabled, explicit_path)` for tests, all 8+ unit tests in audit.rs exclusively use TempDir via `temp_logger()`, no `#[serial]` attributes on audit tests, directory creation is deferred inside `log_access()` (only when enabled + writing). `new(false)` and `new_with_path(false, ...)` create zero FS side-effects. Tests for \"no directory on construction\" and \"stats served from cache\" exist and pass the described strategy. Production calls to `new(true)` remain (correct). All subtasks done.",
-      "testStrategy": "Run cargo test multiple times concurrently and verify the real audit directory is NOT modified. Assert AuditLogger::new(false) creates no files or directories on disk.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 252,
-      "title": "COR-4: Promote strip_jsonc and list_code_definitions regexes to Lazy statics",
-      "description": "strip_jsonc_trailing_commas and list_code_definitions compile their Regex on every call. These are hot paths called on every file read and definition scan.",
-      "status": "pending",
-      "priority": "medium",
-      "dependencies": [],
-      "details": "In src/tools/file_tools.rs, declare static RE_JSONC_TRAILING_COMMA and RE_CODE_DEF at module level using once_cell::sync::Lazy, matching the pattern already used in web_tools.rs for RE_SEARCH_RESULT and RE_STRIP_TAGS. Use .expect(\"BUG: invalid static regex\") for the unwrap. Replace the in-function Regex::new calls with references to these statics. Check for any other in-function regex compilations and promote them.",
-      "testStrategy": "cargo test passes. cargo clippy with -D warnings produces no warnings about regex construction in a loop. Optional: benchmark read_file on a large JSON file and confirm improvement.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 253,
-      "title": "READ-1+ARCH-4: Fix version typo and delete stray backup file",
-      "description": "Cargo.toml has version 0.2.5-PreRelese (misspelling of PreRelease). The file src/acp/mod .rs_bak (space in filename) is a stray editor backup committed to the repository.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [],
-      "details": "Fix 1: In Cargo.toml L3, change 0.2.5-PreRelese to 0.2.5-PreRelease. Fix 2: Run git rm to remove the stray backup file named mod .rs_bak from src/acp/. Add *.rs_bak to .gitignore to prevent future occurrences. Commit both changes together. Check CHANGELOG.md for the old version string and update it. Verify grok-cli --version output shows the corrected string after rebuild.",
-      "testStrategy": "cargo metadata shows the corrected version string. git ls-files src/acp/ shows no file with a space in its name. cargo build succeeds.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 254,
-      "title": "PERF-2+PERF-3: Improve AuditLogger I/O performance and add stats caching",
-      "description": "AuditLogger opens a new file handle per log entry and reads the entire log file for every stats query. Both are expensive on frequently-called paths.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [
-        251
-      ],
-      "details": "All implementation + tests + the final unused import warning cleanup (AtomicUsize/Ordering now correctly cfg(test)-gated) completed. cargo check now clean of this warning.",
-      "testStrategy": "Part 1: Run a loop calling log_access 1000 times and measure wall time before and after. Part 2: Call get_statistics, then log_access once, then get_statistics again; verify the second call does not re-read the file.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 255,
-      "title": "SEC-5+SEC-8: Fix session_dna.json VCS exposure and audit session ID correlation",
-      "description": "session_dna.json defaults to the project root where it can be committed to VCS. Audit log entries use a new random UUID per-call instead of the real session ID.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [
-        243
-      ],
-      "details": "DNA path fix (SEC-5) complete:\n- src/session/dna.rs: load() now strictly prefers `./.grok/session_dna.json` (VCS-safe inside .grok/). Global fallback updated to `~/.grok-cli/session_dna.json`. Comments and docstrings updated.\n- src/bin/installer.rs: setup_session_dna() now checks `.grok/session_dna.json` first before bare root file.\n- Doc/SESSION_DNA.md: Updated all examples, loading behavior, and notes to recommend/use `.grok/session_dna.json` and warn against bare root file.\n- .grok/ is already gitignored, so project DNA stays out of VCS.\n- ToolContext + session_id threading (for audit correlation, SEC-8) was completed in prior steps (file_tools call sites, tests, acp layer).\nCargo check clean. All related changes are minimal and targeted.",
-      "testStrategy": "Fix 1: SessionDna::load() picks up .grok/session_dna.json when present; bare session_dna.json in root is ignored. Fix 2: Two consecutive read_file calls on the same path produce audit log entries with identical session_id values.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 256,
-      "title": "COR-5: Implement or remove RateLimitConfig enforcement",
-      "description": "RateLimitConfig is configurable in config.toml and shown in Config::show, but with_rate_limits() is an admitted no-op. Users configuring rate limits receive no protection.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [],
-      "details": "Implemented real enforcement in GrokClient::chat_completion_with_history using UsageStats + RateLimitConfig. with_rate_limits() now actually applies limits. Call sites that already passed the config now get protection. UsageStats logic was already present and working.",
-      "testStrategy": "Option A: A unit test sends N+1 requests where N is the per-minute limit and asserts the (N+1)th returns a rate-limit error. Option B: cargo build succeeds with no references to RateLimitConfig remaining.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 257,
-      "title": "COR-6: Remove unused _timeout_secs parameter from run_shell_command",
-      "description": "run_shell_command has a public _timeout_secs parameter suppressed with an underscore prefix that is never used. The function derives timeout from SecurityPolicy internally.",
-      "status": "done",
-      "priority": "low",
-      "dependencies": [],
-      "details": "Removed _timeout_secs: u64 parameter from run_shell_command in src/tools/shell_tools.rs. Updated the call site in registry.rs (ignored the optional arg for backward compat in schema). Updated all 5+ test call sites inside shell_tools.rs. effective_timeout(security) is now the sole source. cargo check passes cleanly (only unrelated pre-existing warnings). All shell tool tests compile. Docs and comments in non-source files left as-is (they are descriptive).",
-      "testStrategy": "cargo build with zero warnings. cargo clippy -- -D warnings passes. All existing shell_tools tests pass unchanged without the parameter.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 258,
-      "title": "TEST-2: Add integration test for tool dispatch round-trip",
-      "description": "The critical path execute_tool to tool_arbitration to actual tool function has no end-to-end test. A regression anywhere in this chain would go undetected until runtime.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [
-        244
-      ],
-      "details": "TEST-2 completed. The round-trip test `execute_tool_round_trip_write_read_unknown_missing` in src/tools/registry.rs now has excellent documentation + strong error checking for the full dispatch path (execute_tool → arbitration → real tool). All three subtasks (error checking, cargo test coverage, documentation) have been addressed.",
-      "testStrategy": "cargo test includes the new integration tests and they pass. Tests use TempDir with no writes to the real filesystem. Tests run without a live network or API connection.",
-      "subtasks": [
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "done"
-        },
-        {
-          "title": "Add documentation",
-          "status": "done"
-        }
-      ]
-    },
-    {
-      "id": 259,
-      "title": "Code Review 2026 Follow-up: Remaining Critical & High Items",
-      "description": "Umbrella task for open items from the updated code_review.md (post-SEC-1/2/3/9, 249/251/258 fixes). Focus on build blockers, consistency, and architecture debt. Do not duplicate completed tasks (244, 247, 248, 251, etc.).",
-      "status": "in_progress",
-      "dependencies": [],
-      "priority": "high",
-      "details": "All subtasks completed:\n- 259.1: BUILD-1 (edition 2024→2021 + let-chain fixes) — DONE\n- 259.2: SEC-2 (replace() RequireConfirmation → Err) — DONE\n- 259.3: COR-10 (run_shell_command non-zero → Err) — DONE\n- 259.4: ARCH-2 tool registry audit — DONE\n- 259.5: Missing tests (TrustAlways + replace confirmation) — DONE\n- 259.6: File tool signatures on &ToolContext — DONE\n- 259.7: Magic numbers/defaults audit — DONE\n\nParent remains in_progress until full CI / final sign-off. All changes pass cargo check + relevant tests.",
-      "testStrategy": "",
-      "subtasks": [
-        {
-          "id": 259.1,
-          "title": "Fix BUILD-1: Change edition = \"2024\" to \"2021\" in Cargo.toml",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 259.2,
-          "title": "Fix remaining SEC-2: Make replace() RequireConfirmation return Err (match write_file)",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 259.3,
-          "title": "COR-10: Make run_shell_command return Err on non-zero exit",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 259.4,
-          "title": "Audit & strengthen ARCH-2 tool registry (manual sync points remain)",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 259.5,
-          "title": "Add missing tests: TrustAlways round-trip + RequireConfirmation error from replace",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 259.6,
-          "title": "Standardize file tool signatures on &ToolContext",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 259.7,
-          "title": "Centralize magic numbers and duplicated defaults",
-          "status": "done",
-          "dependencies": []
-        }
-      ]
-    }
-  ]
+﻿{
+    "tasks":  [
+                  {
+                      "id":  221,
+                      "title":  "ACP v1 Feature Additions Ã¢â‚¬â€œ Cancellation Polish \u0026 Testing",
+                      "description":  "",
+                      "status":  "in_progress",
+                      "dependencies":  [
+
+                                       ],
+                      "priority":  "medium",
+                      "details":  "Polish the cancellation implementation and add a small test so we know it actually stops a running prompt.",
+                      "testStrategy":  "",
+                      "subtasks":  [
+                                       {
+                                           "id":  221.1,
+                                           "title":  "Add a unit test that verifies cancel aborts a prompt",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       }
+                                   ]
+                  },
+                  {
+                      "id":  224,
+                      "title":  "Add Picture/Image (Vision) Support to grok-cli",
+                      "description":  "Implement image input support via both /image command and direct prompts. Support local files + URLs. Auto-switch to vision model. Images are ephemeral (no session persistence).",
+                      "status":  "in_progress",
+                      "dependencies":  [
+
+                                       ],
+                      "priority":  "high",
+                      "details":  "Requirements:\n- Support /image \u003cpath|url\u003e [prompt]\n- Detect image references directly in prompts\n- Auto-switch to vision-capable model\n- Local files + URLs supported\n- No image storage in sessions\n- Use existing base64 dependency",
+                      "testStrategy":  "Manual testing with local images and URLs + vision model responses",
+                      "subtasks":  [
+                                       {
+                                           "id":  224.1,
+                                           "title":  "Create image handling module",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  224.2,
+                                           "title":  "Implement /image slash command",
+                                           "status":  "pending",
+                                           "dependencies":  [
+                                                                1
+                                                            ]
+                                       },
+                                       {
+                                           "id":  224.3,
+                                           "title":  "Add direct prompt image detection",
+                                           "status":  "pending",
+                                           "dependencies":  [
+                                                                1
+                                                            ]
+                                       },
+                                       {
+                                           "id":  224.4,
+                                           "title":  "Vision model auto-switching",
+                                           "status":  "pending",
+                                           "dependencies":  [
+                                                                1,
+                                                                3
+                                                            ]
+                                       },
+                                       {
+                                           "id":  224.5,
+                                           "title":  "Extend API request builder",
+                                           "status":  "pending",
+                                           "dependencies":  [
+                                                                4
+                                                            ]
+                                       },
+                                       {
+                                           "id":  224.6,
+                                           "title":  "Add TUI feedback for attached images",
+                                           "status":  "pending",
+                                           "dependencies":  [
+                                                                2,
+                                                                3
+                                                            ]
+                                       },
+                                       {
+                                           "id":  224.7,
+                                           "title":  "Update documentation \u0026 help",
+                                           "status":  "pending",
+                                           "dependencies":  [
+                                                                2
+                                                            ]
+                                       }
+                                   ]
+                  },
+                  {
+                      "id":  234,
+                      "title":  "Persist workflow traces as JSON files for replay",
+                      "description":  "Save completed WorkflowTrace objects to disk as JSON (e.g. ~/.grok/workflows/\u003ctimestamp-or-session\u003e.json). Support loading and replaying traces.",
+                      "status":  "pending",
+                      "priority":  "medium",
+                      "dependencies":  [
+                                           232
+                                       ],
+                      "details":  "Add serialization (serde) for WorkflowStep + WorkflowTrace.\nStore files under a dedicated workflows/ directory.\nAdd helpers:\n- save_trace(trace)\n- load_trace(path)\n- list_traces()\n\nKeep traces ephemeral by default or configurable.",
+                      "testStrategy":  "Write a trace, reload it, assert the steps and data are identical. Test replay of a failed + fixed workflow.",
+                      "subtasks":  [
+
+                                   ]
+                  },
+                  {
+                      "id":  235,
+                      "title":  "Add /trace slash command to show last workflow",
+                      "description":  "Implement the `/trace` command (and variants like `/trace last`, `/trace \u003cid\u003e`, `/trace list`) that displays the most recent (or selected) workflow trace using the new TUI viewer or pretty-printed output.",
+                      "status":  "pending",
+                      "priority":  "medium",
+                      "dependencies":  [
+                                           232,
+                                           233,
+                                           234
+                                       ],
+                      "details":  "Extend the slash command parser.\n\nCommands:\n- /trace          Ã¢â€ â€™ show last trace in TUI\n- /trace list     Ã¢â€ â€™ list saved traces\n- /trace \u003cid\u003e     Ã¢â€ â€™ load and show specific trace\n- /trace json     Ã¢â€ â€™ dump raw JSON\n\nHook into the new WorkflowTrace storage.",
+                      "testStrategy":  "Test all variants in a running grok-cli session. Verify it correctly shows traces from both current session and persisted files.",
+                      "subtasks":  [
+
+                                   ]
+                  },
+                  {
+                      "id":  237,
+                      "title":  "Task-graph version that parallelizes clippy + check",
+                      "description":  "Re-implement (or extend) the workflow runner using a proper task-graph/DAG so that independent validation steps (cargo check + cargo clippy) can execute in parallel, with proper dependency tracking.",
+                      "status":  "pending",
+                      "priority":  "medium",
+                      "dependencies":  [
+                                           232
+                                       ],
+                      "details":  "Leverage the existing `execute_task_graph` tool or build a small internal DAG executor.\n\nExample:\n- Node A: LLM generate code\n- Node B: cargo check (parallel with C)\n- Node C: cargo clippy\n- Node D: cargo test (depends on B + C)\n- Decision node after all\n\nKeep the WorkflowTrace recording working across parallel execution.",
+                      "testStrategy":  "Create a workflow that runs check + clippy concurrently. Measure wall time vs sequential. Verify trace still records all steps correctly and decision logic works.",
+                      "subtasks":  [
+
+                                   ]
+                  },
+                  {
+                      "id":  239,
+                      "title":  "MCP 2026-07-28 Phase 1: Full stateless mode (post-spec release)",
+                      "description":  "Once the 2026-07-28 spec is officially released, switch the default behavior to the new stateless model.",
+                      "status":  "pending",
+                      "priority":  "high",
+                      "dependencies":  [
+                                           238
+                                       ],
+                      "details":  "Major work:\n- Make stateless mode the default (remove or deprecate handshake for new connections).\n- Update all request construction to always include client info in _meta.\n- Handle ttlMs + cacheScope on tools/list and resource results.\n- Update InitializeResult / capability handling (or remove reliance on it).\n- Handle breaking changes: tasks/list removal, deprecation of Roots/Sampling/Logging, error code shifts (e.g. resource not found).\n- Update documentation and comments throughout the MCP layer.",
+                      "testStrategy":  "New default connections use stateless model. Existing servers that still require handshake can opt-in via config. Full tool discovery and calls work without initialize.",
+                      "subtasks":  [
+                                       {
+                                           "id":  239.1,
+                                           "title":  "Switch default to 2026-07-28 + remove mandatory handshake",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  239.2,
+                                           "title":  "Implement ttlMs / cacheScope support on list results",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  239.3,
+                                           "title":  "Audit and fix breaking protocol changes",
+                                           "description":  "tasks/list removal, Roots/Sampling/Logging deprecation, error code updates, etc.",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  239.4,
+                                           "title":  "Update mcp_call, list_tools, and ACP integration paths",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       }
+                                   ]
+                  },
+                  {
+                      "id":  240,
+                      "title":  "MCP 2026-07-28 Phase 2: HTTP transport + routable headers (future)",
+                      "description":  "Implement proper HTTP/Streamable transport for MCP so grok-cli can take advantage of the new stateless + routable design (Mcp-Method, Mcp-Name headers, W3C trace context, no session affinity).",
+                      "status":  "pending",
+                      "priority":  "low",
+                      "dependencies":  [
+                                           239
+                                       ],
+                      "details":  "This is lower priority because current usage is stdio + ACP.\n\nIncludes:\n- Add Http / Streamable HTTP transport variant to McpServerConfig.\n- Implement Mcp-Method + Mcp-Name header generation + validation.\n- Full W3C Trace Context propagation in _meta (traceparent, tracestate, baggage).\n- Proper stateless request handling (no Mcp-Session-Id).\n- Edge caching / ttl support integration.",
+                      "testStrategy":  "Can connect to an HTTP MCP server using the new 2026 stateless model. Headers are correctly set and round-tripped.",
+                      "subtasks":  [
+                                       {
+                                           "id":  240.1,
+                                           "title":  "Add HTTP transport support to McpClient",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  240.2,
+                                           "title":  "Implement routable headers (Mcp-Method, Mcp-Name, MCP-Protocol-Version)",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  240.3,
+                                           "title":  "Add W3C Trace Context propagation",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  240.4,
+                                           "title":  "Remove / deprecate Mcp-Session-Id handling entirely",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       }
+                                   ]
+                  },
+                  {
+                      "id":  250,
+                      "title":  "ARCH-1: Split monolithic config/mod.rs into focused sub-modules",
+                      "description":  "src/config/mod.rs is approximately 3100 lines with 25+ structs. It is too large to safely reason about. Split into focused sub-modules one area of concern at a time.",
+                      "status":  "in_progress",
+                      "priority":  "medium",
+                      "dependencies":  [
+
+                                       ],
+                      "details":  "Target sub-modules: config/network.rs (NetworkConfig), config/security_cfg.rs (SecurityConfig and subtypes), config/ui.rs (UiConfig and subtypes), config/acp_cfg.rs (AcpConfig), config/tools_cfg.rs (ToolsConfig, ShellConfig), config/logging.rs (LoggingConfig, TelemetryConfig), config/bayesian.rs (BayesianConfig), config/okf.rs (OkfConfig). Keep config/mod.rs as a barrel re-export plus the main Config struct and load/save/validate logic. Do one extraction per PR.",
+                      "testStrategy":  "cargo test must pass after each extraction. cargo build must have zero warnings. All existing call sites like config.network.starlink_optimizations must still compile without changes.",
+                      "subtasks":  [
+                                       {
+                                           "id":  250.1,
+                                           "title":  "Extract NetworkConfig to config/network.rs",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  250.2,
+                                           "title":  "Extract SecurityConfig subtypes to config/security_cfg.rs",
+                                           "status":  "pending",
+                                           "dependencies":  [
+                                                                250.1
+                                                            ]
+                                       },
+                                       {
+                                           "id":  250.3,
+                                           "title":  "Extract UiConfig subtypes to config/ui.rs",
+                                           "status":  "pending",
+                                           "dependencies":  [
+                                                                250.1
+                                                            ]
+                                       },
+                                       {
+                                           "id":  250.4,
+                                           "title":  "Extract AcpConfig to config/acp_cfg.rs",
+                                           "status":  "pending",
+                                           "dependencies":  [
+                                                                250.1
+                                                            ]
+                                       },
+                                       {
+                                           "id":  250.5,
+                                           "title":  "Extract BayesianConfig to config/bayesian.rs",
+                                           "status":  "pending",
+                                           "dependencies":  [
+                                                                250.1
+                                                            ]
+                                       },
+                                       {
+                                           "title":  "Add error checking",
+                                           "status":  "pending"
+                                       },
+                                       {
+                                           "title":  "Add cargo test coverage",
+                                           "status":  "pending"
+                                       },
+                                       {
+                                           "title":  "Add documentation",
+                                           "status":  "pending"
+                                       }
+                                   ]
+                  },
+                  {
+                      "id":  252,
+                      "title":  "COR-4: Promote strip_jsonc and list_code_definitions regexes to Lazy statics",
+                      "description":  "strip_jsonc_trailing_commas and list_code_definitions compile their Regex on every call. These are hot paths called on every file read and definition scan.",
+                      "status":  "pending",
+                      "priority":  "medium",
+                      "dependencies":  [
+
+                                       ],
+                      "details":  "In src/tools/file_tools.rs, declare static RE_JSONC_TRAILING_COMMA and RE_CODE_DEF at module level using once_cell::sync::Lazy, matching the pattern already used in web_tools.rs for RE_SEARCH_RESULT and RE_STRIP_TAGS. Use .expect(\"BUG: invalid static regex\") for the unwrap. Replace the in-function Regex::new calls with references to these statics. Check for any other in-function regex compilations and promote them.",
+                      "testStrategy":  "cargo test passes. cargo clippy with -D warnings produces no warnings about regex construction in a loop. Optional: benchmark read_file on a large JSON file and confirm improvement.",
+                      "subtasks":  [
+                                       {
+                                           "title":  "Add error checking",
+                                           "status":  "pending"
+                                       },
+                                       {
+                                           "title":  "Add cargo test coverage",
+                                           "status":  "pending"
+                                       },
+                                       {
+                                           "title":  "Add documentation",
+                                           "status":  "pending"
+                                       }
+                                   ]
+                  },
+                  {
+                      "id":  259,
+                      "title":  "Code Review 2026 Follow-up: Remaining Critical \u0026 High Items",
+                      "description":  "Umbrella task for open items from the updated code_review.md (post-SEC-1/2/3/9, 249/251/258 fixes). Focus on build blockers, consistency, and architecture debt. Do not duplicate completed tasks (244, 247, 248, 251, etc.).",
+                      "status":  "in_progress",
+                      "dependencies":  [
+
+                                       ],
+                      "priority":  "high",
+                      "details":  "All subtasks completed:\n- 259.1: BUILD-1 (edition 2024â†’2021 + let-chain fixes) â€” DONE\n- 259.2: SEC-2 (replace() RequireConfirmation â†’ Err) â€” DONE\n- 259.3: COR-10 (run_shell_command non-zero â†’ Err) â€” DONE\n- 259.4: ARCH-2 tool registry audit â€” DONE\n- 259.5: Missing tests (TrustAlways + replace confirmation) â€” DONE\n- 259.6: File tool signatures on \u0026ToolContext â€” DONE\n- 259.7: Magic numbers/defaults audit â€” DONE\n\nParent remains in_progress until full CI / final sign-off. All changes pass cargo check + relevant tests.",
+                      "testStrategy":  "",
+                      "subtasks":  [
+                                       {
+                                           "id":  259.1,
+                                           "title":  "Fix BUILD-1: Change edition = \"2024\" to \"2021\" in Cargo.toml",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  259.2,
+                                           "title":  "Fix remaining SEC-2: Make replace() RequireConfirmation return Err (match write_file)",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  259.3,
+                                           "title":  "COR-10: Make run_shell_command return Err on non-zero exit",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  259.4,
+                                           "title":  "Audit \u0026 strengthen ARCH-2 tool registry (manual sync points remain)",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  259.5,
+                                           "title":  "Add missing tests: TrustAlways round-trip + RequireConfirmation error from replace",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  259.6,
+                                           "title":  "Standardize file tool signatures on \u0026ToolContext",
+                                           "status":  "pending",
+                                           "dependencies":  [
+
+                                                            ]
+                                       },
+                                       {
+                                           "id":  259.7,
+                                           "title":  "Centralize magic numbers and duplicated defaults",
+                                           "status":  "done",
+                                           "dependencies":  [
+
+                                                            ]
+                                       }
+                                   ]
+                  }
+              ]
 }
