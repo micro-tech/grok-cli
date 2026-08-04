@@ -14,8 +14,11 @@ use serde_json::{Value, json};
 pub fn create_vision_message(text: &str, image_path_or_url: &str) -> Result<Value> {
     let image_content = prepare_image_content(image_path_or_url)?;
 
-    // For now we use a simple structure that most vision APIs understand.
-    // The actual grok_api crate may need a small update to support MessageContent::Image.
+    // Produces the standard OpenAI-style multimodal content array:
+    // [{ "type": "text", "text": "..." }, { "type": "image_url", "image_url": { "url": "..." } }]
+    //
+    // The GrokClient extension (grok_client_ext.rs) now properly converts array content
+    // (including vision messages) when building ChatMessage history for the underlying grok_api.
     Ok(json!({
         "role": "user",
         "content": [

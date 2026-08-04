@@ -105,12 +105,40 @@ impl GrokClient {
             .iter()
             .filter_map(|msg| {
                 let role = msg.get("role")?.as_str()?;
-                // content might be null for tool calls
-                let content = msg.get("content").and_then(|c| c.as_str());
+
+                // Support both plain string content and array content (for vision/multimodal).
+                // Array content is produced by create_vision_message (text + image_url parts).
+                let content = if let Some(s) = msg.get("content").and_then(|c| c.as_str()) {
+                    s.to_string()
+                } else if let Some(arr) = msg.get("content").and_then(|c| c.as_array()) {
+                    // Vision / multimodal: collect text parts and image references
+                    // so the model receives both the prompt and image information.
+                    arr.iter()
+                        .filter_map(|part| {
+                            match part.get("type").and_then(|t| t.as_str()) {
+                                Some("text") => part
+                                    .get("text")
+                                    .and_then(|t| t.as_str())
+                                    .map(|s| s.to_string()),
+                                Some("image_url") => part
+                                    .get("image_url")
+                                    .and_then(|i| i.get("url"))
+                                    .and_then(|u| u.as_str())
+                                    .map(|u| format!("[Attached image: {}]", u)),
+                                _ => None,
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    msg.get("content")
+                        .map(|c| c.to_string())
+                        .unwrap_or_default()
+                };
 
                 match role {
-                    "system" => Some(ChatMessage::system(content.unwrap_or(""))),
-                    "user" => Some(ChatMessage::user(content.unwrap_or(""))),
+                    "system" => Some(ChatMessage::system(&content)),
+                    "user" => Some(ChatMessage::user(&content)),
                     "assistant" => {
                         if let Some(tool_calls_val) = msg.get("tool_calls") {
                             // potential tool calls
@@ -118,10 +146,13 @@ impl GrokClient {
                             if let Ok(calls) =
                                 serde_json::from_value::<Vec<ToolCall>>(tool_calls_val.clone())
                             {
-                                return Some(ChatMessage::assistant_with_tools(content, calls));
+                                return Some(ChatMessage::assistant_with_tools(
+                                    if content.is_empty() { None } else { Some(&content) },
+                                    calls,
+                                ));
                             }
                         }
-                        Some(ChatMessage::assistant(content.unwrap_or("")))
+                        Some(ChatMessage::assistant(&content))
                     }
                     "tool" => {
                         let tool_call_id = msg.get("tool_call_id")?.as_str()?;
@@ -130,7 +161,7 @@ impl GrokClient {
                         Some(ChatMessage::user(format!(
                             "Tool result (ID: {}): {}",
                             tool_call_id,
-                            content.unwrap_or("")
+                            content
                         )))
                     }
                     _ => None,

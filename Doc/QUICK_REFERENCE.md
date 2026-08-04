@@ -329,6 +329,36 @@ grok-cli config set experimental.extensions.enabled true
 | `/history` | Show conversation history |
 | `/version` | Show version info |
 | `/commit [instructions]` | Generate Conventional Commits message from git diff |
+| `/image <path|url> [prompt]` | Attach an image (local file or URL) for vision models |
+
+### Image / Vision Support
+
+Grok CLI supports sending images to vision-capable models.
+
+**Using the dedicated command:**
+```bash
+/image path/to/screenshot.png
+/image diagram.jpg "explain this architecture"
+/image https://example.com/photo.png "what do you see?"
+```
+
+**Direct references (no `/image` needed):**
+Simply mention an image file or URL in your prompt:
+```
+describe this ./assets/ui-mockup.png
+analyze the error shown in error-screenshot.jpg
+what does the chart at https://.../metrics.png show?
+```
+
+**How it works:**
+- Local files are converted to base64 `data:image/...` URLs.
+- Remote HTTPS URLs are passed through as-is.
+- If the current model is not vision-capable, Grok CLI will automatically suggest/switch to a vision model (e.g. `grok-2-vision-1212`).
+- You will see feedback: `📎 Image attached. The next message you send will include the image.`
+- Images are **ephemeral** — they are not persisted in saved sessions or chat history.
+- Supported via the standard multimodal content array format (text + image_url parts).
+
+**Supported image formats:** Common web formats (PNG, JPEG, GIF, WebP, etc.).
 
 ### Session Rules
 Temporary rules that apply to every message in the current ACP session.
