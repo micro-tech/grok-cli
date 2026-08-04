@@ -99,12 +99,13 @@ impl McpClient {
     }
 
     async fn initialize_handshake(&self, connection: &ServerConnection) -> Result<()> {
+        // Legacy handshake path — use the old protocol version for compatibility
         let init_msg = json!({
             "jsonrpc": "2.0",
             "id": 1,
             "method": "initialize",
             "params": {
-                "protocolVersion": MCP_PROTOCOL_VERSION,
+                "protocolVersion": crate::mcp::MCP_PROTOCOL_VERSION_LEGACY,
                 "capabilities": {},
                 "clientInfo": {
                     "name": "grok-cli",
@@ -158,11 +159,11 @@ impl McpClient {
             .ok_or_else(|| anyhow!("Initialize result missing 'protocolVersion'"))?;
 
         // 5. Basic protocol version compatibility check
-        // Accept legacy "0.1.0" and the modern date-based versions (2024-11-05+).
-        // We now target MCP 2024-11-05 (first stable widely deployed release).
+        // Accept legacy "0.1.0", 2024/2025, and the new 2026-07-28 stateless model.
         if server_version != "0.1.0"
             && !server_version.starts_with("2024-")
             && !server_version.starts_with("2025-")
+            && !server_version.starts_with("2026-")
         {
             tracing::warn!(
                 "MCP server protocol version {} may not be fully compatible with client {}",
@@ -203,6 +204,15 @@ impl McpClient {
     }
 
     pub async fn list_tools(&self, server_name: &str) -> Result<Vec<Tool>> {
+        let (tools, _meta) = self.list_tools_with_meta(server_name).await?;
+        Ok(tools)
+    }
+
+    /// List tools and return both the tools and any 2026+ metadata (ttlMs, cacheScope, etc.).
+    ///
+    /// This is the preferred method for 2026 stateless clients that want to respect
+    /// server-provided caching hints.
+    pub async fn list_tools_with_meta(&self, server_name: &str) -> Result<(Vec<Tool>, Option<crate::mcp::protocol::ToolListMeta>)> {
         let connection = self
             .servers
             .get(server_name)
@@ -215,8 +225,7 @@ impl McpClient {
             "params": {}
         });
 
-        // Phase 0: For 2026+ stateless mode, inject client info via _meta
-        // instead of relying on a prior initialize handshake.
+        // 2026+ stateless mode: always put client identity in _meta (no handshake needed)
         if !connection.use_legacy_handshake
             && let Some(obj) = msg.as_object_mut() {
                 obj.insert("_meta".to_string(), self.client_meta());
@@ -225,14 +234,28 @@ impl McpClient {
         self.send_message(connection, &msg).await?;
         let response = self.read_response(connection).await?;
 
-        // Parse response
-        if let Some(result) = response.get("result")
-            && let Some(tools_val) = result.get("tools") {
-                let tools: Vec<Tool> = serde_json::from_value(tools_val.clone())?;
-                return Ok(tools);
+        if let Some(result) = response.get("result") {
+            let tools: Vec<Tool> = result
+                .get("tools")
+                .map(|v| serde_json::from_value(v.clone()))
+                .transpose()?
+                .unwrap_or_default();
+
+            // 2026+ support: extract _meta for ttlMs / cacheScope
+            let meta = result
+                .get("_meta")
+                .and_then(|m| serde_json::from_value::<crate::mcp::protocol::ToolListMeta>(m.clone()).ok());
+
+            if let Some(ref m) = meta {
+                if let Some(ttl) = m.ttl_ms {
+                    debug!("MCP tools/list for '{}' has ttlMs={}", server_name, ttl);
+                }
             }
 
-        Ok(Vec::new())
+            return Ok((tools, meta));
+        }
+
+        Ok((Vec::new(), None))
     }
 
     pub async fn call_tool(
@@ -279,8 +302,9 @@ impl McpClient {
 
     /// Build the `_meta` object containing client info for stateless 2026+ mode.
     ///
-    /// Per the upcoming spec, client identity and protocol version travel on
-    /// every request inside `_meta` instead of a one-time initialize handshake.
+    /// Per the 2026-07-28 spec (SEP-2575), client identity and protocol version
+    /// travel on **every** request inside `_meta` instead of a one-time initialize handshake.
+    /// This is the default and preferred path.
     fn client_meta(&self) -> Value {
         json!({
             "io.modelcontextprotocol/clientInfo": {

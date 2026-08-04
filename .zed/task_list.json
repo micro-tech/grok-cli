@@ -38,37 +38,51 @@
           "id": 224.2,
           "title": "Implement /image slash command",
           "status": "done",
-          "dependencies": [1]
+          "dependencies": [
+            1
+          ]
         },
         {
           "id": 224.3,
           "title": "Add direct prompt image detection",
           "status": "done",
-          "dependencies": [1]
+          "dependencies": [
+            1
+          ]
         },
         {
           "id": 224.4,
           "title": "Vision model auto-switching",
           "status": "done",
-          "dependencies": [1, 3]
+          "dependencies": [
+            1,
+            3
+          ]
         },
         {
           "id": 224.5,
           "title": "Extend API request builder (proper multimodal content array passthrough)",
           "status": "done",
-          "dependencies": [4]
+          "dependencies": [
+            4
+          ]
         },
         {
           "id": 224.6,
           "title": "Add TUI feedback for attached images",
           "status": "done",
-          "dependencies": [2, 3]
+          "dependencies": [
+            2,
+            3
+          ]
         },
         {
           "id": 224.7,
           "title": "Update documentation & help",
           "status": "done",
-          "dependencies": [2]
+          "dependencies": [
+            2
+          ]
         }
       ]
     },
@@ -78,7 +92,9 @@
       "description": "Save completed WorkflowTrace objects to disk as JSON (e.g. ~/.grok/workflows/<timestamp-or-session>.json). Support loading and replaying traces.",
       "status": "pending",
       "priority": "medium",
-      "dependencies": [232],
+      "dependencies": [
+        232
+      ],
       "details": "Add serialization (serde) for WorkflowStep + WorkflowTrace.\nStore files under a dedicated workflows/ directory.\nAdd helpers:\n- save_trace(trace)\n- load_trace(path)\n- list_traces()\n\nKeep traces ephemeral by default or configurable.",
       "testStrategy": "Write a trace, reload it, assert the steps and data are identical. Test replay of a failed + fixed workflow.",
       "subtasks": []
@@ -89,7 +105,11 @@
       "description": "Implement the `/trace` command (and variants like `/trace last`, `/trace <id>`, `/trace list`) that displays the most recent (or selected) workflow trace using the new TUI viewer or pretty-printed output.",
       "status": "pending",
       "priority": "medium",
-      "dependencies": [232, 233, 234],
+      "dependencies": [
+        232,
+        233,
+        234
+      ],
       "details": "Extend the slash command parser.\n\nCommands:\n- /trace          → show last trace in TUI\n- /trace list     → list saved traces\n- /trace <id>     → load and show specific trace\n- /trace json     → dump raw JSON\n\nHook into the new WorkflowTrace storage.",
       "testStrategy": "Test all variants in a running grok-cli session. Verify it correctly shows traces from both current session and persisted files.",
       "subtasks": []
@@ -100,7 +120,9 @@
       "description": "Re-implement (or extend) the workflow runner using a proper task-graph/DAG so that independent validation steps (cargo check + cargo clippy) can execute in parallel, with proper dependency tracking.",
       "status": "pending",
       "priority": "medium",
-      "dependencies": [232],
+      "dependencies": [
+        232
+      ],
       "details": "Leverage the existing `execute_task_graph` tool or build a small internal DAG executor.\n\nExample:\n- Node A: LLM generate code\n- Node B: cargo check (parallel with C)\n- Node C: cargo clippy\n- Node D: cargo test (depends on B + C)\n- Decision node after all\n\nKeep the WorkflowTrace recording working across parallel execution.",
       "testStrategy": "Create a workflow that runs check + clippy concurrently. Measure wall time vs sequential. Verify trace still records all steps correctly and decision logic works.",
       "subtasks": []
@@ -109,10 +131,12 @@
       "id": 239,
       "title": "MCP 2026-07-28 Phase 1: Full stateless mode (post-spec release)",
       "description": "Once the 2026-07-28 spec is officially released, switch the default behavior to the new stateless model.",
-      "status": "pending",
+      "status": "in_progress",
       "priority": "high",
-      "dependencies": [238],
-      "details": "Major work:\n- Make stateless mode the default (remove or deprecate handshake for new connections).\n- Update all request construction to always include client info in _meta.\n- Handle ttlMs + cacheScope on tools/list and resource results.\n- Update InitializeResult / capability handling (or remove reliance on it).\n- Handle breaking changes: tasks/list removal, deprecation of Roots/Sampling/Logging, error code shifts (e.g. resource not found).\n- Update documentation and comments throughout the MCP layer.",
+      "dependencies": [
+        238
+      ],
+      "details": "Phase 1 largely complete: protocol bumped to 2026-07-28, stateless _meta is default, ttlMs/cacheScope support added via list_tools_with_meta + ToolListMeta, legacy handshake still available via use_legacy_handshake. No tasks/list or heavy Roots/Sampling usage to remove. Updated test server and integration paths.",
       "testStrategy": "New default connections use stateless model. Existing servers that still require handshake can opt-in via config. Full tool discovery and calls work without initialize.",
       "subtasks": [
         {
@@ -148,7 +172,9 @@
       "description": "Implement proper HTTP/Streamable transport for MCP so grok-cli can take advantage of the new stateless + routable design (Mcp-Method, Mcp-Name headers, W3C trace context, no session affinity).",
       "status": "pending",
       "priority": "low",
-      "dependencies": [239],
+      "dependencies": [
+        239
+      ],
       "details": "This is lower priority because current usage is stdio + ACP.\n\nIncludes:\n- Add Http / Streamable HTTP transport variant to McpServerConfig.\n- Implement Mcp-Method + Mcp-Name header generation + validation.\n- Full W3C Trace Context propagation in _meta (traceparent, tracestate, baggage).\n- Proper stateless request handling (no Mcp-Session-Id).\n- Edge caching / ttl support integration.",
       "testStrategy": "Can connect to an HTTP MCP server using the new 2026 stateless model. Headers are correctly set and round-tripped.",
       "subtasks": [
@@ -198,25 +224,33 @@
           "id": 250.2,
           "title": "Extract SecurityConfig subtypes to config/security_cfg.rs",
           "status": "pending",
-          "dependencies": [250.1]
+          "dependencies": [
+            250.1
+          ]
         },
         {
           "id": 250.3,
           "title": "Extract UiConfig subtypes to config/ui.rs",
           "status": "pending",
-          "dependencies": [250.1]
+          "dependencies": [
+            250.1
+          ]
         },
         {
           "id": 250.4,
           "title": "Extract AcpConfig to config/acp_cfg.rs",
           "status": "pending",
-          "dependencies": [250.1]
+          "dependencies": [
+            250.1
+          ]
         },
         {
           "id": 250.5,
           "title": "Extract BayesianConfig to config/bayesian.rs",
           "status": "pending",
-          "dependencies": [250.1]
+          "dependencies": [
+            250.1
+          ]
         },
         {
           "title": "Add error checking",

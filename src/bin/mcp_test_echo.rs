@@ -32,30 +32,37 @@ fn main() {
                 "jsonrpc": "2.0",
                 "id": id,
                 "result": {
-                    "protocolVersion": "2024-11-05",
+                    "protocolVersion": "2026-07-28",
                     "capabilities": {},
-                    "serverInfo": { "name": "mcp-test-echo", "version": "0.1.0" }
+                    "serverInfo": { "name": "mcp-test-echo", "version": "0.2.0" }
                 }
             }),
 
-            "tools/list" => json!({
-                "jsonrpc": "2.0",
-                "id": id,
-                "result": {
-                    "tools": [
-                        {
-                            "name": "echo",
-                            "description": "Echoes back the arguments it received (stateless test tool)",
-                            "inputSchema": {
-                                "type": "object",
-                                "properties": {
-                                    "message": { "type": "string" }
+            "tools/list" => {
+                // 2026+ style: include _meta with caching hints
+                json!({
+                    "jsonrpc": "2.0",
+                    "id": id,
+                    "result": {
+                        "tools": [
+                            {
+                                "name": "echo",
+                                "description": "Echoes back the arguments it received (stateless test tool)",
+                                "inputSchema": {
+                                    "type": "object",
+                                    "properties": {
+                                        "message": { "type": "string" }
+                                    }
                                 }
                             }
+                        ],
+                        "_meta": {
+                            "ttlMs": 300000,
+                            "cacheScope": "connection"
                         }
-                    ]
-                }
-            }),
+                    }
+                })
+            },
 
             "tools/call" => {
                 let empty = json!({});

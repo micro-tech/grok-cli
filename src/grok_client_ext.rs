@@ -137,8 +137,8 @@ impl GrokClient {
                 };
 
                 match role {
-                    "system" => Some(ChatMessage::system(&content)),
-                    "user" => Some(ChatMessage::user(&content)),
+                    "system" => Some(ChatMessage::system(content)),
+                    "user" => Some(ChatMessage::user(content)),
                     "assistant" => {
                         if let Some(tool_calls_val) = msg.get("tool_calls") {
                             // potential tool calls
@@ -146,13 +146,15 @@ impl GrokClient {
                             if let Ok(calls) =
                                 serde_json::from_value::<Vec<ToolCall>>(tool_calls_val.clone())
                             {
-                                return Some(ChatMessage::assistant_with_tools(
-                                    if content.is_empty() { None } else { Some(&content) },
-                                    calls,
-                                ));
+                                let content_opt = if content.is_empty() {
+                                    None
+                                } else {
+                                    Some(content)
+                                };
+                                return Some(ChatMessage::assistant_with_tools(content_opt, calls));
                             }
                         }
-                        Some(ChatMessage::assistant(&content))
+                        Some(ChatMessage::assistant(content))
                     }
                     "tool" => {
                         let tool_call_id = msg.get("tool_call_id")?.as_str()?;
