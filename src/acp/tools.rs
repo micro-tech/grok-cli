@@ -38,8 +38,8 @@ mod tests {
         security.add_trusted_directory(temp_dir.path());
         let ctx = ToolContext::new(security.clone());
 
-        // Test write_file (still takes &SecurityPolicy)
-        let write_result = write_file(path_str, "Hello, world!", &security, false).await;
+        // Test write_file (now takes &ToolContext)
+        let write_result = write_file(path_str, "Hello, world!", &ctx, false).await;
         assert!(write_result.is_ok());
 
         // Test read_file (now takes &ToolContext for SEC-8 audit correlation)

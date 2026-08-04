@@ -750,7 +750,7 @@ mod tests {
         let path = dir.path().join("hello.txt");
         let path_str = path.to_str().unwrap();
 
-        write_file(path_str, "Hello, world!", &ctx.policy, false)
+        write_file(path_str, "Hello, world!", &ctx, false)
             .await
             .unwrap();
         let content = read_file(path_str, &ctx).await.unwrap();
@@ -771,7 +771,7 @@ mod tests {
         let ctx = make_ctx(&dir);
         let path = dir.path().join("a.txt");
         let path_str = path.to_str().unwrap().to_string();
-        write_file(path_str.as_str(), "content", &ctx.policy, false)
+        write_file(path_str.as_str(), "content", &ctx, false)
             .await
             .unwrap();
 
@@ -811,7 +811,7 @@ mod tests {
         let path = dir.path().join("r.txt");
         let path_str = path.to_str().unwrap();
 
-        write_file(path_str, "foo bar foo", &ctx.policy, false)
+        write_file(path_str, "foo bar foo", &ctx, false)
             .await
             .unwrap();
         replace(path_str, "foo", "baz", None, &ctx, false)
@@ -867,7 +867,7 @@ mod tests {
         let path = dir.path().join("r2.txt");
         let path_str = path.to_str().unwrap();
 
-        write_file(path_str, "hello world", &ctx.policy, false)
+        write_file(path_str, "hello world", &ctx, false)
             .await
             .unwrap();
         let result = replace(path_str, "notfound", "x", None, &ctx, false).await;
@@ -880,7 +880,7 @@ mod tests {
         let ctx = make_ctx(&dir);
         let path = dir.path().join("code.rs");
         let path_str = path.to_str().unwrap();
-        write_file(path_str, "fn main() {}\nfn helper() {}", &ctx.policy, false)
+        write_file(path_str, "fn main() {}\nfn helper() {}", &ctx, false)
             .await
             .unwrap();
 
@@ -897,7 +897,7 @@ mod tests {
         write_file(
             path_str,
             "pub fn foo() {}\nstruct Bar {}",
-            &ctx.policy,
+            &ctx,
             false,
         )
         .await
