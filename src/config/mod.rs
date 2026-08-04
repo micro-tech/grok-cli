@@ -31,6 +31,7 @@ pub mod model;
 pub mod network;
 pub mod okf;
 pub mod security_cfg;
+pub mod thinking;
 pub mod tools;
 pub mod ui;
 
@@ -46,6 +47,7 @@ pub use okf::OkfConfig;
 pub use security_cfg::{
     EnvVarRedactionConfig, ExternalAccessConfig, FolderTrustConfig, SecurityConfig,
 };
+pub use thinking::ThinkingMode;
 pub use tools::{ShellConfig, ToolsConfig};
 pub use ui::{
     AccessibilityConfig, CustomTheme, FooterConfig, InteractiveUIConfig, ThemeColors, UiConfig,
@@ -58,50 +60,6 @@ use defaults::{
     default_max_retries, default_max_tokens, default_model, default_temperature,
     default_timeout_secs,
 };
-
-/// Reasoning / thinking mode for models that support extended chain-of-thought.
-///
-/// Sent as the `reasoning_effort` field in the API request.
-/// - `Off`  — no reasoning trace (`reasoning_effort` omitted from request).
-/// - `Low`  — light reasoning; faster and cheaper.
-/// - `High` — deep reasoning; highest quality, slower, higher cost.
-///
-/// Only grok-4, grok-4.x, grok-3-mini, and similar reasoning-capable models honour
-/// this field.  Sending it to other models will result in an API error.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum ThinkingMode {
-    /// No reasoning trace — standard response (default).
-    #[default]
-    Off,
-    /// Light reasoning effort: faster, lower token cost.
-    Low,
-    /// High reasoning effort: most thorough, slower, higher token cost.
-    High,
-}
-
-impl ThinkingMode {
-    /// Convert to the `reasoning_effort` string expected by the xAI API.
-    /// Returns `None` when `Off` so callers can skip the field entirely.
-    pub fn as_api_str(&self) -> Option<&'static str> {
-        match self {
-            ThinkingMode::Off => None,
-            ThinkingMode::Low => Some("low"),
-            ThinkingMode::High => Some("high"),
-        }
-    }
-
-    /// Parse from a human-readable string (case-insensitive).
-    /// Accepts `"off"`, `"low"`, `"high"`.
-    pub fn from_str_ci(s: &str) -> Option<Self> {
-        match s.to_ascii_lowercase().as_str() {
-            "off" | "none" => Some(ThinkingMode::Off),
-            "low" => Some(ThinkingMode::Low),
-            "high" | "on" => Some(ThinkingMode::High),
-            _ => None,
-        }
-    }
-}
 
 /// Main configuration structure for grok-cli
 #[derive(Debug, Clone, Serialize, Deserialize)]

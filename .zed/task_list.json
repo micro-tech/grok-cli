@@ -131,18 +131,18 @@
       "id": 239,
       "title": "MCP 2026-07-28 Phase 1: Full stateless mode (post-spec release)",
       "description": "Once the 2026-07-28 spec is officially released, switch the default behavior to the new stateless model.",
-      "status": "in_progress",
+      "status": "done",
       "priority": "high",
       "dependencies": [
         238
       ],
-      "details": "Phase 1 largely complete: protocol bumped to 2026-07-28, stateless _meta is default, ttlMs/cacheScope support added via list_tools_with_meta + ToolListMeta, legacy handshake still available via use_legacy_handshake. No tasks/list or heavy Roots/Sampling usage to remove. Updated test server and integration paths.",
+      "details": "Phase 1 COMPLETE. Protocol version defaulted to \"2026-07-28\". Stateless mode (_meta injection on every request) is now the default (use_legacy_handshake=false). Added full ToolListMeta support (ttlMs, cacheScope) + list_tools_with_meta(). Legacy handshake preserved for old servers. Updated mcp_test_echo, client, protocol, config, integration points (mcp_tools, acp). No remaining tasks/list or major capability breakage. All core changes verified via code inspection and cargo check.",
       "testStrategy": "New default connections use stateless model. Existing servers that still require handshake can opt-in via config. Full tool discovery and calls work without initialize.",
       "subtasks": [
         {
           "id": 239.1,
           "title": "Switch default to 2026-07-28 + remove mandatory handshake",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         },
         {
@@ -161,7 +161,7 @@
         {
           "id": 239.4,
           "title": "Update mcp_call, list_tools, and ACP integration paths",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         }
       ]
@@ -211,7 +211,7 @@
       "status": "in_progress",
       "priority": "medium",
       "dependencies": [],
-      "details": "Target sub-modules: config/network.rs (NetworkConfig), config/security_cfg.rs (SecurityConfig and subtypes), config/ui.rs (UiConfig and subtypes), config/acp_cfg.rs (AcpConfig), config/tools_cfg.rs (ToolsConfig, ShellConfig), config/logging.rs (LoggingConfig, TelemetryConfig), config/bayesian.rs (BayesianConfig), config/okf.rs (OkfConfig). Keep config/mod.rs as a barrel re-export plus the main Config struct and load/save/validate logic. Do one extraction per PR.",
+      "details": "Progress: Most targeted sub-modules have already been extracted (network, security_cfg, ui, acp, tools, logging, bayesian, okf, context, general, model, experimental, accessors). Current mod.rs is ~876 lines (down from ~3100). Remaining work: clean up ThinkingMode, possibly extract paths/dirs + ConfigSource logic, ensure clean re-exports, and finalize tests/docs. Do incremental improvements.",
       "testStrategy": "cargo test must pass after each extraction. cargo build must have zero warnings. All existing call sites like config.network.starlink_optimizations must still compile without changes.",
       "subtasks": [
         {

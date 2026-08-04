@@ -2,10 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::ThinkingMode; // re-exported from mod.rs for now, or move together
-
-// Re-export ThinkingMode here too for convenience if needed.
-// But we keep the canonical definition in mod.rs for now to avoid breaking changes.
+use super::ThinkingMode;
 
 /// ACP-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
