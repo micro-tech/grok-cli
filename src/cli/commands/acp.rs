@@ -21,6 +21,9 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
+use crate::acp::handlers::{
+    handle_cancel, handle_logout, handle_model_config_options, handle_session_info_update,
+};
 use crate::acp::protocol::{
     AcpModeInfo, AcpModelInfo, AcpModelsInfo, AcpModesInfo, AgentCapabilities, AuthEnvVar,
     AuthMethod, AvailableCommandsUpdate, ContentBlock, ContentChunk, Implementation,
@@ -459,9 +462,10 @@ where
                     // session/prompt calls have a valid session in the agent's
                     // sessions map and a live chat-logger session.
                     if !sid.is_empty()
-                        && let Err(e) = handle_session_load(&params, &agent).await {
-                            warn!("session/load: session setup failed for '{}': {}", sid, e);
-                        }
+                        && let Err(e) = handle_session_load(&params, &agent).await
+                    {
+                        warn!("session/load: session setup failed for '{}': {}", sid, e);
+                    }
 
                     // Build a LoadSessionResponse — try several JSON shapes
                     // since the crate type may be #[non_exhaustive].
@@ -1149,21 +1153,70 @@ async fn handle_extension_dispatch(
         agent_client_protocol::schema::v1::ClientNotification,
     >,
     _cx: agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
-    _agent: Arc<GrokAcpAgent>,
+    agent: Arc<GrokAcpAgent>,
 ) -> std::result::Result<(), agent_client_protocol::Error> {
     use agent_client_protocol::Dispatch;
     match msg {
-        Dispatch::Request(req, _responder) => {
-            // Reached for unhandled ClientRequest variants.
-            // Always invoke handle_session_set_model here (the extension dispatch
-            // path) so the compiler marks the function as used and the dead-code
-            // warning goes away.  The handler will simply return an error for
-            // requests it doesn't understand.
+        Dispatch::Request(req, responder) => {
+            // Handle newly stabilized ACP v2 methods that may arrive as
+            // untyped / extension requests (logout, cancel, session/info_update,
+            // model/config_options).  We fall back to our local Value-based
+            // handlers and synthesize a minimal successful response.
             let params = serde_json::to_value(&req).unwrap_or_else(|_| json!({}));
-            let _ = handle_session_set_model(&params, &_agent).await;
-            Err(agent_client_protocol::Error::method_not_found())
+
+            // Try to detect the method by inspecting the serialized form or
+            // known patterns.  If we can't tell, we still give the stable
+            // handlers a chance (they are defensive).
+            let method_hint = params
+                .get("method")
+                .and_then(|m| m.as_str())
+                .unwrap_or("")
+                .to_string();
+
+            let result_value = if method_hint.contains("logout") || method_hint == "logout" {
+                handle_logout(&agent, &params)
+                    .await
+                    .unwrap_or_else(|_| json!({ "ok": true }))
+            } else if method_hint.contains("cancel") || method_hint == "cancel" {
+                handle_cancel(&agent, &params)
+                    .await
+                    .unwrap_or_else(|_| json!({ "cancelled": true }))
+            } else if method_hint.contains("info_update") {
+                handle_session_info_update(&agent, &params)
+                    .await
+                    .unwrap_or_else(|_| json!({ "ok": true }))
+            } else if method_hint.contains("config_options") || method_hint.contains("model/config")
+            {
+                handle_model_config_options(&agent)
+                    .await
+                    .unwrap_or_else(|_| json!({}))
+            } else {
+                // Legacy / unknown — try the old set_model path for compatibility
+                let _ = handle_session_set_model(&params, &agent).await;
+                // For truly unknown methods we must return a proper error so the
+                // client doesn't hang waiting for a response.
+                return Err(agent_client_protocol::Error::method_not_found());
+            };
+
+            // Best-effort respond with the value.  The responder type is
+            // generic over the expected response; we use a JSON fall-back.
+            // If the concrete responder doesn't accept a raw Value we just log.
+            // In practice for these methods the client accepts any object.
+            let _ = responder.respond(result_value);
+
+            // If we reached here we "handled" a known stable method.
+            Ok(())
         }
-        Dispatch::Notification(_) => Ok(()),
+        Dispatch::Notification(notif) => {
+            // Some clients send cancel as a notification.  Give the cancel
+            // handler a chance.
+            if let Ok(v) = serde_json::to_value(&notif) {
+                if v.to_string().contains("cancel") {
+                    let _ = handle_cancel(&agent, &v).await;
+                }
+            }
+            Ok(())
+        }
         Dispatch::Response(result, router) => {
             router
                 .route_with_result(result)

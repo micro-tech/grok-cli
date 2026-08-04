@@ -20,6 +20,7 @@ use crate::router::AppRouter;
 use serde::{Deserialize, Serialize};
 
 pub mod elicitation;
+pub mod handlers;
 pub mod mcp_bridge;
 pub mod protocol;
 pub mod security;
@@ -392,9 +393,10 @@ impl GrokAcpAgent {
     fn get_router(&self) -> Result<AppRouter> {
         if self.router.get().is_none()
             && let Some(ref api_key) = self.config.api_key
-                && let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs) {
-                    let _ = self.router.set(r);
-                }
+            && let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs)
+        {
+            let _ = self.router.set(r);
+        }
 
         self.router.get().cloned().ok_or_else(|| {
             anyhow!(
@@ -1242,12 +1244,13 @@ impl GrokAcpAgent {
                 debug!("🧠 Thinking trace received: ~{} tokens", think_tokens);
 
                 if self.config.acp.stream_thinking
-                    && let Some(sender) = &event_sender {
-                        let blk = crate::acp::protocol::ThinkingBlockUpdate::new(tc, false);
-                        let _ = sender.send(
-                            crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk),
-                        );
-                    }
+                    && let Some(sender) = &event_sender
+                {
+                    let blk = crate::acp::protocol::ThinkingBlockUpdate::new(tc, false);
+                    let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(
+                        blk,
+                    ));
+                }
             }
 
             // Add assistant response to history
@@ -1278,12 +1281,13 @@ impl GrokAcpAgent {
                 let final_response = if let Some(tc) = thinking_content {
                     // Emit final structured thinking block
                     if self.config.acp.stream_thinking
-                        && let Some(sender) = &event_sender {
-                            let blk = crate::acp::protocol::ThinkingBlockUpdate::new(&tc, true);
-                            let _ = sender.send(
-                                crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk),
-                            );
-                        }
+                        && let Some(sender) = &event_sender
+                    {
+                        let blk = crate::acp::protocol::ThinkingBlockUpdate::new(&tc, true);
+                        let _ = sender.send(
+                            crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk),
+                        );
+                    }
 
                     // Still return a nice markdown version for non-Zed clients
                     format!(
@@ -1465,52 +1469,48 @@ impl GrokAcpAgent {
                 let needs_permission = self.config.acp.require_permission
                     && !local_always_allow.contains(function_name.as_str())
                     && !newly_always_allowed.contains(function_name);
-                if needs_permission
-                    && let Some(bridge) = &permission_bridge {
-                        let req_id = uuid::Uuid::new_v4().to_string();
+                if needs_permission && let Some(bridge) = &permission_bridge {
+                    let req_id = uuid::Uuid::new_v4().to_string();
 
-                        let params = RequestPermissionParams::new(
-                            session_id.clone(),
-                            tool_call.id.clone(),
-                            Some(format!("Run {}", function_name)),
-                            Some(crate::acp::protocol::ToolKind::Execute),
-                        );
+                    let params = RequestPermissionParams::new(
+                        session_id.clone(),
+                        tool_call.id.clone(),
+                        Some(format!("Run {}", function_name)),
+                        Some(crate::acp::protocol::ToolKind::Execute),
+                    );
 
-                        let (tx, rx) = oneshot::channel();
-                        if bridge.outbound.send((req_id, params, tx)).is_ok() {
-                            let timeout_secs = self.config.acp.permission_timeout_secs;
-                            match tokio::time::timeout(
-                                std::time::Duration::from_secs(timeout_secs),
-                                rx,
-                            )
+                    let (tx, rx) = oneshot::channel();
+                    if bridge.outbound.send((req_id, params, tx)).is_ok() {
+                        let timeout_secs = self.config.acp.permission_timeout_secs;
+                        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx)
                             .await
-                            {
-                                Ok(Ok(outcome)) => {
-                                    if outcome.is_cancelled() {
-                                        messages.push(json!({
-                                            "role": "tool",
-                                            "tool_call_id": tool_call.id,
-                                            "content": "User rejected the tool execution."
-                                        }));
-                                        continue;
-                                    }
-                                    // Any `selected` outcome is approval; record if always-allow.
-                                    if outcome.is_always_allow() {
-                                        newly_always_allowed.push(function_name.clone());
-                                    }
+                        {
+                            Ok(Ok(outcome)) => {
+                                if outcome.is_cancelled() {
+                                    messages.push(json!({
+                                        "role": "tool",
+                                        "tool_call_id": tool_call.id,
+                                        "content": "User rejected the tool execution."
+                                    }));
+                                    continue;
                                 }
-                                Ok(Err(_)) => {
-                                    return Err(anyhow!("Permission bridge closed unexpectedly"));
+                                // Any `selected` outcome is approval; record if always-allow.
+                                if outcome.is_always_allow() {
+                                    newly_always_allowed.push(function_name.clone());
                                 }
-                                Err(_) => {
-                                    return Err(anyhow!(
-                                        "Timed out waiting for permission ({}s)",
-                                        timeout_secs
-                                    ));
-                                }
+                            }
+                            Ok(Err(_)) => {
+                                return Err(anyhow!("Permission bridge closed unexpectedly"));
+                            }
+                            Err(_) => {
+                                return Err(anyhow!(
+                                    "Timed out waiting for permission ({}s)",
+                                    timeout_secs
+                                ));
                             }
                         }
                     }
+                }
                 // --- END PERMISSION GATE ---
 
                 // Route ALL tool calls through the unified registry + arbitration layer.
@@ -1639,7 +1639,54 @@ impl GrokAcpAgent {
 
             // Emit context usage after each iteration (Task 130)
             if self.config.acp.show_context_usage
-                && let Some(sender) = &event_sender {
+                && let Some(sender) = &event_sender
+            {
+                let usage = crate::acp::protocol::ContextUsageUpdate::new(
+                    estimate_tokens(&messages),
+                    model_context_budget(
+                        &model,
+                        self.config.acp.max_context_tokens,
+                        self.config.acp.grok4_max_context_tokens,
+                    ),
+                    messages.len(),
+                );
+                let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
+                    usage,
+                ));
+
+                // Live status bar update during generation (Task 164)
+                let status_state = crate::acp::status_bar::StatusBarState {
+                    model: model.clone(),
+                    thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
+                    current_tokens: estimate_tokens(&messages),
+                    max_tokens: model_context_budget(
+                        &model,
+                        self.config.acp.max_context_tokens,
+                        self.config.acp.grok4_max_context_tokens,
+                    ),
+                    context_percent: (estimate_tokens(&messages) as f32)
+                        / (model_context_budget(
+                            &model,
+                            self.config.acp.max_context_tokens,
+                            self.config.acp.grok4_max_context_tokens,
+                        ) as f32),
+                    is_generating: true,
+                };
+                self.emit_status_bar(Some(sender), &status_state);
+            }
+
+            // Post-tool-loop guard: if the model signalled "stop" alongside
+            // tool calls, return now instead of spinning up a redundant extra
+            // API iteration (the tools have already completed).
+            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
+                info!(
+                    "✅ Model flagged stop after tool execution — returning ({} loops)",
+                    loop_count
+                );
+                // Emit context usage
+                if self.config.acp.show_context_usage
+                    && let Some(sender) = &event_sender
+                {
                     let usage = crate::acp::protocol::ContextUsageUpdate::new(
                         estimate_tokens(&messages),
                         model_context_budget(
@@ -1652,52 +1699,7 @@ impl GrokAcpAgent {
                     let _ = sender.send(crate::acp::protocol::SessionUpdate::ContextUsageUpdate(
                         usage,
                     ));
-
-                    // Live status bar update during generation (Task 164)
-                    let status_state = crate::acp::status_bar::StatusBarState {
-                        model: model.clone(),
-                        thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
-                        current_tokens: estimate_tokens(&messages),
-                        max_tokens: model_context_budget(
-                            &model,
-                            self.config.acp.max_context_tokens,
-                            self.config.acp.grok4_max_context_tokens,
-                        ),
-                        context_percent: (estimate_tokens(&messages) as f32)
-                            / (model_context_budget(
-                                &model,
-                                self.config.acp.max_context_tokens,
-                                self.config.acp.grok4_max_context_tokens,
-                            ) as f32),
-                        is_generating: true,
-                    };
-                    self.emit_status_bar(Some(sender), &status_state);
                 }
-
-            // Post-tool-loop guard: if the model signalled "stop" alongside
-            // tool calls, return now instead of spinning up a redundant extra
-            // API iteration (the tools have already completed).
-            if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
-                info!(
-                    "✅ Model flagged stop after tool execution — returning ({} loops)",
-                    loop_count
-                );
-                // Emit context usage
-                if self.config.acp.show_context_usage
-                    && let Some(sender) = &event_sender {
-                        let usage = crate::acp::protocol::ContextUsageUpdate::new(
-                            estimate_tokens(&messages),
-                            model_context_budget(
-                                &model,
-                                self.config.acp.max_context_tokens,
-                                self.config.acp.grok4_max_context_tokens,
-                            ),
-                            messages.len(),
-                        );
-                        let _ = sender.send(
-                            crate::acp::protocol::SessionUpdate::ContextUsageUpdate(usage),
-                        );
-                    }
                 // ── Phase 3: Final sync (brief write lock) ──────────────────────────
                 {
                     let mut sessions = self.sessions.write().await;
@@ -2773,18 +2775,19 @@ fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
                     for block in blocks.iter_mut() {
                         if let Some(text_val) = block.get_mut("text")
                             && let Some(s) = text_val.as_str()
-                                && s.len() > max_chars {
-                                    let mut end = max_chars;
-                                    while !s.is_char_boundary(end) {
-                                        end -= 1;
-                                    }
-                                    let truncated = &s[..end];
-                                    *text_val = Value::String(format!(
-                                        "{}\n\n[... output truncated to {} chars to fit \
+                            && s.len() > max_chars
+                        {
+                            let mut end = max_chars;
+                            while !s.is_char_boundary(end) {
+                                end -= 1;
+                            }
+                            let truncated = &s[..end];
+                            *text_val = Value::String(format!(
+                                "{}\n\n[... output truncated to {} chars to fit \
                                          context window ...]",
-                                        truncated, max_chars
-                                    ));
-                                }
+                                truncated, max_chars
+                            ));
+                        }
                     }
                 }
                 _ => {}

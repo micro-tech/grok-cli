@@ -350,6 +350,65 @@
       "details": "Implemented require_* helpers (require_str, require_array, require_u64, require_f64) across the execute_tool dispatch match. Reduced boilerplate significantly. Updated docs. Schemas + derived functions + unknown-arm guard remain the core. Full declarative macro/table still future work.",
       "testStrategy": "",
       "subtasks": []
+    },
+    {
+      "id": 261,
+      "title": "Update ACP integration to fully support agent-client-protocol v2.0",
+      "description": "",
+      "status": "in_progress",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Research complete: agent-client-protocol = \"2.0.0\" (schema v1.5.0 underneath). Code already uses builder pattern (good). Gaps: new stable methods (logout/cancel/info_update/model_config) not registered in typed handlers; permission still custom bridge; several REPLACE types from migration map not yet swapped; custom extensions (AgentActivity, status bar, thinking) need clean extension path; elicitation module is stub. Next: wire stable methods, migrate more leaf types, improve permission/elicitation.",
+      "testStrategy": "cargo check + cargo test for acp-related modules. Manual verification with Zed or other ACP clients if possible. Run the every_tool_schema_has_corresponding_handler style guards if applicable. Document breaking changes in a note.",
+      "subtasks": [
+        {
+          "id": 261.1,
+          "title": "Research agent-client-protocol v2.0 changes",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 261.2,
+          "title": "Audit current ACP implementation",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 261.3,
+          "title": "Update protocol definitions and types",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 261.4,
+          "title": "Update ACP server/client handlers",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 261.5,
+          "title": "Update sub-agent / lifecycle event support",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 261.6,
+          "title": "Verify + add tests",
+          "status": "pending",
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "id": 262,
+      "title": "Wire stable ACP v2 methods (logout, cancel, session/info_update, model/config_options) into typed builder",
+      "description": "",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "high",
+      "details": "In run_acp_session, add on_receive_request or dispatch handlers that call the functions in src/acp/handlers.rs. Ensure cancel actually triggers the cancellation_flags. Update protocol.rs to re-export or define minimal types for the new methods if the crate schema doesn't expose them directly yet. Add tests.",
+      "testStrategy": "cargo check; then run relevant acp tests; verify that calling the methods doesn't panic and cancel works in handle_chat_completion.",
+      "subtasks": []
     }
   ]
 }
