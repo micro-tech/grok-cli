@@ -61,8 +61,6 @@ pub fn list_sessions() -> Result<Vec<String>> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-
     #[test]
     fn test_save_and_load_session() {
         // We can't easily mock dirs::home_dir without more complex dependency injection or env var tricks

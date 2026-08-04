@@ -588,7 +588,7 @@ mod tests {
             ..Default::default()
         };
 
-        let logger = ChatLogger::new(config).unwrap();
+        let _logger = ChatLogger::new(config).unwrap();
         assert!(temp_dir.path().exists());
     }
 

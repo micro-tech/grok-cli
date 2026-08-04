@@ -1826,14 +1826,6 @@ mod tests {
         assert!(err.contains("foo"), "error must mention key on type mismatch: {}", err);
     }
 
-    /// Test that optional helpers are safe and don't panic on missing keys.
-    #[test]
-    fn optional_helpers_are_safe() {
-        let args = serde_json::json!({ "present": "yes" });
-
-        assert_eq!(optional_str(&args, "present"), Some("yes"));
-        assert_eq!(optional_str(&args, "absent"), None);
-        assert_eq!(optional_u64(&args, "absent"), None);
-        assert_eq!(optional_bool(&args, "absent"), None);
-    }
+    // Note: optional_* helpers were removed for now (they were unused in production code).
+    // When they are re-introduced, add tests for them here.
 }
