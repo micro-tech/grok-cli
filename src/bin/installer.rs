@@ -105,22 +105,48 @@ fn install_windows(root_dir: PathBuf) {
         fs::create_dir_all(&install_dir).expect("Failed to create installation directory");
     }
 
-    // 4. Remove old binary if it exists
+    // 4. Handle existing binary safely (Windows "file in use" problem)
+    let mut final_exe = target_exe.clone();
+    let mut needs_manual_replace = false;
+
     if target_exe.exists() {
         println!("Removing old installation...");
-        if let Err(e) = fs::remove_file(&target_exe) {
-            eprintln!("{} {}", "Failed to remove old binary:".red(), e);
-            eprintln!(
-                "{}",
-                "Please make sure 'grok-cli.exe' is not currently running.".yellow()
-            );
-            std::process::exit(1);
+
+        // First try direct delete
+        if fs::remove_file(&target_exe).is_err() {
+            // Try renaming the old one out of the way (often works even when delete fails)
+            let backup = target_exe.with_extension("exe.bak");
+            if fs::rename(&target_exe, &backup).is_ok() {
+                println!("  Moved locked binary to {}", backup.display());
+            } else {
+                // Last resort: install alongside as .new
+                final_exe = target_exe.with_extension("exe.new");
+                needs_manual_replace = true;
+                println!(
+                    "{}",
+                    "  Old binary is locked (probably running). Will install as grok-cli.exe.new".yellow()
+                );
+            }
+        } else {
+            println!("  Removed old binary.");
         }
     }
 
-    // 5. Copy binary
-    println!("Copying binary to {}", target_exe.display());
-    fs::copy(&source_exe, &target_exe).expect("Failed to copy binary");
+    // 5. Copy binary to final location
+    println!("Copying binary to {}", final_exe.display());
+    fs::copy(&source_exe, &final_exe).expect("Failed to copy binary");
+
+    if needs_manual_replace {
+        println!();
+        println!("{}", "MANUAL STEP REQUIRED (Windows file lock):".red().bold());
+        println!("The old grok-cli.exe is still in use.");
+        println!("After you close ALL grok-cli / terminal windows that are using it:");
+        println!();
+        println!("  cd \"{}\"", install_dir.display());
+        println!("  move grok-cli.exe.new grok-cli.exe");
+        println!();
+        println!("Then restart your terminal / PowerShell.");
+    }
 
     // 6. Copy additional files (LICENSE, docs, examples)
     println!("{}", "Installing documentation and examples...".cyan());
