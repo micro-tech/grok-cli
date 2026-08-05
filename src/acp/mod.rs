@@ -32,7 +32,7 @@ use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams};
 use security::SecurityManager;
 
 // Safety hooks (Task 182 - Option A)
-use crate::safety::pre_write_hook::{on_before_write_file, SafetyDecision, WriteContext};
+use crate::safety::pre_write_hook::{SafetyDecision, WriteContext, on_before_write_file};
 
 /// Bridge for passing permission requests from the tool executor to the client writer task
 #[derive(Debug)]
@@ -862,7 +862,9 @@ impl GrokAcpAgent {
                             .messages
                             .iter()
                             .enumerate()
-                            .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+                            .filter(|(_, m)| {
+                                m.get("role").and_then(|r| r.as_str()) != Some("system")
+                            })
                             .map(|(i, _)| i)
                             .collect();
 
@@ -878,7 +880,8 @@ impl GrokAcpAgent {
                                 .get(compress_count - 1)
                                 .copied()
                                 .unwrap_or(start);
-                            let to_compress: Vec<Value> = session.messages.drain(start..=end).collect();
+                            let to_compress: Vec<Value> =
+                                session.messages.drain(start..=end).collect();
 
                             let tokens_saved = estimate_tokens(&to_compress);
                             let model = session.config.model.clone();
@@ -916,13 +919,24 @@ impl GrokAcpAgent {
             let thk = session.config.thinking_mode.clone();
             let bayes = session.bayes_engine.clone();
             let aall = session.always_allow.clone();
-            (msgs, temperature, max_tokens, mdl, thk, bayes, aall, compression_work)
+            (
+                msgs,
+                temperature,
+                max_tokens,
+                mdl,
+                thk,
+                bayes,
+                aall,
+                compression_work,
+            )
         }; // ← write lock released here
 
         // ── Execute compression work (lock-free) ─────────────────────────────────
         // This was prepared inside the brief write lock above.
         // We now perform the expensive async call without holding any session lock.
-        if let Some((to_compress, start_idx, model_for_compression, tokens_saved)) = compression_work.clone() {
+        if let Some((to_compress, start_idx, model_for_compression, tokens_saved)) =
+            compression_work.clone()
+        {
             match self.get_router() {
                 Ok(router) => {
                     match crate::memory::context_compressor::compress(
@@ -953,7 +967,9 @@ impl GrokAcpAgent {
                                     // Re-acquire a short write lock only to insert the notice
                                     let mut sessions = self.sessions.write().await;
                                     if let Some(s) = sessions.get_mut(&session_id.0) {
-                                        let insert_at = if s.messages.first()
+                                        let insert_at = if s
+                                            .messages
+                                            .first()
                                             .and_then(|m| m.get("role"))
                                             .and_then(|r| r.as_str())
                                             == Some("system")
@@ -966,19 +982,26 @@ impl GrokAcpAgent {
                                         s.messages.insert(insert_at, notice.clone());
                                         warn!(
                                             "📦 Archived {} messages → chunk #{} (~{} tokens saved). Active context: {} messages.",
-                                            chunk.message_count, chunk_id, tokens_saved, s.messages.len()
+                                            chunk.message_count,
+                                            chunk_id,
+                                            tokens_saved,
+                                            s.messages.len()
                                         );
                                     }
                                 }
                                 Err(e) => {
-                                    warn!("⚠️  Could not open context archive, messages dropped: {}", e);
+                                    warn!(
+                                        "⚠️  Could not open context archive, messages dropped: {}",
+                                        e
+                                    );
                                 }
                             }
                         }
                         Err(e) => {
                             warn!(
                                 "⚠️  Context compression failed (network drop?): {}. Restoring {} messages.",
-                                e, to_compress.len()
+                                e,
+                                to_compress.len()
                             );
                             // Restore messages under a short lock
                             let mut sessions = self.sessions.write().await;
@@ -1543,28 +1566,39 @@ impl GrokAcpAgent {
                 // Run the mandatory safety hook for file-writing operations before
                 // they reach the registry. This enforces diff validation, DNA-aware
                 // risk checks, and blocks dangerous patterns.
-                if matches!(function_name.as_str(), "write_file" | "replace" | "notebook_edit") {
-                    let proposed = augmented_args.get("content")
+                if matches!(
+                    function_name.as_str(),
+                    "write_file" | "replace" | "notebook_edit"
+                ) {
+                    let proposed = augmented_args
+                        .get("content")
                         .or_else(|| augmented_args.get("new_string"))
                         .and_then(|v| v.as_str());
 
-                    let diff = augmented_args.get("old_string")
+                    let diff = augmented_args
+                        .get("old_string")
                         .and_then(|_old| augmented_args.get("new_string"))
                         .map(|new| format!("old → {}", new));
 
                     let dna_val = {
                         let guard = self.sessions.read().await;
-                        guard.get(&session_id.0)
+                        guard
+                            .get(&session_id.0)
                             .map(|s| serde_json::to_value(&s.dna).unwrap_or_default())
                     };
 
                     let ctx = WriteContext {
                         path: std::path::Path::new(
-                            augmented_args.get("path")
+                            augmented_args
+                                .get("path")
                                 .and_then(|p| p.as_str())
-                                .unwrap_or("")
+                                .unwrap_or(""),
                         ),
-                        operation: if function_name == "replace" { "replace" } else { "write" },
+                        operation: if function_name == "replace" {
+                            "replace"
+                        } else {
+                            "write"
+                        },
                         proposed_content: proposed,
                         diff: diff.as_deref(),
                         session_dna: dna_val.as_ref(),
@@ -1581,7 +1615,7 @@ impl GrokAcpAgent {
                         }
                         SafetyDecision::RequireConfirmation(msg) => {
                             // Treat as a permission request
-                            if let Some(bridge) = &permission_bridge {
+                            if let Some(_bridge) = &permission_bridge {
                                 // ... (simplified: we already passed the permission gate above)
                                 // For now we log and continue; a full implementation would
                                 // re-enter the permission flow here.

@@ -3,7 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{error, info};
 
-use crate::cli::display_data::DisplayData;
+
 
 use crate::config::{Config, ConfigSource, ThinkingMode};
 use crate::display::banner::{BannerConfig, format_welcome_banner};
@@ -410,22 +410,7 @@ pub async fn run() -> Result<()> {
             crate::cli::commands::skills::handle_skills_command(action.clone()).await?;
         }
         Some(Commands::Tools { action }) => {
-            let data = crate::cli::commands::tools::handle_tools_command(action.clone()).await?;
-            // Simple renderer for the new DisplayData (Task 131)
-            match data {
-                DisplayData::Text(t)      => println!("{}", t),
-                DisplayData::Success { message, .. } => println!("{}", message),
-                DisplayData::Error(e)     => eprintln!("{}", e),
-                DisplayData::Lines(l)     => { for line in l { println!("{}", line); } }
-                DisplayData::Multiple(items) => {
-                    for item in items {
-                        if let DisplayData::Text(t) = item {
-                            println!("{}", t);
-                        }
-                    }
-                }
-                DisplayData::None         => {}
-            }
+            crate::cli::commands::tools::handle_tools_command(action.clone()).await?;
         }
         Some(Commands::Setup) => {
             crate::cli::commands::setup::handle_setup().await?;

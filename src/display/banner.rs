@@ -310,6 +310,7 @@ pub fn clear_current_line() {
 
 /// Print a simple progress indicator (still performs I/O)
 #[deprecated(note = "Move to binary crate - performs I/O")]
+#[allow(deprecated)]
 pub fn print_progress_dots(count: usize) {
     clear_current_line();
     print!("Thinking{}", ".".repeat((count % 4) + 1));
