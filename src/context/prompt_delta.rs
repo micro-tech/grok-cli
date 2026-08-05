@@ -31,7 +31,10 @@ impl Default for PromptDelta {
 impl PromptDelta {
     /// Returns true if this delta requires sending the full prompt.
     pub fn requires_full_prompt(&self) -> bool {
-        matches!(self, PromptDelta::Full { .. } | PromptDelta::SystemOrToolsChanged)
+        matches!(
+            self,
+            PromptDelta::Full { .. } | PromptDelta::SystemOrToolsChanged
+        )
     }
 
     /// Returns a short description of the delta for logging/debugging.

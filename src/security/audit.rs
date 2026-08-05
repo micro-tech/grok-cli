@@ -7,9 +7,16 @@ use anyhow::{Result, anyhow};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::fs::{self, File, OpenOptions};
-use std::io::{BufRead, BufReader, Write};
+use std::io::{BufRead, BufReader, BufWriter, Write};
 use std::path::PathBuf;
-use tracing::{debug, error, info};
+use std::sync::Mutex;
+
+#[cfg(test)]
+use std::sync::atomic::{AtomicUsize, Ordering};
+
+#[cfg(test)]
+static DISK_READ_COUNT: AtomicUsize = AtomicUsize::new(0);
+use tracing::{debug, info};
 
 /// A single external file access log entry
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -45,10 +52,26 @@ pub struct ExternalAccessLog {
 pub struct AuditLogger {
     log_file_path: PathBuf,
     enabled: bool,
+    /// Lazily initialized buffered writer. Opened on first enabled write.
+    /// This eliminates per-entry open/write/flush/close.
+    writer: Mutex<Option<BufWriter<File>>>,
+    /// In-memory cache of log entries (oldest first).
+    /// Populated on first query or maintained on writes.
+    cache: Mutex<Vec<ExternalAccessLog>>,
+    /// Flag indicating the cache may be stale (needs reload from disk).
+    cache_dirty: Mutex<bool>,
 }
 
+/// Maximum number of entries to keep in the in-memory stats cache.
+/// Prevents unbounded memory growth for very long sessions.
+const MAX_CACHE_ENTRIES: usize = 10_000;
+
 impl AuditLogger {
-    /// Create a new audit logger
+    /// Create a new audit logger using the standard audit directory.
+    ///
+    /// Directory creation is deferred until the first `log_access` call
+    /// (only when `enabled == true`). This avoids side-effects for
+    /// `new(false)` and for test scenarios.
     ///
     /// # Arguments
     ///
@@ -63,20 +86,32 @@ impl AuditLogger {
     /// ```
     pub fn new(enabled: bool) -> Result<Self> {
         let log_dir = Self::get_audit_log_dir()?;
-
-        // Create audit directory if it doesn't exist
-        if !log_dir.exists() {
-            fs::create_dir_all(&log_dir)
-                .map_err(|e| anyhow!("Failed to create audit log directory: {}", e))?;
-            info!("Created audit log directory: {:?}", log_dir);
-        }
-
         let log_file_path = log_dir.join("external_access.jsonl");
 
         Ok(Self {
             log_file_path,
             enabled,
+            writer: Mutex::new(None),
+            cache: Mutex::new(Vec::new()),
+            cache_dirty: Mutex::new(true),
         })
+    }
+
+    /// Create an audit logger that writes to an explicit file path.
+    ///
+    /// This is primarily intended for tests so they can use a
+    /// `tempfile::TempDir` and avoid contaminating the real audit
+    /// directory on the developer's machine.
+    ///
+    /// No directory is created at construction time.
+    pub fn new_with_path(enabled: bool, log_file_path: PathBuf) -> Self {
+        Self {
+            log_file_path,
+            enabled,
+            writer: Mutex::new(None),
+            cache: Mutex::new(Vec::new()),
+            cache_dirty: Mutex::new(true),
+        }
     }
 
     /// Get the audit log directory path
@@ -122,28 +157,59 @@ impl AuditLogger {
             return Ok(());
         }
 
+        // Lazy directory creation: only create when we are actually going to write.
+        // This ensures new(false) and test constructions have zero FS side-effects.
+        if let Some(parent) = self.log_file_path.parent()
+            && !parent.exists() {
+                fs::create_dir_all(parent)
+                    .map_err(|e| anyhow!("Failed to create audit log directory: {}", e))?;
+                info!("Created audit log directory: {:?}", parent);
+            }
+
         // Serialize to JSON
         let json = serde_json::to_string(&log)
             .map_err(|e| anyhow!("Failed to serialize log entry: {}", e))?;
 
-        // Append to log file
-        let mut file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&self.log_file_path)
-            .map_err(|e| anyhow!("Failed to open audit log file: {}", e))?;
+        // Use the persistent buffered writer (lazily opened)
+        {
+            let mut writer_guard = self.writer.lock().unwrap();
+            if writer_guard.is_none() {
+                let file = OpenOptions::new()
+                    .create(true)
+                    .append(true)
+                    .open(&self.log_file_path)
+                    .map_err(|e| anyhow!("Failed to open audit log file: {}", e))?;
+                *writer_guard = Some(BufWriter::new(file));
+            }
 
-        writeln!(file, "{}", json).map_err(|e| anyhow!("Failed to write to audit log: {}", e))?;
+            if let Some(writer) = writer_guard.as_mut() {
+                writeln!(writer, "{}", json)
+                    .map_err(|e| anyhow!("Failed to write to audit log: {}", e))?;
+                // Flush on every write for audit durability (cheap with BufWriter)
+                // The main win is avoiding repeated open/close per entry.
+                writer
+                    .flush()
+                    .map_err(|e| anyhow!("Failed to flush audit log: {}", e))?;
+            }
+        }
 
-        // Explicitly flush to ensure data is written before returning
-        file.flush()
-            .map_err(|e| anyhow!("Failed to flush audit log: {}", e))?;
+        // Update in-memory cache (append + enforce size limit)
+        {
+            let mut cache = self.cache.lock().unwrap();
+            cache.push(log.clone());
+            if cache.len() > MAX_CACHE_ENTRIES {
+                cache.remove(0);
+            }
+            *self.cache_dirty.lock().unwrap() = false;
+        }
 
         debug!("Logged external access: {} - {}", log.path, log.decision);
         Ok(())
     }
 
     /// Get the most recent log entries
+    ///
+    /// Uses the in-memory cache (populated lazily) for performance.
     ///
     /// # Arguments
     ///
@@ -153,119 +219,127 @@ impl AuditLogger {
     ///
     /// Vector of log entries, most recent first
     pub fn get_recent_logs(&self, count: usize) -> Result<Vec<ExternalAccessLog>> {
-        if !self.log_file_path.exists() {
-            return Ok(Vec::new());
-        }
+        self.ensure_cache_loaded()?;
 
-        let file = File::open(&self.log_file_path)
-            .map_err(|e| anyhow!("Failed to open audit log file: {}", e))?;
-
-        let reader = BufReader::new(file);
-
-        // Read all lines and parse
-        let mut logs: Vec<ExternalAccessLog> = reader
-            .lines()
-            .map_while(Result::ok)
-            .filter_map(|line| {
-                serde_json::from_str(&line)
-                    .map_err(|e| {
-                        error!("Failed to parse log line: {}", e);
-                        e
-                    })
-                    .ok()
-            })
-            .collect();
-
-        // Sort by timestamp (most recent first)
-        logs.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
-
-        // Take only the requested count
-        logs.truncate(count);
-
-        Ok(logs)
+        let cache = self.cache.lock().unwrap();
+        // Cache stores oldest-first; take last N then reverse for most-recent-first
+        let start = if cache.len() > count {
+            cache.len() - count
+        } else {
+            0
+        };
+        let mut recent: Vec<_> = cache[start..].to_vec();
+        recent.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
+        recent.truncate(count);
+        Ok(recent)
     }
 
     /// Get all log entries
+    ///
+    /// Uses the in-memory cache when available and not dirty for performance.
+    /// Falls back to disk read and populates cache.
     ///
     /// # Returns
     ///
     /// Vector of all log entries, most recent first
     pub fn get_all_logs(&self) -> Result<Vec<ExternalAccessLog>> {
-        if !self.log_file_path.exists() {
-            return Ok(Vec::new());
+        self.ensure_cache_loaded()?;
+
+        let cache = self.cache.lock().unwrap();
+        // Return a reversed copy so most-recent-first (cache stores oldest-first)
+        let mut logs = cache.clone();
+        logs.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
+        Ok(logs)
+    }
+
+    /// Ensure the in-memory cache is populated from disk if dirty or empty.
+    fn ensure_cache_loaded(&self) -> Result<()> {
+        let mut dirty = self.cache_dirty.lock().unwrap();
+        if !*dirty {
+            return Ok(());
         }
+
+        let mut cache = self.cache.lock().unwrap();
+        cache.clear();
+
+        if !self.log_file_path.exists() {
+            *dirty = false;
+            return Ok(());
+        }
+
+        #[cfg(test)]
+        DISK_READ_COUNT.fetch_add(1, Ordering::Relaxed);
 
         let file = File::open(&self.log_file_path)
             .map_err(|e| anyhow!("Failed to open audit log file: {}", e))?;
 
         let reader = BufReader::new(file);
 
-        let mut logs: Vec<ExternalAccessLog> = reader
+        let mut loaded: Vec<ExternalAccessLog> = reader
             .lines()
             .map_while(Result::ok)
             .filter_map(|line| serde_json::from_str(&line).ok())
             .collect();
 
-        logs.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
+        // Keep only the most recent MAX_CACHE_ENTRIES
+        if loaded.len() > MAX_CACHE_ENTRIES {
+            loaded.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
+            loaded.truncate(MAX_CACHE_ENTRIES);
+            loaded.sort_by_key(|b| b.timestamp); // restore chronological (oldest first)
+        }
 
-        Ok(logs)
+        *cache = loaded;
+        *dirty = false;
+        Ok(())
     }
 
     /// Get log entries within a date range
     ///
-    /// # Arguments
-    ///
-    /// * `start` - Start of date range (inclusive)
-    /// * `end` - End of date range (inclusive)
-    ///
-    /// # Returns
-    ///
-    /// Vector of log entries within the date range, most recent first
+    /// Serves from the in-memory cache (avoids full disk re-read on cache hits).
     pub fn get_logs_in_range(
         &self,
         start: DateTime<Utc>,
         end: DateTime<Utc>,
     ) -> Result<Vec<ExternalAccessLog>> {
-        let all_logs = self.get_all_logs()?;
+        self.ensure_cache_loaded()?;
 
-        let filtered: Vec<ExternalAccessLog> = all_logs
-            .into_iter()
+        let cache = self.cache.lock().unwrap();
+        let mut filtered: Vec<_> = cache
+            .iter()
             .filter(|log| log.timestamp >= start && log.timestamp <= end)
+            .cloned()
             .collect();
 
+        filtered.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
         Ok(filtered)
     }
 
     /// Get log entries for a specific path
     ///
-    /// # Arguments
-    ///
-    /// * `path` - Path to filter by
-    ///
-    /// # Returns
-    ///
-    /// Vector of log entries for the specified path, most recent first
+    /// Serves from the in-memory cache.
     pub fn get_logs_for_path(&self, path: &str) -> Result<Vec<ExternalAccessLog>> {
-        let all_logs = self.get_all_logs()?;
+        self.ensure_cache_loaded()?;
 
-        let filtered: Vec<ExternalAccessLog> = all_logs
-            .into_iter()
+        let cache = self.cache.lock().unwrap();
+        let mut filtered: Vec<_> = cache
+            .iter()
             .filter(|log| log.path == path)
+            .cloned()
             .collect();
 
+        filtered.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
         Ok(filtered)
     }
 
     /// Get statistics about logged access attempts
     ///
-    /// # Returns
-    ///
-    /// Tuple of (total, allowed, denied)
+    /// Uses the in-memory cache (no disk re-read on repeated calls after first load).
     pub fn get_statistics(&self) -> Result<(usize, usize, usize)> {
-        let all_logs = self.get_all_logs()?;
+        self.ensure_cache_loaded()?;
 
-        let total = all_logs.len();
-        let allowed = all_logs
+        let cache = self.cache.lock().unwrap();
+        let total = cache.len();
+        let allowed = cache
             .iter()
             .filter(|log| {
                 log.decision == "allowed"
@@ -273,29 +347,22 @@ impl AuditLogger {
                     || log.decision == "approved_always"
             })
             .count();
-        let denied = all_logs
-            .iter()
-            .filter(|log| log.decision == "denied")
-            .count();
+        let denied = cache.iter().filter(|log| log.decision == "denied").count();
 
         Ok((total, allowed, denied))
     }
 
     /// Get the most frequently accessed paths
     ///
-    /// # Arguments
-    ///
-    /// * `count` - Number of top paths to return
-    ///
-    /// # Returns
-    ///
-    /// Vector of (path, access_count) tuples, sorted by count descending
+    /// Uses the in-memory cache.
     pub fn get_top_accessed_paths(&self, count: usize) -> Result<Vec<(String, usize)>> {
-        let all_logs = self.get_all_logs()?;
+        self.ensure_cache_loaded()?;
 
-        // Count accesses per path
+        let cache = self.cache.lock().unwrap();
+
+        // Count accesses per path (from cache)
         let mut path_counts = std::collections::HashMap::new();
-        for log in all_logs {
+        for log in cache.iter() {
             *path_counts.entry(log.path.clone()).or_insert(0) += 1;
         }
 
@@ -318,6 +385,17 @@ impl AuditLogger {
                 .map_err(|e| anyhow!("Failed to delete audit log file: {}", e))?;
             info!("Cleared audit log file");
         }
+        // Invalidate cache so next reads start fresh
+        {
+            let mut cache = self.cache.lock().unwrap();
+            cache.clear();
+            *self.cache_dirty.lock().unwrap() = true;
+        }
+        // Also drop any open writer handle
+        {
+            let mut writer = self.writer.lock().unwrap();
+            *writer = None;
+        }
         Ok(())
     }
 
@@ -329,6 +407,16 @@ impl AuditLogger {
     /// Check if audit logging is enabled
     pub fn is_enabled(&self) -> bool {
         self.enabled
+    }
+}
+
+impl Drop for AuditLogger {
+    fn drop(&mut self) {
+        // Best-effort flush of any buffered data on drop.
+        if let Ok(mut guard) = self.writer.lock()
+            && let Some(writer) = guard.as_mut() {
+                let _ = writer.flush();
+            }
     }
 }
 
@@ -358,23 +446,24 @@ pub fn create_access_log(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serial_test::serial;
     use tempfile::TempDir;
 
-    #[test]
-    #[serial]
-    fn test_create_audit_logger() {
-        let logger = AuditLogger::new(true);
-        assert!(logger.is_ok());
+    fn temp_logger(enabled: bool) -> (AuditLogger, TempDir) {
+        let temp = TempDir::new().unwrap();
+        let log_path = temp.path().join("external_access.jsonl");
+        let logger = AuditLogger::new_with_path(enabled, log_path);
+        (logger, temp)
+    }
 
-        let logger = logger.unwrap();
+    #[test]
+    fn test_create_audit_logger() {
+        let (logger, _temp) = temp_logger(true);
         assert!(logger.is_enabled());
     }
 
     #[test]
-    #[serial]
     fn test_log_access() {
-        let logger = AuditLogger::new(true).unwrap();
+        let (logger, _temp) = temp_logger(true);
 
         let log = ExternalAccessLog {
             timestamp: Utc::now(),
@@ -392,9 +481,8 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_get_recent_logs() {
-        let logger = AuditLogger::new(true).unwrap();
+        let (logger, _temp) = temp_logger(true);
 
         // Log multiple entries
         for i in 0..5 {
@@ -416,14 +504,10 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_get_statistics() {
-        let logger = AuditLogger::new(true).unwrap();
+        let (logger, _temp) = temp_logger(true);
 
-        // Clear existing logs
-        let _ = logger.clear_logs();
-
-        // Log some entries
+        // Log some entries (no need to clear; temp dir is fresh)
         let log_allowed = ExternalAccessLog {
             timestamp: Utc::now(),
             path: "C:\\test\\allowed.txt".to_string(),
@@ -450,13 +534,12 @@ mod tests {
         logger.log_access(log_denied).unwrap();
 
         let (total, allowed, denied) = logger.get_statistics().unwrap();
-        assert!(total >= 2);
-        assert!(allowed >= 1);
-        assert!(denied >= 1);
+        assert_eq!(total, 2);
+        assert_eq!(allowed, 1);
+        assert_eq!(denied, 1);
     }
 
     #[test]
-    #[serial]
     fn test_create_access_log() {
         let log = create_access_log(
             "C:\\test\\file.txt",
@@ -474,9 +557,8 @@ mod tests {
     }
 
     #[test]
-    #[serial]
     fn test_disabled_logger() {
-        let logger = AuditLogger::new(false).unwrap();
+        let (logger, _temp) = temp_logger(false);
         assert!(!logger.is_enabled());
 
         let log = ExternalAccessLog {
@@ -493,5 +575,122 @@ mod tests {
         // Should succeed but not actually log
         let result = logger.log_access(log);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_new_false_creates_no_directory() {
+        let temp = TempDir::new().unwrap();
+        let log_path = temp.path().join("audit").join("external_access.jsonl");
+
+        // Before construction
+        assert!(!log_path.parent().unwrap().exists());
+
+        let _logger = AuditLogger::new_with_path(false, log_path.clone());
+
+        // Construction must not create anything
+        assert!(!log_path.parent().unwrap().exists());
+    }
+
+    #[test]
+    fn test_new_true_defers_directory_until_log() {
+        let temp = TempDir::new().unwrap();
+        let log_path = temp.path().join("audit").join("external_access.jsonl");
+        let parent = log_path.parent().unwrap();
+
+        assert!(!parent.exists());
+
+        let logger = AuditLogger::new_with_path(true, log_path.clone());
+
+        // new(true) must still not create the directory
+        assert!(!parent.exists());
+
+        // Only after writing does the directory appear
+        let log = ExternalAccessLog {
+            timestamp: Utc::now(),
+            path: "test".to_string(),
+            operation: "read".to_string(),
+            decision: "allowed".to_string(),
+            user: "test".to_string(),
+            session_id: "s1".to_string(),
+            denial_reason: None,
+            config_source: None,
+        };
+        logger.log_access(log).unwrap();
+
+        assert!(parent.exists());
+        assert!(log_path.exists());
+    }
+
+    #[test]
+    fn test_stats_served_from_cache_after_first_load() {
+        let (logger, _temp) = temp_logger(true);
+
+        // Seed a couple of entries
+        let log1 = ExternalAccessLog {
+            timestamp: Utc::now(),
+            path: "C:\\test\\a.txt".to_string(),
+            operation: "read".to_string(),
+            decision: "allowed".to_string(),
+            user: "t".to_string(),
+            session_id: "s".to_string(),
+            denial_reason: None,
+            config_source: None,
+        };
+        let log2 = ExternalAccessLog {
+            timestamp: Utc::now(),
+            path: "C:\\test\\b.txt".to_string(),
+            operation: "read".to_string(),
+            decision: "denied".to_string(),
+            user: "t".to_string(),
+            session_id: "s".to_string(),
+            denial_reason: None,
+            config_source: None,
+        };
+        logger.log_access(log1).unwrap();
+        logger.log_access(log2).unwrap();
+
+        // Force a cache load
+        let _ = logger.get_statistics().unwrap();
+
+        // Reset the test-only disk read counter
+        #[cfg(test)]
+        DISK_READ_COUNT.store(0, Ordering::Relaxed);
+
+        // Second call must NOT read from disk again
+        let (total, _, _) = logger.get_statistics().unwrap();
+        assert_eq!(total, 2);
+
+        #[cfg(test)]
+        {
+            let reads = DISK_READ_COUNT.load(Ordering::Relaxed);
+            assert_eq!(reads, 0, "expected no additional disk read on cache hit");
+        }
+    }
+
+    #[test]
+    fn test_cache_invalidated_on_clear_logs() {
+        let (logger, _temp) = temp_logger(true);
+
+        let log = ExternalAccessLog {
+            timestamp: Utc::now(),
+            path: "C:\\test\\x.txt".to_string(),
+            operation: "read".to_string(),
+            decision: "allowed".to_string(),
+            user: "t".to_string(),
+            session_id: "s".to_string(),
+            denial_reason: None,
+            config_source: None,
+        };
+        logger.log_access(log).unwrap();
+
+        // Populate cache
+        let _ = logger.get_statistics().unwrap();
+
+        // Clear should invalidate cache
+        logger.clear_logs().unwrap();
+
+        // After clear, stats should be zero (cache was invalidated)
+        let (total, _, _) = logger.get_statistics().unwrap();
+        assert_eq!(total, 0);
     }
 }

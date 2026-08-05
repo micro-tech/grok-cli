@@ -185,6 +185,25 @@ impl AppRouter {
             .route_with_tools(req, context, max_iterations)
             .await
     }
+
+    /// Run the tool loop **and** capture a high-level `WorkflowTrace`.
+    ///
+    /// This is the integration point for Task 232 (Workflow Trace layer).
+    /// Use this instead of `route_with_tools` when you want to record:
+    /// UserPrompt → LLM code → validation ToolRun steps → Decision → ReturnedTo...
+    ///
+    /// The trace is always returned alongside the normal response.
+    pub async fn route_with_workflow_trace(
+        &self,
+        req: RouterRequest,
+        context: &crate::tools::ToolContext,
+        max_iterations: u32,
+        user_prompt: Option<&str>,
+    ) -> Result<(RouterResponse, crate::workflow::WorkflowTrace), RouterError> {
+        self.inner
+            .route_with_workflow_trace(req, context, max_iterations, user_prompt)
+            .await
+    }
 }
 
 // ── Tests ─────────────────────────────────────────────────────────────────────

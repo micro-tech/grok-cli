@@ -14,7 +14,8 @@ pub struct SessionManager {
 impl SessionManager {
     pub fn new(max_tokens: u32) -> Self {
         // Use a safe default on error
-        let budget = ContextBudget::new(max_tokens).unwrap_or_else(|_| ContextBudget::new(8192).unwrap());
+        let budget =
+            ContextBudget::new(max_tokens).unwrap_or_else(|_| ContextBudget::new(8192).unwrap());
         Self {
             budget,
             summarizer: SessionSummarizer::new(8),
@@ -29,8 +30,11 @@ impl SessionManager {
     }
 
     pub fn next_delta(&self, new_prompt: &str, system_changed: bool) -> PromptDelta {
-        should_use_delta(self.last_prompt.as_deref(), new_prompt, system_changed)
-            .unwrap_or_else(|_| PromptDelta::Full { content: new_prompt.to_string() })
+        should_use_delta(self.last_prompt.as_deref(), new_prompt, system_changed).unwrap_or_else(
+            |_| PromptDelta::Full {
+                content: new_prompt.to_string(),
+            },
+        )
     }
 
     pub fn should_compress(&self) -> bool {

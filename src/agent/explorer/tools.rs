@@ -24,11 +24,6 @@ pub fn is_tool_allowed(name: &str) -> bool {
 pub fn is_write_or_dangerous_tool(name: &str) -> bool {
     matches!(
         name,
-        "fs_write"
-            | "fs_patch"
-            | "shell_exec"
-            | "run_terminal_cmd"
-            | "edit_file"
-            | "apply_patch"
+        "fs_write" | "fs_patch" | "shell_exec" | "run_terminal_cmd" | "edit_file" | "apply_patch"
     )
 }

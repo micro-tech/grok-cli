@@ -21,7 +21,13 @@ pub async fn run_explorer_mode(
     ];
 
     // Only allow read/search tools
-    let allowed_tools = ["fs_glob", "fs_read", "fs_grep", "list_directory", "search_file_content"];
+    let allowed_tools = [
+        "fs_glob",
+        "fs_read",
+        "fs_grep",
+        "list_directory",
+        "search_file_content",
+    ];
 
     let all_tools = crate::acp::tools::get_available_tool_definitions();
     let filtered: Vec<serde_json::Value> = all_tools

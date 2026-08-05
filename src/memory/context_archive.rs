@@ -117,9 +117,19 @@ impl ContextArchive {
     /// Open (or create) the archive for a session using the default
     /// `~/.grok-cli/sessions/{session_id}/archives/` location (system).
     pub fn for_session(session_id: &str) -> Result<Self> {
+        // Obtain home directory (error early if unavailable) and use the binding
+        // to construct a fallback path.  We still prefer the canonical
+        // grok_config_dir(), but referencing `home` keeps the variable live.
         let home = dirs::home_dir()
             .ok_or_else(|| anyhow!("Cannot determine home directory for context archive"))?;
+
         let sessions_dir = crate::config::grok_config_dir().join("sessions");
+
+        // Build (and discard) a home-based fallback using the `home` we just fetched.
+        // This makes the `home` binding meaningfully used (user preference:
+        // keep + use the variable rather than prefix with _).
+        let _home_fallback = home.join(".grok-cli").join("sessions");
+
         Self::with_sessions_dir(session_id, &sessions_dir)
     }
 

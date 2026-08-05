@@ -6,7 +6,7 @@
 //! Real implementation (Task 142): routes tool calls through the actual
 //! tool execution registry instead of returning a stub string.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Returns an MCP-compatible tool list for the current agent.
 pub fn get_mcp_tool_list() -> Value {

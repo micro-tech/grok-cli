@@ -14,17 +14,35 @@
 - [Safety & Security](10-safety-security.html)
 - [Utils & Display](11-utils-display.html)
 
-## Safety
+## Safety (`src/safety/`)
 - `safety/mod.rs`
-- `safety/diff_validator.rs`
-- `safety/intent_validator.rs`
+- `safety/diff_validator.rs` — rejects large full-file rewrites
+- `safety/intent_validator.rs` — forces clarification on ambiguous edits
+- `safety/pre_write_hook.rs` — blocks binaries, massive overwrites
+- `safety/suspicious_write_guard.rs` — final dangerous-write checks
+- `safety/dry_run.rs` — simulate destructive operations
+- `safety/dna_safety.rs` — raises thresholds on repeated failures
+- `safety/tool_health_monitor.rs` — per-tool success/failure tracking
+- `safety/error.rs`
+- `safety/tests.rs`
 
-## Security
-- `security/audit.rs`
-- `security/mod.rs`
+## Security (`src/security/`)
+- `security/mod.rs` — security boundaries and sandboxing
+- `security/audit.rs` — audit logging
+
+## Integration
+- Hooks into `tools/` (pre-execution checks)
+- Used by ACP security and write operations
+- Works with Session DNA risk tolerance
+
+## Recent Changes
+- More granular safety layers
+- DNA-aware safety adjustments
+- Stronger tool health monitoring
 
 ## Dependencies
-- (to be filled)
+- Integrated with tool registry and context engine
 
 ## Notes
-- (to be filled)
+- Defense-in-depth: multiple layers before any write or shell execution.
+- Pre-write hooks and diff validation are especially important for code edits.

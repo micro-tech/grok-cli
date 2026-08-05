@@ -164,7 +164,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_shell_intent() {
-
         let mut router = Router::new_with_default_priors();
         let action = router.route("run the build command").await;
 
@@ -173,7 +172,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_clarification_gate() {
-
         let mut router = Router::new_with_default_priors();
         let action = router.route("be careful, don't delete").await;
 
@@ -186,7 +184,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_router_normal_chat() {
-
         let mut router = Router::new_with_default_priors();
         // Just a random statement
         let action = router.route("hello there").await;

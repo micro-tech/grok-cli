@@ -499,8 +499,8 @@ pub fn reinit(config: ChatLoggerConfig) -> Result<()> {
 /// Get a reference to the global logger (if initialized)
 pub fn get_logger() -> Option<ChatLogger> {
     let global = GLOBAL_LOGGER.lock().unwrap_or_else(|e| e.into_inner());
-    global.as_ref().map(|logger| ChatLogger {
-        config: logger.config.clone(),
+    global.as_ref().map(|_logger| ChatLogger {
+        config: _logger.config.clone(),
         current_session: Mutex::new(None),
     })
 }
@@ -588,7 +588,7 @@ mod tests {
             ..Default::default()
         };
 
-        let logger = ChatLogger::new(config).unwrap();
+        let _logger = ChatLogger::new(config).unwrap();
         assert!(temp_dir.path().exists());
     }
 

@@ -305,46 +305,44 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
         );
         // When hide_context_summary is false, show a short preview of the file
         if !config.ui.hide_context_summary
-            && let Ok(content) = std::fs::read_to_string(&context_path)
-        {
-            let preview: Vec<&str> = content
-                .lines()
-                .filter(|l| !l.trim().is_empty())
-                .take(3)
-                .collect();
-            for line in preview {
-                let truncated = if line.len() > 80 {
-                    format!("{}...", &line[..80])
-                } else {
-                    line.to_string()
-                };
-                println!("      {}", truncated.dimmed());
+            && let Ok(content) = std::fs::read_to_string(&context_path) {
+                let preview: Vec<&str> = content
+                    .lines()
+                    .filter(|l| !l.trim().is_empty())
+                    .take(3)
+                    .collect();
+                for line in preview {
+                    let truncated = if line.len() > 80 {
+                        format!("{}...", &line[..80])
+                    } else {
+                        line.to_string()
+                    };
+                    println!("      {}", truncated.dimmed());
+                }
             }
-        }
     }
 
     // Show available and active skills
     if let Some(skills_dir) = crate::skills::get_default_skills_dir()
-        && let Ok(skills) = crate::skills::list_skills(&skills_dir)
-    {
-        let total = skills.len();
-        let active = session.active_skills.len();
-        if total > 0 {
-            println!(
-                "  Skills: {} available, {} active",
-                format!("{}", total).bright_blue(),
-                format!("{}", active).bright_green()
-            );
-            if active > 0 {
-                let skill_names: Vec<String> = session
-                    .active_skills
-                    .iter()
-                    .map(|s| s.bright_yellow().to_string())
-                    .collect();
-                println!("    Active: {}", skill_names.join(", "));
+        && let Ok(skills) = crate::skills::list_skills(&skills_dir) {
+            let total = skills.len();
+            let active = session.active_skills.len();
+            if total > 0 {
+                println!(
+                    "  Skills: {} available, {} active",
+                    format!("{}", total).bright_blue(),
+                    format!("{}", active).bright_green()
+                );
+                if active > 0 {
+                    let skill_names: Vec<String> = session
+                        .active_skills
+                        .iter()
+                        .map(|s| s.bright_yellow().to_string())
+                        .collect();
+                    println!("    Active: {}", skill_names.join(", "));
+                }
             }
         }
-    }
 
     if let Some(system) = &session.system_prompt {
         let preview = if system.len() > 60 {
@@ -606,7 +604,7 @@ async fn run_interactive_loop(
 }
 
 /// Display the input prompt with proper cursor positioning
-#[allow(dead_code)]
+#[expect(dead_code, reason = "reserved for future use")]
 fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> Result<()> {
     let prompt = match config.prompt_style {
         PromptStyle::Simple => "> ".to_string(),
@@ -641,7 +639,7 @@ fn display_prompt(session: &InteractiveSession, config: &InteractiveConfig) -> R
 }
 
 /// Read user input from stdin with cursor cleanup
-#[allow(dead_code)]
+#[expect(dead_code, reason = "reserved for future use")]
 fn read_user_input() -> Result<String> {
     let mut input = String::new();
     std::io::stdin().read_line(&mut input)?;
@@ -1009,7 +1007,9 @@ async fn handle_special_commands(
                         };
                         // Store the image reference in the next user message
                         session.add_conversation_item("user", &msg, None);
-                        println!("📎 Image attached. The next message you send will include the image.");
+                        println!(
+                            "📎 Image attached. The next message you send will include the image."
+                        );
                     }
                     Err(e) => println!("❌ {}", e),
                 }

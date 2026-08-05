@@ -107,7 +107,7 @@ fn get_usage_stats_path() -> Result<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::thread;
+    // std::thread was previously used for timing tests; currently unused.
 
     #[test]
     fn test_clean_old_history() {

@@ -16,19 +16,29 @@
 
 ## Core
 - `rag/mod.rs`
-- `rag/api.rs`
+- `rag/api.rs` — public retrieval API
 
 ## Graph
-- `rag/graph/`
+- `rag/graph/` — builder, node, edge, project_graph
 
 ## Retrieval
-- `rag/retrieval/`
+- `rag/retrieval/` — hybrid, graph_expansion, reranker, bm25
 
 ## Parser
-- `rag/parser/`
+- `rag/parser/` — tree_sitter_scanner, syn_extractor
+
+## Integrations
+- `rag/acp_integration.rs`
+- `rag/dna_integration.rs`
+- `rag/compression.rs`, `rag/persistence.rs`
+
+## Recent Changes
+- Graph-based RAG
+- DNA-shaped retrieval weighting
+- ACP session hooks
 
 ## Dependencies
-- (to be filled)
+- tree-sitter, vector stores, hybrid search (BM25 + cosine)
 
 ## Notes
-- (to be filled)
+- Used by context engine and agents for code-aware retrieval.

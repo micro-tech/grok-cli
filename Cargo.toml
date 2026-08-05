@@ -1,7 +1,8 @@
 [package]
 name = "grok-cli"
-version = "0.2.4"
+version = "0.2.5"
 edition = "2024"
+rust-version = "1.97.1"
 build = "build.rs"
 authors = ["john mcconnell john.microtech@gmail.com"]
 description = "A CLI tool for interacting with Grok AI via X API"
@@ -22,8 +23,7 @@ path = "src/bin/github_mcp.rs"
 [dependencies]
 #  grok_api = { path = "../grok_crate/grok_api", version = "0.1.71" }
 # HTTP client with timeout support for network drops
-grok_api = "0.1.74"
-#grok_api = "0.1.7"
+grok_api = "0.2.0"
 
 reqwest = { version = "0.13.4", features = [
     "json",
@@ -31,16 +31,16 @@ reqwest = { version = "0.13.4", features = [
     "http2",
 ], default-features = false }
 # Async runtime
-tokio = { version = "1.52.3", features = ["full"] }
+tokio = { version = "1.53.1", features = ["full"] }
 # JSON handling
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 # CLI parsing
-clap = { version = "4.6.1", features = ["derive", "env"] }
+clap = { version = "4.6.5", features = ["derive", "env"] }
 # Error handling
 anyhow = "1.0"
 thiserror = "2.0"
-agent-client-protocol = "1.2.0"
+agent-client-protocol = "2.0.0"
 tokio-util = { version = "0.7", features = ["compat"] }
 # Environment variable loading
 dotenvy = "0.15"
@@ -53,7 +53,7 @@ tracing-subscriber = { version = "0.3", features = [
     "json",
     "fmt",
 ] }
-once_cell = "1"
+
 # Terminal colors and formatting
 colored = "3.1.1"
 # Progress indicators
@@ -61,11 +61,11 @@ indicatif = "0.18"
 # File I/O and paths
 dirs = "6.0"
 # UUID generation
-uuid = { version = "1.23.4", features = ["v4"] }
+uuid = { version = "1.24.0", features = ["v4"] }
 # TGS-RAG dependencies (gated behind "tgs-rag" feature)
-tree-sitter = { version = "0.26.10", optional = true }
+tree-sitter = { version = "0.26.11", optional = true }
 tree-sitter-rust = { version = "0.24.2", optional = true }
-syn = { version = "2.0", features = [
+syn = { version = "3.0.3", features = [
     "full",
     "parsing",
     "visit",
@@ -73,7 +73,7 @@ syn = { version = "2.0", features = [
 quote = { version = "1.0", optional = true }
 proc-macro2 = { version = "1.0", optional = true }
 # Base64 encoding
-base64 = "0.22"
+base64 = "0.23.0"
 # Terminal utilities (using terminal_size instead)
 # Random number generation for retry backoff
 rand = "0.10.2"
@@ -83,7 +83,7 @@ chrono = { version = "0.4", features = ["serde"] }
 # Terminal size detection
 terminal_size = "0.4"
 # TOML configuration parsing
-toml = "1.1.2"
+toml = "1.1.4"
 
 # Terminal detection
 is-terminal = "0.4"
@@ -96,7 +96,7 @@ urlencoding = "2"
 clap-markdown = "0.1"
 serde_yaml = "0.9.34"
 whoami = "2.1.2"
-libloading = "0.8"
+shellexpand = "3.1"
 
 [target.'cfg(windows)'.dependencies]
 winreg = "0.56.0"
@@ -105,7 +105,7 @@ winreg = "0.56.0"
 tempfile = "3.27.0"
 mockito = "1.7"
 tokio-test = "0.4"
-serial_test = "3.5.0"
+serial_test = "4.0.1"
 
 [profile.release]
 lto = true

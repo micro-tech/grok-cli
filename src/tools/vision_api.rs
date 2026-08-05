@@ -5,7 +5,7 @@
 
 use crate::tools::image::prepare_image_content;
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 
 /// Create a user message that includes both text and an image.
 /// This is the format expected by most vision APIs (including xAI/Grok).
@@ -14,8 +14,11 @@ use serde_json::{json, Value};
 pub fn create_vision_message(text: &str, image_path_or_url: &str) -> Result<Value> {
     let image_content = prepare_image_content(image_path_or_url)?;
 
-    // For now we use a simple structure that most vision APIs understand.
-    // The actual grok_api crate may need a small update to support MessageContent::Image.
+    // Produces the standard OpenAI-style multimodal content array:
+    // [{ "type": "text", "text": "..." }, { "type": "image_url", "image_url": { "url": "..." } }]
+    //
+    // The GrokClient extension (grok_client_ext.rs) now properly converts array content
+    // (including vision messages) when building ChatMessage history for the underlying grok_api.
     Ok(json!({
         "role": "user",
         "content": [
@@ -35,13 +38,14 @@ pub fn create_vision_message(text: &str, image_path_or_url: &str) -> Result<Valu
 
 /// Check if a message (as JSON) already contains image content.
 pub fn message_has_image(msg: &Value) -> bool {
-    if let Some(content) = msg.get("content") {
-        if content.is_array() {
-            return content.as_array().unwrap().iter().any(|part| {
-                part.get("type").and_then(|t| t.as_str()) == Some("image_url")
-            });
+    if let Some(content) = msg.get("content")
+        && content.is_array() {
+            return content
+                .as_array()
+                .unwrap()
+                .iter()
+                .any(|part| part.get("type").and_then(|t| t.as_str()) == Some("image_url"));
         }
-    }
     false
 }
 
@@ -61,6 +65,9 @@ mod tests {
         assert_eq!(content[0]["type"], "text");
         assert_eq!(content[0]["text"], "describe this");
         assert_eq!(content[1]["type"], "image_url");
-        assert_eq!(content[1]["image_url"]["url"], "https://example.com/test.png");
+        assert_eq!(
+            content[1]["image_url"]["url"],
+            "https://example.com/test.png"
+        );
     }
 }

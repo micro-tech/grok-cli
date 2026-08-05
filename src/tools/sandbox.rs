@@ -42,11 +42,10 @@ impl PluginSandbox {
         for entry in std::fs::read_dir(dir)? {
             let entry = entry?;
             let path = entry.path();
-            if path.extension() == Some(std::ffi::OsStr::new("rs")) {
-                if let Err(e) = self.compile_and_load(&path) {
+            if path.extension() == Some(std::ffi::OsStr::new("rs"))
+                && let Err(e) = self.compile_and_load(&path) {
                     tracing::error!("Failed to load {}: {}", path.display(), e);
                 }
-            }
         }
 
         Ok(())
@@ -87,18 +86,32 @@ impl PluginSandbox {
         }
 
         tracing::info!("Compiled → {}", out_path.display());
+
+        // Even though dynamic loading is currently disabled (libloading placeholder),
+        // we still record the compiled tool metadata. This makes the
+        // `registered_tools` field actively written to and usable.
+        {
+            let mut tools = self.registered_tools.lock().unwrap();
+            tools.push(CustomTool {
+                name: file_stem.clone(),
+                description: format!("Custom tool compiled from {}", path.display()),
+                library_path: out_path.clone(),
+            });
+        }
+
         // Dynamic loading disabled (libloading not present).
-        // In a future build with the crate enabled, call:
-        // self.load_library(&out_path, &file_stem)
         tracing::warn!(
-            "Dynamic tool loading is currently disabled. Compiled library at {} was not loaded.",
+            "Dynamic tool loading is currently disabled. Compiled library at {} was not loaded (metadata recorded).",
             out_path.display()
         );
         Ok(())
     }
 
     /// Stub: dynamic loading requires the `libloading` crate (currently disabled).
-    #[allow(dead_code)]
+    #[expect(
+        dead_code,
+        reason = "libloading is currently disabled; stub kept for future dynamic loading"
+    )]
     fn load_library(
         &self,
         _lib_path: &Path,

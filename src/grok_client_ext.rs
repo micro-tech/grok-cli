@@ -10,6 +10,7 @@ use grok_api::{
 use serde_json::Value;
 
 use crate::config::RateLimitConfig;
+use crate::utils::rate_limiter::UsageStats;
 
 /// Extended Grok client that wraps grok_api::GrokClient with additional methods
 #[derive(Clone, Debug)]
@@ -48,7 +49,9 @@ impl GrokClient {
         })
     }
 
-    /// Set rate limit configuration (for compatibility - currently a no-op)
+    /// Set rate limit configuration.
+    /// When present, chat methods will enforce max_requests_per_minute and max_tokens_per_minute
+    /// using the UsageStats token-bucket style limiter before sending requests.
     pub fn with_rate_limits(mut self, config: RateLimitConfig) -> Self {
         self.rate_limit_config = Some(config);
         self
@@ -102,12 +105,40 @@ impl GrokClient {
             .iter()
             .filter_map(|msg| {
                 let role = msg.get("role")?.as_str()?;
-                // content might be null for tool calls
-                let content = msg.get("content").and_then(|c| c.as_str());
+
+                // Support both plain string content and array content (for vision/multimodal).
+                // Array content is produced by create_vision_message (text + image_url parts).
+                let content = if let Some(s) = msg.get("content").and_then(|c| c.as_str()) {
+                    s.to_string()
+                } else if let Some(arr) = msg.get("content").and_then(|c| c.as_array()) {
+                    // Vision / multimodal: collect text parts and image references
+                    // so the model receives both the prompt and image information.
+                    arr.iter()
+                        .filter_map(|part| {
+                            match part.get("type").and_then(|t| t.as_str()) {
+                                Some("text") => part
+                                    .get("text")
+                                    .and_then(|t| t.as_str())
+                                    .map(|s| s.to_string()),
+                                Some("image_url") => part
+                                    .get("image_url")
+                                    .and_then(|i| i.get("url"))
+                                    .and_then(|u| u.as_str())
+                                    .map(|u| format!("[Attached image: {}]", u)),
+                                _ => None,
+                            }
+                        })
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                } else {
+                    msg.get("content")
+                        .map(|c| c.to_string())
+                        .unwrap_or_default()
+                };
 
                 match role {
-                    "system" => Some(ChatMessage::system(content.unwrap_or(""))),
-                    "user" => Some(ChatMessage::user(content.unwrap_or(""))),
+                    "system" => Some(ChatMessage::system(content)),
+                    "user" => Some(ChatMessage::user(content)),
                     "assistant" => {
                         if let Some(tool_calls_val) = msg.get("tool_calls") {
                             // potential tool calls
@@ -115,10 +146,15 @@ impl GrokClient {
                             if let Ok(calls) =
                                 serde_json::from_value::<Vec<ToolCall>>(tool_calls_val.clone())
                             {
-                                return Some(ChatMessage::assistant_with_tools(content, calls));
+                                let content_opt = if content.is_empty() {
+                                    None
+                                } else {
+                                    Some(content)
+                                };
+                                return Some(ChatMessage::assistant_with_tools(content_opt, calls));
                             }
                         }
-                        Some(ChatMessage::assistant(content.unwrap_or("")))
+                        Some(ChatMessage::assistant(content))
                     }
                     "tool" => {
                         let tool_call_id = msg.get("tool_call_id")?.as_str()?;
@@ -127,13 +163,26 @@ impl GrokClient {
                         Some(ChatMessage::user(format!(
                             "Tool result (ID: {}): {}",
                             tool_call_id,
-                            content.unwrap_or("")
+                            content
                         )))
                     }
                     _ => None,
                 }
             })
             .collect();
+
+        // === Rate limit enforcement (COR-5) ===
+        // If RateLimitConfig was provided via with_rate_limits(), enforce before the call.
+        // We use a conservative token estimate based on prompt size.
+        if let Some(ref cfg) = self.rate_limit_config {
+            let prompt_chars: usize = messages.iter().map(|v| v.to_string().len()).sum();
+            let estimated_tokens: u32 = ((prompt_chars / 3) as u32).saturating_add(600); // rough prompt + response headroom
+
+            let mut stats = UsageStats::load().unwrap_or_default();
+            if let Err(msg) = stats.check_limit(cfg, estimated_tokens) {
+                return Err(anyhow::anyhow!("Rate limit exceeded: {}", msg));
+            }
+        }
 
         let mut request = self
             .inner
@@ -149,7 +198,7 @@ impl GrokClient {
         }
 
         // Add reasoning_effort if the caller requested a thinking mode.
-        // Only send this for models that support it (e.g. grok-4.3, grok-3-mini).
+        // Only send this for models that support it (grok-4.x, grok-3-mini, etc.).
         if let Some(effort) = reasoning_effort {
             request = request.reasoning_effort(effort);
         }
@@ -165,7 +214,16 @@ impl GrokClient {
         self.inner.test_connection().await.map_err(|e| e.into())
     }
 
-    /// List available models
+    /// List available models from the Grok API.
+    ///
+    /// Note: The actual list returned depends on the version of the `grok_api`
+    /// crate (the one published on crates.io). If that crate has not yet been
+    /// updated to call the live `/v1/models` endpoint (or to return a richer
+    /// response), this will return whatever the current published version
+    /// hard-codes or can discover.
+    ///
+    /// The static list shown by `/model` and in ACP capabilities is maintained
+    /// separately in `slash_commands.rs` and `acp/mod.rs`.
     pub async fn list_models(&self) -> Result<Vec<String>> {
         self.inner.list_models().await.map_err(|e| e.into())
     }

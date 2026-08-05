@@ -7,8 +7,13 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub enum PromptDelta {
-    Full { content: String },
-    Delta { added: String, removed: Option<String> },
+    Full {
+        content: String,
+    },
+    Delta {
+        added: String,
+        removed: Option<String>,
+    },
     None,
 }
 

@@ -1,13 +1,13 @@
+use crate::tools::ToolContext;
 use anyhow::Result;
-use once_cell::sync::Lazy;
 use serde_json::Value;
 use std::collections::HashMap;
+use std::sync::LazyLock;
 use std::sync::RwLock;
-use crate::tools::ToolContext;
 
 /// Simple in-memory registry for AI-generated / dynamic tools.
-static DYNAMIC_TOOLS: Lazy<RwLock<HashMap<String, String>>> =
-    Lazy::new(|| RwLock::new(HashMap::new()));
+static DYNAMIC_TOOLS: LazyLock<RwLock<HashMap<String, String>>> =
+    LazyLock::new(|| RwLock::new(HashMap::new()));
 
 /// Register a new dynamic tool (name + description).
 /// This can be called by code generators or plugins.
@@ -20,9 +20,7 @@ pub fn register_dynamic_tool(name: &str, description: &str) {
 /// List all currently registered dynamic tools.
 pub fn list_dynamic_tools() -> Vec<(String, String)> {
     if let Ok(map) = DYNAMIC_TOOLS.read() {
-        map.iter()
-            .map(|(k, v)| (k.clone(), v.clone()))
-            .collect()
+        map.iter().map(|(k, v)| (k.clone(), v.clone())).collect()
     } else {
         vec![]
     }
@@ -99,16 +97,12 @@ mod tests {
 
 /// TGS-RAG context enrichment (proper implementation when feature enabled).
 #[cfg(feature = "tgs-rag")]
-pub async fn enrich_with_rag_context(
-    query: &str,
-    _ctx: &ToolContext,
-) -> Option<String> {
+pub async fn enrich_with_rag_context(query: &str, _ctx: &ToolContext) -> Option<String> {
     // Try to load a persisted graph from the current directory
     let config = crate::rag::config::TgsRagConfig::default();
-    if let Some(provider) = crate::rag::api::TgsRagContextProvider::from_persisted(
-        std::path::Path::new("."),
-        config,
-    ) {
+    if let Some(provider) =
+        crate::rag::api::TgsRagContextProvider::from_persisted(std::path::Path::new("."), config)
+    {
         let context = provider.get_context_for_query(query);
         if !context.is_empty() {
             return Some(context.join("\n---\n"));

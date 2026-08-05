@@ -593,9 +593,9 @@ mod tests {
             &[],
         );
 
-        let has_delegation = steps.iter().any(|s| {
-            matches!(s.action, StepAction::DelegateToSubAgent { .. })
-        });
+        let has_delegation = steps
+            .iter()
+            .any(|s| matches!(s.action, StepAction::DelegateToSubAgent { .. }));
 
         assert!(
             has_delegation,

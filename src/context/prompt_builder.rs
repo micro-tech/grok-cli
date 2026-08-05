@@ -13,8 +13,12 @@ pub fn build_prompt_with_delta(
     tools: Vec<serde_json::Value>,
     allowed_tools: &[&str],
 ) -> (PromptDelta, Vec<serde_json::Value>) {
-    let delta = should_use_delta(previous_prompt, current_prompt, system_changed)
-        .unwrap_or_else(|_| PromptDelta::Full { content: current_prompt.to_string() });
+    let delta =
+        should_use_delta(previous_prompt, current_prompt, system_changed).unwrap_or_else(|_| {
+            PromptDelta::Full {
+                content: current_prompt.to_string(),
+            }
+        });
 
     let pruned_tools = prune_unused_tools(tools, allowed_tools);
     let mut optimized = pruned_tools;
@@ -49,13 +53,7 @@ mod tests {
 
     #[test]
     fn test_build_prompt_delta() {
-        let (delta, tools) = build_prompt_with_delta(
-            None,
-            "hello",
-            false,
-            vec![],
-            &[],
-        );
+        let (delta, tools) = build_prompt_with_delta(None, "hello", false, vec![], &[]);
         assert!(matches!(delta, PromptDelta::Full { .. }));
         assert!(tools.is_empty());
     }

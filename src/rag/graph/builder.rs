@@ -108,9 +108,8 @@ impl GraphBuilder {
         {
             let path = entry.path().to_path_buf();
 
-            let current_mtime = match std::fs::metadata(&path).and_then(|m| m.modified()) {
-                Ok(t) => t,
-                Err(_) => continue,
+            let Ok(current_mtime) = std::fs::metadata(&path).and_then(|m| m.modified()) else {
+                continue;
             };
 
             let is_stale = self

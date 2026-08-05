@@ -74,11 +74,14 @@ async fn handle_external_access_audit(
     // Export if requested
     if let Some(export_path) = export_file {
         export_to_csv(&logs, &export_path)?;
-        println!("{}", format_success(&format!(
-            "Exported {} entries to {}",
-            logs.len(),
-            export_path
-        )));
+        println!(
+            "{}",
+            format_success(&format!(
+                "Exported {} entries to {}",
+                logs.len(),
+                export_path
+            ))
+        );
         return Ok(());
     }
 

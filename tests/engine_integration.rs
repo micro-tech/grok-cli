@@ -9,8 +9,8 @@
 use grok_cli::engine::{
     CorrectionConfig, CorrectionEngine, CorrectionOutcome, CorrectionTrigger, EngineBeliefs,
     EngineObserver, EngineState, Evidence, MemoryBridge, MemoryBridgeConfig, ObserverConfig,
-    PlanBuilder, PlanBuilderConfig, ReasoningEngineState, StepAction, StepStatus,
-    is_safe_to_log, redact_state,
+    PlanBuilder, PlanBuilderConfig, ReasoningEngineState, StepAction, StepStatus, is_safe_to_log,
+    redact_state,
 };
 // ArbitrationEngine moved or made private — test disabled for now
 // use grok_cli::engine::arbitration::ArbitrationEngine;

@@ -46,7 +46,7 @@ pub struct SkillSecurityValidator {
     /// Patterns that warrant warnings
     suspicious_patterns: Vec<Regex>,
     /// Allowed script interpreters
-    #[allow(dead_code)]
+    #[expect(dead_code, reason = "reserved for future interpreter validation")]
     allowed_interpreters: HashSet<String>,
 }
 
@@ -236,31 +236,30 @@ impl SkillSecurityValidator {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.is_file()
-                        && let Some(ext) = path.extension()
-                    {
-                        let ext_str = ext.to_string_lossy();
+                        && let Some(ext) = path.extension() {
+                            let ext_str = ext.to_string_lossy();
 
-                        // Check if it's an executable script
-                        if ext_str == "sh" || ext_str == "bash" || ext_str == "py" {
-                            suspicious.push(format!(
-                                "Found executable script: {}",
-                                path.file_name().unwrap().to_string_lossy()
-                            ));
+                            // Check if it's an executable script
+                            if ext_str == "sh" || ext_str == "bash" || ext_str == "py" {
+                                suspicious.push(format!(
+                                    "Found executable script: {}",
+                                    path.file_name().unwrap().to_string_lossy()
+                                ));
 
-                            // Read and validate script content
-                            if let Ok(content) = fs::read_to_string(&path) {
-                                for pattern in &self.dangerous_patterns {
-                                    if pattern.is_match(&content) {
-                                        dangerous.push(format!(
-                                            "Script '{}' contains dangerous pattern: {}",
-                                            path.file_name().unwrap().to_string_lossy(),
-                                            pattern.as_str()
-                                        ));
+                                // Read and validate script content
+                                if let Ok(content) = fs::read_to_string(&path) {
+                                    for pattern in &self.dangerous_patterns {
+                                        if pattern.is_match(&content) {
+                                            dangerous.push(format!(
+                                                "Script '{}' contains dangerous pattern: {}",
+                                                path.file_name().unwrap().to_string_lossy(),
+                                                pattern.as_str()
+                                            ));
+                                        }
                                     }
                                 }
                             }
                         }
-                    }
                 }
             }
             Err(e) => {
@@ -290,14 +289,13 @@ impl SkillSecurityValidator {
                     if path.is_file() {
                         // Check file size to prevent DoS
                         if let Ok(metadata) = fs::metadata(&path)
-                            && metadata.len() > 10 * 1024 * 1024
-                        {
-                            // 10MB
-                            warnings.push(format!(
-                                "Reference file is very large: {}",
-                                path.file_name().unwrap().to_string_lossy()
-                            ));
-                        }
+                            && metadata.len() > 10 * 1024 * 1024 {
+                                // 10MB
+                                warnings.push(format!(
+                                    "Reference file is very large: {}",
+                                    path.file_name().unwrap().to_string_lossy()
+                                ));
+                            }
                     }
                 }
             }

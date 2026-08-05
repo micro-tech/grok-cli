@@ -3,7 +3,7 @@
 #[cfg(test)]
 mod tests {
     use crate::rag::graph::{GraphNode, NodeKind, ProjectGraph};
-    use crate::rag::persistence::{graph_exists, save_graph, load_graph};
+    use crate::rag::persistence::{graph_exists, load_graph, save_graph};
     use std::path::PathBuf;
     use tempfile::tempdir;
 

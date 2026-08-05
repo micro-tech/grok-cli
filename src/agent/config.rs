@@ -29,6 +29,7 @@ use std::path::PathBuf;
 /// `allow = None` → all tools permitted (permissive default, use with care).
 /// `allow = Some([])` → no tools at all (pure text completion).
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct ToolPermissions {
     /// Whitelist of tool names the agent may call.
     /// `None` = unrestricted (all tools available).
@@ -43,15 +44,6 @@ pub struct ToolPermissions {
     pub restricted: Vec<String>,
 }
 
-impl Default for ToolPermissions {
-    fn default() -> Self {
-        Self {
-            allow: None, // no tools by default — safest
-            deny: vec![],
-            restricted: vec![],
-        }
-    }
-}
 
 impl ToolPermissions {
     /// Return `true` if `tool_name` is permitted (not in deny, in allow or unrestricted).
@@ -266,6 +258,7 @@ impl Default for ContextBudget {
 
 /// Filesystem isolation rules for a sub-agent.
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Default)]
 pub struct AgentSandbox {
     /// Whether to restrict the agent to the sandbox path.
     #[serde(default)]
@@ -281,15 +274,6 @@ pub struct AgentSandbox {
     pub keep: bool,
 }
 
-impl Default for AgentSandbox {
-    fn default() -> Self {
-        Self {
-            enabled: false,
-            path: String::new(),
-            keep: false,
-        }
-    }
-}
 
 impl AgentSandbox {
     /// Resolve the sandbox to an absolute `PathBuf`, or `None` if disabled
@@ -421,10 +405,10 @@ impl SubAgentConfig {
     /// Resolve all trusted directories: sandbox path (if enabled) + explicit trusted_dirs.
     pub fn effective_trusted_dirs(&self) -> Vec<PathBuf> {
         let mut dirs = self.trusted_dirs.clone();
-        if let Some(sandbox_path) = self.sandbox.resolved_path() {
-            if !dirs.contains(&sandbox_path) {
-                dirs.push(sandbox_path);
-            }
+        if let Some(sandbox_path) = self.sandbox.resolved_path()
+            && !dirs.contains(&sandbox_path)
+        {
+            dirs.push(sandbox_path);
         }
         dirs
     }

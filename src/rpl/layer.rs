@@ -27,7 +27,7 @@
 use tracing::{debug, warn};
 
 use crate::rpl::{
-    logging::{log_trace, ReasoningLogLevel},
+    logging::{ReasoningLogLevel, log_trace},
     schema::{ReasoningPhase, ReasoningTrace, ToolEvaluation},
     validation::validate,
 };
@@ -151,7 +151,7 @@ impl RplLayer {
     /// * `tool_name`        – The registered name of the tool being evaluated.
     /// * `selected`         – Whether this tool was chosen for execution.
     /// * `relevance_score`  – Optional score (0.0–1.0). If `None`, defaults to
-    ///                        1.0 when `selected`, else 0.0.
+    ///   1.0 when `selected`, else 0.0.
     /// * `reason`           – Optional explanation for the selection decision.
     pub fn on_tool_selection(
         &self,
@@ -168,9 +168,7 @@ impl RplLayer {
 
         // Preserve caller-provided score when meaningful; otherwise fall back
         // to the simple selected/not-selected default.
-        let relevance_score = relevance_score.unwrap_or_else(|| {
-            if selected { 1.0_f32 } else { 0.0_f32 }
-        });
+        let relevance_score = relevance_score.unwrap_or(if selected { 1.0_f32 } else { 0.0_f32 });
 
         let eval = ToolEvaluation {
             tool_name: tool_name.to_string(),
@@ -350,7 +348,13 @@ mod tests {
         let layer = RplLayer::with_default_config();
         let mut trace = layer.on_pre_evaluate(None, None);
 
-        layer.on_tool_selection(&mut trace, "read_file", true, None, Some("file path in goal"));
+        layer.on_tool_selection(
+            &mut trace,
+            "read_file",
+            true,
+            None,
+            Some("file path in goal"),
+        );
         layer.on_tool_selection(&mut trace, "list_directory", false, None, None);
 
         assert_eq!(trace.tool_evaluations.len(), 2);
@@ -486,7 +490,13 @@ mod tests {
         let mut trace = layer.on_pre_evaluate(Some("find large files"), Some("home dir"));
         layer.on_tool_selection(&mut trace, "list_directory", true, None, Some("dir arg"));
         layer.on_tool_selection(&mut trace, "read_file", false, None, None);
-        layer.on_tool_selection(&mut trace, "shell_exec", false, None, Some("blocked by policy"));
+        layer.on_tool_selection(
+            &mut trace,
+            "shell_exec",
+            false,
+            None,
+            Some("blocked by policy"),
+        );
         layer.on_complete(&mut trace);
 
         assert_eq!(trace.phase, ReasoningPhase::Complete);

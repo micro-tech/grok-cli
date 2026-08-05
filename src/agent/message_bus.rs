@@ -3,11 +3,11 @@
 //! Provides fast, in-process messaging between agents as a complement
 //! (and eventual replacement) for the file-based send_message system.
 
+use chrono::{DateTime, Utc};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AgentMessage {
@@ -45,10 +45,7 @@ impl AgentMessageBus {
         };
 
         let mut channels = self.channels.write().await;
-        channels
-            .entry(to.to_string())
-            .or_default()
-            .push(msg);
+        channels.entry(to.to_string()).or_default().push(msg);
 
         format!("Message delivered to '{}' (in-memory)", to)
     }
@@ -111,5 +108,5 @@ mod tests {
 }
 
 /// Global shared message bus instance.
-pub static MESSAGE_BUS: once_cell::sync::Lazy<Arc<AgentMessageBus>> =
-    once_cell::sync::Lazy::new(|| Arc::new(AgentMessageBus::new()));
+pub static MESSAGE_BUS: std::sync::LazyLock<Arc<AgentMessageBus>> =
+    std::sync::LazyLock::new(|| Arc::new(AgentMessageBus::new()));

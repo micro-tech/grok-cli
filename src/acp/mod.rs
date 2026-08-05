@@ -8,6 +8,7 @@ use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{RwLock, mpsc, oneshot};
 use tokio::time::{Duration, sleep};
 use tracing::{debug, error, info, warn};
@@ -19,6 +20,7 @@ use crate::router::AppRouter;
 use serde::{Deserialize, Serialize};
 
 pub mod elicitation;
+pub mod handlers;
 pub mod mcp_bridge;
 pub mod protocol;
 pub mod security;
@@ -94,6 +96,10 @@ pub struct GrokAcpAgent {
     /// Tools discovered from connected MCP servers.
     /// Key = server name, Value = list of tools returned by `tools/list`.
     discovered_mcp_tools: Arc<RwLock<HashMap<String, Vec<crate::mcp::protocol::Tool>>>>,
+
+    /// Per-session cancellation flags (Task 221 - ACP cancellation).
+    /// Each session has an AtomicBool that can be set to true to request abort.
+    cancellation_flags: Arc<RwLock<HashMap<String, Arc<AtomicBool>>>>,
 }
 
 /// Session data for tracking conversation state
@@ -139,6 +145,14 @@ struct SessionData {
     /// Temporary rules added via `/rule add <text>` for this session.
     /// Injected into every refined prompt so the model respects them throughout.
     session_rules: crate::context::session_rules::SessionRules,
+
+    /// Last workflow trace recorded for this session (Task 232).
+    /// Populated when using `route_with_workflow_trace` (e.g. in sub-agents)
+    /// or when a full tool-using code workflow completes.
+    ///
+    /// Kept (and read in save/restore paths) rather than removed.
+    #[expect(dead_code, reason = "reserved for future use")]
+    last_workflow_trace: Option<crate::workflow::WorkflowTrace>,
 }
 
 impl SessionData {
@@ -227,8 +241,12 @@ pub struct SessionConfig {
 }
 
 /// Snapshot of a session that can be written to disk and reloaded.
+///
+/// Made `pub` so that the `pub` methods `load_session_from_disk` and
+/// `restore_session_from_disk` can return/take it without triggering
+/// private_interfaces warnings. (We prefer to keep and use the API.)
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub(crate) struct PersistedSession {
+pub struct PersistedSession {
     pub(crate) session_id: String,
     pub(crate) cwd: String,
     pub(crate) messages: Vec<serde_json::Value>,
@@ -270,10 +288,10 @@ pub struct ToolDefinition {
 impl Default for SessionConfig {
     fn default() -> Self {
         Self {
-            model: "grok-4.3".to_string(),
+            model: "grok-4".to_string(),
             temperature: 0.5, // Lower temperature for more deterministic coding output
-            // grok-4.3 supports higher output token limits; 16 384 balances
-            // detailed responses with reasonable response times.
+            // grok-4.x models support large output token budgets; 16 384 is a safe default
+            // that avoids accidental huge responses while still allowing detailed answers.
             max_tokens: 16_384,
             system_prompt: Some(
                 "You are an expert software engineer and coding assistant. \
@@ -314,7 +332,51 @@ impl GrokAcpAgent {
             default_model,
             mcp_client: Arc::new(RwLock::new(crate::mcp::client::McpClient::new())),
             discovered_mcp_tools: Arc::new(RwLock::new(HashMap::new())),
+            cancellation_flags: Arc::new(RwLock::new(HashMap::new())),
         })
+    }
+
+    // ─────────────────────────────────────────────────────────────────
+    // Task 221: ACP Cancellation support
+    // ─────────────────────────────────────────────────────────────────
+
+    /// Request cancellation for a session. Sets the AtomicBool so that
+    /// the running `handle_chat_completion` (or any long-running prompt)
+    /// can observe it and abort.
+    pub async fn cancel_session(&self, session_id: &str) {
+        let mut flags = self.cancellation_flags.write().await;
+        let flag = flags
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(false)));
+        flag.store(true, Ordering::Release);
+        info!("Cancellation requested for session {}", session_id);
+    }
+
+    /// Returns the shared cancellation flag for a session.
+    /// Creates the flag (initially false) if it does not exist yet.
+    pub async fn get_cancellation_flag(&self, session_id: &str) -> Arc<AtomicBool> {
+        let mut flags = self.cancellation_flags.write().await;
+        flags
+            .entry(session_id.to_string())
+            .or_insert_with(|| Arc::new(AtomicBool::new(false)))
+            .clone()
+    }
+
+    /// Clears the cancellation flag for a session (resets it to false).
+    pub async fn clear_cancellation_flag(&self, session_id: &str) {
+        let flags = self.cancellation_flags.write().await;
+        if let Some(flag) = flags.get(session_id) {
+            flag.store(false, Ordering::Release);
+        }
+    }
+
+    /// Returns true if a cancellation has been requested for this session.
+    pub async fn is_cancelled(&self, session_id: &str) -> bool {
+        let flags = self.cancellation_flags.read().await;
+        flags
+            .get(session_id)
+            .map(|f| f.load(Ordering::Acquire))
+            .unwrap_or(false)
     }
 
     /// Return agent capabilities, computing them lazily on first access.
@@ -332,12 +394,11 @@ impl GrokAcpAgent {
     /// on first use if an API key is configured.  This keeps `new()` fast
     /// for ACP stdio startup.
     fn get_router(&self) -> Result<AppRouter> {
-        if self.router.get().is_none() {
-            if let Some(ref api_key) = self.config.api_key {
-                if let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs) {
-                    let _ = self.router.set(r);
-                }
-            }
+        if self.router.get().is_none()
+            && let Some(ref api_key) = self.config.api_key
+            && let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs)
+        {
+            let _ = self.router.set(r);
         }
 
         self.router.get().cloned().ok_or_else(|| {
@@ -404,18 +465,16 @@ impl GrokAcpAgent {
     fn create_capabilities() -> GrokAgentCapabilities {
         GrokAgentCapabilities {
             models: vec![
-                "grok-4.3".to_string(), // Default — 1 M token context
-                "grok-4.20-0309-reasoning".to_string(),
-                "grok-4.20-0309-non-reasoning".to_string(),
-                "grok-4.20-multi-agent-0309".to_string(),
-                "grok-coder".to_string(), // Specialized coding model
+                "grok-4".to_string(), // Current flagship
+                "grok-4-latest".to_string(),
+                "grok-4.3".to_string(), // 1M context variant
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
+                "grok-coder".to_string(), // Specialized coding model
                 "grok-2-vision-1212".to_string(),
-                "grok-2".to_string(), // Fallback
-                "grok-build-0.1".to_string(),
+                "grok-2".to_string(),
             ],
-            // grok-4.3 exposes a 1,048,576-token context window.
+            // grok-4.3 (and select grok-4.x variants) expose a 1,048,576-token context window.
             // This is reported here so ACP clients (e.g. Zed) can make
             // informed decisions about context insertion.
             max_context_length: 1_048_576,
@@ -501,6 +560,7 @@ impl GrokAcpAgent {
             dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
             session_rules: Default::default(),
+            last_workflow_trace: None,
         };
 
         // --- Task 102: Knowledge Pack Loader ---
@@ -538,13 +598,12 @@ impl GrokAcpAgent {
             .messages
             .iter_mut()
             .find(|m| m["role"] == "system")
+            && let Some(content) = sys_msg["content"].as_str()
         {
-            if let Some(content) = sys_msg["content"].as_str() {
-                let mut prompt = content.to_string();
-                dna.inject_into_prompt(&mut prompt);
-                prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
-                sys_msg["content"] = serde_json::Value::String(prompt);
-            }
+            let mut prompt = content.to_string();
+            dna.inject_into_prompt(&mut prompt);
+            prompt.push_str(&format!("\n\n**Current DNA Mode:** {}", dna.get_mode()));
+            sys_msg["content"] = serde_json::Value::String(prompt);
         } else {
             let mut prompt = String::new();
             dna.inject_into_prompt(&mut prompt);
@@ -953,6 +1012,13 @@ impl GrokAcpAgent {
         let mut newly_always_allowed: Vec<String> = Vec::new();
 
         loop {
+            // Task 221: Check for cancellation request at the start of each iteration
+            if self.is_cancelled(&session_id.0).await {
+                self.clear_cancellation_flag(&session_id.0).await;
+                info!("🛑 Prompt cancelled for session {}", session_id.0);
+                return Ok("Request cancelled by user.".to_string());
+            }
+
             if loop_count >= max_loops {
                 let elapsed = start_time.elapsed();
                 error!(
@@ -1408,11 +1474,10 @@ impl GrokAcpAgent {
                 }
 
                 // --- PERMISSION GATE ---
-                if self.config.acp.require_permission
+                let needs_permission = self.config.acp.require_permission
                     && !local_always_allow.contains(function_name.as_str())
-                    && !newly_always_allowed.contains(function_name)
-                    && let Some(bridge) = &permission_bridge
-                {
+                    && !newly_always_allowed.contains(function_name);
+                if needs_permission && let Some(bridge) = &permission_bridge {
                     let req_id = uuid::Uuid::new_v4().to_string();
 
                     let params = RequestPermissionParams::new(
@@ -1620,6 +1685,14 @@ impl GrokAcpAgent {
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": content
+                }));
+
+                // Final-answer guard: tell the model the tool result is ready and
+                // it should now produce the final answer instead of calling more tools.
+                // This breaks common ReAct-style loops (prevents "max tool loop iterations").
+                messages.push(json!({
+                    "role": "system",
+                    "content": "Tool result received. Produce your final answer now. Do NOT call any more tools unless the user explicitly asks for additional actions."
                 }));
             }
 
@@ -1907,7 +1980,7 @@ impl GrokAcpAgent {
     }
 
     pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
-        &self.capabilities()
+        self.capabilities()
     }
 
     /// Emit the dynamic status bar + token meter (Task 164)
@@ -2215,6 +2288,110 @@ impl GrokAcpAgent {
             info!("Cleared conversation history for session: {}", session_id.0);
         }
         Ok(())
+    }
+
+    /// Force an immediate context compression + archive for testing.
+    /// This ignores the normal `compression_threshold` and always tries to
+    /// summarize + archive the oldest non-system messages.
+    pub async fn force_compress(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        let session = sessions
+            .get_mut(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found"))?;
+
+        let model = session.config.model.clone();
+
+        // Collect non-system messages
+        let non_system_indices: Vec<usize> = session
+            .messages
+            .iter()
+            .enumerate()
+            .filter(|(_, m)| m.get("role").and_then(|r| r.as_str()) != Some("system"))
+            .map(|(i, _)| i)
+            .collect();
+
+        if non_system_indices.len() < 4 {
+            return Ok("Not enough conversation history to compress (need at least 4 non-system messages).".to_string());
+        }
+
+        let compress_count = ((non_system_indices.len() as f64
+            * self.config.acp.compression_chunk_ratio as f64)
+            as usize)
+            .max(4)
+            .min(non_system_indices.len());
+
+        let start = non_system_indices[0];
+        let end = non_system_indices
+            .get(compress_count - 1)
+            .copied()
+            .unwrap_or(start);
+
+        let to_compress: Vec<Value> = session.messages.drain(start..=end).collect();
+        let tokens_saved = estimate_tokens(&to_compress);
+
+        // Release lock before the (potentially slow) summarization call
+        drop(sessions);
+
+        let router = self.get_router()?;
+
+        match crate::memory::context_compressor::compress(&to_compress, &router, &model).await {
+            Ok((summary, key_facts)) => {
+                let mut archive =
+                    crate::memory::context_archive::ContextArchive::for_session(&session_id.0)?;
+
+                let chunk_id = archive.next_chunk_id();
+                let chunk = crate::memory::context_archive::ContextChunk {
+                    chunk_id,
+                    session_id: session_id.0.clone(),
+                    created_at: chrono::Utc::now(),
+                    message_count: to_compress.len(),
+                    estimated_tokens_saved: tokens_saved,
+                    summary: summary.clone(),
+                    key_facts: key_facts.clone(),
+                    raw_messages: to_compress,
+                };
+
+                archive.save_chunk(&chunk)?;
+
+                // Re-acquire lock to insert the archive notice
+                let mut sessions = self.sessions.write().await;
+                if let Some(s) = sessions.get_mut(&session_id.0) {
+                    let insert_at = if s
+                        .messages
+                        .first()
+                        .and_then(|m| m.get("role"))
+                        .and_then(|r| r.as_str())
+                        == Some("system")
+                    {
+                        1
+                    } else {
+                        0
+                    };
+
+                    let notice = build_archive_notice(&chunk);
+                    s.messages.insert(insert_at, notice);
+                }
+
+                Ok(format!(
+                    "✅ **Forced compression complete**\n\n\
+                     - Archived **{}** messages into chunk **#{}**\n\
+                     - Tokens saved: **~{}**\n\
+                     - Summary: {}\n\n\
+                     Use `/archives` to see all chunks or `/recall {}` to restore.",
+                    chunk.message_count, chunk_id, tokens_saved, summary, chunk_id
+                ))
+            }
+            Err(e) => {
+                // Restore the messages we drained
+                let mut sessions = self.sessions.write().await;
+                if let Some(s) = sessions.get_mut(&session_id.0) {
+                    for (offset, msg) in to_compress.into_iter().enumerate() {
+                        s.messages.insert(start + offset, msg);
+                    }
+                }
+                Err(e.context("Compression failed — original messages restored"))
+            }
+        }
     }
 
     /// Return a clone of the [`SessionConfig`] for a session.
@@ -2532,6 +2709,7 @@ impl GrokAcpAgent {
                 dna: crate::session::dna::SessionDna::default(),
                 current_goal: source.current_goal.clone(),
                 session_rules: source.session_rules.clone(),
+                last_workflow_trace: None,
             }
         };
         let mut sessions = self.sessions.write().await;
@@ -2667,21 +2845,20 @@ fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
                 // Array-of-content-blocks form used by some providers
                 Value::Array(blocks) => {
                     for block in blocks.iter_mut() {
-                        if let Some(text_val) = block.get_mut("text") {
-                            if let Some(s) = text_val.as_str() {
-                                if s.len() > max_chars {
-                                    let mut end = max_chars;
-                                    while !s.is_char_boundary(end) {
-                                        end -= 1;
-                                    }
-                                    let truncated = &s[..end];
-                                    *text_val = Value::String(format!(
-                                        "{}\n\n[... output truncated to {} chars to fit \
-                                         context window ...]",
-                                        truncated, max_chars
-                                    ));
-                                }
+                        if let Some(text_val) = block.get_mut("text")
+                            && let Some(s) = text_val.as_str()
+                            && s.len() > max_chars
+                        {
+                            let mut end = max_chars;
+                            while !s.is_char_boundary(end) {
+                                end -= 1;
                             }
+                            let truncated = &s[..end];
+                            *text_val = Value::String(format!(
+                                "{}\n\n[... output truncated to {} chars to fit \
+                                         context window ...]",
+                                truncated, max_chars
+                            ));
                         }
                     }
                 }
@@ -2744,9 +2921,14 @@ mod tests {
     #[test]
     fn test_session_config_default() {
         let config = SessionConfig::default();
-        assert_eq!(config.model, "grok-4.3");
+        // Default should now be the current grok-4 flagship (or a 4.x variant)
+        assert!(
+            config.model.starts_with("grok-4"),
+            "default model should be a grok-4 variant, got {}",
+            config.model
+        );
         assert_eq!(config.temperature, 0.5);
-        // grok-4.3 supports higher output token limits; default raised to 16_384
+        // grok-4.x models support higher output token limits; default 16_384 kept for compatibility
         assert_eq!(config.max_tokens, 16_384);
         assert!(config.system_prompt.is_some());
     }
@@ -2759,8 +2941,12 @@ mod tests {
         assert!(!capabilities.tools.is_empty());
         // grok-4.3 exposes a 1 M token context window
         assert_eq!(capabilities.max_context_length, 1_048_576);
-        // grok-4.3 must be the first / default model
-        assert_eq!(capabilities.models[0], "grok-4.3");
+        // grok-4 (or latest) should be the first / recommended model
+        assert!(
+            capabilities.models[0].starts_with("grok-4"),
+            "Expected a grok-4 variant as first model, got {}",
+            capabilities.models[0]
+        );
         // 1m_context and vision feature flags
         assert!(capabilities.features.contains(&"1m_context".to_string()));
         assert!(capabilities.features.contains(&"vision".to_string()));
@@ -2798,6 +2984,7 @@ mod tests {
             bayes_engine: crate::bayes::BayesianEngine::new(),
             current_goal: None,
             session_rules: Default::default(),
+            last_workflow_trace: None,
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);

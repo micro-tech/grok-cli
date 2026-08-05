@@ -17,6 +17,12 @@ pub struct ToolHealthMonitor {
     metrics: Mutex<HashMap<String, ToolMetrics>>,
 }
 
+impl Default for ToolHealthMonitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ToolHealthMonitor {
     pub fn new() -> Self {
         Self {

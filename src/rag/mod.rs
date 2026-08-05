@@ -2,25 +2,27 @@
 //!
 //! Semantic entity graph + hybrid retrieval for project-aware context.
 
-pub mod graph;
-pub mod parser;
-pub mod index;
-pub mod retrieval;
+pub mod acp_integration;
+pub mod api;
 pub mod compression;
 pub mod config;
-pub mod persistence;
-pub mod api;
-pub mod acp_integration;
 pub mod debug;
 pub mod dna_integration;
+pub mod graph;
+pub mod index;
+pub mod parser;
+pub mod persistence;
+pub mod retrieval;
 #[cfg(test)]
 pub mod tests;
 
-pub use graph::{GraphNode, GraphEdge, ProjectGraph, NodeId, NodeKind, EdgeKind, GraphBuilder, Visibility};
-pub use index::bm25::Bm25Index;
-pub use retrieval::{hybrid::HybridRetriever, graph_expansion::expand_with_neighbors};
+pub use acp_integration::{build_rag_context, create_rag_provider_for_session};
+pub use api::{TgsRag, TgsRagContextProvider};
 pub use compression::compress_context;
 pub use config::TgsRagConfig;
-pub use persistence::{save_graph, load_graph, graph_exists, graph_path};
-pub use api::{TgsRag, TgsRagContextProvider};
-pub use acp_integration::{build_rag_context, create_rag_provider_for_session};
+pub use graph::{
+    EdgeKind, GraphBuilder, GraphEdge, GraphNode, NodeId, NodeKind, ProjectGraph, Visibility,
+};
+pub use index::bm25::Bm25Index;
+pub use persistence::{graph_exists, graph_path, load_graph, save_graph};
+pub use retrieval::{graph_expansion::expand_with_neighbors, hybrid::HybridRetriever};

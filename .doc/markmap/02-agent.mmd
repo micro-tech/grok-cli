@@ -15,21 +15,36 @@
 - [Utils & Display](11-utils-display.html)
 
 ## Core
-- `agent/manager.rs`
+- `agent/manager.rs` — AgentManager, session lifecycle
 - `agent/mod.rs`
+- `agent/mode.rs`
+
+## Multi-Agent & Coordination
+- `agent/message_bus.rs` — typed in-memory messaging
+- Tools: `spawn_agent`, `fork_agent`, `join_agents`, `cancel_agent`, `send_message`
 
 ## Planner & Router
 - `agent/planner.rs`
 - `agent/router.rs`
+- `agent/cost_router.rs`
 
 ## Explorer
-- `agent/explorer/`
+- `agent/explorer/` — evidence, json, runner, tools
 
 ## Prompts
-- `agent/prompts/`
+- `agent/prompts/` — explorer_prompt.rs and shared prompts
+
+## Session DNA
+- Integrated via `src/session/dna.rs`
+
+## Recent Changes
+- Strong multi-agent support with message bus
+- Explorer subsystem for repository investigation
+- DNA-driven behavior and mode switching
 
 ## Dependencies
-- (to be filled)
+- (internal agent coordination)
 
 ## Notes
-- (to be filled)
+- Agents can delegate via `StepAction::DelegateToSubAgent`
+- Works closely with Engine and Bayesian routing.

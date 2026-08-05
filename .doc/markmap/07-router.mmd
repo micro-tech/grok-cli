@@ -1,17 +1,40 @@
 # grok-cli · Router
 
+## Navigation
+- [Overview](00-overview.html)
+- [CLI](01-cli.html)
+- [Agent](02-agent.html)
+- [RAG](03-rag.html)
+- [Memory](04-memory.html)
+- [Tools](05-tools.html)
+- [Engine](06-engine.html)
+- [Router](07-router.html)
+- [Config & Context](08-config-context.html)
+- [MCP & ACP](09-mcp-acp.html)
+- [Safety & Security](10-safety-security.html)
+- [Utils & Display](11-utils-display.html)
+
 ## App Router
-- `router/app_router.rs`
+- `router/app_router.rs` — high-level routing decisions
 
 ## Backends
 - `router/backends/`
+- `router/backends/grok.rs` — Grok backend with think/reason handling
 
 ## CPU & Cost Routing
 - `router/cpu_router.rs`
 - `optimizer/cost_router.rs`
 
+## Core Types
+- `router/request.rs` / `router/response.rs`
+- `router/router_error.rs`
+
+## Recent Changes
+- Bayesian + cost-aware routing
+- Better resilience for unreliable connections
+
 ## Dependencies
-- (to be filled)
+- Integrates with `bayes/`
 
 ## Notes
-- (to be filled)
+- Handles model selection, retries, and response streaming.

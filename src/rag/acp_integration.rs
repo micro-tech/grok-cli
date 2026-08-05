@@ -10,10 +10,7 @@ use std::path::Path;
 
 /// High-level integration point for ACP sessions.
 /// ACP code can call this to obtain relevant project context.
-pub fn build_rag_context(
-    provider: &TgsRagContextProvider,
-    query: &str,
-) -> Vec<String> {
+pub fn build_rag_context(provider: &TgsRagContextProvider, query: &str) -> Vec<String> {
     if !provider.is_enabled() {
         return vec![];
     }

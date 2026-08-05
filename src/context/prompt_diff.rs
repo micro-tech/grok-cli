@@ -4,7 +4,11 @@ use crate::context::error::{ContextError, ContextResult};
 use crate::context::prompt_delta::PromptDelta;
 
 /// Compute the delta between the previous prompt and the current one.
-pub fn compute_delta(previous: &str, current: &str, system_changed: bool) -> ContextResult<PromptDelta> {
+pub fn compute_delta(
+    previous: &str,
+    current: &str,
+    system_changed: bool,
+) -> ContextResult<PromptDelta> {
     if previous.len() > 1_000_000 || current.len() > 1_000_000 {
         return Err(ContextError::PromptTooLarge);
     }
@@ -34,7 +38,11 @@ pub fn compute_delta(previous: &str, current: &str, system_changed: bool) -> Con
 }
 
 /// High-level helper to decide whether to use delta prompting.
-pub fn should_use_delta(previous: Option<&str>, current: &str, system_changed: bool) -> ContextResult<PromptDelta> {
+pub fn should_use_delta(
+    previous: Option<&str>,
+    current: &str,
+    system_changed: bool,
+) -> ContextResult<PromptDelta> {
     match previous {
         Some(prev) => compute_delta(prev, current, system_changed),
         None => Ok(PromptDelta::Full {

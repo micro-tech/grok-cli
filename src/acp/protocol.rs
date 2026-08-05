@@ -1126,6 +1126,74 @@ pub const AGENT_METHOD_NAMES: MethodNames = MethodNames {
 };
 
 // ---------------------------------------------------------------------------
+// Stable ACP v2 method request/response types (Task 262)
+// These are defined locally because the agent_client_protocol crate schema
+// may not yet expose typed structs for the newly stabilized methods.
+// They are used for documentation, tests, and potential future typed routing.
+// Wire format matches the handlers in src/acp/handlers.rs.
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct LogoutRequest {
+    #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<SessionId>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LogoutResponse {
+    #[serde(default)]
+    pub ok: bool,
+}
+
+impl Default for LogoutResponse {
+    fn default() -> Self {
+        Self { ok: true }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct CancelRequest {
+    #[serde(rename = "sessionId", skip_serializing_if = "Option::is_none")]
+    pub session_id: Option<SessionId>,
+    #[serde(rename = "requestId", skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct CancelResponse {
+    pub cancelled: bool,
+    #[serde(rename = "requestId", skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct SessionInfoUpdateRequest {
+    #[serde(rename = "sessionId")]
+    pub session_id: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub title: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub status: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionInfoUpdateResponse {
+    #[serde(default)]
+    pub ok: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct ModelConfigOptionsRequest {}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModelConfigOptionsResponse {
+    pub category: String,
+    pub title: String,
+    pub description: String,
+    pub options: Value,
+}
+
+// ---------------------------------------------------------------------------
 // session/list types
 // ---------------------------------------------------------------------------
 // `SessionListRequest`, `SessionInfo`, and `SessionListResponse` are now

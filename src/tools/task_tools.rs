@@ -125,7 +125,10 @@ fn save_task_file(path: &std::path::Path, data: &Value) -> Result<()> {
 ///
 /// The new task is assigned `ID = floor(max_existing_id) + 1` and its
 /// `status` is always initialised to `"pending"`.
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "required by the task creation API surface"
+)]
 pub fn task_create(
     title: &str,
     description: &str,
@@ -347,11 +350,10 @@ pub fn task_get(id: f64, security: &SecurityPolicy) -> Result<String> {
         if let Some(n) = val["id"].as_f64() {
             return (n - target).abs() < 0.001;
         }
-        if let Some(s) = val["id"].as_str() {
-            if let Ok(n) = s.parse::<f64>() {
+        if let Some(s) = val["id"].as_str()
+            && let Ok(n) = s.parse::<f64>() {
                 return (n - target).abs() < 0.001;
             }
-        }
         false
     }
 

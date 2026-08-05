@@ -21,6 +21,9 @@ use tokio::net::TcpListener;
 use tokio::sync::RwLock;
 use tracing::{debug, error, info, warn};
 
+use crate::acp::handlers::{
+    handle_cancel, handle_logout, handle_model_config_options, handle_session_info_update,
+};
 use crate::acp::protocol::{
     AcpModeInfo, AcpModelInfo, AcpModelsInfo, AcpModesInfo, AgentCapabilities, AuthEnvVar,
     AuthMethod, AvailableCommandsUpdate, ContentBlock, ContentChunk, Implementation,
@@ -367,9 +370,9 @@ where
                 let init = Arc::clone(&init_new);
                 async move {
                     // Auto-init if client skipped initialize (Gemini CLI)
-                    if !init.load(Ordering::SeqCst) {
+                    if !init.load(Ordering::Acquire) {
                         ensure_default_initialized(&agent, &mut false);
-                        init.store(true, Ordering::SeqCst);
+                        init.store(true, Ordering::Release);
                     }
                     // Convert crate's typed request → Value for our local handler.
                     // Note: the crate's NewSessionRequest requires 'cwd' in the
@@ -458,10 +461,10 @@ where
                     // Initialize (or restore) the session so that subsequent
                     // session/prompt calls have a valid session in the agent's
                     // sessions map and a live chat-logger session.
-                    if !sid.is_empty() {
-                        if let Err(e) = handle_session_load(&params, &agent).await {
-                            warn!("session/load: session setup failed for '{}': {}", sid, e);
-                        }
+                    if !sid.is_empty()
+                        && let Err(e) = handle_session_load(&params, &agent).await
+                    {
+                        warn!("session/load: session setup failed for '{}': {}", sid, e);
                     }
 
                     // Build a LoadSessionResponse — try several JSON shapes
@@ -643,7 +646,7 @@ async fn handle_session_prompt_v2(
 ) -> std::result::Result<(), agent_client_protocol::Error> {
     // Convert the crate's PromptRequest → our local type via JSON serde.
     let local_req: PromptRequest = serde_json::to_value(&req)
-        .and_then(|v| serde_json::from_value(v))
+        .and_then(serde_json::from_value)
         .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
 
     let session_id = SessionId::new(local_req.session_id.0.clone());
@@ -954,10 +957,14 @@ async fn handle_builtin_result(
                 Err(e) => format!("Could not switch model: {e}"),
             }
         }
-        BuiltinResult::ShowCurrentModel => match agent.get_session_config(session_id).await {
-            Ok(cfg) => format!("🧠 Current model: **`{}`**", cfg.model),
-            Err(e) => format!("❌ Could not retrieve current model: {e}"),
-        },
+        BuiltinResult::ShowCurrentModel => {
+            let current = match agent.get_session_config(session_id).await {
+                Ok(cfg) => cfg.model,
+                Err(e) => return format!("❌ Could not retrieve current model: {e}"),
+            };
+            let list = slash_commands::format_model_list();
+            format!("🧠 Current model: **`{}`**\n\n{}", current, list)
+        }
         BuiltinResult::ShowContext => match agent.get_session_config(session_id).await {
             Ok(cfg) => {
                 let msg_count = agent
@@ -1063,6 +1070,30 @@ async fn handle_builtin_result(
             Ok(t) => t,
             Err(e) => format!("❌ Could not clear rules: {e}"),
         },
+        BuiltinResult::ShowTrace(sub) => {
+            // Use the workflow module implementation (Task 235)
+            crate::workflow::handle_trace_command(&sub).await
+        }
+        BuiltinResult::ShowOkf(query) => {
+            // Best-effort OKF lookup via the tool functions (they handle global cache).
+            if query.trim().is_empty() {
+                // Provide a nice summary when no query is given.
+                // We fall back to the tool output which already gives a good "no bundles" message.
+                match crate::tools::okf_lookup("", None) {
+                    Ok(s) => s,
+                    Err(e) => format!("Error loading OKF summary: {}", e),
+                }
+            } else {
+                match crate::tools::okf_lookup(&query, Some(8)) {
+                    Ok(s) => s,
+                    Err(e) => format!("OKF search failed: {}", e),
+                }
+            }
+        }
+        BuiltinResult::ForceCompress => match agent.force_compress(session_id).await {
+            Ok(msg) => msg,
+            Err(e) => format!("❌ Forced compression failed: {}", e),
+        },
     }
 }
 
@@ -1123,18 +1154,101 @@ async fn handle_extension_dispatch(
         agent_client_protocol::schema::v1::ClientNotification,
     >,
     _cx: agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
-    _agent: Arc<GrokAcpAgent>,
+    agent: Arc<GrokAcpAgent>,
 ) -> std::result::Result<(), agent_client_protocol::Error> {
     use agent_client_protocol::Dispatch;
+
+    // Helper to call a handler and respond with its JSON result (best effort).
+    async fn respond_with_handler_result(
+        responder: agent_client_protocol::Responder<serde_json::Value>,
+        fut: impl std::future::Future<Output = anyhow::Result<serde_json::Value>>,
+    ) -> std::result::Result<(), agent_client_protocol::Error> {
+        let val = fut.await.unwrap_or_else(|_| json!({ "ok": true }));
+        // Many responders accept a generic payload; if not, we ignore the error.
+        let _ = responder.respond(val);
+        Ok(())
+    }
+
     match msg {
-        Dispatch::Request(_req, _responder) => {
-            // Reached for unhandled ClientRequest variants.
+        Dispatch::Request(req, responder) => {
+            // Convert the incoming ClientRequest into a raw JSON value so we
+            // can inspect the actual method name and params for the stable
+            // ACP v2 methods (logout, cancel, session/info_update,
+            // model/config_options). These may arrive as extension / unknown
+            // requests until the official crate schema grows typed variants.
+            let raw = serde_json::to_value(&req).unwrap_or_else(|_| json!({}));
+
+            // The wire form for a JSON-RPC request is usually:
+            // { "jsonrpc": "2.0", "id": ..., "method": "logout", "params": { ... } }
+            // or the crate may wrap it. We look in a few common places.
+            let method = raw
+                .get("method")
+                .and_then(|m| m.as_str())
+                .or_else(|| raw.get("request").and_then(|r| r.get("method")).and_then(|m| m.as_str()))
+                .unwrap_or("")
+                .to_string();
+
+            let params = raw
+                .get("params")
+                .cloned()
+                .or_else(|| raw.get("request").and_then(|r| r.get("params")).cloned())
+                .unwrap_or_else(|| json!({}));
+
+            if method == "logout" || method.ends_with("/logout") {
+                return respond_with_handler_result(
+                    responder,
+                    handle_logout(&agent, &params),
+                )
+                .await;
+            }
+
+            if method == "cancel" || method.ends_with("/cancel") {
+                return respond_with_handler_result(
+                    responder,
+                    handle_cancel(&agent, &params),
+                )
+                .await;
+            }
+
+            if method == "session/info_update" || method.ends_with("info_update") {
+                return respond_with_handler_result(
+                    responder,
+                    handle_session_info_update(&agent, &params),
+                )
+                .await;
+            }
+
+            if method == "model/config_options" || method.ends_with("config_options") {
+                return respond_with_handler_result(
+                    responder,
+                    handle_model_config_options(&agent),
+                )
+                .await;
+            }
+
+            // Unknown method — fall back to legacy set_model for old clients,
+            // otherwise return proper "method not found".
+            let _ = handle_session_set_model(&raw, &agent).await;
             Err(agent_client_protocol::Error::method_not_found())
         }
-        Dispatch::Notification(_) => Ok(()),
+
+        Dispatch::Notification(notif) => {
+            // Some clients (or older flows) may send cancel as a notification.
+            if let Ok(v) = serde_json::to_value(&notif) {
+                let method = v
+                    .get("method")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("");
+                if method == "cancel" || method.ends_with("/cancel") {
+                    let _ = handle_cancel(&agent, &v).await;
+                }
+            }
+            Ok(())
+        }
+
         Dispatch::Response(result, router) => {
             router
-                .respond_with_result(result)
+                .route_with_result(result)
                 .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()))?;
             Ok(())
         }
@@ -1504,13 +1618,11 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
                 .and_then(|v| v.as_str())
                 .unwrap_or("unnamed");
 
-            let command = match server_val.get("command").and_then(|v| v.as_str()) {
-                Some(c) => c.to_string(),
-                None => {
-                    warn!("MCP server '{}' missing 'command' field — skipping", name);
-                    continue;
-                }
+            let Some(cmd_val) = server_val.get("command").and_then(|v| v.as_str()) else {
+                warn!("MCP server '{}' missing 'command' field — skipping", name);
+                continue;
             };
+            let command = cmd_val.to_string();
 
             let args: Vec<String> = server_val
                 .get("args")
@@ -1532,7 +1644,12 @@ async fn handle_session_new(params: &Value, agent: &GrokAcpAgent) -> Result<Valu
                 })
                 .unwrap_or_default();
 
-            let cfg = crate::mcp::config::McpServerConfig::Stdio { command, args, env };
+            let cfg = crate::mcp::config::McpServerConfig::Stdio {
+                command,
+                args,
+                env,
+                use_legacy_handshake: false,
+            };
 
             // Acquire the lock for this server only
             let mcp_client = agent.get_mcp_client();
@@ -1727,16 +1844,14 @@ async fn handle_session_load(params: &Value, agent: &GrokAcpAgent) -> Result<()>
                 .and_then(|v| v.as_str())
                 .unwrap_or("unnamed");
 
-            let command = match server_val.get("command").and_then(|v| v.as_str()) {
-                Some(c) => c.to_string(),
-                None => {
-                    warn!(
-                        "session/load: MCP server '{}' missing 'command' — skipping",
-                        name
-                    );
-                    continue;
-                }
+            let Some(cmd_val) = server_val.get("command").and_then(|v| v.as_str()) else {
+                warn!(
+                    "session/load: MCP server '{}' missing 'command' — skipping",
+                    name
+                );
+                continue;
             };
+            let command = cmd_val.to_string();
 
             let args: Vec<String> = server_val
                 .get("args")
@@ -1758,7 +1873,12 @@ async fn handle_session_load(params: &Value, agent: &GrokAcpAgent) -> Result<()>
                 })
                 .unwrap_or_default();
 
-            let cfg = crate::mcp::config::McpServerConfig::Stdio { command, args, env };
+            let cfg = crate::mcp::config::McpServerConfig::Stdio {
+                command,
+                args,
+                env,
+                use_legacy_handshake: false,
+            };
             let mcp_client = agent.get_mcp_client();
             let mut client_guard = mcp_client.write().await;
 
@@ -2119,7 +2239,7 @@ struct ModelInfo {
 
 /// Server statistics tracking
 #[derive(Debug, Default)]
-#[allow(dead_code)]
+#[expect(dead_code, reason = "reserved for future use")]
 struct ServerStats {
     connections: u64,
     active_connections: u64,

@@ -144,11 +144,7 @@ fn main() {
         "🔑".bright_yellow(),
         "✓ Configured".bright_green()
     );
-    println!(
-        "  {} Model: {}",
-        "🤖".bright_blue(),
-        "grok-4.3".bright_cyan()
-    );
+    println!("  {} Model: {}", "🤖".bright_blue(), "grok-4".bright_cyan());
     println!(
         "  {} Network: {}",
         "🌐".bright_green(),

@@ -19,8 +19,14 @@ if ($mmdFiles.Count -eq 0) {
 }
 
 $count = $mmdFiles.Count
-Write-Host "Found $count Markmap file(s)..." -ForegroundColor Cyan
-Write-Host ""
+
+# Detect if we were called from cargo (build.rs) — be less noisy
+$isCargoBuild = $env:CARGO_MANIFEST_DIR -ne $null -or $env:CARGO_PKG_NAME -ne $null
+
+if (-not $isCargoBuild) {
+    Write-Host "Found $count Markmap file(s)..." -ForegroundColor Cyan
+    Write-Host ""
+}
 
 # Detect preferred markmap command
 $useMarkmap = $false
@@ -30,16 +36,18 @@ $markmapCmd = $null
 if (Get-Command markmap -ErrorAction SilentlyContinue) {
     $useMarkmap = $true
     $markmapCmd = "markmap"
-    Write-Host "Using globally installed 'markmap' (fast)" -ForegroundColor Green
+    if (-not $isCargoBuild) { Write-Host "Using globally installed 'markmap' (fast)" -ForegroundColor Green }
 }
 # 2. Check for 'markmap-cli'
 elseif (Get-Command markmap-cli -ErrorAction SilentlyContinue) {
     $useMarkmap = $true
     $markmapCmd = "markmap-cli"
-    Write-Host "Using globally installed 'markmap-cli'" -ForegroundColor Green
+    if (-not $isCargoBuild) { Write-Host "Using globally installed 'markmap-cli'" -ForegroundColor Green }
 }
 else {
-    Write-Host "No global markmap found — will use npx (slower first run)" -ForegroundColor Yellow
+    if (-not $isCargoBuild) {
+        Write-Host "No global markmap found — will use npx (slower first run)" -ForegroundColor Yellow
+    }
 }
 
 $success = 0

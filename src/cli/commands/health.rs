@@ -13,15 +13,11 @@ use anyhow::{Result, anyhow};
 use colored::*;
 use std::time::{Duration, Instant};
 
-use crate::cli::display_data::DisplayData;
-use crate::cli::{
-    create_spinner, format_error, format_info, format_success, format_warning,
-};
+use crate::cli::{create_spinner, format_error, format_info, format_success, format_warning};
 use crate::utils::client::initialize_client;
-use crate::utils::network::{detect_starlink_connection, test_connectivity};
+use crate::utils::network::test_connectivity;
 
 /// Handle health check commands
-/// Returns structured DisplayData instead of printing directly (Task 131).
 pub async fn handle_health_check(
     check_api: bool,
     check_config: bool,
@@ -29,7 +25,7 @@ pub async fn handle_health_check(
     config: &Config,
     model: &str,
     timeout_secs: u64,
-) -> Result<DisplayData> {
+) -> Result<()> {
     println!("{}", "🏥 Grok CLI Health Check".cyan().bold());
     println!();
 
@@ -45,11 +41,17 @@ pub async fn handle_health_check(
     let config_file_status = check_config_file().await;
     match config_file_status {
         Ok(()) => {
-            println!("{}", format_success("Configuration file found and readable"));
+            println!(
+                "{}",
+                format_success("Configuration file found and readable")
+            );
             checks_passed += 1;
         }
         Err(e) => {
-            println!("{}", format_error(&format!("Configuration file issue: {}", e)));
+            println!(
+                "{}",
+                format_error(&format!("Configuration file issue: {}", e))
+            );
             warnings.push("Configuration file may need to be initialized".to_string());
         }
     }
@@ -79,7 +81,10 @@ pub async fn handle_health_check(
 
     match connectivity_result {
         Ok(latency) => {
-            println!("{}", format_success(&format!("Network connectivity OK (latency: {:?})", latency)));
+            println!(
+                "{}",
+                format_success(&format!("Network connectivity OK (latency: {:?})", latency))
+            );
             checks_passed += 1;
 
             if latency > Duration::from_millis(1000) {
@@ -89,30 +94,25 @@ pub async fn handle_health_check(
             }
         }
         Err(e) => {
-            println!("{}", format_error(&format!("Network connectivity failed: {}", e)));
+            println!(
+                "{}",
+                format_error(&format!("Network connectivity failed: {}", e))
+            );
             warnings.push("Network issues may affect API calls".to_string());
         }
     }
 
-    // Check for Starlink connection
+    // Network type detection removed (COR-1).
+    // The previous heuristic (DNS lookup of starlink.com) was a false-positive generator
+    // that returned true for any working internet connection.
+    // Starlink-specific retry logic in calculate_retry_delay is still available via config
+    // but no longer auto-detected here. Users can still enable starlink_optimizations manually.
     total_checks += 1;
-    let starlink_spinner = create_spinner("Detecting network type...");
-    let is_starlink = detect_starlink_connection().await;
-    starlink_spinner.finish_and_clear();
-
-    if is_starlink {
-        println!("{}", format_info("Detected possible Starlink satellite connection"));
-        if config.network.starlink_optimizations {
-            println!("{}", format_success("Starlink optimizations are enabled"));
-        } else {
-            println!("{}", format_warning("Consider enabling Starlink optimizations"));
-            warnings.push("Enable Starlink optimizations with: grok config set network.starlink_optimizations true".to_string());
-        }
-        checks_passed += 1;
-    } else {
-        println!("{}", format_info("Standard internet connection detected"));
-        checks_passed += 1;
-    }
+    println!(
+        "{}",
+        format_info("Network type detection skipped (heuristic removed)")
+    );
+    checks_passed += 1;
 
     // Configuration validation if requested
     if check_config {
@@ -126,7 +126,10 @@ pub async fn handle_health_check(
                 checks_passed += 1;
             }
             Err(e) => {
-                println!("{}", format_error(&format!("Configuration validation failed: {}", e)));
+                println!(
+                    "{}",
+                    format_error(&format!("Configuration validation failed: {}", e))
+                );
             }
         }
 
@@ -176,7 +179,10 @@ pub async fn handle_health_check(
                             checks_passed += 2;
                         }
                         Err(e) => {
-                            println!("{}", format_error(&format!("Grok API connection failed: {}", e)));
+                            println!(
+                                "{}",
+                                format_error(&format!("Grok API connection failed: {}", e))
+                            );
 
                             // Provide specific error guidance
                             let error_msg = e.to_string().to_lowercase();
@@ -200,7 +206,10 @@ pub async fn handle_health_check(
                 }
                 Err(e) => {
                     api_spinner.finish_and_clear();
-                    println!("{}", format_error(&format!("Failed to create API client: {}", e)));
+                    println!(
+                        "{}",
+                        format_error(&format!("Failed to create API client: {}", e))
+                    );
                 }
             }
 
@@ -214,14 +223,35 @@ pub async fn handle_health_check(
                     match models_result {
                         Ok(models) => {
                             if models.contains(&model.to_string()) {
-                                println!("{}", format_success(&format!("Model '{}' is available", model)));
+                                println!(
+                                    "{}",
+                                    format_success(&format!("Model '{}' is available", model))
+                                );
                             } else {
-                                println!("{}", format_warning(&format!("Model '{}' may not be available", model)));
-                                println!("{}", format_info(&format!("Available models: {}", models.join(", "))));
+                                println!(
+                                    "{}",
+                                    format_warning(&format!(
+                                        "Model '{}' may not be available",
+                                        model
+                                    ))
+                                );
+                                println!(
+                                    "{}",
+                                    format_info(&format!(
+                                        "Available models: {}",
+                                        models.join(", ")
+                                    ))
+                                );
                             }
                         }
                         Err(e) => {
-                            println!("{}", format_warning(&format!("Could not check model availability: {}", e)));
+                            println!(
+                                "{}",
+                                format_warning(&format!(
+                                    "Could not check model availability: {}",
+                                    e
+                                ))
+                            );
                         }
                     }
                 }
@@ -230,7 +260,10 @@ pub async fn handle_health_check(
                 }
             }
         } else {
-            println!("{}", format_warning("No API key provided - skipping API tests"));
+            println!(
+                "{}",
+                format_warning("No API key provided - skipping API tests")
+            );
             warnings.push("Provide API key to test API connectivity".to_string());
         }
     }
@@ -248,7 +281,10 @@ pub async fn handle_health_check(
             checks_passed += 1;
         }
         Err(e) => {
-            println!("{}", format_warning(&format!("Performance diagnostics failed: {}", e)));
+            println!(
+                "{}",
+                format_warning(&format!("Performance diagnostics failed: {}", e))
+            );
         }
     }
 
@@ -300,19 +336,26 @@ pub async fn handle_health_check(
         }
     }
 
-    let final_message = if success_rate >= 90.0 {
-        "System is healthy and ready to use!".to_string()
+    println!();
+    if success_rate >= 90.0 {
+        println!("{}", format_success("System is healthy and ready to use!"));
     } else if success_rate >= 70.0 {
-        "System has minor issues but should work".to_string()
+        println!(
+            "{}",
+            format_warning("System has minor issues but should work")
+        );
     } else {
+        println!(
+            "{}",
+            format_error("System has significant issues that need attention")
+        );
         return Err(anyhow!(
             "Health check failed with {:.0}% success rate",
             success_rate
         ));
-    };
+    }
 
-    // Return structured data instead of printing (Task 131)
-    Ok(DisplayData::success(final_message))
+    Ok(())
 }
 
 /// Check if configuration file exists and is readable
@@ -443,7 +486,7 @@ mod tests {
     #[tokio::test]
     async fn test_performance_diagnostics() {
         let config = Config::default();
-        let result = run_performance_diagnostics(&config).await;
+        let _result = run_performance_diagnostics(&config).await;
         // This test might fail if config loading fails, but that's expected
         // in a test environment without proper setup
     }

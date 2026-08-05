@@ -131,6 +131,23 @@ pub enum SlashCommand {
 
     /// `/init` — initialize a new Grok project with recommended structure.
     Init,
+
+    /// `/trace [last|list|<id>|json]` — show the latest (or specified) workflow trace.
+    /// Uses the rich TUI viewer when possible, otherwise falls back to pretty print.
+    /// `/trace list` — list saved traces.
+    /// `/trace last` or `/trace` — show most recent trace in TUI.
+    /// `/trace <timestamp>` — load specific trace by filename prefix (e.g. 20250405-143022).
+    /// `/trace json` — dump raw JSON of the latest trace.
+    Trace { subcommand: String },
+
+    /// `/okf [query]` — Search the loaded OKF Knowledge OS bundles (structured knowledge).
+    /// `/okf` with no argument shows a summary of loaded knowledge.
+    /// `/okf <query>` performs a semantic search across all bundles (e.g. "orders table", "weekly active users").
+    Okf { query: String },
+
+    /// `/compress` — Force an immediate context compression + archive pass (for testing).
+    /// This bypasses the normal threshold and compresses the oldest messages right now.
+    Compress,
 }
 
 // ---------------------------------------------------------------------------
@@ -241,6 +258,19 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
 
         "/init" => Some(SlashCommand::Init),
 
+        "/trace" => {
+            let sub = if args.is_empty() {
+                "last".to_string()
+            } else {
+                args
+            };
+            Some(SlashCommand::Trace { subcommand: sub })
+        }
+
+        "/okf" => Some(SlashCommand::Okf { query: args }),
+
+        "/compress" | "/force_compress" => Some(SlashCommand::Compress),
+
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -298,7 +328,7 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         )),
         AvailableCommand::new("help", "Show all available slash commands and their usage"),
         AvailableCommand::new("model", "Switch to a different Grok model for this session")
-            .input(input("model name (e.g. grok-3, grok-4.3, grok-3-mini)")),
+            .input(input("model name (e.g. grok-4, grok-4.3, grok-3, grok-3-mini)")),
         AvailableCommand::new("plan", "Create a detailed step-by-step implementation plan")
             .input(input("description of what to plan")),
         AvailableCommand::new(
@@ -338,6 +368,21 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         AvailableCommand::new("image", "Analyze an image (local file or URL)")
             .input(input("path or URL [optional prompt]")),
         AvailableCommand::new("init", "Initialize a new Grok project with recommended structure"),
+        AvailableCommand::new(
+            "trace",
+            "View workflow traces (UserPrompt → LLM code → validation → decision) using the rich TUI viewer. Supports list, last, specific ID, or raw JSON."
+        )
+        .input(input("last | list | <id-or-timestamp> | json — omit for last trace")),
+        AvailableCommand::new(
+            "okf",
+            "Search or list concepts from the loaded OKF Knowledge OS bundles (structured knowledge)"
+        )
+        .input(input("optional search query — omit to list loaded bundles and top concepts")),
+
+        AvailableCommand::new(
+            "compress",
+            "Force an immediate context compression + archive (great for testing the compressor)"
+        ),
     ];
 
     // Ensure alphabetical order by command name
@@ -381,7 +426,10 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::RuleList
         | SlashCommand::RuleClear
         | SlashCommand::Image { .. }
-        | SlashCommand::Init => None,
+        | SlashCommand::Init
+        | SlashCommand::Trace { .. }
+        | SlashCommand::Okf { .. }
+        | SlashCommand::Compress => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -618,6 +666,18 @@ pub enum BuiltinResult {
     ListRules,
     /// Clear all session-only rules.
     ClearRules,
+
+    /// Internal result for /trace command handling.
+    /// Carries the subcommand string (last, list, <id>, json, etc.).
+    ShowTrace(String),
+
+    /// Show or search OKF Knowledge OS.
+    /// `query` empty → summary of loaded bundles.
+    /// `query` non-empty → search results.
+    ShowOkf(String),
+
+    /// Force an immediate context compression (for testing `/compress`).
+    ForceCompress,
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -667,6 +727,9 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
                 ))),
             }
         }
+        SlashCommand::Trace { subcommand } => Some(BuiltinResult::ShowTrace(subcommand.clone())),
+        SlashCommand::Okf { query } => Some(BuiltinResult::ShowOkf(query.clone())),
+        SlashCommand::Compress => Some(BuiltinResult::ForceCompress),
         _ => None, // AI-assisted command
     }
 }
@@ -828,16 +891,20 @@ pub fn format_help_text() -> String {
 
 /// Format the model list shown when `/model` is called with no argument.
 pub fn format_model_list() -> String {
+    // Keep this list reasonably up to date with current xAI offerings.
+    // Newer / flagship models should appear first.
     let models = [
-        ("grok-4.3", "Latest flagship (1M context) — recommended default"),
-        ("grok-4.20-0309-reasoning", "Reasoning variant (best for deep thinking)"),
-        ("grok-4.20-0309-non-reasoning", "Fast non-reasoning variant"),
-        ("grok-4.20-multi-agent-0309", "Multi-agent orchestration variant"),
-        ("grok-coder", "Specialized coding model (fast iteration & edits)"),
-        ("grok-3", "Previous generation (stable)"),
-        ("grok-3-mini", "Lightweight & fast"),
+        ("grok-4", "Latest flagship Grok 4 (recommended)"),
+        ("grok-4-latest", "Grok 4 latest alias"),
+        ("grok-4.3", "Grok 4.3 (1M context)"),
+        ("grok-3", "Grok 3"),
+        ("grok-3-mini", "Grok 3 mini (fast & lightweight)"),
+        (
+            "grok-coder",
+            "Specialized coding model (fast iteration & edits)",
+        ),
         ("grok-2-vision-1212", "Vision-enabled model"),
-        ("grok-build-0.1", "Experimental / build-focused"),
+        ("grok-2", "Grok 2 (previous generation)"),
     ];
 
     let mut lines: Vec<String> = vec![
@@ -852,7 +919,13 @@ pub fn format_model_list() -> String {
     }
 
     lines.push(String::new());
-    lines.push("Example: `/model grok-4.3` — switches the current session to Grok 4.3.".to_string());
+    lines.push(
+        "Example: `/model grok-4` — switches the current session to the latest Grok 4.".to_string(),
+    );
+    lines.push(
+        "Tip: You can also pass a specific variant (e.g. grok-4.3 for 1M context, grok-3-mini)."
+            .to_string(),
+    );
 
     lines.join("\n")
 }
@@ -922,10 +995,10 @@ pub fn format_diagnostics_text() -> String {
 /// `session_id` is `None` when called from `handle_builtin` (the ACP caller
 /// will supply it); pass `Some(id)` to load live data for a specific session.
 pub fn format_archives_text(session_id: Option<&str>) -> String {
-    let sid = match session_id {
-        Some(s) => s.to_string(),
-        None => return "📦 **Context Archives**\n\n_(session ID required to list archives — use `/archives` from within a session)_".to_string(),
+    let Some(sid) = session_id else {
+        return "📦 **Context Archives**\n\n_(session ID required to list archives — use `/archives` from within a session)_".to_string();
     };
+    let sid = sid.to_string();
 
     match crate::memory::context_archive::ContextArchive::for_session(&sid) {
         Err(e) => format!("❌ Could not open archive: {}", e),
@@ -1407,10 +1480,93 @@ mod tests {
         ));
     }
 
+    // ── /okf slash command (Knowledge OS) ─────────────────────────────────────
+
+    #[test]
+    fn test_parse_okf_empty() {
+        assert_eq!(
+            parse_slash_command("/okf"),
+            Some(SlashCommand::Okf {
+                query: String::new()
+            })
+        );
+    }
+
+    #[test]
+    fn test_parse_okf_with_query() {
+        assert_eq!(
+            parse_slash_command("/okf weekly active users"),
+            Some(SlashCommand::Okf {
+                query: "weekly active users".to_string()
+            })
+        );
+        assert_eq!(
+            parse_slash_command("/okf orders table"),
+            Some(SlashCommand::Okf {
+                query: "orders table".to_string()
+            })
+        );
+    }
+
+    #[test]
+    fn test_okf_is_builtin() {
+        let result = handle_builtin(&SlashCommand::Okf {
+            query: String::new(),
+        });
+        assert!(matches!(result, Some(BuiltinResult::ShowOkf(_))));
+
+        let result2 = handle_builtin(&SlashCommand::Okf {
+            query: "orders".to_string(),
+        });
+        match result2 {
+            Some(BuiltinResult::ShowOkf(q)) => assert_eq!(q, "orders"),
+            other => panic!("expected ShowOkf, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn test_okf_no_ai_prompt() {
+        // /okf must be handled as builtin, never sent to the model via command_to_prompt
+        assert!(
+            command_to_prompt(&SlashCommand::Okf {
+                query: String::new()
+            })
+            .is_none()
+        );
+        assert!(
+            command_to_prompt(&SlashCommand::Okf {
+                query: "foo".to_string()
+            })
+            .is_none()
+        );
+    }
+
     #[test]
     fn test_parse_think_unknown_arg_returns_none() {
         // Unknown argument — fall through to AI
         assert!(parse_slash_command("/think ultra").is_none());
+
+        // --- /trace (Task 235) ---
+        assert!(matches!(
+            parse_slash_command("/trace"),
+            Some(SlashCommand::Trace { subcommand }) if subcommand == "last"
+        ));
+        assert!(matches!(
+            parse_slash_command("/trace last"),
+            Some(SlashCommand::Trace { subcommand }) if subcommand == "last"
+        ));
+        assert!(matches!(
+            parse_slash_command("/trace list"),
+            Some(SlashCommand::Trace { subcommand }) if subcommand == "list"
+        ));
+        assert!(matches!(
+            parse_slash_command("/trace json"),
+            Some(SlashCommand::Trace { subcommand }) if subcommand == "json"
+        ));
+        assert!(matches!(
+            parse_slash_command("/trace 20250405-143022"),
+            Some(SlashCommand::Trace { subcommand }) if subcommand == "20250405-143022"
+        ));
     }
 
     #[test]

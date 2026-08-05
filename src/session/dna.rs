@@ -30,31 +30,29 @@ impl Default for SessionDna {
 impl SessionDna {
     /// Load Session DNA.
     ///
-    /// Search order:
-    /// 1. `./session_dna.json`  (project root – checked first so per-project DNA wins)
-    /// 2. `~/.grok/session_dna.json`
+    /// Search order (SEC-5: VCS-safe location):
+    /// 1. `./.grok/session_dna.json`  (project-local under .grok/ – wins for per-project DNA)
+    ///    NOTE: bare `session_dna.json` directly in project root is deliberately ignored
+    ///    to prevent accidental commits to VCS.
+    /// 2. `~/.grok-cli/session_dna.json` (global user defaults, migrated location)
     /// 3. Built-in defaults
     pub fn load() -> Self {
-        // 1. Project-local file (highest priority)
-        let local = std::path::Path::new("session_dna.json");
-        if local.exists() {
-            if let Ok(content) = fs::read_to_string(local) {
-                if let Ok(dna) = serde_json::from_str(&content) {
+        // 1. Project-local under .grok (highest priority, VCS-safe)
+        let project_grok = std::path::Path::new(".grok").join("session_dna.json");
+        if project_grok.exists()
+            && let Ok(content) = fs::read_to_string(&project_grok)
+                && let Ok(dna) = serde_json::from_str(&content) {
                     return dna;
                 }
-            }
-        }
 
         // 2. Global user file
         if let Some(home) = dirs::home_dir() {
-            let path = home.join(".grok").join("session_dna.json");
-            if path.exists() {
-                if let Ok(content) = fs::read_to_string(&path) {
-                    if let Ok(dna) = serde_json::from_str(&content) {
+            let path = home.join(".grok-cli").join("session_dna.json");
+            if path.exists()
+                && let Ok(content) = fs::read_to_string(&path)
+                    && let Ok(dna) = serde_json::from_str(&content) {
                         return dna;
                     }
-                }
-            }
         }
 
         tracing::warn!("No session_dna.json found – using defaults");
@@ -136,9 +134,13 @@ impl SessionDna {
     /// Returns a weight multiplier for skill scoring (Skill Arbitration 2.0).
     pub fn get_skill_weight(&self, skill_name: &str) -> f32 {
         let base = 1.0;
-        let style_boost = if self.coding_style.to_lowercase().contains("concise") && skill_name.to_lowercase().contains("refactor") {
+        let style_boost = if self.coding_style.to_lowercase().contains("concise")
+            && skill_name.to_lowercase().contains("refactor")
+        {
             1.3
-        } else { 1.0 };
+        } else {
+            1.0
+        };
 
         let risk_boost = match self.risk_tolerance.as_str() {
             "high" if skill_name.to_lowercase().contains("shell") => 1.4,
@@ -160,7 +162,11 @@ impl SessionDna {
 
     /// Returns the current operating mode inferred from DNA.
     pub fn get_mode(&self) -> &'static str {
-        if self.tool_preferences.iter().any(|t| t.contains("shell") || t.contains("command")) {
+        if self
+            .tool_preferences
+            .iter()
+            .any(|t| t.contains("shell") || t.contains("command"))
+        {
             return "shell";
         }
         if self.verbosity == "high" || self.tone.contains("research") {
@@ -184,9 +190,10 @@ impl SessionDna {
     }
 
     /// Suggests a preferred model based on DNA (for future model routing).
+    /// Leads with grok-4 (current flagship); 4.3 variant only when very large context is desired.
     pub fn get_model_preference(&self) -> Option<&'static str> {
         match self.verbosity.as_str() {
-            "high" => Some("grok-4.3"),
+            "high" => Some("grok-4"),
             "low" => Some("grok-3-mini"),
             _ => None,
         }

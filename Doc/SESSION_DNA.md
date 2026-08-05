@@ -13,9 +13,9 @@ This is especially useful for:
 - Team projects where everyone wants the same AI behavior
 - Switching between different modes (e.g., "research mode" vs "production mode")
 
-## The `session_dna.json` File
+## The `session_dna.json` File (SEC-5: VCS-safe location)
 
-Create a file called `session_dna.json` in your project root:
+Create the file **inside** the `.grok/` directory (VCS-safe location):
 
 ```json
 {
@@ -26,6 +26,10 @@ Create a file called `session_dna.json` in your project root:
   "tool_preferences": ["prefer_rust", "avoid_shell"]
 }
 ```
+
+**Path:** `.grok/session_dna.json` (inside your project)
+
+> **Note:** A bare `session_dna.json` directly in the project root is **deliberately ignored** to prevent accidental commits of personal preferences to version control. Always use the `.grok/` subdirectory.
 
 ### Available Fields
 
@@ -39,10 +43,16 @@ Create a file called `session_dna.json` in your project root:
 
 ## How It Works
 
-1. When a session starts, Grok CLI looks for `session_dna.json` in the current directory.
-2. If found, it is parsed and stored.
-3. The values are injected into the system prompt at the beginning of the conversation.
-4. If the file is missing or invalid, sensible defaults are used.
+1. When a session starts, Grok CLI looks for `.grok/session_dna.json` (project-local under `.grok/`).
+2. Falls back to `~/.grok-cli/session_dna.json` (global user defaults).
+3. If found, it is parsed and stored.
+4. The values are injected into the system prompt at the beginning of the conversation.
+5. If the file is missing or invalid, sensible defaults are used.
+
+**Search order (SEC-5):**
+- `./.grok/session_dna.json`
+- `~/.grok-cli/session_dna.json`
+- Built-in defaults
 
 Example of what gets injected:
 
@@ -56,8 +66,9 @@ Coding style: functional
 ## Loading Behavior
 
 - The file is loaded **once per session** at startup.
-- Changes to `session_dna.json` require restarting the session to take effect.
-- You can have different `session_dna.json` files per project.
+- Changes to `.grok/session_dna.json` require restarting the session to take effect.
+- You can have different `.grok/session_dna.json` files per project (VCS-safe).
+- Bare `session_dna.json` in the project root is ignored.
 
 ## Related Features
 

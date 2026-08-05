@@ -25,7 +25,7 @@ fn main() {
 
     for (filename, content) in markmaps {
         let path = Path::new(out_dir).join(filename);
-        fs::write(&path, content).expect(&format!("Failed to write {}", filename));
+        fs::write(&path, content).unwrap_or_else(|_| panic!("Failed to write {filename}"));
         println!("Generated: {}", path.display());
     }
 
@@ -41,7 +41,7 @@ fn skeleton(title: &str, sections: Vec<(&str, Vec<&str>)>) -> String {
         for item in items {
             out.push_str(&format!("- {}\n", item));
         }
-        out.push_str("\n");
+        out.push('\n');
     }
 
     out.push_str("## Dependencies\n- (to be filled)\n\n");
@@ -50,114 +50,208 @@ fn skeleton(title: &str, sections: Vec<(&str, Vec<&str>)>) -> String {
 }
 
 fn overview_content() -> String {
-    skeleton("Overview", vec![
-        ("Entry Point", vec!["`main.rs`", "`lib.rs`"]),
-        ("High-Level Architecture", vec!["CLI", "Agent", "RAG", "Tools", "Memory"]),
-    ])
+    skeleton(
+        "Overview",
+        vec![
+            ("Entry Point", vec!["`main.rs`", "`lib.rs`"]),
+            (
+                "High-Level Architecture",
+                vec!["CLI", "Agent", "RAG", "Tools", "Memory"],
+            ),
+        ],
+    )
 }
 
 fn cli_content() -> String {
-    skeleton("CLI", vec![
-        ("App Entry", vec!["`cli/app.rs`", "`cli/mod.rs`"]),
-        ("Commands", vec![
-            "chat, code, config, tools, skills, setup...",
-            "`cli/commands/*.rs`"
-        ]),
-        ("Interactive UI", vec!["`display/`"]),
-    ])
+    skeleton(
+        "CLI",
+        vec![
+            ("App Entry", vec!["`cli/app.rs`", "`cli/mod.rs`"]),
+            (
+                "Commands",
+                vec![
+                    "chat, code, config, tools, skills, setup...",
+                    "`cli/commands/*.rs`",
+                ],
+            ),
+            ("Interactive UI", vec!["`display/`"]),
+        ],
+    )
 }
 
 fn agent_content() -> String {
-    skeleton("Agent System", vec![
-        ("Core", vec!["`agent/manager.rs`", "`agent/mod.rs`"]),
-        ("Planner & Router", vec!["`agent/planner.rs`", "`agent/router.rs`"]),
-        ("Explorer", vec!["`agent/explorer/`"]),
-        ("Prompts", vec!["`agent/prompts/`"]),
-    ])
+    skeleton(
+        "Agent System",
+        vec![
+            ("Core", vec!["`agent/manager.rs`", "`agent/mod.rs`"]),
+            (
+                "Planner & Router",
+                vec!["`agent/planner.rs`", "`agent/router.rs`"],
+            ),
+            ("Explorer", vec!["`agent/explorer/`"]),
+            ("Prompts", vec!["`agent/prompts/`"]),
+        ],
+    )
 }
 
 fn rag_content() -> String {
-    skeleton("RAG System", vec![
-        ("Core", vec!["`rag/mod.rs`", "`rag/api.rs`"]),
-        ("Graph", vec!["`rag/graph/`"]),
-        ("Retrieval", vec!["`rag/retrieval/`"]),
-        ("Parser", vec!["`rag/parser/`"]),
-    ])
+    skeleton(
+        "RAG System",
+        vec![
+            ("Core", vec!["`rag/mod.rs`", "`rag/api.rs`"]),
+            ("Graph", vec!["`rag/graph/`"]),
+            ("Retrieval", vec!["`rag/retrieval/`"]),
+            ("Parser", vec!["`rag/parser/`"]),
+        ],
+    )
 }
 
 fn memory_content() -> String {
-    skeleton("Memory System", vec![
-        ("Layers", vec![
-            "`memory/short_term.rs`",
-            "`memory/long_term.rs`",
-            "`memory/working.rs`",
-            "`memory/episodic.rs`"
-        ]),
-        ("Compression & Archive", vec!["`memory/context_compressor.rs`", "`memory/context_archive.rs`"]),
-    ])
+    skeleton(
+        "Memory System",
+        vec![
+            (
+                "Layers",
+                vec![
+                    "`memory/short_term.rs`",
+                    "`memory/long_term.rs`",
+                    "`memory/working.rs`",
+                    "`memory/episodic.rs`",
+                ],
+            ),
+            (
+                "Compression & Archive",
+                vec![
+                    "`memory/context_compressor.rs`",
+                    "`memory/context_archive.rs`",
+                ],
+            ),
+        ],
+    )
 }
 
 fn tools_content() -> String {
-    skeleton("Tools", vec![
-        ("Registry & Dispatch", vec!["`tools/registry.rs`", "`tools/mod.rs`"]),
-        ("Tool Categories", vec![
-            "file, shell, web, mcp, agent, memory, skills...",
-            "`tools/*_tools.rs`"
-        ]),
-        ("Sandbox & Arbitration", vec!["`tools/sandbox.rs`", "`tools/tool_arbitration.rs`"]),
-    ])
+    skeleton(
+        "Tools",
+        vec![
+            (
+                "Registry & Dispatch",
+                vec!["`tools/registry.rs`", "`tools/mod.rs`"],
+            ),
+            (
+                "Tool Categories",
+                vec![
+                    "file, shell, web, mcp, agent, memory, skills...",
+                    "`tools/*_tools.rs`",
+                ],
+            ),
+            (
+                "Sandbox & Arbitration",
+                vec!["`tools/sandbox.rs`", "`tools/tool_arbitration.rs`"],
+            ),
+        ],
+    )
 }
 
 fn engine_content() -> String {
-    skeleton("Execution Engine", vec![
-        ("Core Loop", vec!["`engine/mod.rs`", "`engine/execution.rs`"]),
-        ("Beliefs & Arbitration", vec!["`engine/beliefs.rs`", "`engine/arbitration.rs`"]),
-        ("Planner & Correction", vec!["`engine/planner.rs`", "`engine/correction.rs`"]),
-    ])
+    skeleton(
+        "Execution Engine",
+        vec![
+            (
+                "Core Loop",
+                vec!["`engine/mod.rs`", "`engine/execution.rs`"],
+            ),
+            (
+                "Beliefs & Arbitration",
+                vec!["`engine/beliefs.rs`", "`engine/arbitration.rs`"],
+            ),
+            (
+                "Planner & Correction",
+                vec!["`engine/planner.rs`", "`engine/correction.rs`"],
+            ),
+        ],
+    )
 }
 
 fn router_content() -> String {
-    skeleton("Router", vec![
-        ("App Router", vec!["`router/app_router.rs`"]),
-        ("Backends", vec!["`router/backends/`"]),
-        ("CPU & Cost Routing", vec!["`router/cpu_router.rs`", "`optimizer/cost_router.rs`"]),
-    ])
+    skeleton(
+        "Router",
+        vec![
+            ("App Router", vec!["`router/app_router.rs`"]),
+            ("Backends", vec!["`router/backends/`"]),
+            (
+                "CPU & Cost Routing",
+                vec!["`router/cpu_router.rs`", "`optimizer/cost_router.rs`"],
+            ),
+        ],
+    )
 }
 
 fn config_context_content() -> String {
-    skeleton("Config & Context", vec![
-        ("Config", vec!["`config/mod.rs`"]),
-        ("Context Engine", vec![
-            "`context/engine.rs`",
-            "`context/session_manager.rs`",
-            "`context/prompt_builder.rs`"
-        ]),
-    ])
+    skeleton(
+        "Config & Context",
+        vec![
+            ("Config", vec!["`config/mod.rs`"]),
+            (
+                "Context Engine",
+                vec![
+                    "`context/engine.rs`",
+                    "`context/session_manager.rs`",
+                    "`context/prompt_builder.rs`",
+                ],
+            ),
+        ],
+    )
 }
 
 fn mcp_acp_content() -> String {
-    skeleton("MCP & ACP", vec![
-        ("MCP", vec!["`mcp/client.rs`", "`mcp/protocol.rs`"]),
-        ("ACP", vec![
-            "`acp/mod.rs`",
-            "`acp/protocol.rs`",
-            "`acp/tools.rs`",
-            "`acp/elicitation.rs`"
-        ]),
-    ])
+    skeleton(
+        "MCP & ACP",
+        vec![
+            ("MCP", vec!["`mcp/client.rs`", "`mcp/protocol.rs`"]),
+            (
+                "ACP",
+                vec![
+                    "`acp/mod.rs`",
+                    "`acp/protocol.rs`",
+                    "`acp/tools.rs`",
+                    "`acp/elicitation.rs`",
+                ],
+            ),
+        ],
+    )
 }
 
 fn safety_security_content() -> String {
-    skeleton("Safety & Security", vec![
-        ("Safety", vec!["`safety/mod.rs`", "`safety/diff_validator.rs`", "`safety/intent_validator.rs`"]),
-        ("Security", vec!["`security/audit.rs`", "`security/mod.rs`"]),
-    ])
+    skeleton(
+        "Safety & Security",
+        vec![
+            (
+                "Safety",
+                vec![
+                    "`safety/mod.rs`",
+                    "`safety/diff_validator.rs`",
+                    "`safety/intent_validator.rs`",
+                ],
+            ),
+            ("Security", vec!["`security/audit.rs`", "`security/mod.rs`"]),
+        ],
+    )
 }
 
 fn utils_display_content() -> String {
-    skeleton("Utils & Display", vec![
-        ("Utils", vec!["`utils/` (auth, client, history, telemetry...)"]),
-        ("Display", vec!["`display/` (banner, terminal, interactive components)"]),
-        ("Terminal", vec!["`terminal/`"]),
-    ])
+    skeleton(
+        "Utils & Display",
+        vec![
+            (
+                "Utils",
+                vec!["`utils/` (auth, client, history, telemetry...)"],
+            ),
+            (
+                "Display",
+                vec!["`display/` (banner, terminal, interactive components)"],
+            ),
+            ("Terminal", vec!["`terminal/`"]),
+        ],
+    )
 }

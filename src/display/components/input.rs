@@ -4,13 +4,13 @@ use crossterm::event::{Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers, rea
 use crossterm::style::{Color, Print, ResetColor, SetBackgroundColor, SetForegroundColor};
 use crossterm::terminal::{self, Clear, ClearType};
 use crossterm::{ExecutableCommand, QueueableCommand};
-use once_cell::sync::Lazy;
 use regex::Regex;
 use std::io::{Write, stdout};
+use std::sync::LazyLock;
 
 /// ANSI escape sequence pattern — compiled once, reused on every render tick.
-static RE_ANSI: Lazy<Regex> =
-    Lazy::new(|| Regex::new(r"\x1b\[[0-9;]*m").expect("BUG: invalid static RE_ANSI pattern"));
+static RE_ANSI: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*m").expect("BUG: invalid static RE_ANSI pattern"));
 
 pub struct Suggestion {
     pub text: String,
@@ -245,77 +245,74 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
             kind,
             ..
         }) = read()?
-            && kind == KeyEventKind::Press
-        {
-            match code {
-                KeyCode::Enter => {
-                    if let Some(idx) = suggestion_index
-                        && !filtered_suggestions.is_empty()
-                    {
-                        buffer = filtered_suggestions[idx].text.clone();
-                        // Select and break
-                        break;
-                    }
-                    if !buffer.is_empty() {
-                        break;
-                    }
-                }
-                KeyCode::Char(c) => {
-                    if modifiers == KeyModifiers::CONTROL && c == 'c' {
-                        buffer.clear();
-                        break;
-                    }
-                    if cursor_pos < buffer.len() {
-                        buffer.insert(cursor_pos, c);
-                    } else {
-                        buffer.push(c);
-                    }
-                    cursor_pos += 1;
-                }
-                KeyCode::Backspace if cursor_pos > 0 => {
-                    buffer.remove(cursor_pos - 1);
-                    cursor_pos -= 1;
-                }
-                KeyCode::Left => {
-                    cursor_pos = cursor_pos.saturating_sub(1);
-                }
-                KeyCode::Right if cursor_pos < buffer.len() => {
-                    cursor_pos += 1;
-                }
-                KeyCode::Up => {
-                    if let Some(idx) = suggestion_index {
-                        if idx > 0 {
-                            suggestion_index = Some(idx - 1);
+            && kind == KeyEventKind::Press {
+                match code {
+                    KeyCode::Enter => {
+                        if let Some(idx) = suggestion_index
+                            && !filtered_suggestions.is_empty() {
+                                buffer = filtered_suggestions[idx].text.clone();
+                                // Select and break
+                                break;
+                            }
+                        if !buffer.is_empty() {
+                            break;
                         }
-                    } else if !filtered_suggestions.is_empty() {
-                        // If no selection but list exists, select last?
-                        suggestion_index = Some(filtered_suggestions.len() - 1);
                     }
-                }
-                KeyCode::Down => {
-                    if let Some(idx) = suggestion_index {
-                        if idx < filtered_suggestions.len().saturating_sub(1) {
-                            suggestion_index = Some(idx + 1);
+                    KeyCode::Char(c) => {
+                        if modifiers == KeyModifiers::CONTROL && c == 'c' {
+                            buffer.clear();
+                            break;
                         }
-                    } else if !filtered_suggestions.is_empty() {
-                        suggestion_index = Some(0);
+                        if cursor_pos < buffer.len() {
+                            buffer.insert(cursor_pos, c);
+                        } else {
+                            buffer.push(c);
+                        }
+                        cursor_pos += 1;
                     }
-                }
-                KeyCode::Tab => {
-                    if let Some(idx) = suggestion_index
-                        && !filtered_suggestions.is_empty()
-                    {
-                        buffer = filtered_suggestions[idx].text.clone();
-                        cursor_pos = buffer.len();
-                        // Don't break, just fill
+                    KeyCode::Backspace if cursor_pos > 0 => {
+                        buffer.remove(cursor_pos - 1);
+                        cursor_pos -= 1;
                     }
+                    KeyCode::Left => {
+                        cursor_pos = cursor_pos.saturating_sub(1);
+                    }
+                    KeyCode::Right if cursor_pos < buffer.len() => {
+                        cursor_pos += 1;
+                    }
+                    KeyCode::Up => {
+                        if let Some(idx) = suggestion_index {
+                            if idx > 0 {
+                                suggestion_index = Some(idx - 1);
+                            }
+                        } else if !filtered_suggestions.is_empty() {
+                            // If no selection but list exists, select last?
+                            suggestion_index = Some(filtered_suggestions.len() - 1);
+                        }
+                    }
+                    KeyCode::Down => {
+                        if let Some(idx) = suggestion_index {
+                            if idx < filtered_suggestions.len().saturating_sub(1) {
+                                suggestion_index = Some(idx + 1);
+                            }
+                        } else if !filtered_suggestions.is_empty() {
+                            suggestion_index = Some(0);
+                        }
+                    }
+                    KeyCode::Tab => {
+                        if let Some(idx) = suggestion_index
+                            && !filtered_suggestions.is_empty() {
+                                buffer = filtered_suggestions[idx].text.clone();
+                                cursor_pos = buffer.len();
+                                // Don't break, just fill
+                            }
+                    }
+                    KeyCode::Esc => {
+                        suggestion_index = None;
+                    }
+                    _ => {}
                 }
-                KeyCode::Esc => {
-                    suggestion_index = None;
-                }
-                _ => {}
             }
-        }
     }
 
     // Cleanup

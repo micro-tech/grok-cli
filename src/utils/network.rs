@@ -143,27 +143,6 @@ pub fn analyze_network_error(error: &Error) -> NetworkDropInfo {
     }
 }
 
-/// Check if we're likely on a Starlink connection
-pub async fn detect_starlink_connection() -> bool {
-    // Try to resolve Starlink-specific domains or check for satellite-specific patterns
-    // This is a heuristic approach
-
-    // Check if we can resolve starlink.com (indicates possible Starlink connection)
-    if let Ok(addrs) = tokio::net::lookup_host("starlink.com:80").await
-        && addrs.count() > 0
-    {
-        info!("Starlink domain resolution successful - possible Starlink connection");
-        return true;
-    }
-
-    // Additional heuristics could be added here:
-    // - Check for specific IP ranges
-    // - Analyze latency patterns
-    // - Check for satellite-specific network characteristics
-
-    false
-}
-
 /// Perform a network connectivity test
 pub async fn test_connectivity(timeout: Duration) -> Result<Duration, Error> {
     let start = Instant::now();
@@ -192,15 +171,14 @@ pub async fn test_connectivity(timeout: Duration) -> Result<Duration, Error> {
     Err(anyhow!("All connectivity tests failed"))
 }
 
-/// Calculate optimal retry delay based on network conditions
-pub fn calculate_retry_delay(attempt: u32, is_starlink: bool) -> Duration {
-    let base_delay = if is_starlink {
-        // Longer delays for satellite connections
-        Duration::from_secs(2_u64.pow(attempt.min(4)))
-    } else {
-        // Standard exponential backoff
-        Duration::from_secs(2_u64.pow(attempt.min(3)))
-    };
+/// Calculate optimal retry delay based on network conditions.
+///
+/// This uses a satellite-friendly exponential backoff (longer tail than
+/// standard clients) because Starlink and similar connections can experience
+/// 20-60s handovers. Callers should use this for any transient network error.
+pub fn calculate_retry_delay(attempt: u32) -> Duration {
+    // Satellite-friendly exponential backoff (longer tail than usual)
+    let base_delay = Duration::from_secs(2_u64.pow(attempt.min(4)));
 
     // Add jitter to prevent thundering herd
     let jitter = Duration::from_millis(rand::random::<u64>() % 1000);
@@ -315,16 +293,13 @@ mod tests {
 
     #[test]
     fn test_calculate_retry_delay() {
-        let delay1 = calculate_retry_delay(1, false);
-        let delay2 = calculate_retry_delay(2, false);
+        let delay1 = calculate_retry_delay(1);
+        let delay2 = calculate_retry_delay(2);
         assert!(delay2 >= delay1);
 
-        let starlink_delay = calculate_retry_delay(1, true);
-        let regular_delay = calculate_retry_delay(1, false);
-        // Starlink delays should generally be longer (though jitter may affect this)
-        // We just test that both are reasonable
-        assert!(starlink_delay >= Duration::from_secs(1));
-        assert!(regular_delay >= Duration::from_secs(1));
+        let delay = calculate_retry_delay(1);
+        // Satellite-friendly backoff should be reasonable (>= 1s base + jitter)
+        assert!(delay >= Duration::from_secs(1));
     }
 
     #[test]

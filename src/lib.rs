@@ -58,6 +58,7 @@ pub mod task_graph;
 pub mod tools;
 pub mod utils;
 pub mod visualizer;
+pub mod workflow;
 
 #[cfg(feature = "tgs-rag")]
 pub mod rag;
@@ -308,7 +309,10 @@ pub enum SandboxAction {
     List,
 }
 pub use config::{Config, ConfigSource, RateLimitConfig};
-#[allow(deprecated)]
+#[expect(
+    deprecated,
+    reason = "deprecated I/O functions re-exported for backward compatibility until binary-crate migration is complete"
+)]
 pub use display::{
     ascii_art::print_grok_logo,
     banner::{print_banner, print_welcome_banner},

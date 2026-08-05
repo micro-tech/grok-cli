@@ -57,10 +57,7 @@ mod tests {
     #[test]
     fn test_classification() {
         let router = CostRouter::default();
-        assert_eq!(
-            router.classify_request("short", false),
-            CostProfile::Cheap
-        );
+        assert_eq!(router.classify_request("short", false), CostProfile::Cheap);
         assert_eq!(
             router.classify_request(&"x".repeat(5000), true),
             CostProfile::HighPrecision

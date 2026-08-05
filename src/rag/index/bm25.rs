@@ -29,7 +29,10 @@ impl Bm25Index {
             let t = token.to_lowercase();
             let count = freqs.entry(t.clone()).or_insert(0);
             *count += 1;
-            self.index.entry(t).or_default().insert(doc_id.clone(), *count);
+            self.index
+                .entry(t)
+                .or_default()
+                .insert(doc_id.clone(), *count);
         }
 
         // update average doc length
@@ -43,15 +46,15 @@ impl Bm25Index {
         let mut score = 0.0;
 
         for term in query.split_whitespace().map(|s| s.to_lowercase()) {
-            if let Some(postings) = self.index.get(&term) {
-                if let Some(&tf) = postings.get(doc_id) {
-                    let idf = ((self.total_docs as f32 - postings.len() as f32 + 0.5)
-                        / (postings.len() as f32 + 0.5))
-                        .ln();
-                    let len = *self.doc_lengths.get(doc_id).unwrap_or(&1) as f32;
-                    let norm = 1.0 - b + b * (len / self.avg_doc_len);
-                    score += idf * (tf as f32 * (k1 + 1.0)) / (tf as f32 + k1 * norm);
-                }
+            if let Some(postings) = self.index.get(&term)
+                && let Some(&tf) = postings.get(doc_id)
+            {
+                let idf = ((self.total_docs as f32 - postings.len() as f32 + 0.5)
+                    / (postings.len() as f32 + 0.5))
+                    .ln();
+                let len = *self.doc_lengths.get(doc_id).unwrap_or(&1) as f32;
+                let norm = 1.0 - b + b * (len / self.avg_doc_len);
+                score += idf * (tf as f32 * (k1 + 1.0)) / (tf as f32 + k1 * norm);
             }
         }
         score

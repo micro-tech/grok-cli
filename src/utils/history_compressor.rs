@@ -124,7 +124,13 @@ mod tests {
         let compressed = compress_history(&history, 3);
         assert_eq!(compressed.messages.len(), 3);
         assert!(compressed.summary.is_some());
-        assert!(compressed.summary.as_ref().unwrap().contains("7 user messages"));
+        assert!(
+            compressed
+                .summary
+                .as_ref()
+                .unwrap()
+                .contains("7 user messages")
+        );
     }
 
     #[test]

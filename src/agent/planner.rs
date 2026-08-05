@@ -108,23 +108,15 @@ impl Planner {
         debug!(intent = %intent, "Planner: Bayesian intent resolved");
 
         // ── Optional Explorer run (Task 161/162) ─────────────────────────────
-        // Fixed: Use proper Bayesian intent names instead of fragile substring checks.
         let mut repo_evidence = None;
-        let should_explore = matches!(
-            intent.as_str(),
-            "intent_edit" | "intent_refactor" | "intent_fix" | "intent_code_change"
-        ) || intent.contains("edit"); // keep a loose fallback for future intent names
-
-        if should_explore {
-            if let Some(client) = client {
-                if let Ok(evidence) =
-                    crate::agent::explorer::run_explorer_mode(client, user_input, model).await
-                {
-                    repo_evidence = Some(serde_json::to_value(evidence)?);
-                    debug!("Planner: Explorer evidence collected");
-                }
+        if (intent.contains("edit") || intent.contains("refactor") || intent.contains("fix"))
+            && let Some(client) = client
+            && let Ok(evidence) =
+                crate::agent::explorer::run_explorer_mode(client, user_input, model).await
+            {
+                repo_evidence = Some(serde_json::to_value(evidence)?);
+                debug!("Planner: Explorer evidence collected");
             }
-        }
 
         // Boot the FSM.
         // ReasoningEngineState::new() takes no args; set goal with builder.

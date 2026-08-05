@@ -287,7 +287,7 @@ pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Res
             Ok(response_text) => return Ok(response_text),
 
             Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
-                let delay = crate::utils::network::calculate_retry_delay(attempt, false);
+                let delay = crate::utils::network::calculate_retry_delay(attempt);
                 tracing::warn!(
                     attempt  = attempt + 1,
                     delay_ms = delay.as_millis() as u64,

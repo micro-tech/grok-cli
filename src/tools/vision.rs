@@ -10,13 +10,7 @@ use std::sync::OnceLock;
 static VISION_MODELS: OnceLock<Vec<&'static str>> = OnceLock::new();
 
 fn get_vision_models() -> &'static [&'static str] {
-    VISION_MODELS.get_or_init(|| {
-        vec![
-            "grok-2-vision-1212",
-            "grok-4-vision",
-            "grok-vision",
-        ]
-    })
+    VISION_MODELS.get_or_init(|| vec!["grok-2-vision-1212", "grok-4-vision", "grok-vision"])
 }
 
 /// Check if the given model name is a vision-capable model.
@@ -27,7 +21,10 @@ pub fn is_vision_model(model: &str) -> bool {
 /// Return a recommended vision model.
 /// Currently returns the first known vision model.
 pub fn recommended_vision_model() -> &'static str {
-    get_vision_models().first().copied().unwrap_or("grok-2-vision-1212")
+    get_vision_models()
+        .first()
+        .copied()
+        .unwrap_or("grok-2-vision-1212")
 }
 
 /// Detect whether we should use a vision model for this turn.

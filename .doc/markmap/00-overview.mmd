@@ -19,103 +19,105 @@
 - Author: John McConnell
 - Repo: github.com/micro-tech/grok-cli
 
+## Recent Architecture Updates
+- **Markmap / Docs Build** — `build.rs` no longer auto-runs markmap generation (was causing repeated "Missing HTML" warnings on every `cargo check`).
+  - Only `cargo:rerun-if-changed=.doc/markmap` remains.
+  - **Manual regeneration required**: `.\scripts\build-markmaps.ps1`
+  - Script prefers global `markmap` / `markmap-cli`, falls back to `npx`.
+- New subsystems: `bayes/`, `rpl/`, `optimizer/`, `hooks/`, `workflow/`, `skills/`, `task_graph/`
+- Expanded agent coordination, multi-agent tools, DNA-driven behavior, and safety layers.
+
 ## Entry Points
-- `src/main.rs` — binary bootstrap
+- `src/main.rs` — binary bootstrap + logging
 - `src/lib.rs` — crate root, all pub mods
 - `src/bin/installer.rs` — Windows installer
 
 ## ACP / Zed Integration (`src/acp/`)
-- `mod.rs` — session lifecycle, JSON-RPC dispatch
+- `mod.rs` — session lifecycle, JSON-RPC dispatch, GrokAdapter
 - `protocol.rs` — ACP message types
 - `security.rs` — path sandboxing
-- `slash_commands.rs` — `/help` `/clear` `/model` `/rule` etc.
-  - `get_available_commands()` — advertises to Zed command picker
-  - `handle_builtin()` — routes to BuiltinResult
-  - `command_to_prompt()` — builds AI prompt
+- `slash_commands.rs` — `/help` `/clear` `/model` `/rule` `/think` `/goal` `/commit` `/bayes` etc.
 - `tools.rs` — routes ACP tool calls → `src/tools/`
+- `mcp_bridge.rs` — MCP server integration
 
 ## Slash Commands
-- `/help` `/clear` `/context` `/tools` `/model`
-- `/think off|low|high` — reasoning effort
-- `/goal <text>` — session goal injection
-- `/rule add|list|remove|clear` — session-only rules
-- `/commit [instructions]` — Conventional Commits from git diff
-- `/bayes show|reset|explain` — Bayesian state
-- `/diagnostics` — system health
-- `/visualize` — pipeline graph
-- `/web` `/explain` `/review` `/plan` `/test` `/fix`
+- Core: `/help` `/clear` `/context` `/tools` `/model`
+- Reasoning: `/think off|low|high`
+- Goal & Rules: `/goal <text>`, `/rule add|list|remove|clear`
+- Meta: `/commit [instructions]`, `/bayes show|reset|explain`, `/diagnostics`, `/visualize`
+- Action: `/web` `/explain` `/review` `/plan` `/test` `/fix`
 
 ## Session Data (`src/acp/mod.rs → SessionData`)
-- `messages` — conversation history
-- `config` — model, temperature, max_tokens
-- `current_goal` — active session goal
-- `session_rules` — temporary rules (SessionRules)
-- `bayes_engine` — Bayesian inference
-- `dna` — SessionDna personality
+- `messages`, `config`, `current_goal`, `session_rules`
+- `bayes_engine`, `dna` (SessionDna)
 
 ## Context (`src/context/`)
-- `mod.rs` — multi-file context discovery
-- `session_rules.rs` — add/remove/list/clear/format_for_prompt
-- `belief_state.rs` — runtime belief tracking
-- `agent_rules.rs` — loads .agents/rules/ files
+- `mod.rs` + `engine.rs` — multi-file context + prompt assembly
+- `session_rules.rs`, `belief_state.rs`, `agent_rules.rs`
+- `prompt_builder.rs`, `prompt_applicator.rs`, `tool_optimizer.rs`
+- Agent rules loaded from global + project `.agents/rules/`
 
 ## Router (`src/router/`)
-- Bayesian routing — belief-weighted model selection
-- Starlink-resilient retries + timeouts
-- Thinking mode passthrough (off/low/high)
+- `app_router.rs` — high-level routing (chain / code / plan)
+- Bayesian routing + belief-weighted model selection
+- Starlink-resilient retries, thinking mode passthrough
 
 ## Tools (`src/tools/`)
-- `registry.rs` — central tool registry
-- File: read_file, write_file, list_directory, find_path, delete_file
-- Shell: run_command
-- Web: web_search
-- Task: task graph tools
-- Agent: spawn_agent, fork_agent, join_agents
+- Central `registry.rs` + `tool_context.rs`
+- File, Shell, Web, Memory, Agent, Task, Planning, Skills, LSP, MCP, System, Discovery
+- Full list in [05-tools](05-tools.html)
+- `tool_arbitration.rs`, sandboxing, policy
 
 ## Memory (`src/memory/`)
-- 4-tier hierarchy: working → episodic → semantic → archival
-- Context compression + archiving
+- 4-tier: working → episodic → semantic → archival
+- `context_compressor.rs`, `context_archive.rs`, skill/tool memory
 
 ## Safety (`src/safety/`)
-- `pre_write_hook.rs` — blocks binary, massive overwrites
-- `dry_run.rs` — diff preview before commit
-- `diff_validator.rs` — rejects full-file rewrites >200 lines
-- `intent_validator.rs` — forces clarification on ambiguous edits
-- `suspicious_write_guard.rs` — final in-tool checks
-- `dna_safety.rs` — raises thresholds on repeated failures
-- `tool_health_monitor.rs` — per-tool success/failure tracking
+- `pre_write_hook.rs`, `diff_validator.rs`, `intent_validator.rs`
+- `suspicious_write_guard.rs`, `dna_safety.rs`, `tool_health_monitor.rs`
+- `dry_run.rs`
+- See [10-safety-security](10-safety-security.html)
 
 ## Session DNA (`src/session/dna.rs`)
 - tone, verbosity, risk_tolerance, coding_style, tool_preferences
-- Injected into system prompt
-- Evolves via tool feedback loop
-- Drives mode: coder / research / shell / creative
+- Evolves via feedback; drives coder/research/shell/creative modes
 
 ## Skills (`src/skills/`)
-- Auto-activation on project context keywords
-- `.agents/skills/` — project-local skills
-- `~/.grok-cli/agents/skills/` — global skills
+- `manager.rs`, `auto_activate.rs`, `rules.rs`
+- Project: `.agents/skills/`, Global: `~/.grok-cli/agents/skills/`
 
 ## Engine (`src/engine/`)
-- Reasoning engine — plan → step → execute
-- `StepAction::DelegateToSubAgent` — multi-agent
-- DNA-driven skill arbitration
+- `execution.rs`, `planner.rs`, `arbitration.rs`, `beliefs.rs`, `correction.rs`
+- `StepAction::DelegateToSubAgent` for multi-agent
 
 ## Multi-Agent (`src/agent/`)
-- `manager.rs` — AgentManager registry
-- `message_bus.rs` — in-memory AgentMessageBus
-- Tools: spawn_agent, fork_agent, join_agents, cancel_agent
+- `manager.rs`, `message_bus.rs`
+- Tools: `spawn_agent`, `fork_agent`, `join_agents`, `cancel_agent`, `send_message`
+
+## Bayesian (`src/bayes/`)
+- `engine.rs`, `belief_graph.rs`, `updater.rs`
+- Used for routing, intent classification, and context weighting
+
+## RPL — Reasoning Prompt Layer (`src/rpl/`)
+- Structured reasoning layer with schema, validation, suppression, logging
+
+## Optimizer (`src/optimizer/`)
+- `cost_router.rs`, `delta_prompt.rs`, `semantic_compression.rs`, token caching
+
+## Hooks & Workflow
+- `hooks/` — loader + extensible hook system
+- `workflow/` — runner, trace, persistence
 
 ## Config (`src/config/`)
-- Priority: env vars → CLI args → .grok/.env → ~/.grok/.env → defaults
+- Priority: env → CLI → .grok/.env → ~/.grok/.env → defaults
 - `config.toml` — model, ACP, logging, tools, sessions
 
 ## Key Directories
-- `Doc/` — user-facing docs, quick references
-- `docs/` — architecture docs
-- `.doc/markmap/` — mind maps (this file)
-- `.agents/rules/` — agent behavior rules
-- `.agents/skills/` — project skills
-- `config/agents/` — shipped agent presets
-- `examples/skills/` — skill examples
-- `scripts/` — build/release scripts
+- `.doc/markmap/` — mind maps (sources)
+- `.agents/rules/` + `.agents/skills/` — agent behavior & skills (global + project)
+- `scripts/` — including `build-markmaps.ps1`
+- `src/tools/`, `src/memory/`, `src/safety/`, `src/skills/`
+
+## Documentation Build
+- Edit `.mmd` files → run `.\scripts\build-markmaps.ps1` to regenerate HTML
+- `build.rs` only declares rerun-if-changed (no more auto-build or warnings)

@@ -276,7 +276,10 @@ async fn search_sessions(query: &str) -> Result<()> {
     }
 
     if matches.is_empty() {
-        println!("{}", format_info(&format!("No matches found for query: '{}'", query)));
+        println!(
+            "{}",
+            format_info(&format!("No matches found for query: '{}'", query))
+        );
         return Ok(());
     }
 
@@ -359,7 +362,10 @@ fn highlight_query(text: &str, query: &str) -> String {
 /// Clear chat history
 async fn clear_history(confirm: bool) -> Result<()> {
     if !confirm {
-        println!("{}", format_error("This will delete all chat session logs!"));
+        println!(
+            "{}",
+            format_error("This will delete all chat session logs!")
+        );
         println!(
             "{} {}",
             "To confirm, run:".bright_white(),
@@ -382,21 +388,27 @@ async fn clear_history(confirm: bool) -> Result<()> {
     for entry in entries.flatten() {
         if entry.path().is_file() {
             if let Err(e) = std::fs::remove_file(entry.path()) {
-                println!("{}", format_error(&format!(
-                    "Failed to delete {}: {}",
-                    entry.path().display(),
-                    e
-                )));
+                println!(
+                    "{}",
+                    format_error(&format!(
+                        "Failed to delete {}: {}",
+                        entry.path().display(),
+                        e
+                    ))
+                );
             } else {
                 deleted_count += 1;
             }
         }
     }
 
-    println!("{}", format_success(&format!(
-        "Cleared chat history: {} files deleted",
-        deleted_count
-    )));
+    println!(
+        "{}",
+        format_success(&format!(
+            "Cleared chat history: {} files deleted",
+            deleted_count
+        ))
+    );
 
     Ok(())
 }

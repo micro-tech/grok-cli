@@ -35,7 +35,10 @@ impl TreeSitterScanner {
                 match child.kind() {
                     "function_item" | "struct_item" | "enum_item" | "trait_item" | "impl_item" => {
                         if let Some(name_node) = child.child_by_field_name("name") {
-                            let name = name_node.utf8_text(source.as_bytes()).unwrap_or("unknown").to_string();
+                            let name = name_node
+                                .utf8_text(source.as_bytes())
+                                .unwrap_or("unknown")
+                                .to_string();
                             let start = child.start_byte();
                             let end = child.end_byte();
                             items.push((name, start, end));

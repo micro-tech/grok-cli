@@ -1,7 +1,7 @@
 //! JSON parsing helpers for Explorer mode output.
 
-use anyhow::{anyhow, Result};
 use crate::agent::explorer::evidence::RepoEvidence;
+use anyhow::{Result, anyhow};
 
 /// Parse raw LLM text into `RepoEvidence`.
 /// Accepts either a clean JSON object or a fenced ```json block.
@@ -18,14 +18,13 @@ pub fn parse_explorer_json(text: &str) -> Result<RepoEvidence> {
         Ok(ev) => Ok(ev),
         Err(e) => {
             // Try to extract a JSON object heuristically
-            if let Some(start) = cleaned.find('{') {
-                if let Some(end) = cleaned.rfind('}') {
+            if let Some(start) = cleaned.find('{')
+                && let Some(end) = cleaned.rfind('}') {
                     let candidate = &cleaned[start..=end];
                     if let Ok(ev) = serde_json::from_str::<RepoEvidence>(candidate) {
                         return Ok(ev);
                     }
                 }
-            }
             Err(anyhow!("Failed to parse explorer JSON: {}", e))
         }
     }

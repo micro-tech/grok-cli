@@ -132,10 +132,10 @@ impl MemoryBridge {
         memory: &'a LongTermMemory,
     ) -> Vec<&'a MemoryEntry> {
         // 1. Early return when there is no goal to derive keywords from.
-        let goal = match &state.goal {
-            Some(g) => g.clone(),
-            None => return Vec::new(),
+        let Some(goal) = &state.goal else {
+            return Vec::new();
         };
+        let goal = goal.clone();
 
         // 2. Extract keywords: words of >= 4 chars, up to 5.
         let keywords: Vec<String> = goal

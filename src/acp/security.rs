@@ -28,9 +28,7 @@ fn is_windows_drive_absolute(path: &Path) -> bool {
     let s = path.to_string_lossy();
     let bytes = s.as_bytes();
     // X: or X:\ or X:/
-    bytes.len() >= 2
-        && bytes[0].is_ascii_alphabetic()
-        && bytes[1] == b':'
+    bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
 impl SecurityPolicy {
@@ -136,43 +134,66 @@ impl SecurityPolicy {
         self.external_access_config.logging
     }
 
-    /// Resolve a path to its canonical absolute form
+    /// Resolve a path to its canonical absolute form.
+    ///
+    /// This version is deliberately tolerant of non-existent deep directories
+    /// (required by write_file when creating nested paths like deep/nested/file.txt).
+    /// It walks upward to the first existing ancestor and re-attaches the suffix.
     pub fn resolve_path<P: AsRef<Path>>(&self, path: P) -> Result<PathBuf> {
-        let path = path.as_ref();
+        let p = path.as_ref();
 
-        // Convert to absolute path relative to working directory
-        // Also treat Windows drive-letter paths (e.g. C:\foo) as absolute even
-        // when running on Unix - otherwise Path::is_absolute is false and the
-        // path is incorrectly joined under the working directory, which can make
-        // foreign system paths appear "trusted" on Linux CI.
-        let absolute = if path.is_absolute() || is_windows_drive_absolute(path) {
-            path.to_path_buf()
+        // Make absolute (respect Windows drive letters)
+        let mut abs = if p.is_absolute() || is_windows_drive_absolute(p) {
+            p.to_path_buf()
         } else {
-            self.working_directory.join(path)
+            self.working_directory.join(p)
         };
 
-        // Canonicalize to resolve symlinks and .. components
-        // If the file doesn't exist yet, try to canonicalize the parent
-        absolute.canonicalize().or_else(|_| {
-            if let Some(parent) = absolute.parent() {
-                let canonical_parent = parent.canonicalize()?;
-                if let Some(file_name) = absolute.file_name() {
-                    Ok(canonical_parent.join(file_name))
-                } else {
-                    Ok(canonical_parent)
-                }
-            } else {
-                Ok(absolute)
+        // If it already exists (or is a file that exists), just canonicalize.
+        if let Ok(c) = abs.canonicalize() {
+            return Ok(c);
+        }
+
+        // Walk up until we find an existing directory we can canonicalize.
+        let mut suffix = std::path::PathBuf::new();
+
+        loop {
+            if abs.exists() {
+                break;
             }
+            if let Some(name) = abs.file_name() {
+                suffix = Path::new(name).join(&suffix);
+            }
+            match abs.parent() {
+                Some(parent) if parent != abs => {
+                    abs = parent.to_path_buf();
+                }
+                _ => break,
+            }
+        }
+
+        if abs.exists()
+            && let Ok(canonical) = abs.canonicalize() {
+                if suffix.as_os_str().is_empty() {
+                    return Ok(canonical);
+                }
+                return Ok(canonical.join(suffix));
+            }
+
+        // Final fallback — at least give an absolute path under the working dir.
+        // is_internal_path will still compare against trusted directories.
+        Ok(if p.is_absolute() || is_windows_drive_absolute(p) {
+            p.to_path_buf()
+        } else {
+            self.working_directory.join(p)
         })
     }
 
     /// Check if a path is within internal project boundaries
     pub fn is_internal_path<P: AsRef<Path>>(&self, path: P) -> bool {
         // Resolve the path first
-        let resolved = match self.resolve_path(path) {
-            Ok(p) => p,
-            Err(_) => return false,
+        let Ok(resolved) = self.resolve_path(path) else {
+            return false;
         };
 
         // If no trusted directories are set, everything is untrusted (deny by default)

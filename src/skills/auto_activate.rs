@@ -288,9 +288,8 @@ impl AutoActivationEngine {
     ) -> Vec<SkillMatch> {
         let mut matches = self.check(input, working_dir, available_skills, already_active);
 
-        let trace = match reasoning {
-            Some(t) => t,
-            None => return matches,
+        let Some(trace) = reasoning else {
+            return matches;
         };
 
         // Build a map of lowercased tool name → original tool name for all
@@ -312,18 +311,17 @@ impl AutoActivationEngine {
                 && let Some(skill) = available_skills
                     .iter()
                     .find(|s| s.config.name == m.skill_name)
-                && let Some(auto_cfg) = skill.config.auto_activate.as_ref()
-            {
-                'kw: for keyword in &auto_cfg.keywords {
-                    let kw_lower = keyword.to_lowercase();
-                    if let Some(orig_name) = selected_tools.get(&kw_lower) {
-                        confidence = confidence.saturating_add(15).min(100);
-                        m.reasons.push(format!("RPL tool match: {orig_name}"));
-                        // A single boost per skill is sufficient.
-                        break 'kw;
+                    && let Some(auto_cfg) = skill.config.auto_activate.as_ref() {
+                        'kw: for keyword in &auto_cfg.keywords {
+                            let kw_lower = keyword.to_lowercase();
+                            if let Some(orig_name) = selected_tools.get(&kw_lower) {
+                                confidence = confidence.saturating_add(15).min(100);
+                                m.reasons.push(format!("RPL tool match: {orig_name}"));
+                                // A single boost per skill is sufficient.
+                                break 'kw;
+                            }
+                        }
                     }
-                }
-            }
 
             // ── Uncertainty penalty ──────────────────────────────────────
             if apply_penalty {
@@ -417,10 +415,9 @@ fn collect_extensions(dir: &Path) -> HashSet<String> {
         .filter_map(|e| e.ok())
     {
         if entry.file_type().is_file()
-            && let Some(ext) = entry.path().extension().and_then(|e| e.to_str())
-        {
-            exts.insert(ext.to_lowercase());
-        }
+            && let Some(ext) = entry.path().extension().and_then(|e| e.to_str()) {
+                exts.insert(ext.to_lowercase());
+            }
     }
 
     exts

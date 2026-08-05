@@ -15,18 +15,40 @@
 - [Utils & Display](11-utils-display.html)
 
 ## App Entry
-- `cli/app.rs`
+- `cli/app.rs` — main CLI router + command dispatch
 - `cli/mod.rs`
 
 ## Commands
-- chat, code, config, tools, skills, setup...
-- `cli/commands/*.rs`
+- `cli/commands/`
+  - `chat.rs` — interactive REPL / chat
+  - `code.rs` — explain, review, generate, plan, test, fix
+  - `config.rs`, `setup.rs`, `skills.rs`, `tools.rs`
+  - `init.rs` — interactive project initialization
+  - `bayes.rs`, `audit.rs`, `history.rs`, `health.rs`, `sandbox.rs`
+  - `acp.rs`, `settings.rs`
 
 ## Interactive UI
-- `display/`
+- `display/` — banner, progress, workflow_viewer, interactive components
+- `terminal/` — low-level terminal I/O
+
+## Slash Commands (in ACP + chat)
+- `/help`, `/clear`, `/context`, `/tools`, `/model`
+- `/think off|low|high`
+- `/goal <text>`, `/rule add|list|remove|clear`
+- `/commit [instructions]`, `/bayes ...`, `/diagnostics`, `/visualize`
+
+## Key Features
+- Full command-line + interactive modes
+- ACP server mode for Zed
+- Rich display with workflow visualization
+
+## Recent Changes
+- Added many new CLI commands (`init`, `bayes`, `health`, `sandbox`)
+- Improved slash command handling and goal/rule injection
 
 ## Dependencies
-- (to be filled)
+- `clap`, `inquire`, `crossterm`, `ratatui` (for some components)
 
 ## Notes
-- (to be filled)
+- CLI is the primary user interface.
+- Many commands delegate to the engine / agent system.

@@ -297,9 +297,8 @@ pub fn load_and_merge_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Op
 /// Returns a Vec of all found context file paths
 pub fn get_all_context_file_paths<P: AsRef<Path>>(start_dir: P) -> Vec<PathBuf> {
     // Find project root by walking up directory tree
-    let project_root = match find_project_root(start_dir) {
-        Ok(root) => root,
-        Err(_) => return Vec::new(),
+    let Ok(project_root) = find_project_root(start_dir) else {
+        return Vec::new();
     };
     let mut found_paths: Vec<PathBuf> = Vec::new();
     // Deduplicate by canonical path so the same file is never listed twice
@@ -344,9 +343,8 @@ pub fn get_all_context_file_paths<P: AsRef<Path>>(start_dir: P) -> Vec<PathBuf> 
 /// Get the path of the first context file found
 pub fn get_context_file_path<P: AsRef<Path>>(start_dir: P) -> Option<PathBuf> {
     // Find project root by walking up directory tree
-    let project_root = match find_project_root(start_dir) {
-        Ok(root) => root,
-        Err(_) => return None,
+    let Ok(project_root) = find_project_root(start_dir) else {
+        return None;
     };
 
     // Check project directory

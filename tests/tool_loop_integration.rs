@@ -126,7 +126,14 @@ async fn test_tool_loop_prevention() {
         }
 
         let result = client
-            .chat_completion_with_history(&messages, 0.7, 150, "grok-2-latest", Some(tools.clone()), None)
+            .chat_completion_with_history(
+                &messages,
+                0.7,
+                150,
+                "grok-2-latest",
+                Some(tools.clone()),
+                None,
+            )
             .await
             .expect("API call failed");
 

@@ -25,7 +25,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow}; // `anyhow` macro kept and used below (user preference: use rather than remove)
 use chrono::{DateTime, Utc};
 use tracing::{debug, warn};
 
@@ -60,15 +60,21 @@ impl EpisodicMemory {
     // ── Constructors ──────────────────────────────────────────────────────────
 
     /// Open (or create) the episodic memory store backed by the default
-    /// `~/.grok-cli/sessions/` directory (system).
+    /// sessions directory (typically `~/.grok-cli/sessions/` or the platform
+    /// config dir under `grok-cli/sessions`).
     ///
-    /// Returns an error only if the home directory cannot be determined;
-    /// the sessions directory itself is created on demand.
+    /// The sessions directory is created on demand when first saving an episode.
     pub fn new() -> Result<Self> {
-        let home = dirs::home_dir()
+        // Validate we can determine a home directory (using the `anyhow!` macro
+        // explicitly so the import stays live — user preference: use rather than remove).
+        let _home = dirs::home_dir()
             .ok_or_else(|| anyhow!("Cannot determine home directory for episodic memory"))?;
+
+        // Delegate to the canonical helper from config.
+        let sessions_dir = crate::config::grok_config_dir().join("sessions");
+
         Ok(Self {
-            sessions_dir: crate::config::grok_config_dir().join("sessions"),
+            sessions_dir,
             index: None,
         })
     }

@@ -3,6 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::tools::{ToolContext, execute_tool};
+use anyhow::{anyhow, Result};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -19,8 +20,9 @@ pub struct ToolCall {
 }
 
 /// Boxed async result type used by [`TaskGraph::execute`].
+/// Now returns a map of node_id -> tool output string on success (Task 237 parallel support).
 type ExecuteFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<(), Box<dyn std::error::Error>>> + Send + 'a>>;
+    Pin<Box<dyn Future<Output = Result<HashMap<String, String>>> + Send + 'a>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskGraph {
@@ -44,30 +46,107 @@ impl TaskGraph {
         self.nodes.insert(node.id.clone(), node);
     }
 
+    /// Execute the graph in topological order.
+    /// Independent nodes (no shared dependencies) are executed **concurrently**
+    /// using tokio tasks for true parallelism (Task 237).
+    ///
+    /// Returns a map of node_id -> tool output for successful nodes.
     pub fn execute(&self, context: &ToolContext) -> ExecuteFuture<'_> {
         let nodes = self.nodes.clone();
         let context = context.clone();
         Box::pin(async move {
-            // Topological sort
+            // Topological sort first (for order + cycle detection)
             let mut sorted = Vec::new();
             let mut visited = HashSet::new();
             let mut visiting = HashSet::new();
 
             for id in nodes.keys() {
                 if !visited.contains(id) {
-                    Self::topo_sort_static(id, &nodes, &mut visited, &mut visiting, &mut sorted)?;
+                    Self::topo_sort_static(id, &nodes, &mut visited, &mut visiting, &mut sorted)
+                        .map_err(|e| anyhow!("Topo sort error: {}", e))?;
                 }
             }
 
-            // Execute in topological order
-            for id in sorted {
-                let node = &nodes[&id];
-                // Execute the tool
-                execute_tool(&node.action.tool_name, &node.action.arguments, &context).await?;
-                // Results are handled by the tool execution itself
+            // Build dependency graph for parallel scheduling (Kahn's algorithm style with ready queue)
+            let mut in_degree: HashMap<String, usize> = HashMap::new();
+            let mut dependents: HashMap<String, Vec<String>> = HashMap::new();
+
+            for (id, node) in &nodes {
+                in_degree.insert(id.clone(), node.dependencies.len());
+                for dep in &node.dependencies {
+                    dependents.entry(dep.clone()).or_default().push(id.clone());
+                }
             }
 
-            Ok(())
+            // Ready queue: nodes with no pending dependencies
+            let mut ready: Vec<String> = in_degree
+                .iter()
+                .filter(|&(_, &deg)| deg == 0)
+                .map(|(id, _)| id.clone())
+                .collect();
+
+            let mut completed = HashSet::new();
+            let mut results: HashMap<String, String> = HashMap::new();
+            let mut join_set = tokio::task::JoinSet::new();
+
+            while !ready.is_empty() || !join_set.is_empty() {
+                // Launch all currently ready independent nodes in parallel
+                for id in ready.drain(..) {
+                    if completed.contains(&id) {
+                        continue;
+                    }
+                    let node = nodes[&id].clone();
+                    let ctx = context.clone();
+                    let id_clone = id.clone();
+
+                    join_set.spawn(async move {
+                        let res = execute_tool(&node.action.tool_name, &node.action.arguments, &ctx).await;
+                        (id_clone, res)
+                    });
+                }
+
+                // Wait for the next completion
+                if let Some(result) = join_set.join_next().await {
+                    match result {
+                        Ok((id, Ok(output))) => {
+                            results.insert(id.clone(), output);
+                            completed.insert(id.clone());
+
+                            // Unblock dependents
+                            if let Some(deps) = dependents.get(&id) {
+                                for dep_id in deps {
+                                    if let Some(deg) = in_degree.get_mut(dep_id) {
+                                        *deg = deg.saturating_sub(1);
+                                        if *deg == 0 {
+                                            ready.push(dep_id.clone());
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Ok((id, Err(e))) => {
+                            completed.insert(id);
+                            // Propagate the first error (strict for validation workflows)
+                            return Err(e);
+                        }
+                        Err(e) => {
+                            return Err(anyhow!("Task join error: {}", e));
+                        }
+                    }
+                }
+            }
+
+            // Drain any remaining
+            while let Some(result) = join_set.join_next().await {
+                if let Ok((id, Ok(output))) = result {
+                    results.insert(id.clone(), output);
+                    completed.insert(id);
+                } else if let Ok((_, Err(e))) = result {
+                    return Err(e);
+                }
+            }
+
+            Ok(results)
         })
     }
 
@@ -77,9 +156,9 @@ impl TaskGraph {
         visited: &mut HashSet<String>,
         visiting: &mut HashSet<String>,
         sorted: &mut Vec<String>,
-    ) -> Result<(), Box<dyn std::error::Error>> {
+    ) -> anyhow::Result<()> {
         if visiting.contains(id) {
-            return Err("Cycle detected in task graph".into());
+            return Err(anyhow!("Cycle detected in task graph"));
         }
         if visited.contains(id) {
             return Ok(());

@@ -126,18 +126,17 @@ async fn handle_single_chat(
             let response = response_with_finish.message;
             // Handle tool calls if present
             if let Some(tool_calls) = &response.tool_calls
-                && !tool_calls.is_empty()
-            {
-                println!("{}", format_info("Executing requested operations..."));
-                let mut security = SecurityPolicy::new();
-                security.add_trusted_directory(&env::current_dir()?);
+                && !tool_calls.is_empty() {
+                    println!("{}", format_info("Executing requested operations..."));
+                    let mut security = SecurityPolicy::new();
+                    security.add_trusted_directory(&env::current_dir()?);
 
-                for tool_call in tool_calls {
-                    execute_tool_call(tool_call, &security).await?;
+                    for tool_call in tool_calls {
+                        execute_tool_call(tool_call, &security).await?;
+                    }
+                    println!("{}", format_success("All operations completed!"));
+                    return Ok(());
                 }
-                println!("{}", format_success("All operations completed!"));
-                return Ok(());
-            }
 
             // Regular text response
             println!("{}", format_success("Response received!"));
@@ -586,6 +585,34 @@ fn handle_interactive_command(
                                 "🧠 Current model: (use `--model <name>` when starting the CLI session)"
                             );
                         }
+                        slash_commands::BuiltinResult::ShowTrace(sub) => {
+                            // /trace is async because of the possible TUI viewer.
+                            // Use a small blocking runtime for the CLI interactive loop.
+                            let rt = tokio::runtime::Runtime::new().unwrap();
+                            let text = rt.block_on(crate::workflow::handle_trace_command(&sub));
+                            println!("{}", text);
+                        }
+                        slash_commands::BuiltinResult::ShowOkf(query) => {
+                            let text = if query.trim().is_empty() {
+                                crate::tools::okf_lookup("", None)
+                                    .unwrap_or_else(|e| format!("Error: {}", e))
+                            } else {
+                                crate::tools::okf_lookup(&query, Some(8))
+                                    .unwrap_or_else(|e| format!("Error: {}", e))
+                            };
+                            println!("{}", text);
+                        }
+                        slash_commands::BuiltinResult::ForceCompress => {
+                            println!(
+                                "⚠️  /compress is only fully supported in ACP sessions (Zed, etc.)."
+                            );
+                            println!(
+                                "   In pure CLI mode it is not connected to a real session context."
+                            );
+                            println!(
+                                "   Start an ACP session or use a long conversation + the auto-compress path instead."
+                            );
+                        }
                     }
                     return Ok(Some(CommandResult::Continue));
                 }
@@ -740,9 +767,7 @@ fn print_conversation_history(history: &[Value]) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use tokio;
-
+    // super::* intentionally not used — placeholder test only verifies compilation
     #[tokio::test]
     async fn test_chat_command_structure() {
         // Test that the chat command structure is properly defined
@@ -770,13 +795,11 @@ async fn handle_explorer_mode(client: AppRouter, query: &str, model: &str) -> Re
     ];
 
     // Only allow read/search tools in explorer mode
-    let allowed_tools = vec![
-        "fs_glob",
+    let allowed_tools = ["fs_glob",
         "fs_read",
         "fs_grep",
         "list_directory",
-        "search_file_content",
-    ];
+        "search_file_content"];
 
     let all_tools = tools::get_available_tool_definitions();
     let filtered_tools: Vec<serde_json::Value> = all_tools

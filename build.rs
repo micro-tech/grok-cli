@@ -15,48 +15,21 @@ fn main() {
     println!("cargo:rerun-if-changed=system_manifest.md");
 
     // === Markmap Documentation Build Integration ===
-    // Detect when .mmd files are newer than their .html counterparts
-    // and trigger the markmap build script.
+    //
+    // We only declare that Cargo should re-run this build script
+    // when anything inside .doc/markmap changes.
+    //
+    // We do **NOT** auto-invoke the markmap generator here anymore.
+    // This was causing the repeated "Missing HTML for .mmd file" warnings
+    // on every `cargo check` / `cargo build`.
+    //
+    // To (re)generate the mindmaps, run manually:
+    //     .\scripts\build-markmaps.ps1
+    //
+    // (The script prefers a globally installed `markmap` / `markmap-cli`,
+    //  otherwise falls back to `npx`.)
     println!("cargo:rerun-if-changed=.doc/markmap");
 
-    // Check if any .mmd file is newer than its corresponding .html
-    let markmap_dir = std::path::Path::new(".doc/markmap");
-    let html_dir = std::path::Path::new(".doc/markmap/html");
-
-    if markmap_dir.exists() {
-        if let Ok(entries) = std::fs::read_dir(markmap_dir) {
-            for entry in entries.flatten() {
-                if let Some(ext) = entry.path().extension() {
-                    if ext == "mmd" {
-                        let mmd_path = entry.path();
-                        let html_name =
-                            mmd_path.file_stem().unwrap().to_string_lossy().to_string() + ".html";
-                        let html_path = html_dir.join(html_name);
-
-                        let mmd_modified =
-                            std::fs::metadata(&mmd_path).and_then(|m| m.modified()).ok();
-
-                        let html_modified = std::fs::metadata(&html_path)
-                            .and_then(|m| m.modified())
-                            .ok();
-
-                        if let (Some(mmd_time), Some(html_time)) = (mmd_modified, html_modified) {
-                            if mmd_time > html_time {
-                                println!("cargo:warning=.mmd file newer than .html — attempting to rebuild markmaps...");
-                                let _ = std::process::Command::new("powershell")
-                                    .args(["-ExecutionPolicy", "Bypass", "-File", "scripts/build-markmaps.ps1"])
-                                    .status();
-                            }
-                        } else if mmd_modified.is_some() && html_modified.is_none() {
-                            // HTML doesn't exist yet
-                            println!("cargo:warning=Missing HTML for .mmd file — attempting to build markmaps...");
-                            let _ = std::process::Command::new("powershell")
-                                .args(["-ExecutionPolicy", "Bypass", "-File", "scripts/build-markmaps.ps1"])
-                                .status();
-                        }
-                    }
-                }
-            }
-        }
-    }
+    // Intentionally do nothing else here — no cargo:warning, no cargo:info,
+    // no auto-execution.  This keeps `cargo check` completely clean.
 }

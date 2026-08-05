@@ -12,7 +12,6 @@
 //! - Agent Rules: Global + project rules loaded from ~/.grok-cli/agents/rules/ and .agents/rules/
 
 pub mod agent_rules;
-pub mod session_rules;
 pub mod belief_state;
 pub mod context_budget;
 pub mod engine;
@@ -24,6 +23,7 @@ pub mod prompt_cache;
 pub mod prompt_delta;
 pub mod prompt_diff;
 pub mod session_manager;
+pub mod session_rules;
 pub mod session_summarizer;
 pub mod token_cache;
 pub mod token_counter;
@@ -170,7 +170,14 @@ impl ContextEngine {
     }
 
     /// Record a tool call
-    pub fn record_tool_call(&mut self, tool_name: String, arguments: serde_json::Value, result: Option<String>, error: Option<String>, duration_ms: u64) {
+    pub fn record_tool_call(
+        &mut self,
+        tool_name: String,
+        arguments: serde_json::Value,
+        result: Option<String>,
+        error: Option<String>,
+        duration_ms: u64,
+    ) {
         let record = ToolCallRecord {
             tool_name,
             arguments,
@@ -187,7 +194,13 @@ impl ContextEngine {
     }
 
     /// Record skill usage
-    pub fn record_skill_usage(&mut self, skill_name: String, confidence: f64, arbitration_score: f64, successful: bool) {
+    pub fn record_skill_usage(
+        &mut self,
+        skill_name: String,
+        confidence: f64,
+        arbitration_score: f64,
+        successful: bool,
+    ) {
         let usage = SkillUsage {
             skill_name: skill_name.clone(),
             confidence,
@@ -196,11 +209,17 @@ impl ContextEngine {
             successful,
         };
         self.skill_context.recent_skills.push(usage);
-        self.skill_context.arbitration_scores.insert(skill_name, arbitration_score);
+        self.skill_context
+            .arbitration_scores
+            .insert(skill_name, arbitration_score);
     }
 
     /// Update belief state
-    pub fn update_belief_state(&mut self, probabilities: HashMap<String, f64>, uncertainties: HashMap<String, f64>) {
+    pub fn update_belief_state(
+        &mut self,
+        probabilities: HashMap<String, f64>,
+        uncertainties: HashMap<String, f64>,
+    ) {
         self.belief_state.probabilities = probabilities;
         self.belief_state.uncertainties = uncertainties;
         self.belief_state.last_update = Some(std::time::SystemTime::now());
@@ -250,24 +269,43 @@ impl ContextEngine {
             summary.push_str(&format!("User Intent: {}\n", intent));
         }
         if !self.session.last_commands.is_empty() {
-            summary.push_str(&format!("Recent Commands: {}\n", self.session.last_commands.join(", ")));
+            summary.push_str(&format!(
+                "Recent Commands: {}\n",
+                self.session.last_commands.join(", ")
+            ));
         }
 
         // Working memory (top 5 facts)
         if !self.working_memory.facts.is_empty() {
             summary.push_str("Working Memory Facts:\n");
             for fact in self.working_memory.facts.iter().rev().take(5) {
-                summary.push_str(&format!("- {} (confidence: {:.2})\n", fact.fact, fact.confidence));
+                summary.push_str(&format!(
+                    "- {} (confidence: {:.2})\n",
+                    fact.fact, fact.confidence
+                ));
             }
         }
 
         // Tool context (recent errors/successes)
-        let recent_tools: Vec<_> = self.tool_context.recent_calls.iter().rev().take(5).collect();
+        let recent_tools: Vec<_> = self
+            .tool_context
+            .recent_calls
+            .iter()
+            .rev()
+            .take(5)
+            .collect();
         if !recent_tools.is_empty() {
             summary.push_str("Recent Tool Usage:\n");
             for call in recent_tools {
-                let status = if call.error.is_some() { "ERROR" } else { "SUCCESS" };
-                summary.push_str(&format!("- {}: {} ({}ms)\n", call.tool_name, status, call.duration_ms));
+                let status = if call.error.is_some() {
+                    "ERROR"
+                } else {
+                    "SUCCESS"
+                };
+                summary.push_str(&format!(
+                    "- {}: {} ({}ms)\n",
+                    call.tool_name, status, call.duration_ms
+                ));
             }
         }
 
@@ -275,7 +313,10 @@ impl ContextEngine {
         if !self.skill_context.recent_skills.is_empty() {
             summary.push_str("Recent Skills Used:\n");
             for skill in self.skill_context.recent_skills.iter().rev().take(3) {
-                summary.push_str(&format!("- {} (confidence: {:.2}, score: {:.2})\n", skill.skill_name, skill.confidence, skill.arbitration_score));
+                summary.push_str(&format!(
+                    "- {} (confidence: {:.2}, score: {:.2})\n",
+                    skill.skill_name, skill.confidence, skill.arbitration_score
+                ));
             }
         }
 

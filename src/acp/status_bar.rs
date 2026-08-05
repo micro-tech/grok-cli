@@ -3,7 +3,7 @@
 //! This module builds and emits rich `session/update` events that Zed
 //! renders as a beautiful bottom status bar + native thinking blocks.
 
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Compact status line shown at the bottom of the ACP session.
@@ -20,7 +20,7 @@ pub struct StatusBarState {
 impl Default for StatusBarState {
     fn default() -> Self {
         Self {
-            model: "grok-4.3".to_string(),
+            model: "grok-4".to_string(),
             thinking_mode: "Off".to_string(),
             current_tokens: 0,
             max_tokens: 950_000,
