@@ -59,7 +59,7 @@ pub async fn handle_cancel(agent: &GrokAcpAgent, params: &Value) -> Result<Value
 
 /// Handle `session/info_update` — agent pushes metadata (title, status, …) to client.
 pub async fn handle_session_info_update(
-    agent: &GrokAcpAgent,
+    _agent: &GrokAcpAgent,
     params: &Value,
 ) -> Result<Value> {
     let session_id = params

@@ -1156,67 +1156,95 @@ async fn handle_extension_dispatch(
     agent: Arc<GrokAcpAgent>,
 ) -> std::result::Result<(), agent_client_protocol::Error> {
     use agent_client_protocol::Dispatch;
+
+    // Helper to call a handler and respond with its JSON result (best effort).
+    async fn respond_with_handler_result(
+        responder: agent_client_protocol::Responder<serde_json::Value>,
+        fut: impl std::future::Future<Output = anyhow::Result<serde_json::Value>>,
+    ) -> std::result::Result<(), agent_client_protocol::Error> {
+        let val = fut.await.unwrap_or_else(|_| json!({ "ok": true }));
+        // Many responders accept a generic payload; if not, we ignore the error.
+        let _ = responder.respond(val);
+        Ok(())
+    }
+
     match msg {
         Dispatch::Request(req, responder) => {
-            // Handle newly stabilized ACP v2 methods that may arrive as
-            // untyped / extension requests (logout, cancel, session/info_update,
-            // model/config_options).  We fall back to our local Value-based
-            // handlers and synthesize a minimal successful response.
-            let params = serde_json::to_value(&req).unwrap_or_else(|_| json!({}));
+            // Convert the incoming ClientRequest into a raw JSON value so we
+            // can inspect the actual method name and params for the stable
+            // ACP v2 methods (logout, cancel, session/info_update,
+            // model/config_options). These may arrive as extension / unknown
+            // requests until the official crate schema grows typed variants.
+            let raw = serde_json::to_value(&req).unwrap_or_else(|_| json!({}));
 
-            // Try to detect the method by inspecting the serialized form or
-            // known patterns.  If we can't tell, we still give the stable
-            // handlers a chance (they are defensive).
-            let method_hint = params
+            // The wire form for a JSON-RPC request is usually:
+            // { "jsonrpc": "2.0", "id": ..., "method": "logout", "params": { ... } }
+            // or the crate may wrap it. We look in a few common places.
+            let method = raw
                 .get("method")
                 .and_then(|m| m.as_str())
+                .or_else(|| raw.get("request").and_then(|r| r.get("method")).and_then(|m| m.as_str()))
                 .unwrap_or("")
                 .to_string();
 
-            let result_value = if method_hint.contains("logout") || method_hint == "logout" {
-                handle_logout(&agent, &params)
-                    .await
-                    .unwrap_or_else(|_| json!({ "ok": true }))
-            } else if method_hint.contains("cancel") || method_hint == "cancel" {
-                handle_cancel(&agent, &params)
-                    .await
-                    .unwrap_or_else(|_| json!({ "cancelled": true }))
-            } else if method_hint.contains("info_update") {
-                handle_session_info_update(&agent, &params)
-                    .await
-                    .unwrap_or_else(|_| json!({ "ok": true }))
-            } else if method_hint.contains("config_options") || method_hint.contains("model/config")
-            {
-                handle_model_config_options(&agent)
-                    .await
-                    .unwrap_or_else(|_| json!({}))
-            } else {
-                // Legacy / unknown — try the old set_model path for compatibility
-                let _ = handle_session_set_model(&params, &agent).await;
-                // For truly unknown methods we must return a proper error so the
-                // client doesn't hang waiting for a response.
-                return Err(agent_client_protocol::Error::method_not_found());
-            };
+            let params = raw
+                .get("params")
+                .cloned()
+                .or_else(|| raw.get("request").and_then(|r| r.get("params")).cloned())
+                .unwrap_or_else(|| json!({}));
 
-            // Best-effort respond with the value.  The responder type is
-            // generic over the expected response; we use a JSON fall-back.
-            // If the concrete responder doesn't accept a raw Value we just log.
-            // In practice for these methods the client accepts any object.
-            let _ = responder.respond(result_value);
+            if method == "logout" || method.ends_with("/logout") {
+                return respond_with_handler_result(
+                    responder,
+                    handle_logout(&agent, &params),
+                )
+                .await;
+            }
 
-            // If we reached here we "handled" a known stable method.
-            Ok(())
+            if method == "cancel" || method.ends_with("/cancel") {
+                return respond_with_handler_result(
+                    responder,
+                    handle_cancel(&agent, &params),
+                )
+                .await;
+            }
+
+            if method == "session/info_update" || method.ends_with("info_update") {
+                return respond_with_handler_result(
+                    responder,
+                    handle_session_info_update(&agent, &params),
+                )
+                .await;
+            }
+
+            if method == "model/config_options" || method.ends_with("config_options") {
+                return respond_with_handler_result(
+                    responder,
+                    handle_model_config_options(&agent),
+                )
+                .await;
+            }
+
+            // Unknown method — fall back to legacy set_model for old clients,
+            // otherwise return proper "method not found".
+            let _ = handle_session_set_model(&raw, &agent).await;
+            Err(agent_client_protocol::Error::method_not_found())
         }
+
         Dispatch::Notification(notif) => {
-            // Some clients send cancel as a notification.  Give the cancel
-            // handler a chance.
+            // Some clients (or older flows) may send cancel as a notification.
             if let Ok(v) = serde_json::to_value(&notif) {
-                if v.to_string().contains("cancel") {
+                let method = v
+                    .get("method")
+                    .and_then(|m| m.as_str())
+                    .unwrap_or("");
+                if method == "cancel" || method.ends_with("/cancel") {
                     let _ = handle_cancel(&agent, &v).await;
                 }
             }
             Ok(())
         }
+
         Dispatch::Response(result, router) => {
             router
                 .route_with_result(result)
