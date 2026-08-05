@@ -9,7 +9,14 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
-## [0.2.5] — 2026-07-04
+## [0.2.5] — 2026-07-05
+
+### Release Polish & Merge Preparation
+
+- Cleaned version string: `Cargo.toml` and related metadata now use clean `0.2.5` (removed `-PreRelease` suffix).
+- Updated `project_layout.md` and documentation dates.
+- Verified all major features from 0.2.3/0.2.5 are documented (Session Rules, Safety Hooks, Sub-Agents, DNA arbitration, Commit generator).
+- Documentation refreshed across README, QUICK_REFERENCE, CHANGELOG, and supporting Doc/ files in preparation for merge.
 
 ### Storage Layout Clarification & Chat Log Scoping (User Request)
 

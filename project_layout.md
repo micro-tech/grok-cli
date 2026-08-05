@@ -1,7 +1,7 @@
 # Grok CLI — Project Layout
 
 > **Version:** 0.2.5 | **Author:** John McConnell <john.microtech@gmail.com>
-> **Repository:** https://github.com/micro-tech/grok-cli | **Last updated:** 2026-07-04
+> **Repository:** https://github.com/micro-tech/grok-cli | **Last updated:** 2026-07-05
 
 ---
 
