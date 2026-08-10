@@ -16,8 +16,8 @@ pub async fn run_explorer_mode(
     let system = explorer_system_prompt();
 
     let messages = vec![
-        serde_json::json!({ "role": "system", "content": system }),
-        serde_json::json!({ "role": "user", "content": query }),
+        crate::utils::messages::system(system),
+        crate::utils::messages::user(query),
     ];
 
     // Only allow read/search tools
@@ -31,7 +31,7 @@ pub async fn run_explorer_mode(
 
     let all_tools = crate::acp::tools::get_available_tool_definitions();
     let filtered: Vec<serde_json::Value> = all_tools
-        .into_iter()
+        .iter()
         .filter(|t| {
             t.get("function")
                 .and_then(|f| f.get("name"))
@@ -39,6 +39,7 @@ pub async fn run_explorer_mode(
                 .map(|name| allowed_tools.contains(&name))
                 .unwrap_or(false)
         })
+        .cloned()
         .collect();
 
     let resp = client

@@ -34,7 +34,6 @@ use crate::utils::context::{
 use crate::utils::session::{list_sessions, load_session, save_session};
 use crate::utils::shell_permissions::{ApprovalMode, ShellPermissions};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 // Use cheap message builders (Task 267)
 use crate::utils::messages::{assistant, system, user};
 
@@ -1803,7 +1802,7 @@ mod tests {
 
         assert_eq!(session.conversation_history.len(), 1);
         assert_eq!(session.total_tokens_used, 10);
-        assert_eq!(session.conversation_history[0].content, "Hello");
+        assert_eq!(session.conversation_history[0].content.as_ref(), "Hello");
     }
 
     #[test]

@@ -196,11 +196,7 @@ impl CpuRouter {
                     }
                 };
 
-                messages_json.push(serde_json::json!({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": result,
-                }));
+                messages_json.push(crate::utils::messages::tool_result(&tool_call.id, result));
             }
 
             tracing::debug!(
@@ -346,11 +342,7 @@ impl CpuRouter {
                     success,
                 });
 
-                messages_json.push(serde_json::json!({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": output,
-                }));
+                messages_json.push(crate::utils::messages::tool_result(&tool_call.id, output));
             }
         }
 
@@ -429,7 +421,7 @@ mod tests {
     fn make_request(model: &str) -> RouterRequest {
         RouterRequest::new(
             model,
-            vec![serde_json::json!({"role": "user", "content": "hello"})],
+            vec![crate::utils::messages::user("hello")],
         )
     }
 

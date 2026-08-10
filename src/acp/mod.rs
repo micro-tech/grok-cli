@@ -1111,7 +1111,7 @@ impl GrokAcpAgent {
                             temperature,
                             max_tokens,
                             &model,
-                            Some(tool_defs.clone()),
+                            Some(tool_defs.to_vec()),
                             thinking_mode.as_api_str(),
                         )
                         .await

@@ -9,7 +9,7 @@
 
 use anyhow::Result;
 use colored::*;
-use serde_json::{Value, json};
+use serde_json::Value;
 // Cheap message builders to reduce allocations (Task 267)
 use crate::utils::messages::{assistant, assistant_with_tool_calls, system, user};
 use std::env;
@@ -32,7 +32,7 @@ use crate::{ToolCall, content_to_string, extract_text_content};
 pub struct ChatOptions<'a> {
     pub message: Vec<String>,
     pub interactive: bool,
-    pub system: Option<String>,
+    pub system_prompt: Option<String>,
     pub temperature: f32,
     pub max_tokens: u32,
     pub api_key: &'a str,
@@ -53,7 +53,7 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
     if options.interactive {
         handle_interactive_chat(
             client,
-            options.system,
+            options.system_prompt,
             options.temperature,
             options.max_tokens,
             options.model,
@@ -68,7 +68,7 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
         handle_single_chat(
             client,
             &combined_message,
-            options.system,
+            options.system_prompt,
             options.temperature,
             options.max_tokens,
             options.model,
@@ -81,7 +81,7 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
 async fn handle_single_chat(
     client: AppRouter,
     message: &str,
-    system: Option<String>,
+    system_prompt: Option<String>,
     temperature: f32,
     max_tokens: u32,
     model: &str,
@@ -97,7 +97,7 @@ async fn handle_single_chat(
 
     // Prepare messages (cheap builders, Task 267)
     let mut messages = Vec::new();
-    if let Some(sys) = system {
+    if let Some(sys) = system_prompt {
         messages.push(system(sys));
     }
     messages.push(user(message));
@@ -111,7 +111,7 @@ async fn handle_single_chat(
             temperature,
             max_tokens,
             model,
-            Some(tools.iter().map(|t| serde_json::json!(t)).collect()),
+            Some(tools.to_vec()),
             thinking_mode.as_api_str(),
         )
         .await;
@@ -190,7 +190,7 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
 
 async fn handle_interactive_chat(
     client: AppRouter,
-    system: Option<String>,
+    system_prompt: Option<String>,
     temperature: f32,
     max_tokens: u32,
     model: &str,
@@ -200,7 +200,7 @@ async fn handle_interactive_chat(
     println!("{}", "🤖 Interactive Grok Chat Session".cyan().bold());
     println!("{}", format!("Model: {}", model).dimmed());
 
-    if let Some(ref sys) = system {
+    if let Some(ref sys) = system_prompt {
         println!("{}", format!("System: {}", sys).dimmed());
     }
 
@@ -216,7 +216,7 @@ async fn handle_interactive_chat(
     // Add system message if provided (cheap builder, Task 267).
     // Keep system message separate (as a single owned Value) to avoid
     // repeatedly cloning it when clearing history or building prompts (Task 264).
-    let system_message: Option<serde_json::Value> = system.map(system);
+    let system_message: Option<serde_json::Value> = system_prompt.map(system);
 
     if let Some(ref sys_msg) = system_message {
         conversation_history.push(sys_msg.clone()); // one-time at startup
@@ -374,9 +374,13 @@ async fn handle_interactive_chat(
 
                     // Add assistant's tool call response to history (Task 267)
                     let content_str = content_to_string(response_msg.content.as_ref());
+                    let tool_calls_json: Vec<serde_json::Value> = tool_calls
+                        .iter()
+                        .map(|tc| serde_json::to_value(tc).unwrap_or_else(|_| serde_json::json!({})))
+                        .collect();
                     conversation_history.push(assistant_with_tool_calls(
                         if content_str.is_empty() { None } else { Some(content_str) },
-                        tool_calls.clone(),
+                        tool_calls_json,
                     ));
 
                     continue;

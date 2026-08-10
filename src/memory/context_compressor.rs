@@ -80,8 +80,8 @@ Do not include any other text.";
     );
 
     let summarizer_messages: Vec<serde_json::Value> = vec![
-        serde_json::json!({"role": "system", "content": system_prompt}),
-        serde_json::json!({"role": "user",   "content": user_message}),
+        crate::utils::messages::system(system_prompt),
+        crate::utils::messages::user(user_message),
     ];
 
     // ── Retry loop ────────────────────────────────────────────────────────────

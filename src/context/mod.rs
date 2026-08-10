@@ -259,30 +259,35 @@ impl ContextEngine {
 
     /// Generate a summarized context string for prompt injection
     pub fn summarize_for_prompt(&self) -> String {
-        let mut summary = String::new();
+        // Pre-size to reduce reallocations in hot path
+        let mut summary = String::with_capacity(512);
 
         // Session context
         if let Some(task) = &self.session.task {
-            summary.push_str(&format!("Current Task: {}\n", task));
+            summary.push_str("Current Task: ");
+            summary.push_str(task);
+            summary.push('\n');
         }
         if let Some(intent) = &self.session.intent {
-            summary.push_str(&format!("User Intent: {}\n", intent));
+            summary.push_str("User Intent: ");
+            summary.push_str(intent);
+            summary.push('\n');
         }
         if !self.session.last_commands.is_empty() {
-            summary.push_str(&format!(
-                "Recent Commands: {}\n",
-                self.session.last_commands.join(", ")
-            ));
+            summary.push_str("Recent Commands: ");
+            summary.push_str(&self.session.last_commands.join(", "));
+            summary.push('\n');
         }
 
         // Working memory (top 5 facts)
         if !self.working_memory.facts.is_empty() {
             summary.push_str("Working Memory Facts:\n");
             for fact in self.working_memory.facts.iter().rev().take(5) {
-                summary.push_str(&format!(
-                    "- {} (confidence: {:.2})\n",
-                    fact.fact, fact.confidence
-                ));
+                summary.push_str("- ");
+                summary.push_str(&fact.fact);
+                summary.push_str(" (confidence: ");
+                summary.push_str(&format!("{:.2}", fact.confidence));
+                summary.push_str(")\n");
             }
         }
 
@@ -297,15 +302,14 @@ impl ContextEngine {
         if !recent_tools.is_empty() {
             summary.push_str("Recent Tool Usage:\n");
             for call in recent_tools {
-                let status = if call.error.is_some() {
-                    "ERROR"
-                } else {
-                    "SUCCESS"
-                };
-                summary.push_str(&format!(
-                    "- {}: {} ({}ms)\n",
-                    call.tool_name, status, call.duration_ms
-                ));
+                let status = if call.error.is_some() { "ERROR" } else { "SUCCESS" };
+                summary.push_str("- ");
+                summary.push_str(&call.tool_name);
+                summary.push_str(": ");
+                summary.push_str(status);
+                summary.push_str(" (");
+                summary.push_str(&call.duration_ms.to_string());
+                summary.push_str("ms)\n");
             }
         }
 
@@ -313,10 +317,13 @@ impl ContextEngine {
         if !self.skill_context.recent_skills.is_empty() {
             summary.push_str("Recent Skills Used:\n");
             for skill in self.skill_context.recent_skills.iter().rev().take(3) {
-                summary.push_str(&format!(
-                    "- {} (confidence: {:.2}, score: {:.2})\n",
-                    skill.skill_name, skill.confidence, skill.arbitration_score
-                ));
+                summary.push_str("- ");
+                summary.push_str(&skill.skill_name);
+                summary.push_str(" (confidence: ");
+                summary.push_str(&format!("{:.2}", skill.confidence));
+                summary.push_str(", score: ");
+                summary.push_str(&format!("{:.2}", skill.arbitration_score));
+                summary.push_str(")\n");
             }
         }
 
@@ -326,7 +333,11 @@ impl ContextEngine {
             let mut uncertains: Vec<_> = self.belief_state.uncertainties.iter().collect();
             uncertains.sort_by(|a, b| b.1.partial_cmp(a.1).unwrap());
             for (key, uncertainty) in uncertains.into_iter().take(3) {
-                summary.push_str(&format!("- {}: {:.2}\n", key, uncertainty));
+                summary.push_str("- ");
+                summary.push_str(key);
+                summary.push_str(": ");
+                summary.push_str(&format!("{:.2}", uncertainty));
+                summary.push('\n');
             }
         }
 

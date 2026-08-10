@@ -281,7 +281,7 @@ pub async fn run() -> Result<()> {
             crate::cli::commands::chat::handle_chat(crate::cli::commands::chat::ChatOptions {
                 message: message.clone(),
                 interactive: *interactive,
-                system: system.clone(),
+                system_prompt: system.clone(),
                 temperature: *temperature,
                 max_tokens: *max_tokens,
                 api_key: &api_key,
@@ -334,7 +334,7 @@ pub async fn run() -> Result<()> {
             crate::cli::commands::chat::handle_chat(crate::cli::commands::chat::ChatOptions {
                 message: vec![query],
                 interactive: false,
-                system: None,
+                system_prompt: None,
                 temperature: 0.7,
                 max_tokens: 4096,
                 api_key: &api_key,

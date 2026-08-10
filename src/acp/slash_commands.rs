@@ -1104,7 +1104,7 @@ mod tests {
         let text = format_tools_text();
         let all_defs = crate::tools::registry::get_available_tool_definitions();
         // Every registered tool should appear in the formatted output
-        for def in &all_defs {
+        for def in all_defs {
             if let Some(name) = def
                 .get("function")
                 .and_then(|f| f.get("name"))

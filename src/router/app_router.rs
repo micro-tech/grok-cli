@@ -98,15 +98,9 @@ impl AppRouter {
         let mut messages: Vec<Value> = Vec::new();
 
         if let Some(sys) = system_prompt {
-            messages.push(serde_json::json!({
-                "role": "system",
-                "content": sys
-            }));
+            messages.push(crate::utils::messages::system(sys));
         }
-        messages.push(serde_json::json!({
-            "role": "user",
-            "content": message
-        }));
+        messages.push(crate::utils::messages::user(message));
 
         let mwfr = self
             .chat_completion_with_history(&messages, temperature, max_tokens, model, None, None)

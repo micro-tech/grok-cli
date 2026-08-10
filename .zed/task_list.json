@@ -115,25 +115,25 @@
         {
           "id": 266.1,
           "title": "Integrate simple timing into chat/interactive paths",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         },
         {
           "id": 266.2,
           "title": "Add criterion or built-in benchmark for key paths",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         },
         {
           "id": 266.3,
           "title": "Create profiling documentation",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         },
         {
           "id": 266.4,
           "title": "Implement allocation tracking helper (optional)",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         }
       ]
@@ -142,10 +142,10 @@
       "id": 267,
       "title": "Optimize Hot-Path Allocations (json! and format!)",
       "description": "Lots of serde_json::json!() macros and repeated format! / String building inside the main turn loop (message construction, prompt building, status lines, tool results). Replace with pre-built templates, write! to buffers, or small reusable structs.",
-      "status": "pending",
+      "status": "done",
       "dependencies": [],
       "priority": "medium",
-      "details": "**Problem**: Inside every turn we do many small allocations from:\n- `serde_json::json!({ \"role\": ..., \"content\": ... })` (very common)\n- Repeated `format!()`, `format!(\"...{}\", x)`, string building in status, prompts, tool results, logs.\n\nThese add up on top of the big clones and tool definition rebuilds.\n\n**Goals**:\n- Reduce `json!` usage in the absolute hottest paths by using small typed builders or pre-allocated templates.\n- Use `String::with_capacity` + `write!` instead of `format!` where we know the size.\n- Cache common static prompt fragments and system messages.\n- Make error and status formatting cheaper.\n\n**Primary locations**:\n- display/interactive.rs (message construction)\n- acp/mod.rs (hundreds of format!/json!)\n- context/prompt_*.rs\n- cli/commands/chat.rs\n- status_bar.rs, various display helpers\n\n**Success**: Lower allocation count per turn when measured with the harness. No loss of readability or debuggability.",
+      "details": "Completed: Introduced cheap message builders in utils/messages.rs (user/assistant/system/tool_result/assistant_with_tool_calls using Map::with_capacity). Replaced high-frequency json! message construction in routers (app_router, cpu_router), explorer/runner, context_compressor, agent_tools. Improved summarize_for_prompt in context/mod.rs with with_capacity + push_str to reduce format! allocations. High-frequency per-turn message allocs reduced. Subtasks addressed.",
       "testStrategy": "1. Before/after comparison using allocation profiler on a 10-turn session.\n2. Existing integration tests continue to pass.\n3. Add a test that asserts certain hot strings are not re-allocated.",
       "subtasks": [
         {
