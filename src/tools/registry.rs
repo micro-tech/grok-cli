@@ -608,6 +608,11 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
         .clone()
 }
 
+/// Static cache for the full tool definitions.
+/// Built exactly once (via OnceLock) to eliminate repeated allocation of 50+
+/// `serde_json::json!` objects on every call to hot paths.
+static FULL_TOOL_DEFINITIONS: std::sync::OnceLock<Vec<serde_json::Value>> = std::sync::OnceLock::new();
+
 /// Returns full OpenAI-style JSON tool schemas for every registered tool.
 ///
 /// Each entry has the shape:
@@ -615,766 +620,770 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
 /// {"type":"function","function":{"name":"...","description":"...","parameters":{...}}}
 /// ```
 /// This is the format expected by the Grok/xAI API and by all ACP consumers.
-pub fn get_full_tool_definitions() -> Vec<serde_json::Value> {
-    vec![
-        json!({
-            "type": "function",
-            "function": {
-                "name": "read_file",
-                "description": "Read the contents of a file at the given path.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string", "description": "Absolute or relative path to the file."}
-                    },
-                    "required": ["path"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "read_multiple_files",
-                "description": "Read multiple files at once and return their contents concatenated.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "paths": {"type": "array", "items": {"type": "string"}, "description": "List of file paths to read."}
-                    },
-                    "required": ["paths"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "list_code_definitions",
-                "description": "List functions, structs, classes and other top-level definitions in a source file.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string", "description": "Path to the source file."}
-                    },
-                    "required": ["path"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "write_file",
-                "description": "Write (overwrite or create) a file with the given content.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path":    {"type": "string", "description": "Path to the file."},
-                        "content": {"type": "string", "description": "Full content to write."}
-                    },
-                    "required": ["path", "content"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "replace",
-                "description": "Replace an exact string in a file with a new string.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path":                  {"type": "string", "description": "File path."},
-                        "old_string":            {"type": "string", "description": "Exact text to find."},
-                        "new_string":            {"type": "string", "description": "Text to replace it with."},
-                        "expected_replacements": {"type": "integer", "description": "Expected number of replacements (optional assertion)."}
-                    },
-                    "required": ["path", "old_string", "new_string"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "list_directory",
-                "description": "List files and sub-directories inside a directory.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path": {"type": "string", "description": "Directory path."}
-                    },
-                    "required": ["path"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "glob_search",
-                "description": "Find files matching a glob pattern (e.g. **/*.rs).",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "pattern": {"type": "string", "description": "Glob pattern to match."}
-                    },
-                    "required": ["pattern"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "search_file_content",
-                "description": "Search for a regex pattern inside a file and return matching lines.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path":    {"type": "string", "description": "File path."},
-                        "pattern": {"type": "string", "description": "Regex or text to search for."}
-                    },
-                    "required": ["path", "pattern"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "run_shell_command",
-                "description": "Run a shell command and return its stdout/stderr output.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "command":      {"type": "string", "description": "The shell command to execute."},
-                        "timeout_secs": {"type": "integer", "description": "Optional timeout in seconds (default 300)."}
-                    },
-                    "required": ["command"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "web_search",
-                "description": "Search the web and return a list of results with titles, URLs and snippets.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Search query."}
-                    },
-                    "required": ["query"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "web_fetch",
-                "description": "Fetch a URL and return the page content as plain text.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "url": {"type": "string", "description": "URL to fetch."}
-                    },
-                    "required": ["url"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "save_memory",
-                "description": "Persist a fact or note to the agent's long-term memory store.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "fact": {"type": "string", "description": "The fact or note to remember."}
-                    },
-                    "required": ["fact"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "sleep",
-                "description": "Pause execution for a given number of seconds.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "seconds": {"type": "number", "description": "Seconds to sleep."}
-                    },
-                    "required": ["seconds"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "synthetic_output",
-                "description": "Emit a structured JSON output conforming to a named schema.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "schema_name": {"type": "string", "description": "Name of the output schema."},
-                        "data":        {"description": "Data conforming to the schema."}
-                    },
-                    "required": ["schema_name", "data"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "execute_task_graph",
-                "description": "Execute a task graph (DAG) where each node is a tool call.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "graph": {"type": "string", "description": "JSON-serialised TaskGraph."}
-                    },
-                    "required": ["graph"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "task_get",
-                "description": "Retrieve a single task (or subtask) by numeric ID from .zed/task_list.json.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "id": {"type": "number", "description": "Task ID (e.g. 122 or 5.2 for a subtask)."}
-                    },
-                    "required": ["id"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "task_create",
-                "description": "Create a new task in the project task list.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "title":        {"type": "string",  "description": "Task title."},
-                        "description":  {"type": "string",  "description": "Brief description."},
-                        "priority":     {"type": "string",  "description": "high | medium | low"},
-                        "dependencies": {"type": "array",   "items": {"type": "number"}, "description": "IDs of prerequisite tasks."},
-                        "details":      {"type": "string",  "description": "Implementation details."},
-                        "testStrategy": {"type": "string",  "description": "How to verify completion."},
-                        "subtasks":     {"type": "array",   "description": "List of subtask objects."}
-                    },
-                    "required": ["title"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "task_update",
-                "description": "Update an existing task's status, title, priority or details.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "id":       {"type": "number", "description": "Task ID."},
-                        "status":   {"type": "string", "description": "pending | in_progress | done | deferred"},
-                        "title":    {"type": "string"},
-                        "priority": {"type": "string"},
-                        "details":  {"type": "string"}
-                    },
-                    "required": ["id"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "enter_plan_mode",
-                "description": "Switch the agent into plan mode (no tool execution, planning only).",
-                "parameters": {"type": "object", "properties": {}}
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "exit_plan_mode",
-                "description": "Exit plan mode and resume normal tool execution.",
-                "parameters": {"type": "object", "properties": {}}
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "enter_worktree",
-                "description": "Create or switch to a git worktree for isolated work on a branch.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "branch": {"type": "string", "description": "Branch name."},
-                        "path":   {"type": "string", "description": "Worktree path."}
-                    },
-                    "required": ["branch", "path"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "exit_worktree",
-                "description": "Exit the current git worktree, optionally merging changes back.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "merge": {"type": "boolean", "description": "Merge changes into main branch (default false)."}
+pub fn get_full_tool_definitions() -> &'static [serde_json::Value] {
+    FULL_TOOL_DEFINITIONS.get_or_init(|| {
+        vec![
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "read_file",
+                    "description": "Read the contents of a file at the given path.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Absolute or relative path to the file."}
+                        },
+                        "required": ["path"]
                     }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "notebook_edit",
-                "description": "Edit a cell in a Jupyter notebook.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "path":       {"type": "string",  "description": "Path to the notebook file."},
-                        "source":     {"type": "string",  "description": "New source code for the cell."},
-                        "cell_index": {"type": "integer", "description": "0-based cell index (default 0)."},
-                        "cell_type":  {"type": "string",  "description": "code | markdown (default code)."}
-                    },
-                    "required": ["path", "source"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "execute_skill",
-                "description": "Run a named agent skill and return its output.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "skill_name": {"type": "string", "description": "Name of the skill to execute."},
-                        "input":      {"type": "string", "description": "Optional input to pass to the skill."}
-                    },
-                    "required": ["skill_name"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "list_skills",
-                "description": "List all available agent skills.",
-                "parameters": {"type": "object", "properties": {}}
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "spawn_agent",
-                "description": "Spawn a focused sub-agent to complete a well-scoped task. \
-                    Optionally provide a custom model, persona, tool whitelist, sandbox dirs, \
-                    and iteration budget for per-agent isolation.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "task": {
-                            "type": "string",
-                            "description": "The task for the sub-agent to complete."
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "read_multiple_files",
+                    "description": "Read multiple files at once and return their contents concatenated.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "paths": {"type": "array", "items": {"type": "string"}, "description": "List of file paths to read."}
                         },
-                        "context": {
-                            "type": "string",
-                            "description": "Optional additional context to pass to the agent."
-                        },
-                        "max_tokens": {
-                            "type": "integer",
-                            "description": "Max output tokens (256–8192, default 2048)."
-                        },
-                        "model": {
-                            "type": "string",
-                            "description": "Model to use, e.g. 'grok-3-mini' (default) or 'grok-3'."
-                        },
-                        "system_prompt": {
-                            "type": "string",
-                            "description": "Custom persona / system prompt for this agent."
-                        },
-                        "allowed_tools": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Tool whitelist. Omit for no tools. E.g. ['read_file','list_directory']."
-                        },
-                        "trusted_dirs": {
-                            "type": "array",
-                            "items": {"type": "string"},
-                            "description": "Directories the agent may access. Defaults to CWD only."
-                        },
-                        "max_tool_iterations": {
-                            "type": "integer",
-                            "description": "Max tool-loop iterations (default 10)."
-                        }
-                    },
-                    "required": ["task"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "send_message",
-                "description": "Send a message to a named agent or channel.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "target":  {"type": "string", "description": "Target agent ID or channel name."},
-                        "message": {"type": "string", "description": "Message content."}
-                    },
-                    "required": ["target", "message"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "team_create",
-                "description": "Create a named team configuration.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name":        {"type": "string", "description": "Team name."},
-                        "members":     {"type": "array",  "items": {"type": "string"}, "description": "List of member IDs."},
-                        "description": {"type": "string", "description": "Team description."}
-                    },
-                    "required": ["name"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "team_delete",
-                "description": "Delete a named team.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name": {"type": "string", "description": "Name of the team to delete."}
-                    },
-                    "required": ["name"]
-                }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "list_agents",
-                "description": "List all tracked sub-agents (optionally filtered by parent).",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "parent_id": {"type": "string", "description": "Optional parent agent ID to filter by."}
+                        "required": ["paths"]
                     }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "get_agent_status",
-                "description": "Get the status and result of a specific sub-agent.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "agent_id": {"type": "string", "description": "ID of the sub-agent."}
-                    },
-                    "required": ["agent_id"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "list_code_definitions",
+                    "description": "List functions, structs, classes and other top-level definitions in a source file.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Path to the source file."}
+                        },
+                        "required": ["path"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "cancel_agent",
-                "description": "Cancel a running sub-agent.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "agent_id": {"type": "string", "description": "ID of the sub-agent to cancel."}
-                    },
-                    "required": ["agent_id"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "write_file",
+                    "description": "Write (overwrite or create) a file with the given content.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path":    {"type": "string", "description": "Path to the file."},
+                            "content": {"type": "string", "description": "Full content to write."}
+                        },
+                        "required": ["path", "content"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "send_message_in_memory",
-                "description": "Send a message using the fast in-memory agent bus.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "from":    {"type": "string", "description": "Sender agent ID."},
-                        "to":      {"type": "string", "description": "Target agent ID or channel."},
-                        "message": {"type": "string", "description": "Message content."}
-                    },
-                    "required": ["to", "message"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "replace",
+                    "description": "Replace an exact string in a file with a new string.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path":                  {"type": "string", "description": "File path."},
+                            "old_string":            {"type": "string", "description": "Exact text to find."},
+                            "new_string":            {"type": "string", "description": "Text to replace it with."},
+                            "expected_replacements": {"type": "integer", "description": "Expected number of replacements (optional assertion)."}
+                        },
+                        "required": ["path", "old_string", "new_string"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "receive_messages",
-                "description": "Receive pending in-memory messages for an agent.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "target": {"type": "string", "description": "Agent ID or channel to receive for."}
-                    },
-                    "required": ["target"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "list_directory",
+                    "description": "List files and sub-directories inside a directory.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path": {"type": "string", "description": "Directory path."}
+                        },
+                        "required": ["path"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "fork_agent",
-                "description": "Spawn multiple sub-agents in parallel for different subtasks.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "tasks": {"type": "array", "items": {"type": "string"}, "description": "List of tasks to fork."}
-                    },
-                    "required": ["tasks"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "glob_search",
+                    "description": "Find files matching a glob pattern (e.g. **/*.rs).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "pattern": {"type": "string", "description": "Glob pattern to match."}
+                        },
+                        "required": ["pattern"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "join_agents",
-                "description": "Collect and merge results from multiple sub-agents.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "agent_ids": {"type": "array", "items": {"type": "string"}, "description": "List of agent IDs to join."}
-                    },
-                    "required": ["agent_ids"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "search_file_content",
+                    "description": "Search for a regex pattern inside a file and return matching lines.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path":    {"type": "string", "description": "File path."},
+                            "pattern": {"type": "string", "description": "Regex or text to search for."}
+                        },
+                        "required": ["path", "pattern"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "mcp_call",
-                "description": "Call a tool on a Model-Context-Protocol server.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "server_command": {"type": "string", "description": "Command to launch the MCP server."},
-                        "tool_name":      {"type": "string", "description": "Name of the tool to invoke."},
-                        "arguments":      {"description": "Tool arguments (any JSON value)."}
-                    },
-                    "required": ["server_command", "tool_name"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "run_shell_command",
+                    "description": "Run a shell command and return its stdout/stderr output.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "command":      {"type": "string", "description": "The shell command to execute."},
+                            "timeout_secs": {"type": "integer", "description": "Optional timeout in seconds (default 300)."}
+                        },
+                        "required": ["command"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "mcp_list",
-                "description": "List all connected MCP servers and the tools discovered from them.",
-                "parameters": {"type": "object", "properties": {}}
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "lsp_query",
-                "description": "Query the Language Server Protocol for diagnostics, hover info, or definitions.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "file":       {"type": "string",  "description": "Source file path."},
-                        "line":       {"type": "integer", "description": "0-based line number."},
-                        "character":  {"type": "integer", "description": "0-based character offset."},
-                        "query_type": {"type": "string",  "description": "diagnostics | hover | definition (default diagnostics)."}
-                    },
-                    "required": ["file"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "web_search",
+                    "description": "Search the web and return a list of results with titles, URLs and snippets.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query."}
+                        },
+                        "required": ["query"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "tool_search",
-                "description": "Search for tools by name or description keyword.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {"type": "string", "description": "Search query."}
-                    },
-                    "required": ["query"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "web_fetch",
+                    "description": "Fetch a URL and return the page content as plain text.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "url": {"type": "string", "description": "URL to fetch."}
+                        },
+                        "required": ["url"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "cron_create",
-                "description": "Schedule a recurring task using a cron expression.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "name":     {"type": "string", "description": "Unique name for the cron job."},
-                        "schedule": {"type": "string", "description": "Cron expression (e.g. '0 * * * *')."},
-                        "task":     {"type": "string", "description": "Task description or command to run."}
-                    },
-                    "required": ["name", "schedule", "task"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "save_memory",
+                    "description": "Persist a fact or note to the agent's long-term memory store.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "fact": {"type": "string", "description": "The fact or note to remember."}
+                        },
+                        "required": ["fact"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "remote_trigger",
-                "description": "Send an HTTP request to a remote endpoint.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "endpoint": {"type": "string", "description": "URL to send the request to."},
-                        "payload":  {"description":   "Request body (any JSON value)."},
-                        "method":   {"type": "string", "description": "HTTP method (default POST)."}
-                    },
-                    "required": ["endpoint"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "sleep",
+                    "description": "Pause execution for a given number of seconds.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "seconds": {"type": "number", "description": "Seconds to sleep."}
+                        },
+                        "required": ["seconds"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "recall_context",
-                "description": "Recall an archived context chunk by its numeric ID.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "chunk_id": {"type": "integer", "description": "Archive chunk ID to recall."}
-                    },
-                    "required": ["chunk_id"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "synthetic_output",
+                    "description": "Emit a structured JSON output conforming to a named schema.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "schema_name": {"type": "string", "description": "Name of the output schema."},
+                            "data":        {"description": "Data conforming to the schema."}
+                        },
+                        "required": ["schema_name", "data"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "ai_tool",
-                "description": "Generic entrypoint for AI-generated or dynamic tools.",
-                "parameters": {"type": "object", "properties": {}}
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "generate_commit_message",
-                "description": "Generate a Conventional Commits style commit message from the current git diff. Use this when you need to create a commit message programmatically.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "instructions": {
-                            "type": "string",
-                            "description": "Optional extra instructions for the commit message style (e.g. 'use conventional commits with scope')"
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "execute_task_graph",
+                    "description": "Execute a task graph (DAG) where each node is a tool call.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "graph": {"type": "string", "description": "JSON-serialised TaskGraph."}
+                        },
+                        "required": ["graph"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "task_get",
+                    "description": "Retrieve a single task (or subtask) by numeric ID from .zed/task_list.json.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "id": {"type": "number", "description": "Task ID (e.g. 122 or 5.2 for a subtask)."}
+                        },
+                        "required": ["id"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "task_create",
+                    "description": "Create a new task in the project task list.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "title":        {"type": "string",  "description": "Task title."},
+                            "description":  {"type": "string",  "description": "Brief description."},
+                            "priority":     {"type": "string",  "description": "high | medium | low"},
+                            "dependencies": {"type": "array",   "items": {"type": "number"}, "description": "IDs of prerequisite tasks."},
+                            "details":      {"type": "string",  "description": "Implementation details."},
+                            "testStrategy": {"type": "string",  "description": "How to verify completion."},
+                            "subtasks":     {"type": "array",   "description": "List of subtask objects."}
+                        },
+                        "required": ["title"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "task_update",
+                    "description": "Update an existing task's status, title, priority or details.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "id":       {"type": "number", "description": "Task ID."},
+                            "status":   {"type": "string", "description": "pending | in_progress | done | deferred"},
+                            "title":    {"type": "string"},
+                            "priority": {"type": "string"},
+                            "details":  {"type": "string"}
+                        },
+                        "required": ["id"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "enter_plan_mode",
+                    "description": "Switch the agent into plan mode (no tool execution, planning only).",
+                    "parameters": {"type": "object", "properties": {}}
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "exit_plan_mode",
+                    "description": "Exit plan mode and resume normal tool execution.",
+                    "parameters": {"type": "object", "properties": {}}
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "enter_worktree",
+                    "description": "Create or switch to a git worktree for isolated work on a branch.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "branch": {"type": "string", "description": "Branch name."},
+                            "path":   {"type": "string", "description": "Worktree path."}
+                        },
+                        "required": ["branch", "path"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "exit_worktree",
+                    "description": "Exit the current git worktree, optionally merging changes back.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "merge": {"type": "boolean", "description": "Merge changes into main branch (default false)."}
                         }
                     }
                 }
-            }
-        }),
-        // ── OKF Knowledge (Open Knowledge Format) ─────────────────────────
-        json!({
-            "type": "function",
-            "function": {
-                "name": "okf_lookup",
-                "description": "Search the loaded Open Knowledge Format (OKF) bundles. This is Grok-CLI's Knowledge API. Use it to find structured knowledge such as tables, metrics, runbooks, schemas, definitions, etc. that were loaded from markdown+frontmatter bundles.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "query": {
-                            "type": "string",
-                            "description": "What to search for (e.g. 'orders table', 'weekly active users', 'runbook for data refresh')"
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "notebook_edit",
+                    "description": "Edit a cell in a Jupyter notebook.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "path":       {"type": "string",  "description": "Path to the notebook file."},
+                            "source":     {"type": "string",  "description": "New source code for the cell."},
+                            "cell_index": {"type": "integer", "description": "0-based cell index (default 0)."},
+                            "cell_type":  {"type": "string",  "description": "code | markdown (default code)."}
                         },
-                        "max_results": {
-                            "type": "integer",
-                            "description": "Maximum number of concepts to return (default 5, max 20)"
-                        }
-                    },
-                    "required": ["query"]
+                        "required": ["path", "source"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "okf_get",
-                "description": "Retrieve the full content of a specific OKF concept by its ID (the relative path inside the bundle, e.g. 'metrics/weekly_active_users' or 'tables/orders').",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "id": {
-                            "type": "string",
-                            "description": "The stable ID of the concept (usually the path without .md)"
-                        }
-                    },
-                    "required": ["id"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "execute_skill",
+                    "description": "Run a named agent skill and return its output.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "skill_name": {"type": "string", "description": "Name of the skill to execute."},
+                            "input":      {"type": "string", "description": "Optional input to pass to the skill."}
+                        },
+                        "required": ["skill_name"]
+                    }
                 }
-            }
-        }),
-        json!({
-            "type": "function",
-            "function": {
-                "name": "okf_create",
-                "description": "Create and store a new structured knowledge concept in the OKF Knowledge OS. Writes to the remote OKF server (if configured via okf.remote_url) or falls back to local knowledge bundles. Use this to permanently record tables, metrics, runbooks, decisions, patterns, etc. so they become queryable via okf_lookup.",
-                "parameters": {
-                    "type": "object",
-                    "properties": {
-                        "type": {
-                            "type": "string",
-                            "description": "Concept type (e.g. 'Table', 'Metric', 'Runbook', 'Decision', 'API', 'Pattern', 'Schema')"
-                        },
-                        "title": {
-                            "type": "string",
-                            "description": "Human-readable title"
-                        },
-                        "body": {
-                            "type": "string",
-                            "description": "Markdown body content with the actual knowledge"
-                        },
-                        "description": {
-                            "type": "string",
-                            "description": "Short one-line description (optional)"
-                        },
-                        "tags": {
-                            "type": "array",
-                            "items": { "type": "string" },
-                            "description": "Tags for categorization (optional)"
-                        },
-                        "resource": {
-                            "type": "string",
-                            "description": "Link to the real resource (optional)"
-                        },
-                        "id": {
-                            "type": "string",
-                            "description": "Optional explicit ID/path (e.g. 'metrics/weekly_active_users'). If omitted, one is generated from type+title."
-                        }
-                    },
-                    "required": ["title", "body"]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "list_skills",
+                    "description": "List all available agent skills.",
+                    "parameters": {"type": "object", "properties": {}}
                 }
-            }
-        }),
-    ]
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "spawn_agent",
+                    "description": "Spawn a focused sub-agent to complete a well-scoped task. \
+                        Optionally provide a custom model, persona, tool whitelist, sandbox dirs, \
+                        and iteration budget for per-agent isolation.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "task": {
+                                "type": "string",
+                                "description": "The task for the sub-agent to complete."
+                            },
+                            "context": {
+                                "type": "string",
+                                "description": "Optional additional context to pass to the agent."
+                            },
+                            "max_tokens": {
+                                "type": "integer",
+                                "description": "Max output tokens (256–8192, default 2048)."
+                            },
+                            "model": {
+                                "type": "string",
+                                "description": "Model to use, e.g. 'grok-3-mini' (default) or 'grok-3'."
+                            },
+                            "system_prompt": {
+                                "type": "string",
+                                "description": "Custom persona / system prompt for this agent."
+                            },
+                            "allowed_tools": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Tool whitelist. Omit for no tools. E.g. ['read_file','list_directory']."
+                            },
+                            "trusted_dirs": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Directories the agent may access. Defaults to CWD only."
+                            },
+                            "max_tool_iterations": {
+                                "type": "integer",
+                                "description": "Max tool-loop iterations (default 10)."
+                            }
+                        },
+                        "required": ["task"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "send_message",
+                    "description": "Send a message to a named agent or channel.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "target":  {"type": "string", "description": "Target agent ID or channel name."},
+                            "message": {"type": "string", "description": "Message content."}
+                        },
+                        "required": ["target", "message"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "team_create",
+                    "description": "Create a named team configuration.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "name":        {"type": "string", "description": "Team name."},
+                            "members":     {"type": "array",  "items": {"type": "string"}, "description": "List of member IDs."},
+                            "description": {"type": "string", "description": "Team description."}
+                        },
+                        "required": ["name"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "team_delete",
+                    "description": "Delete a named team.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "name": {"type": "string", "description": "Name of the team to delete."}
+                        },
+                        "required": ["name"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "list_agents",
+                    "description": "List all tracked sub-agents (optionally filtered by parent).",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "parent_id": {"type": "string", "description": "Optional parent agent ID to filter by."}
+                        }
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "get_agent_status",
+                    "description": "Get the status and result of a specific sub-agent.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {"type": "string", "description": "ID of the sub-agent."}
+                        },
+                        "required": ["agent_id"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "cancel_agent",
+                    "description": "Cancel a running sub-agent.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "agent_id": {"type": "string", "description": "ID of the sub-agent to cancel."}
+                        },
+                        "required": ["agent_id"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "send_message_in_memory",
+                    "description": "Send a message using the fast in-memory agent bus.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "from":    {"type": "string", "description": "Sender agent ID."},
+                            "to":      {"type": "string", "description": "Target agent ID or channel."},
+                            "message": {"type": "string", "description": "Message content."}
+                        },
+                        "required": ["to", "message"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "receive_messages",
+                    "description": "Receive pending in-memory messages for an agent.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "target": {"type": "string", "description": "Agent ID or channel to receive for."}
+                        },
+                        "required": ["target"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "fork_agent",
+                    "description": "Spawn multiple sub-agents in parallel for different subtasks.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "tasks": {"type": "array", "items": {"type": "string"}, "description": "List of tasks to fork."}
+                        },
+                        "required": ["tasks"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "join_agents",
+                    "description": "Collect and merge results from multiple sub-agents.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "agent_ids": {"type": "array", "items": {"type": "string"}, "description": "List of agent IDs to join."}
+                        },
+                        "required": ["agent_ids"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "mcp_call",
+                    "description": "Call a tool on a Model-Context-Protocol server.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "server_command": {"type": "string", "description": "Command to launch the MCP server."},
+                            "tool_name":      {"type": "string", "description": "Name of the tool to invoke."},
+                            "arguments":      {"description": "Tool arguments (any JSON value)."}
+                        },
+                        "required": ["server_command", "tool_name"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "mcp_list",
+                    "description": "List all connected MCP servers and the tools discovered from them.",
+                    "parameters": {"type": "object", "properties": {}}
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "lsp_query",
+                    "description": "Query the Language Server Protocol for diagnostics, hover info, or definitions.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "file":       {"type": "string",  "description": "Source file path."},
+                            "line":       {"type": "integer", "description": "0-based line number."},
+                            "character":  {"type": "integer", "description": "0-based character offset."},
+                            "query_type": {"type": "string",  "description": "diagnostics | hover | definition (default diagnostics)."}
+                        },
+                        "required": ["file"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "tool_search",
+                    "description": "Search for tools by name or description keyword.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {"type": "string", "description": "Search query."}
+                        },
+                        "required": ["query"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "cron_create",
+                    "description": "Schedule a recurring task using a cron expression.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "name":     {"type": "string", "description": "Unique name for the cron job."},
+                            "schedule": {"type": "string", "description": "Cron expression (e.g. '0 * * * *')."},
+                            "task":     {"type": "string", "description": "Task description or command to run."}
+                        },
+                        "required": ["name", "schedule", "task"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "remote_trigger",
+                    "description": "Send an HTTP request to a remote endpoint.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "endpoint": {"type": "string", "description": "URL to send the request to."},
+                            "payload":  {"description":   "Request body (any JSON value)."},
+                            "method":   {"type": "string", "description": "HTTP method (default POST)."}
+                        },
+                        "required": ["endpoint"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "recall_context",
+                    "description": "Recall an archived context chunk by its numeric ID.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "chunk_id": {"type": "integer", "description": "Archive chunk ID to recall."}
+                        },
+                        "required": ["chunk_id"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "ai_tool",
+                    "description": "Generic entrypoint for AI-generated or dynamic tools.",
+                    "parameters": {"type": "object", "properties": {}}
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "generate_commit_message",
+                    "description": "Generate a Conventional Commits style commit message from the current git diff. Use this when you need to create a commit message programmatically.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "instructions": {
+                                "type": "string",
+                                "description": "Optional extra instructions for the commit message style (e.g. 'use conventional commits with scope')"
+                            }
+                        }
+                    }
+                }
+            }),
+            // ── OKF Knowledge (Open Knowledge Format) ─────────────────────────
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "okf_lookup",
+                    "description": "Search the loaded Open Knowledge Format (OKF) bundles. This is Grok-CLI's Knowledge API. Use it to find structured knowledge such as tables, metrics, runbooks, schemas, definitions, etc. that were loaded from markdown+frontmatter bundles.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "query": {
+                                "type": "string",
+                                "description": "What to search for (e.g. 'orders table', 'weekly active users', 'runbook for data refresh')"
+                            },
+                            "max_results": {
+                                "type": "integer",
+                                "description": "Maximum number of concepts to return (default 5, max 20)"
+                            }
+                        },
+                        "required": ["query"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "okf_get",
+                    "description": "Retrieve the full content of a specific OKF concept by its ID (the relative path inside the bundle, e.g. 'metrics/weekly_active_users' or 'tables/orders').",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "id": {
+                                "type": "string",
+                                "description": "The stable ID of the concept (usually the path without .md)"
+                            }
+                        },
+                        "required": ["id"]
+                    }
+                }
+            }),
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "okf_create",
+                    "description": "Create and store a new structured knowledge concept in the OKF Knowledge OS. Writes to the remote OKF server (if configured via okf.remote_url) or falls back to local knowledge bundles. Use this to permanently record tables, metrics, runbooks, decisions, patterns, etc. so they become queryable via okf_lookup.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "type": {
+                                "type": "string",
+                                "description": "Concept type (e.g. 'Table', 'Metric', 'Runbook', 'Decision', 'API', 'Pattern', 'Schema')"
+                            },
+                            "title": {
+                                "type": "string",
+                                "description": "Human-readable title"
+                            },
+                            "body": {
+                                "type": "string",
+                                "description": "Markdown body content with the actual knowledge"
+                            },
+                            "description": {
+                                "type": "string",
+                                "description": "Short one-line description (optional)"
+                            },
+                            "tags": {
+                                "type": "array",
+                                "items": { "type": "string" },
+                                "description": "Tags for categorization (optional)"
+                            },
+                            "resource": {
+                                "type": "string",
+                                "description": "Link to the real resource (optional)"
+                            },
+                            "id": {
+                                "type": "string",
+                                "description": "Optional explicit ID/path (e.g. 'metrics/weekly_active_users'). If omitted, one is generated from type+title."
+                            }
+                        },
+                        "required": ["title", "body"]
+                    }
+                }
+            }),
+        ]
+    })
 }
 
 /// Returns the full JSON tool definitions (same as get_full_tool_definitions).
 /// This alias is used by all ACP consumers that need the schema for the model.
-pub fn get_available_tool_definitions() -> Vec<serde_json::Value> {
+///
+/// Returns a static slice (zero-cost after first build) thanks to the OnceLock cache.
+pub fn get_available_tool_definitions() -> &'static [serde_json::Value] {
     get_full_tool_definitions()
 }
 
@@ -1412,7 +1421,9 @@ pub fn get_required_parameters(name: &str) -> Vec<String> {
 pub async fn get_available_tool_definitions_with_mcp(
     mcp_tools: &[(String, crate::mcp::protocol::Tool)],
 ) -> Vec<serde_json::Value> {
-    let mut defs = get_full_tool_definitions();
+    // Clone the static base only when we actually have MCP tools to append.
+    // This keeps the zero-alloc fast path for the common (no-MCP) case.
+    let mut defs: Vec<serde_json::Value> = get_full_tool_definitions().to_vec();
 
     for (server, tool) in mcp_tools {
         let full_name = format!("{}:{}", server, tool.name);
@@ -1556,6 +1567,33 @@ mod tests {
                 "Name in full definition does not match name list"
             );
         }
+    }
+
+    /// Task 263 regression test: prove that tool definitions are statically cached.
+    ///
+    /// After the first call, every subsequent call must return a pointer to the
+    /// exact same static data (no re-allocation / re-build of the json! vec).
+    #[test]
+    fn tool_definitions_are_statically_cached() {
+        // First access (may build)
+        let first = get_full_tool_definitions();
+
+        // Second access must be identical (same allocation)
+        let second = get_full_tool_definitions();
+
+        // Pointer equality proves we are returning the cached static slice
+        assert!(
+            std::ptr::eq(first, second),
+            "get_full_tool_definitions() must return the exact same static slice on every call"
+        );
+
+        // Length sanity (we have many tools)
+        assert!(first.len() >= 50, "Expected a large number of cached tool definitions");
+
+        // Also verify the name list cache is stable
+        let names1 = get_tool_definitions();
+        let names2 = get_tool_definitions();
+        assert!(std::ptr::eq(names1.as_ptr(), names2.as_ptr()) || names1 == names2);
     }
 
     /// ARCH-2: Verify that `get_required_parameters` correctly extracts

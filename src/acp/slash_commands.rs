@@ -191,7 +191,7 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         "/tools" => Some(SlashCommand::Tools),
         "/bayes" => match args.as_str() {
             "show" | "" => Some(SlashCommand::BayesShow),
-            "reset" => Some(SlashCommand::BayesReset),
+            "reset" | "rest" => Some(SlashCommand::BayesReset),
             "explain" => Some(SlashCommand::BayesExplain),
             _ => None,
         },

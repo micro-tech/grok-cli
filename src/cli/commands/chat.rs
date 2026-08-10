@@ -10,6 +10,8 @@
 use anyhow::Result;
 use colored::*;
 use serde_json::{Value, json};
+// Cheap message builders to reduce allocations (Task 267)
+use crate::utils::messages::{assistant, assistant_with_tool_calls, system, user};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -90,20 +92,15 @@ async fn handle_single_chat(
         format_info(&format!("Sending message to Grok (model: {})...", model))
     );
 
+    let turn_start = crate::utils::perf::start_turn();
     let spinner = create_spinner("Thinking...");
 
-    // Prepare messages
+    // Prepare messages (cheap builders, Task 267)
     let mut messages = Vec::new();
     if let Some(sys) = system {
-        messages.push(json!({
-            "role": "system",
-            "content": sys
-        }));
+        messages.push(system(sys));
     }
-    messages.push(json!({
-        "role": "user",
-        "content": message
-    }));
+    messages.push(user(message));
 
     // Add tool definitions
     let tools = tools::get_available_tool_definitions();
@@ -120,6 +117,9 @@ async fn handle_single_chat(
         .await;
 
     spinner.finish_and_clear();
+
+    // Task 266: per-turn timing (non-interactive)
+    crate::utils::perf::report_turn("single-chat turn", turn_start);
 
     match result {
         Ok(response_with_finish) => {
@@ -211,14 +211,15 @@ async fn handle_interactive_chat(
     println!("{}", "Type 'help' for available commands".dimmed());
     println!();
 
-    let mut conversation_history = Vec::new();
+    let mut conversation_history: Vec<serde_json::Value> = Vec::new();
 
-    // Add system message if provided
-    if let Some(sys) = system {
-        conversation_history.push(json!({
-            "role": "system",
-            "content": sys
-        }));
+    // Add system message if provided (cheap builder, Task 267).
+    // Keep system message separate (as a single owned Value) to avoid
+    // repeatedly cloning it when clearing history or building prompts (Task 264).
+    let system_message: Option<serde_json::Value> = system.map(system);
+
+    if let Some(ref sys_msg) = system_message {
+        conversation_history.push(sys_msg.clone()); // one-time at startup
     }
 
     // Set up security policy with current directory as trusted
@@ -255,7 +256,7 @@ async fn handle_interactive_chat(
 
                 // Handle special commands using a command registry
                 if let Some(result) =
-                    handle_interactive_command(&lower_input, input, &mut conversation_history)?
+                    handle_interactive_command(&lower_input, input, &mut conversation_history, &mut router)?
                 {
                     match result {
                         CommandResult::Exit => {
@@ -322,13 +323,11 @@ async fn handle_interactive_chat(
                     }
                 }
 
-                // Add user message to history
-                conversation_history.push(json!({
-                    "role": "user",
-                    "content": actual_input
-                }));
+                // Add user message to history (cheap builder, Task 267)
+                conversation_history.push(user(actual_input));
 
-                // Show spinner while waiting for response
+                // Show spinner while waiting for response + timing (Task 266)
+                let turn_start = crate::utils::perf::start_turn();
                 let spinner = create_spinner("Grok is thinking...");
 
                 // Get response with timeout and retries (including tool definitions)
@@ -354,6 +353,9 @@ async fn handle_interactive_chat(
 
                 spinner.finish_and_clear();
 
+                // Task 266: report per-turn timing (CLI interactive) — gated by GROK_PERF
+                crate::utils::perf::report_turn("cli-interactive turn", turn_start);
+
                 // Handle tool calls if present
                 if let Some(tool_calls) = &response_msg.tool_calls
                     && !tool_calls.is_empty()
@@ -370,23 +372,20 @@ async fn handle_interactive_chat(
                         }
                     }
 
-                    // Add assistant's tool call response to history
-                    conversation_history.push(json!({
-                        "role": "assistant",
-                        "content": response_msg.content.clone(),
-                        "tool_calls": tool_calls
-                    }));
+                    // Add assistant's tool call response to history (Task 267)
+                    let content_str = content_to_string(response_msg.content.as_ref());
+                    conversation_history.push(assistant_with_tool_calls(
+                        if content_str.is_empty() { None } else { Some(content_str) },
+                        tool_calls.clone(),
+                    ));
 
                     continue;
                 }
 
                 let response = content_to_string(response_msg.content.as_ref());
 
-                // Add assistant response to history
-                conversation_history.push(json!({
-                    "role": "assistant",
-                    "content": response.clone()
-                }));
+                // Add assistant response to history (cheap builder)
+                conversation_history.push(assistant(response.clone()));
 
                 // Display response
                 println!("{} {}", "Grok:".blue().bold(), response);
@@ -412,6 +411,7 @@ fn handle_interactive_command(
     lower_input: &str,
     input: &str,
     conversation_history: &mut Vec<Value>,
+    router: &mut Router,
 ) -> Result<Option<CommandResult>> {
     match lower_input {
         "exit" | "quit" | "q" => Ok(Some(CommandResult::Exit)),
@@ -530,6 +530,7 @@ fn handle_interactive_command(
                             );
                         }
                         slash_commands::BuiltinResult::ResetBayes => {
+                            router.reset();
                             println!("🔄 Bayesian priors reset (CLI session).");
                         }
                         slash_commands::BuiltinResult::ExplainBayes => {
@@ -790,8 +791,8 @@ async fn handle_explorer_mode(client: AppRouter, query: &str, model: &str) -> Re
     let system_prompt = Mode::Explorer.system_prompt_additions();
 
     let messages = vec![
-        json!({ "role": "system", "content": system_prompt }),
-        json!({ "role": "user", "content": query }),
+        system(system_prompt),
+        user(query),
     ];
 
     // Only allow read/search tools in explorer mode
@@ -814,6 +815,7 @@ async fn handle_explorer_mode(client: AppRouter, query: &str, model: &str) -> Re
         .map(|t| serde_json::json!(t))
         .collect();
 
+    let turn_start = crate::utils::perf::start_turn();
     let spinner = create_spinner("Exploring repository...");
     let response = match client
         .chat_completion_with_history(&messages, 0.2, 4096, model, Some(filtered_tools), None)
@@ -831,6 +833,9 @@ async fn handle_explorer_mode(client: AppRouter, query: &str, model: &str) -> Re
         }
     };
     spinner.finish_and_clear();
+
+    // Task 266: explorer timing
+    crate::utils::perf::report_turn("explorer turn", turn_start);
 
     if let Some(content) = response.message.content {
         let text = extract_text_content(&content);

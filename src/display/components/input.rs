@@ -12,9 +12,13 @@ use std::sync::LazyLock;
 static RE_ANSI: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"\x1b\[[0-9;]*m").expect("BUG: invalid static RE_ANSI pattern"));
 
+/// A command suggestion shown in the interactive prompt.
+///
+/// Using `&'static str` allows the entire suggestions list to live in a
+/// `static` / `LazyLock` with zero per-iteration allocations (Task 265).
 pub struct Suggestion {
-    pub text: String,
-    pub description: String,
+    pub text: &'static str,
+    pub description: &'static str,
 }
 
 fn strip_ansi(s: &str) -> String {
@@ -250,7 +254,7 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
                     KeyCode::Enter => {
                         if let Some(idx) = suggestion_index
                             && !filtered_suggestions.is_empty() {
-                                buffer = filtered_suggestions[idx].text.clone();
+                                buffer = filtered_suggestions[idx].text.to_string();
                                 // Select and break
                                 break;
                             }
@@ -302,7 +306,7 @@ pub fn read_input_with_suggestions(prompt: &str, suggestions: &[Suggestion]) -> 
                     KeyCode::Tab => {
                         if let Some(idx) = suggestion_index
                             && !filtered_suggestions.is_empty() {
-                                buffer = filtered_suggestions[idx].text.clone();
+                                buffer = filtered_suggestions[idx].text.to_string();
                                 cursor_pos = buffer.len();
                                 // Don't break, just fill
                             }

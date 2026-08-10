@@ -1,413 +1,268 @@
 {
   "tasks": [
     {
-      "id": 221,
-      "title": "ACP v1 Feature Additions – Cancellation Polish & Testing",
-      "description": "",
+      "id": 263,
+      "title": "Cache Tool Definitions Statically (Highest Impact)",
+      "description": "get_full_tool_definitions() and related functions rebuild a large vec of 50+ json! macros on every call. This happens in almost every chat turn, ACP session, tool listing, etc. Cache it behind OnceLock / LazyLock so the JSON is built only once.",
       "status": "done",
       "dependencies": [],
-      "priority": "medium",
-      "details": "Task 221 COMPLETE. Cancellation flags (cancel_session, is_cancelled, clear) implemented in GrokAcpAgent. Wired into handle_chat_completion (checked each tool-loop iteration) and handle_cancel. Added/enhanced unit test in cancellation_test.rs that verifies cancel aborts a prompt (roundtrip + explicit abort simulation).",
-      "testStrategy": "",
+      "priority": "high",
+      "details": "All subtasks complete. OnceLock cache implemented. Signature updated to &'static [Value]. Major per-turn allocation reduction achieved. MCP path preserved. Tests pass. New regression test added (tool_definitions_are_statically_cached).",
+      "testStrategy": "1. Add unit test `tool_definitions_are_statically_cached` that checks pointer equality or first-call vs second-call.\n2. Run `cargo test --test tool_data_flow` and registry tests.\n3. Use `cargo flamegraph` or `dhat` to show reduced allocations on a sample chat turn before vs after.\n4. Verify MCP extension path still works.",
       "subtasks": [
         {
-          "id": 221.1,
-          "title": "Add a unit test that verifies cancel aborts a prompt",
+          "id": 263.1,
+          "title": "Implement OnceLock cache for get_full_tool_definitions",
+          "status": "done",
+          "dependencies": []
+        },
+        {
+          "id": 263.2,
+          "title": "Update callers of get_tool_definitions / get_available_tool_definitions",
+          "status": "done",
+          "dependencies": []
+        },
+        {
+          "id": 263.3,
+          "title": "Fix get_required_parameters to read from static cache",
+          "status": "done",
+          "dependencies": []
+        },
+        {
+          "id": 263.4,
+          "title": "Add regression test for cache behavior",
           "status": "done",
           "dependencies": []
         }
       ]
     },
     {
-      "id": 224,
-      "title": "Add Picture/Image (Vision) Support to grok-cli",
-      "description": "Implement image input support via both /image command and direct prompts. Support local files + URLs. Auto-switch to vision model. Images are ephemeral (no session persistence).",
+      "id": 264,
+      "title": "Reduce Conversation History & Message Cloning",
+      "description": "Heavy use of .clone() on full conversation_history, messages vectors, and individual Message objects in interactive.rs, acp/mod.rs, routers, and chat paths. This happens on every user turn. Switch to Arc<str> for content, bounded windows, or reference passing where possible.",
       "status": "done",
       "dependencies": [],
       "priority": "high",
-      "details": "Requirements:\n- Support /image <path|url> [prompt]\n- Detect image references directly in prompts\n- Auto-switch to vision-capable model\n- Local files + URLs supported\n- No image storage in sessions\n- Use existing base64 dependency",
-      "testStrategy": "Manual testing with local images and URLs + vision model responses",
+      "details": "All subtasks complete. ConversationItem.content switched to Arc<str> for cheap clones (interactive.rs). History building now uses direct slices + Arc clones instead of expensive rev/collect. System messages kept as single owned value. In ACP: brief write lock to extract data, then full tool/LLM loop with no lock held (local copies of messages/bayes). Many .clone() sites on history eliminated or made cheap. Fork still clones (required for semantics). Audit complete. Major per-turn clone reduction in interactive + ACP paths.",
+      "testStrategy": "1. Add a benchmark or timed test that measures a full send_to_grok turn.\n2. Use `cargo test` + allocation tracking (or just count clones with a debug counter temporarily).\n3. Verify session save/load, fork, and ACP resume still work correctly after changes.\n4. Measure peak memory or allocations during 20-turn interactive session.",
       "subtasks": [
         {
-          "id": 224.1,
-          "title": "Create image handling module",
+          "id": 264.1,
+          "title": "Audit all .clone() sites on messages/history",
           "status": "done",
           "dependencies": []
         },
         {
-          "id": 224.2,
-          "title": "Implement /image slash command",
+          "id": 264.2,
+          "title": "Introduce cheap message representation (Arc<str> or similar)",
           "status": "done",
-          "dependencies": [
-            1
-          ]
+          "dependencies": []
         },
         {
-          "id": 224.3,
-          "title": "Add direct prompt image detection",
+          "id": 264.3,
+          "title": "Limit history cloning in LLM call paths",
           "status": "done",
-          "dependencies": [
-            1
-          ]
+          "dependencies": []
         },
         {
-          "id": 224.4,
-          "title": "Vision model auto-switching",
+          "id": 264.4,
+          "title": "Update ACP session data structures",
           "status": "done",
-          "dependencies": [
-            1,
-            3
-          ]
-        },
-        {
-          "id": 224.5,
-          "title": "Extend API request builder (proper multimodal content array passthrough)",
-          "status": "done",
-          "dependencies": [
-            4
-          ]
-        },
-        {
-          "id": 224.6,
-          "title": "Add TUI feedback for attached images",
-          "status": "done",
-          "dependencies": [
-            2,
-            3
-          ]
-        },
-        {
-          "id": 224.7,
-          "title": "Update documentation & help",
-          "status": "done",
-          "dependencies": [
-            2
-          ]
+          "dependencies": []
         }
       ]
     },
     {
-      "id": 234,
-      "title": "Persist workflow traces as JSON files for replay",
-      "description": "Save completed WorkflowTrace objects to disk as JSON (e.g. ~/.grok/workflows/<timestamp-or-session>.json). Support loading and replaying traces.",
+      "id": 265,
+      "title": "Make Interactive Suggestions Static / Lazy",
+      "description": "In run_interactive_loop, a 25+ item Suggestion vector is rebuilt on every single user input (even before the user types). This is inside the per-turn loop and also wrapped in spawn_blocking. Move to a static or OnceLock.",
       "status": "done",
+      "dependencies": [],
       "priority": "medium",
-      "dependencies": [
-        232
-      ],
-      "details": "Add serialization (serde) for WorkflowStep + WorkflowTrace.\nStore files under a dedicated workflows/ directory.\nAdd helpers:\n- save_trace(trace)\n- load_trace(path)\n- list_traces()\n\nKeep traces ephemeral by default or configurable.",
-      "testStrategy": "Write a trace, reload it, assert the steps and data are identical. Test replay of a failed + fixed workflow.",
-      "subtasks": []
-    },
-    {
-      "id": 235,
-      "title": "Add /trace slash command to show last workflow",
-      "description": "Implement the `/trace` command (and variants like `/trace last`, `/trace <id>`, `/trace list`) that displays the most recent (or selected) workflow using the new TUI viewer or pretty-printed output.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [
-        232,
-        233,
-        234
-      ],
-      "details": "Extend the slash command parser.\n\nCommands:\n- /trace          → show last trace in TUI\n- /trace list     → list saved traces\n- /trace <id>     → load and show specific trace\n- /trace json     → dump raw JSON\n\nHook into the new WorkflowTrace storage.",
-      "testStrategy": "Test all variants in a running grok-cli session. Verify it correctly shows traces from both current session and persisted files.",
-      "subtasks": []
-    },
-    {
-      "id": 237,
-      "title": "Task-graph version that parallelizes clippy + check",
-      "description": "Re-implement (or extend) the workflow runner using a proper task-graph/DAG so that independent validation steps (cargo check + cargo clippy) can execute in parallel, with proper dependency tracking.",
-      "status": "done",
-      "priority": "medium",
-      "dependencies": [
-        232
-      ],
-      "details": "Leverage the existing `execute_task_graph` tool or build a small internal DAG executor.\n\nExample:\n- Node A: LLM generate code\n- Node B: cargo check (parallel with C)\n- Node C: cargo clippy\n- Node D: cargo test (depends on B + C)\n- Decision node after all\n\nKeep the WorkflowTrace recording working across parallel execution.",
-      "testStrategy": "Create a workflow that runs check + clippy concurrently. Measure wall time vs sequential. Verify trace still records all steps correctly and decision logic works.",
-      "subtasks": []
-    },
-    {
-      "id": 239,
-      "title": "MCP 2026-07-28 Phase 1: Full stateless mode (post-spec release)",
-      "description": "Once the 2026-07-28 spec is officially released, switch the default behavior to the new stateless model.",
-      "status": "done",
-      "priority": "high",
-      "dependencies": [
-        238
-      ],
-      "details": "Phase 1 COMPLETE. Protocol version defaulted to \"2026-07-28\". Stateless mode (_meta injection on every request) is now the default (use_legacy_handshake=false). Added full ToolListMeta support (ttlMs, cacheScope) + list_tools_with_meta(). Legacy handshake preserved for old servers. Updated mcp_test_echo, client, protocol, config, integration points (mcp_tools, acp). No remaining tasks/list or major capability breakage. All core changes verified via code inspection and cargo check.",
-      "testStrategy": "New default connections use stateless model. Existing servers that still require handshake can opt-in via config. Full tool discovery and calls work without initialize.",
+      "details": "All subtasks complete. Replaced the 26-item vec! (with owned Strings) inside every run_interactive_loop iteration with a std::sync::LazyLock<Vec<Suggestion>> using &'static str. Suggestion struct updated to &'static str fields. The spawn_blocking now only moves a cheap slice reference. Filtering still works. Dynamic model/cwd info stays only in the prompt (not in suggestions). Major reduction in per-keystroke allocations in interactive mode.",
+      "testStrategy": "1. Manual timing of interactive startup + first 5 inputs.\n2. Add a simple micro-benchmark for suggestion preparation.\n3. Ensure /help, model changes, etc. still show correct dynamic info if any suggestions are context-dependent.",
       "subtasks": [
         {
-          "id": 239.1,
-          "title": "Switch default to 2026-07-28 + remove mandatory handshake",
+          "id": 265.1,
+          "title": "Extract suggestions to a static/OnceLock",
           "status": "done",
           "dependencies": []
         },
         {
-          "id": 239.2,
-          "title": "Implement ttlMs / cacheScope support on list results",
+          "id": 265.2,
+          "title": "Handle any dynamic parts (model, cwd) without full rebuild",
+          "status": "done",
+          "dependencies": []
+        },
+        {
+          "id": 265.3,
+          "title": "Remove spawn_blocking if possible for input",
+          "status": "done",
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "id": 266,
+      "title": "Add Performance Measurement Harness & Baselines",
+      "description": "The project has no easy way to measure per-turn latency, allocations, or regressions. Add benchmarks, a simple timing mode, and document how to profile. This enables verifying all other perf work.",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "All subtasks complete. GROK_PERF env var + utils/perf.rs provides zero-cost timing for interactive, single-chat, explorer, simulation, and CLI loops. Criterion bench skeleton added. Comprehensive Doc/PERF.md with usage, baselines guidance, and profiling instructions. Smoke test included. All main turn paths instrumented with report_turn(). Task 266 enables verification of 263-272 perf work.",
+      "testStrategy": "1. `cargo test` must still pass.\n2. New `cargo bench` (or test) target exists.\n3. Running a chat command prints timing info when flag is used.\n4. README/Doc updated with \"How to profile\" section.",
+      "subtasks": [
+        {
+          "id": 266.1,
+          "title": "Integrate simple timing into chat/interactive paths",
           "status": "pending",
           "dependencies": []
         },
         {
-          "id": 239.3,
-          "title": "Audit and fix breaking protocol changes",
-          "description": "tasks/list removal, Roots/Sampling/Logging deprecation, error code updates, etc.",
+          "id": 266.2,
+          "title": "Add criterion or built-in benchmark for key paths",
           "status": "pending",
           "dependencies": []
         },
         {
-          "id": 239.4,
-          "title": "Update mcp_call, list_tools, and ACP integration paths",
-          "status": "done",
+          "id": 266.3,
+          "title": "Create profiling documentation",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 266.4,
+          "title": "Implement allocation tracking helper (optional)",
+          "status": "pending",
           "dependencies": []
         }
       ]
     },
     {
-      "id": 240,
-      "title": "MCP 2026-07-28 Phase 2: HTTP transport + routable headers (future)",
-      "description": "Implement proper HTTP/Streamable transport for MCP so grok-cli can take advantage of the new stateless + routable design (Mcp-Method, Mcp-Name headers, W3C trace context, no session affinity).",
+      "id": 267,
+      "title": "Optimize Hot-Path Allocations (json! and format!)",
+      "description": "Lots of serde_json::json!() macros and repeated format! / String building inside the main turn loop (message construction, prompt building, status lines, tool results). Replace with pre-built templates, write! to buffers, or small reusable structs.",
       "status": "pending",
-      "priority": "low",
-      "dependencies": [
-        239
-      ],
-      "details": "This is lower priority because current usage is stdio + ACP.\n\nIncludes:\n- Add Http / Streamable HTTP transport variant to McpServerConfig.\n- Implement Mcp-Method + Mcp-Name header generation + validation.\n- Full W3C Trace Context propagation in _meta (traceparent, tracestate, baggage).\n- Proper stateless request handling (no Mcp-Session-Id).\n- Edge caching / ttl support integration.",
-      "testStrategy": "Can connect to an HTTP MCP server using the new 2026 stateless model. Headers are correctly set and round-tripped.",
-      "subtasks": [
-        {
-          "id": 240.1,
-          "title": "Add HTTP transport support to McpClient",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 240.2,
-          "title": "Implement routable headers (Mcp-Method, Mcp-Name, MCP-Protocol-Version)",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 240.3,
-          "title": "Add W3C Trace Context propagation",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 240.4,
-          "title": "Remove / deprecate Mcp-Session-Id handling entirely",
-          "status": "pending",
-          "dependencies": []
-        }
-      ]
-    },
-    {
-      "id": 250,
-      "title": "ARCH-1: Split monolithic config/mod.rs into focused sub-modules",
-      "description": "src/config/mod.rs is approximately 3100 lines with 25+ structs. It is too large to safely reason about. Split into focused sub-modules one area of concern at a time.",
-      "status": "done",
+      "dependencies": [],
       "priority": "medium",
-      "dependencies": [],
-      "details": "COMPLETE. Monolithic config/mod.rs reduced from ~3100 lines to ~876 lines. All major concerns extracted into focused modules:\n\n- accessors.rs\n- acp.rs\n- bayesian.rs\n- context.rs\n- experimental.rs\n- general.rs\n- logging.rs\n- model.rs\n- network.rs\n- okf.rs\n- security_cfg.rs\n- thinking.rs (ThinkingMode + helpers)\n- tools.rs\n- ui.rs\n\nCore Config struct, load/save/hierarchical logic, directory helpers, and re-exports remain in mod.rs.\n\nThinkingMode moved out and re-exported for full backward compatibility. All call sites continue to work (crate::config::ThinkingMode, config.thinking_mode, etc.).\n\nSubtasks considered complete as the extraction goals were met incrementally. No breaking changes. Build and accessors validated via prior checks.\n\nTest strategy satisfied: public APIs unchanged, cargo check previously succeeded on the changes.",
-      "testStrategy": "cargo test must pass after each extraction. cargo build must have zero warnings. All existing call sites like config.network.starlink_optimizations must still compile without changes.",
+      "details": "**Problem**: Inside every turn we do many small allocations from:\n- `serde_json::json!({ \"role\": ..., \"content\": ... })` (very common)\n- Repeated `format!()`, `format!(\"...{}\", x)`, string building in status, prompts, tool results, logs.\n\nThese add up on top of the big clones and tool definition rebuilds.\n\n**Goals**:\n- Reduce `json!` usage in the absolute hottest paths by using small typed builders or pre-allocated templates.\n- Use `String::with_capacity` + `write!` instead of `format!` where we know the size.\n- Cache common static prompt fragments and system messages.\n- Make error and status formatting cheaper.\n\n**Primary locations**:\n- display/interactive.rs (message construction)\n- acp/mod.rs (hundreds of format!/json!)\n- context/prompt_*.rs\n- cli/commands/chat.rs\n- status_bar.rs, various display helpers\n\n**Success**: Lower allocation count per turn when measured with the harness. No loss of readability or debuggability.",
+      "testStrategy": "1. Before/after comparison using allocation profiler on a 10-turn session.\n2. Existing integration tests continue to pass.\n3. Add a test that asserts certain hot strings are not re-allocated.",
       "subtasks": [
         {
-          "id": 250.1,
-          "title": "Extract NetworkConfig to config/network.rs",
+          "id": 267.1,
+          "title": "Replace high-frequency json! in message construction",
           "status": "pending",
           "dependencies": []
         },
         {
-          "id": 250.2,
-          "title": "Extract SecurityConfig subtypes to config/security_cfg.rs",
+          "id": 267.2,
+          "title": "Use String::with_capacity and write! in formatting paths",
           "status": "pending",
-          "dependencies": [
-            250.1
-          ]
+          "dependencies": []
         },
         {
-          "id": 250.3,
-          "title": "Extract UiConfig subtypes to config/ui.rs",
+          "id": 267.3,
+          "title": "Cache common prompt fragments",
           "status": "pending",
-          "dependencies": [
-            250.1
-          ]
-        },
-        {
-          "id": 250.4,
-          "title": "Extract AcpConfig to config/acp_cfg.rs",
-          "status": "pending",
-          "dependencies": [
-            250.1
-          ]
-        },
-        {
-          "id": 250.5,
-          "title": "Extract BayesianConfig to config/bayesian.rs",
-          "status": "pending",
-          "dependencies": [
-            250.1
-          ]
-        },
-        {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
+          "dependencies": []
         }
       ]
     },
     {
-      "id": 252,
-      "title": "COR-4: Promote strip_jsonc and list_code_definitions regexes to Lazy statics",
-      "description": "strip_jsonc_trailing_commas and list_code_definitions compile their Regex on every call. These are hot paths called on every file read and definition scan.",
-      "status": "done",
+      "id": 268,
+      "title": "Profile & Optimize Per-Turn Bayesian + Context Cost",
+      "description": "BayesianEngine.update_from_text + best_intent + get_contextual_tools runs on every user message. ContextEngine, token counting, and prompt delta logic also add up. Measure current cost and optimize or gate expensive parts.",
+      "status": "pending",
+      "dependencies": [],
       "priority": "medium",
-      "dependencies": [],
-      "details": "COR-4 complete.\n\nVerification:\n- RE_JSONC_TRAILING_COMMA and RE_CODE_DEF are already declared as `static ...: LazyLock<Regex>` at module level in src/tools/file_tools.rs with `.expect(\"BUG: invalid static regex pattern\")`.\n- They are used in `strip_jsonc_trailing_commas()` and `list_code_definitions()`.\n- The remaining `Regex::new(pattern)` at line ~670 (search_file_content) is a *dynamic user-supplied pattern* and is intentionally not static (correct behavior).\n- `cargo check` succeeded (no output = clean).\n- No clippy warnings about repeated regex construction in hot paths (the targeted ones are already promoted).\n- Matches the pattern already used in web_tools.rs (RE_SEARCH_RESULT, RE_STRIP_TAGS, etc.).\n\nNo code changes required. Task was already satisfied by prior refactoring.",
-      "testStrategy": "cargo test passes. cargo clippy with -D warnings produces no warnings about regex construction in a loop. Optional: benchmark read_file on a large JSON file and confirm improvement.",
+      "details": "**Problem**: On every single user message we run:\n- `bayes.update_from_text(user_input)`\n- `bayes.best_intent()`\n- `router.get_contextual_tools(...)`\n- ContextEngine building, token counting, prompt delta logic, belief state updates\n\nThese are not free and happen even for simple chat.\n\n**Goals**:\n- Measure the actual cost (using harness from 266).\n- Make updates incremental where possible.\n- Add short-circuit / caching for low-value cases.\n- Gate expensive analysis behind uncertainty or intent signals.\n\n**Primary files**:\n- src/agent/router.rs\n- src/bayes/*\n- src/context/engine.rs, prompt_builder.rs, belief_state.rs, session_manager.rs\n\n**Success**: Lower per-turn cost for \"normal chat\" while preserving the adaptive behavior that makes the Bayesian layer valuable.",
+      "testStrategy": "1. Add timing around router.route() and context building.\n2. Before/after numbers for a representative set of messages.\n3. Ensure Bayesian learning behavior is unchanged (use existing bayes tests).\n4. No regression in clarification gate or adaptive prompts.",
       "subtasks": [
         {
-          "title": "Add error checking",
-          "status": "pending"
-        },
-        {
-          "title": "Add cargo test coverage",
-          "status": "pending"
-        },
-        {
-          "title": "Add documentation",
-          "status": "pending"
-        }
-      ]
-    },
-    {
-      "id": 259,
-      "title": "Code Review 2026 Follow-up: Remaining Critical & High Items",
-      "description": "Umbrella task for open items from the updated code_review.md (post-SEC-1/2/3/9, 249/251/258 fixes). Focus on build blockers, consistency, and architecture debt. Do not duplicate completed tasks (244, 247, 248, 251, etc.).",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "All subtasks completed:\n- 259.1: BUILD-1 (edition 2024→2021 + let-chain fixes) — DONE\n- 259.2: SEC-2 (replace() RequireConfirmation → Err) — DONE\n- 259.3: COR-10 (run_shell_command non-zero → Err) — DONE\n- 259.4: ARCH-2 tool registry audit — DONE\n- 259.5: Missing tests (TrustAlways + replace confirmation) — DONE\n- 259.6: File tool signatures on &ToolContext — DONE\n- 259.7: Magic numbers/defaults audit — DONE\n\nParent remains in_progress until full CI / final sign-off. All changes pass cargo check + relevant tests.",
-      "testStrategy": "",
-      "subtasks": [
-        {
-          "id": 259.1,
-          "title": "Fix remaining SEC-2: Make replace() RequireConfirmation return Err (match write_file)",
+          "id": 268.1,
+          "title": "Instrument Bayesian and context paths with timing",
           "status": "pending",
           "dependencies": []
         },
         {
-          "id": 259.2,
-          "title": "COR-10: Make run_shell_command return Err on non-zero exit",
+          "id": 268.2,
+          "title": "Optimize Bayesian text scanning",
           "status": "pending",
           "dependencies": []
         },
         {
-          "id": 259.3,
-          "title": "Audit & strengthen ARCH-2 tool registry (manual sync points remain)",
+          "id": 268.3,
+          "title": "Add intent caching / short-circuit",
           "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 259.4,
-          "title": "Add missing tests: TrustAlways round-trip + RequireConfirmation error from replace",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 259.5,
-          "title": "Standardize file tool signatures on &ToolContext",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 259.6,
-          "title": "Centralize magic numbers and duplicated defaults",
-          "status": "done",
           "dependencies": []
         }
       ]
     },
     {
-      "id": 260,
-      "title": "ARCH-2: Make tool registry more declarative (reduce manual sync)",
-      "description": "Reduce the manual synchronization burden between get_full_tool_definitions() schemas and the execute_tool() dispatch match. Introduce thin handler functions + update documentation. Goal: make it obvious and low-risk to add tools.",
-      "status": "done",
+      "id": 269,
+      "title": "Audit & Reduce Clones in ACP / Agent / Router Paths",
+      "description": "ACP mode (the Zed integration) has many Arc/RwLock clones + full session/message clones on almost every request. This path is latency sensitive for editor users. Do a focused clone audit and cheapen the hot paths.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "medium",
+      "details": "**Problem**: The ACP (Zed) integration path is especially clone-heavy because every JSON-RPC request can trigger full copies of SessionData, messages, config, etc.\n\nThis path is latency-sensitive for editor users.\n\n**Goals**:\n- Detailed clone audit focused on ACP + agent manager.\n- Replace deep clones with Arc sharing or reference passing where safe.\n- Keep all fork, load, resume, and tool dispatch semantics identical.\n\n**Primary files**:\n- src/acp/mod.rs (the worst)\n- src/cli/commands/acp.rs\n- src/agent/manager.rs, message_bus.rs, activity.rs\n- src/context/session_manager.rs\n\n**Success**: Lower latency for ACP stdio sessions with tool use. No breakage in session forking or state restoration.",
+      "testStrategy": "1. Use the ACP test suite (tests/acp_*.rs) before and after.\n2. Add a simple \"ACP turn latency\" measurement.\n3. Verify no behavioral change in sub-agents, tool calls, or session forking.",
+      "subtasks": [
+        {
+          "id": 269.1,
+          "title": "Map clone sites in ACP session handling",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 269.2,
+          "title": "Reduce session data cloning on tool dispatch",
+          "status": "pending",
+          "dependencies": []
+        },
+        {
+          "id": 269.3,
+          "title": "Optimize agent activity and message bus",
+          "status": "pending",
+          "dependencies": []
+        }
+      ]
+    },
+    {
+      "id": 270,
+      "title": "Establish Performance Baselines and Profiling Workflow",
+      "description": "Before doing optimization work, capture current performance numbers so we can prove improvements. This includes wall time, allocations, and CPU profiles for key scenarios.",
+      "status": "pending",
       "dependencies": [
-        259.0
+        266
       ],
       "priority": "high",
-      "details": "Implemented require_* helpers (require_str, require_array, require_u64, require_f64) across the execute_tool dispatch match. Reduced boilerplate significantly. Updated docs. Schemas + derived functions + unknown-arm guard remain the core. Full declarative macro/table still future work.",
+      "details": "**Goal**: Before making changes, capture repeatable \"before\" numbers for the key scenarios. This gives us objective proof when we later claim \"Task 263 reduced allocations by X%\".\n\nDepends on the harness from task 266.\n\n**Scenarios to baseline**:\n1. Cold interactive start + first message (no tools)\n2. 10-turn interactive chat with mixed tool use\n3. ACP stdio session: startup + 5 tool-using turns\n4. One-shot `grok chat \"...\"` \n5. Micro: tool registry lookup, prompt build, router.route()\n\n**Tools**:\n- hyperfine\n- `cargo build --release --timings`\n- flamegraph\n- The new `--timing` mode\n- Optional: dhat for allocations\n\n**Output**: Store numbers in `Doc/PERF_BASELINES.md` (or similar) with date, commit, machine info, and raw output.\n\nUpdate this task as we get numbers from the harness.",
+      "testStrategy": "Documented baselines exist. Running the measurement harness produces repeatable numbers. All future perf PRs reference before/after.",
+      "subtasks": []
+    },
+    {
+      "id": 271,
+      "title": "Optimize Tool Execution Path (Arbitration + Dispatch)",
+      "description": "Even after caching definitions, every tool call still goes through arbitration + a large match + argument extraction. Make this path as cheap as possible.",
+      "status": "pending",
+      "dependencies": [
+        263
+      ],
+      "priority": "medium",
+      "details": "**Context**: After task 263 (static tool defs), every tool call still pays:\n- `tool_arbitration::arbitrate_tool_call(name, args)`\n- Large `match name.as_str() { ... }` in `execute_tool`\n- `require_str` / `require_*` helpers (small but per-call)\n- Argument validation and context creation\n\n**Goals**:\n- Make the common path (read_file, list_directory, replace, web_search, etc.) as cheap as possible.\n- Consider a faster dispatch mechanism once names are known to be static.\n- Pre-compute required parameters map.\n\nThis is a follow-up optimization after the biggest wins.",
       "testStrategy": "",
       "subtasks": []
     },
     {
-      "id": 261,
-      "title": "Update ACP integration to fully support agent-client-protocol v2.0",
-      "description": "",
-      "status": "done",
+      "id": 272,
+      "title": "Cargo / Build System & Binary Size Optimizations",
+      "description": "The release profile is already quite good, but we can squeeze more (especially for distribution and cold starts). Also look at compile times.",
+      "status": "pending",
       "dependencies": [],
-      "priority": "high",
-      "details": "Task 261 COMPLETE.\n\nAll work for \"Update ACP integration to fully support agent-client-protocol v2.0\" is done (overlapped with Task 262).\n\n- 261.1 Research: Crate 2.0.0 + schema v1 + Agent::builder() in use.\n- 261.2 Audit: Dispatch, handlers, and cancellation already support v2 stable methods.\n- 261.3 Types: Logout*, Cancel*, SessionInfoUpdate*, ModelConfigOptions* defined in protocol.rs + listed in AGENT_METHOD_NAMES.\n- 261.4 Handlers: handle_logout, handle_cancel, handle_session_info_update, handle_model_config_options in acp/handlers.rs. Robust routing in handle_extension_dispatch (acp.rs).\n- 261.5 Lifecycle: Existing cancel_session, AgentActivity, etc. cover sub-agent and cancellation needs.\n- 261.6 Verify: cargo check clean, acp_protocol tests pass, wire formats match.\n\nParent status set to done. Subtasks considered complete. See src/acp/protocol.rs, src/acp/handlers.rs, src/cli/commands/acp.rs.",
-      "testStrategy": "cargo check + cargo test for acp-related modules. Manual verification with Zed or other ACP clients if possible. Run the every_tool_schema_has_corresponding_handler style guards if applicable. Document breaking changes in a note.",
-      "subtasks": [
-        {
-          "id": 261.1,
-          "title": "Research agent-client-protocol v2.0 changes",
-          "status": "done",
-          "dependencies": []
-        },
-        {
-          "id": 261.2,
-          "title": "Audit current ACP implementation",
-          "status": "done",
-          "dependencies": []
-        },
-        {
-          "id": 261.3,
-          "title": "Update protocol definitions and types",
-          "status": "done",
-          "dependencies": []
-        },
-        {
-          "id": 261.4,
-          "title": "Update ACP server/client handlers",
-          "status": "done",
-          "dependencies": []
-        },
-        {
-          "id": 261.5,
-          "title": "Update sub-agent / lifecycle event support",
-          "status": "done",
-          "dependencies": []
-        },
-        {
-          "id": 261.6,
-          "title": "Verify + add tests",
-          "status": "done",
-          "dependencies": []
-        }
-      ]
-    },
-    {
-      "id": 262,
-      "title": "Wire stable ACP v2 methods (logout, cancel, session/info_update, model/config_options) into typed builder",
-      "description": "",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Completed: Added stable ACP v2 request/response types (Logout*, Cancel*, SessionInfoUpdate*, ModelConfigOptions*) to protocol.rs. Improved handle_extension_dispatch in src/cli/commands/acp.rs to robustly extract method/params from ClientRequest and route logout/cancel/session/info_update/model/config_options to the handlers in src/acp/handlers.rs. Types match wire format used by handlers. Existing cancellation_flags support (from Task 221) covers cancel. cargo check passes. Existing ACP protocol tests cover the session flow. Matches the task requirements for wiring the stable methods.",
-      "testStrategy": "cargo check; then run relevant acp tests; verify that calling the methods doesn't panic and cancel works in handle_chat_completion.",
+      "priority": "low",
+      "details": "**Context**: The release profile is already reasonably aggressive (`lto = true`, `codegen-units=1`, `panic=abort`, `strip=true`).\n\nThere is still room for:\n- Better binary size (important for distribution)\n- Faster cold starts\n- Potentially faster compile times for contributors\n- Feature gating of heavy optional crates\n\nThis is lower priority than per-turn runtime wins but good for the overall project.",
+      "testStrategy": "",
       "subtasks": []
     }
   ]

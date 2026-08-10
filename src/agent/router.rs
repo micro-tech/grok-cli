@@ -149,6 +149,12 @@ impl Router {
     pub fn is_low_confidence(&self) -> bool {
         self.bayes.is_low_confidence()
     }
+
+    /// Reset the Bayesian engine to default priors.
+    /// Used by `/bayes reset` (and the "rest" alias).
+    pub fn reset(&mut self) {
+        self.bayes = BayesianEngine::new_with_default_priors();
+    }
 }
 #[cfg(test)]
 mod tests {

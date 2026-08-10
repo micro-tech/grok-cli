@@ -19,6 +19,10 @@ path = "src/main.rs"
 name = "github_mcp"
 path = "src/bin/github_mcp.rs"
 
+[[bench]]
+name = "perf_bench"
+harness = false
+
 
 [dependencies]
 #  grok_api = { path = "../grok_crate/grok_api", version = "0.1.71" }
@@ -106,6 +110,8 @@ tempfile = "3.27.0"
 mockito = "1.7"
 tokio-test = "0.4"
 serial_test = "4.0.1"
+# For Task 266 benchmarks (optional but recommended for perf work)
+criterion = { version = "0.5", features = ["html_reports"] }
 
 [profile.release]
 lto = true
