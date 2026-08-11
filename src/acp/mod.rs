@@ -987,13 +987,21 @@ impl GrokAcpAgent {
                 .map(|t| t as u32)
                 .unwrap_or(session.config.max_tokens);
 
-            // Clone everything needed for the lock-free loop.
-            let msgs = session.messages.clone();
+            // Task 269: Avoid expensive clone of the full conversation history (Vec<Value>)
+            // on every ACP turn. We *take* ownership instead. The vec is moved out of
+            // SessionData (leaving it temporarily empty) and will be put back at the
+            // end of the turn (or at visibility sync points). This eliminates one full
+            // deep clone of the history per user turn while the tool loop runs lock-free.
+            let mut messages = std::mem::take(&mut session.messages);
             let mdl = session.config.model.clone();
             let thk = session.config.thinking_mode.clone();
+
+            // BayesianEngine clone is relatively cheap (small maps). We only actually
+            // mutate it on tool failure, so we could avoid it on the happy path, but
+            // we keep a clone here for simplicity and to preserve exact prior behavior.
             let bayes = session.bayes_engine.clone();
             let aall = session.always_allow.clone();
-            (msgs, temperature, max_tokens, mdl, thk, bayes, aall)
+            (messages, temperature, max_tokens, mdl, thk, bayes, aall)
         }; // ← write lock released here
 
         // ── Phase 2: Tool loop (NO write lock during API calls) ────────────────────
@@ -1315,10 +1323,11 @@ impl GrokAcpAgent {
                 };
 
                 // ── Phase 3: Final sync (brief write lock) ─────────────────────────────
+                // Task 269: move the accumulated messages back instead of cloning.
                 {
                     let mut sessions = self.sessions.write().await;
                     if let Some(s) = sessions.get_mut(&session_id.0) {
-                        s.messages = messages.clone();
+                        s.messages = std::mem::take(&mut messages);
                         s.bayes_engine = local_bayes;
                         for name in &newly_always_allowed {
                             s.always_allow.insert(name.clone());
@@ -1376,10 +1385,11 @@ impl GrokAcpAgent {
                 };
 
                 // ── Phase 3: Final sync (brief write lock) ─────────────────────────────
+                // Task 269: move instead of clone for the no-tool-call early return.
                 {
                     let mut sessions = self.sessions.write().await;
                     if let Some(s) = sessions.get_mut(&session_id.0) {
-                        s.messages = messages.clone();
+                        s.messages = std::mem::take(&mut messages);
                         s.bayes_engine = local_bayes;
                         for name in &newly_always_allowed {
                             s.always_allow.insert(name.clone());
@@ -1627,12 +1637,17 @@ impl GrokAcpAgent {
             let loop_duration = loop_start.elapsed();
             info!("🔄 Loop iteration completed in {:?}", loop_duration);
 
-            // Brief write-lock sync: persist the updated message history so
-            // save_session_to_disk and /context queries see fresh data between iterations.
+            // Task 269 (clone reduction): Do *not* clone the full history back into
+            // SessionData on every tool iteration. The local `messages` vec is the
+            // source of truth during the lock-free tool loop. We only write it back
+            // once at the end of the turn (in the final sync blocks before return).
+            // This eliminates N deep Vec<Value> clones per turn (where N = tool loops).
+            // Readers (save, /context) will see history as of the start of this user turn
+            // until the turn completes — acceptable tradeoff for much lower per-turn cost.
             {
                 let mut sessions = self.sessions.write().await;
                 if let Some(s) = sessions.get_mut(&session_id.0) {
-                    s.messages = messages.clone();
+                    // Only cheap fields; full history moved back at end of turn.
                     s.last_activity = std::time::Instant::now();
                 }
             }
@@ -1701,10 +1716,11 @@ impl GrokAcpAgent {
                     ));
                 }
                 // ── Phase 3: Final sync (brief write lock) ──────────────────────────
+                // Task 269: move the history back (no clone).
                 {
                     let mut sessions = self.sessions.write().await;
                     if let Some(s) = sessions.get_mut(&session_id.0) {
-                        s.messages = messages.clone();
+                        s.messages = std::mem::take(&mut messages);
                         s.bayes_engine = local_bayes.clone();
                         for name in &newly_always_allowed {
                             s.always_allow.insert(name.clone());

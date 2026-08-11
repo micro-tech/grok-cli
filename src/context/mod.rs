@@ -259,6 +259,9 @@ impl ContextEngine {
 
     /// Generate a summarized context string for prompt injection
     pub fn summarize_for_prompt(&self) -> String {
+        // Task 273 (268.1): Instrument ContextEngine summarize path with GROK_PERF
+        crate::perf_guard!("context.summarize_for_prompt");
+
         // Pre-size to reduce reallocations in hot path
         let mut summary = String::with_capacity(512);
 

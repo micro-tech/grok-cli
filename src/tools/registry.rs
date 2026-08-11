@@ -477,9 +477,9 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
     let policy = &ctx.policy;
 
     // ─────────────────────────────────────────────────────────────────────
-    // Tool Arbitration Layer
+    // Tool Arbitration Layer (Task 271: fast O(1) checks)
     // ─────────────────────────────────────────────────────────────────────
-    match tool_arbitration::arbitrate_tool_call(name, args)? {
+    match tool_arbitration::arbitrate_tool_call(name, args.clone())? {
         ArbitrationDecision::Execute { name, args } => {
             // Pure dispatch table (ARCH-2 / Task 260)
             // All real work lives in the thin handle_* functions above.
@@ -612,6 +612,48 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
 /// Built exactly once (via OnceLock) to eliminate repeated allocation of 50+
 /// `serde_json::json!` objects on every call to hot paths.
 static FULL_TOOL_DEFINITIONS: std::sync::OnceLock<Vec<serde_json::Value>> = std::sync::OnceLock::new();
+
+/// Task 271: Pre-computed static lookup structures for hot-path tool execution.
+///
+/// These eliminate O(n) linear scans on every tool call in arbitration + dispatch.
+///
+/// - KNOWN_TOOLS: O(1) membership test (replaces Vec.contains)
+/// - REQUIRED_PARAMS_MAP: O(1) lookup for required fields (replaces find_map + alloc per call)
+static KNOWN_TOOLS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
+    std::sync::OnceLock::new();
+
+static REQUIRED_PARAMS_MAP: std::sync::OnceLock<std::collections::HashMap<&'static str, Vec<String>>> =
+    std::sync::OnceLock::new();
+
+/// Initialize (or return) the fast lookup caches.
+/// Called lazily from the hot-path accessors.
+fn get_known_tools() -> &'static std::collections::HashSet<&'static str> {
+    KNOWN_TOOLS.get_or_init(|| {
+        get_tool_definitions().into_iter().collect()
+    })
+}
+
+fn get_required_params_map() -> &'static std::collections::HashMap<&'static str, Vec<String>> {
+    REQUIRED_PARAMS_MAP.get_or_init(|| {
+        let mut map = std::collections::HashMap::new();
+        for def in get_full_tool_definitions() {
+            if let Some(name) = def["function"]["name"].as_str() {
+                let required: Vec<String> = def["function"]["parameters"]["required"]
+                    .as_array()
+                    .map(|arr| {
+                        arr.iter()
+                            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                            .collect()
+                    })
+                    .unwrap_or_default();
+                // Leak the key for 'static lifetime (safe for tool names)
+                let static_name: &'static str = name.to_owned().leak();
+                map.insert(static_name, required);
+            }
+        }
+        map
+    })
+}
 
 /// Returns full OpenAI-style JSON tool schemas for every registered tool.
 ///
@@ -1395,23 +1437,23 @@ pub fn get_available_tool_definitions() -> &'static [serde_json::Value] {
 /// definition of what arguments a tool needs.  `tool_arbitration` now
 /// delegates to it, eliminating the old per-tool `match` duplication.
 pub fn get_required_parameters(name: &str) -> Vec<String> {
-    get_full_tool_definitions()
-        .iter()
-        .find_map(|def| {
-            let func = def.get("function")?;
-            if func.get("name").and_then(|n| n.as_str()) != Some(name) {
-                return None;
-            }
-            let params = func.get("parameters")?;
-            let required = params.get("required")?.as_array()?;
-            Some(
-                required
-                    .iter()
-                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                    .collect(),
-            )
-        })
+    // Task 271: Use pre-computed static map for O(1) lookup instead of linear scan.
+    get_required_params_map()
+        .get(name)
+        .cloned()
         .unwrap_or_default()
+}
+
+/// Fast O(1) version for hot paths (Task 271).
+/// Returns a reference to the static list (no allocation on lookup).
+pub fn get_required_parameters_fast(name: &str) -> Option<&'static [String]> {
+    get_required_params_map().get(name).map(|v| v.as_slice())
+}
+
+/// O(1) known-tool check (Task 271).
+/// Replaces the previous O(n) `get_tool_definitions().contains(...)` on the hot path.
+pub fn is_known_tool_fast(name: &str) -> bool {
+    get_known_tools().contains(name)
 }
 
 /// Returns the built-in tools plus any tools discovered from connected MCP servers.

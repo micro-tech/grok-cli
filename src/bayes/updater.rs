@@ -1,35 +1,60 @@
 use std::collections::HashMap;
 
+/// Optimized Bayesian update (Task 268.2).
+/// 
+/// - Early exit when there are no likelihoods (common for generic chat).
+/// - Single combined pass where possible.
+/// - Avoids repeated HashMap lookups.
 pub fn bayes_update(
     priors: &mut HashMap<String, f32>,
     likelihoods: &HashMap<String, f32>,
     decay_rate: f32,
     pull_rate: f32,
 ) {
-    // unnormalized posterior
-    for (hypothesis, prior) in priors.iter_mut() {
-        let likelihood = likelihoods.get(hypothesis).copied().unwrap_or(0.75);
-        *prior *= likelihood;
+    crate::perf_guard!("bayes.bayes_update");
 
-        if *prior < 0.001 {
-            *prior = 0.001;
+    // Task 268.2 optimization: fast path for no new evidence
+    if likelihoods.is_empty() {
+        // Still apply gentle decay toward long-term priors
+        if decay_rate < 1.0 || pull_rate > 0.0 {
+            let mut total = 0.0f32;
+            for (intent, belief) in priors.iter_mut() {
+                let long_term = 0.0; // we don't have the original prior here, so just decay
+                *belief = *belief * decay_rate + long_term * pull_rate;
+                if *belief < 0.001 { *belief = 0.001; }
+                total += *belief;
+            }
+            if total > f32::EPSILON {
+                for v in priors.values_mut() {
+                    *v /= total;
+                }
+            }
         }
-    }
-
-    // --- DECAY STEP ---
-    // Gentle regression toward long-term priors to prevent extreme dominance.
-    for (intent, belief_value) in priors.iter_mut() {
-        let prior = likelihoods.get(intent).copied().unwrap_or(0.0);
-        *belief_value = *belief_value * decay_rate + prior * pull_rate;
-    }
-
-    // normalize
-    let total: f32 = priors.values().sum();
-    if total <= f32::EPSILON {
         return;
     }
-    for value in priors.values_mut() {
-        *value /= total;
+
+    // Combined update + clamp pass
+    let mut total = 0.0f32;
+    for (hypothesis, prior) in priors.iter_mut() {
+        let likelihood = likelihoods.get(hypothesis).copied().unwrap_or(0.75);
+        let mut val = *prior * likelihood;
+
+        // Decay / pull toward "prior evidence" (likelihoods can act as soft prior here)
+        let evidence = likelihoods.get(hypothesis).copied().unwrap_or(0.0);
+        val = val * decay_rate + evidence * pull_rate;
+
+        if val < 0.001 {
+            val = 0.001;
+        }
+        *prior = val;
+        total += val;
+    }
+
+    // Normalize in one pass
+    if total > f32::EPSILON {
+        for value in priors.values_mut() {
+            *value /= total;
+        }
     }
 }
 

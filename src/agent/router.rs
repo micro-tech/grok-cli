@@ -48,6 +48,9 @@ impl Router {
     }
 
     pub async fn route(&mut self, user_input: &str) -> RouterAction {
+        // Task 268.2: instrument full router turn with the zero-cost guard
+        crate::perf_guard!("agent::router.route");
+
         // 1) Update beliefs from the user's text.
         self.bayes.update_from_text(user_input);
 
@@ -61,7 +64,8 @@ impl Router {
             );
         }
 
-        // 3) choose intent
+        // 3) choose intent (sub-measurement still useful)
+        crate::perf_guard!("bayes.best_intent (from route)");
         let intent = self
             .bayes
             .best_intent()
@@ -94,6 +98,13 @@ impl Router {
     }
 
     pub fn get_contextual_tools(&self, all_tools: Vec<Value>) -> Vec<Value> {
+        // Task 268: instrument context tool filtering cost
+        let t0 = if crate::utils::perf::perf_enabled() {
+            Some(crate::utils::perf::start_turn())
+        } else {
+            None
+        };
+
         let best = self
             .bayes
             .best_intent()
@@ -114,11 +125,14 @@ impl Router {
             }
             _ => {
                 // Return all tools for general intent
+                if let Some(s) = t0 {
+                    crate::utils::perf::report_turn("router.get_contextual_tools (full)", s);
+                }
                 return all_tools;
             }
         }
 
-        all_tools
+        let filtered: Vec<Value> = all_tools
             .into_iter()
             .filter(|t| {
                 if let Some(name) = t
@@ -130,7 +144,12 @@ impl Router {
                 }
                 true
             })
-            .collect()
+            .collect();
+
+        if let Some(s) = t0 {
+            crate::utils::perf::report_turn("router.get_contextual_tools", s);
+        }
+        filtered
     }
 
     pub fn get_adaptive_system_prompt(&self) -> Option<String> {

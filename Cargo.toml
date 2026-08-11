@@ -114,13 +114,29 @@ serial_test = "4.0.1"
 criterion = { version = "0.5", features = ["html_reports"] }
 
 [profile.release]
-lto = true
+# Task 272: Strong release profile for small binary + fast cold starts
+opt-level = 3          # Maximum optimization (change to "z" or "s" for even smaller size if needed)
+lto = "fat"            # Full link-time optimization (stronger than true in recent Rust)
+codegen-units = 1      # Better optimization, longer build
+panic = "abort"        # Smaller binaries (no unwinding)
+strip = true           # Strip symbols (good for distribution)
+debug = "none"         # Explicitly no debug info in release
+
+# Optional "slim" profile for even smaller distribution builds
+# Usage: cargo build --profile slim
+[profile.slim]
+inherits = "release"
+opt-level = "z"        # Optimize for size
+strip = true
+lto = "fat"
 codegen-units = 1
 panic = "abort"
-strip = true
 
 [profile.dev]
 debug = true
+# Task 272: modest opt-level in dev to improve compile + run speed during development
+opt-level = 1
+incremental = true
 
 [features]
 default = []

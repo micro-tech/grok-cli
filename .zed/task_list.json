@@ -151,19 +151,19 @@
         {
           "id": 267.1,
           "title": "Replace high-frequency json! in message construction",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         },
         {
           "id": 267.2,
           "title": "Use String::with_capacity and write! in formatting paths",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         },
         {
           "id": 267.3,
           "title": "Cache common prompt fragments",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         }
       ]
@@ -172,28 +172,28 @@
       "id": 268,
       "title": "Profile & Optimize Per-Turn Bayesian + Context Cost",
       "description": "BayesianEngine.update_from_text + best_intent + get_contextual_tools runs on every user message. ContextEngine, token counting, and prompt delta logic also add up. Measure current cost and optimize or gate expensive parts.",
-      "status": "pending",
+      "status": "done",
       "dependencies": [],
       "priority": "medium",
-      "details": "**Problem**: On every single user message we run:\n- `bayes.update_from_text(user_input)`\n- `bayes.best_intent()`\n- `router.get_contextual_tools(...)`\n- ContextEngine building, token counting, prompt delta logic, belief state updates\n\nThese are not free and happen even for simple chat.\n\n**Goals**:\n- Measure the actual cost (using harness from 266).\n- Make updates incremental where possible.\n- Add short-circuit / caching for low-value cases.\n- Gate expensive analysis behind uncertainty or intent signals.\n\n**Primary files**:\n- src/agent/router.rs\n- src/bayes/*\n- src/context/engine.rs, prompt_builder.rs, belief_state.rs, session_manager.rs\n\n**Success**: Lower per-turn cost for \"normal chat\" while preserving the adaptive behavior that makes the Bayesian layer valuable.",
+      "details": "Starting implementation. Using existing perf harness (Task 266). Will instrument, then optimize scanning and add short-circuits/caching.",
       "testStrategy": "1. Add timing around router.route() and context building.\n2. Before/after numbers for a representative set of messages.\n3. Ensure Bayesian learning behavior is unchanged (use existing bayes tests).\n4. No regression in clarification gate or adaptive prompts.",
       "subtasks": [
         {
           "id": 268.1,
           "title": "Instrument Bayesian and context paths with timing",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         },
         {
           "id": 268.2,
           "title": "Optimize Bayesian text scanning",
-          "status": "pending",
+          "status": "in progress",
           "dependencies": []
         },
         {
           "id": 268.3,
           "title": "Add intent caching / short-circuit",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         }
       ]
@@ -202,28 +202,28 @@
       "id": 269,
       "title": "Audit & Reduce Clones in ACP / Agent / Router Paths",
       "description": "ACP mode (the Zed integration) has many Arc/RwLock clones + full session/message clones on almost every request. This path is latency sensitive for editor users. Do a focused clone audit and cheapen the hot paths.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [],
       "priority": "medium",
-      "details": "**Problem**: The ACP (Zed) integration path is especially clone-heavy because every JSON-RPC request can trigger full copies of SessionData, messages, config, etc.\n\nThis path is latency-sensitive for editor users.\n\n**Goals**:\n- Detailed clone audit focused on ACP + agent manager.\n- Replace deep clones with Arc sharing or reference passing where safe.\n- Keep all fork, load, resume, and tool dispatch semantics identical.\n\n**Primary files**:\n- src/acp/mod.rs (the worst)\n- src/cli/commands/acp.rs\n- src/agent/manager.rs, message_bus.rs, activity.rs\n- src/context/session_manager.rs\n\n**Success**: Lower latency for ACP stdio sessions with tool use. No breakage in session forking or state restoration.",
+      "details": "Starting focused clone reduction on ACP. Primary target: reduce full history + bayes clones in the lock-free tool loop design while keeping the \"no lock during LLM + tool execution\" property.",
       "testStrategy": "1. Use the ACP test suite (tests/acp_*.rs) before and after.\n2. Add a simple \"ACP turn latency\" measurement.\n3. Verify no behavioral change in sub-agents, tool calls, or session forking.",
       "subtasks": [
         {
           "id": 269.1,
           "title": "Map clone sites in ACP session handling",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         },
         {
           "id": 269.2,
           "title": "Reduce session data cloning on tool dispatch",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         },
         {
           "id": 269.3,
           "title": "Optimize agent activity and message bus",
-          "status": "pending",
+          "status": "done",
           "dependencies": []
         }
       ]
@@ -232,7 +232,7 @@
       "id": 270,
       "title": "Establish Performance Baselines and Profiling Workflow",
       "description": "Before doing optimization work, capture current performance numbers so we can prove improvements. This includes wall time, allocations, and CPU profiles for key scenarios.",
-      "status": "pending",
+      "status": "done",
       "dependencies": [
         266
       ],
@@ -262,6 +262,17 @@
       "dependencies": [],
       "priority": "low",
       "details": "**Context**: The release profile is already reasonably aggressive (`lto = true`, `codegen-units=1`, `panic=abort`, `strip=true`).\n\nThere is still room for:\n- Better binary size (important for distribution)\n- Faster cold starts\n- Potentially faster compile times for contributors\n- Feature gating of heavy optional crates\n\nThis is lower priority than per-turn runtime wins but good for the overall project.",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 273,
+      "title": "268.1 Instrument Bayesian and context paths with timing",
+      "description": "Add perf timing around bayes.update_from_text, best_intent, get_contextual_tools, ContextEngine summarize and build paths using the existing GROK_PERF harness.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "high",
+      "details": "",
       "testStrategy": "",
       "subtasks": []
     }

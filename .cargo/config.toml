@@ -1,0 +1,25 @@
+# Task 272: Cargo configuration for faster builds + smaller releases
+# This file is git-ignored for machine-specific tweaks but committed defaults are here.
+
+[build]
+# Use all logical cores for parallel compilation
+jobs = -1
+
+[target.'cfg(all())']
+# Linker: on Windows we often use the default. Uncomment for faster linking on Linux/macOS.
+# rustflags = ["-C", "link-arg=-fuse-ld=lld"]
+
+[profile.release]
+# These are also duplicated in Cargo.toml for visibility.
+# The ones here act as overrides / additional flags.
+
+[profile.dev]
+# Faster dev builds
+incremental = true
+
+# Optional: thinner LTO for faster dev iteration if you want
+# [profile.dev.package."*"]
+# opt-level = 0
+
+# Helpful for contributors who want reproducible slim builds:
+# cargo build --profile slim
