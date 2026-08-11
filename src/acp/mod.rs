@@ -992,7 +992,7 @@ impl GrokAcpAgent {
             // SessionData (leaving it temporarily empty) and will be put back at the
             // end of the turn (or at visibility sync points). This eliminates one full
             // deep clone of the history per user turn while the tool loop runs lock-free.
-            let mut messages = std::mem::take(&mut session.messages);
+            let messages = std::mem::take(&mut session.messages);
             let mdl = session.config.model.clone();
             let thk = session.config.thinking_mode.clone();
 

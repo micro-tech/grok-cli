@@ -479,7 +479,7 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
     // ─────────────────────────────────────────────────────────────────────
     // Tool Arbitration Layer (Task 271: fast O(1) checks)
     // ─────────────────────────────────────────────────────────────────────
-    match tool_arbitration::arbitrate_tool_call(name, args.clone())? {
+    match tool_arbitration::arbitrate_tool_call(name, args)? {
         ArbitrationDecision::Execute { name, args } => {
             // Pure dispatch table (ARCH-2 / Task 260)
             // All real work lives in the thin handle_* functions above.

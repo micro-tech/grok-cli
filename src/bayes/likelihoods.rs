@@ -19,7 +19,7 @@ pub fn likelihood_from_text(text: &str, weight: f32) -> HashMap<String, f32> {
     // Use ascii lowercase (faster for typical command text, still correct for our keywords)
     let t = trimmed.to_ascii_lowercase();
     // Pre-allocate to avoid reallocs in the common 0-4 entry case
-    let mut map = HashMap::with_capacity(6);
+    let mut map: HashMap<String, f32> = HashMap::with_capacity(6);
 
     if t.contains("edit") || t.contains("fix") || t.contains("refactor") || t.contains("change") {
         map.insert("intent_edit".into(), weight);

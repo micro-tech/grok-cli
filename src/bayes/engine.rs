@@ -13,7 +13,6 @@
 //! [`BayesianEngine::new`] uses the compiled-in defaults and is kept for
 //! backward compatibility and tests.
 
-use std::cell::RefCell;
 use std::collections::HashMap;
 
 use crate::bayes::belief_graph::BeliefGraph;
@@ -34,7 +33,7 @@ const DEFAULT_BELIEF_DECAY_RATE: f32 = 0.95;
 const DEFAULT_PRIOR_PULL_RATE: f32 = 0.05;
 
 /// The core Bayesian inference engine.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BayesianEngine {
     priors: HashMap<String, f32>,
     graph: BeliefGraph,
@@ -67,9 +66,34 @@ pub struct BayesianEngine {
     // ── Task 268.3: Intent caching / short-circuit ────────────────────────────
     /// Last user text we fully processed (trimmed). Used for identical-input fast path.
     last_text: Option<String>,
-    /// Cached result of the most recent best_intent computation (interior mut for &self query).
-    /// Invalidated on any update that mutates the distribution.
-    cached_best_intent: RefCell<Option<String>>,
+    /// Cached result of the most recent best_intent computation.
+    /// Uses Mutex so BayesianEngine stays Send + Sync (required by ACP thread boundaries).
+    cached_best_intent: std::sync::Mutex<Option<String>>,
+}
+
+impl Clone for BayesianEngine {
+    fn clone(&self) -> Self {
+        Self {
+            priors: self.priors.clone(),
+            graph: self.graph.clone(),
+            clarification_threshold: self.clarification_threshold,
+            uncertainty_threshold: self.uncertainty_threshold,
+            vagueness_threshold: self.vagueness_threshold,
+            intent_likelihood_weight: self.intent_likelihood_weight,
+            profile_learning_rate: self.profile_learning_rate,
+            belief_decay_rate: self.belief_decay_rate,
+            prior_pull_rate: self.prior_pull_rate,
+            last_text: self.last_text.clone(),
+            // Clone the cached value if possible; otherwise start empty.
+            // Losing the cache on clone is harmless (it's only a perf hint).
+            cached_best_intent: std::sync::Mutex::new(
+                self.cached_best_intent
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.clone()),
+            ),
+        }
+    }
 }
 
 impl BayesianEngine {
@@ -152,7 +176,7 @@ impl BayesianEngine {
             belief_decay_rate,
             prior_pull_rate,
             last_text: None,
-            cached_best_intent: RefCell::new(None),
+            cached_best_intent: std::sync::Mutex::new(None),
         }
     }
 
@@ -235,7 +259,9 @@ impl BayesianEngine {
 
         // Update cache state for next short-circuit / best_intent
         self.last_text = Some(trimmed);
-        self.cached_best_intent.replace(None);
+        if let Ok(mut guard) = self.cached_best_intent.lock() {
+            *guard = None;
+        }
 
         if let Some(start) = _t {
             crate::utils::perf::report_turn("bayes.update_from_text", start);
@@ -326,8 +352,8 @@ impl BayesianEngine {
     /// since the last `update_from_text` (or when the identical-input fast path fired).
     pub fn best_intent(&self) -> Option<String> {
         // Task 268.3 fast path: serve from cache if present
-        if let Some(cached) = self.cached_best_intent.borrow().as_ref() {
-            return Some(cached.clone());
+        if let Some(cached) = self.cached_best_intent.lock().ok().and_then(|g| g.clone()) {
+            return Some(cached);
         }
 
         // Task 268.2: use the zero-cost guard (only emits under GROK_PERF=1)
@@ -336,7 +362,9 @@ impl BayesianEngine {
         // Compute and cache
         let computed = self.graph.best_key("intent_");
         if let Some(ref key) = computed {
-            self.cached_best_intent.replace(Some(key.clone()));
+            if let Ok(mut guard) = self.cached_best_intent.lock() {
+                *guard = Some(key.clone());
+            }
         }
         computed
     }
@@ -361,7 +389,9 @@ impl BayesianEngine {
     /// Call this before/after any operation that mutates the prior distribution.
     fn invalidate_caches(&mut self) {
         self.last_text = None;
-        self.cached_best_intent.replace(None);
+        if let Ok(mut guard) = self.cached_best_intent.lock() {
+            *guard = None;
+        }
     }
 }
 
