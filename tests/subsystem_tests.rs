@@ -366,7 +366,7 @@ fn registry_full_tool_definitions_have_correct_shape() {
         "full tool definitions list must not be empty"
     );
 
-    for def in &full {
+    for def in full {
         let type_field = def.get("type");
         assert!(
             type_field.is_some(),

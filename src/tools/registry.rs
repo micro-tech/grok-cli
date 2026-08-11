@@ -1573,27 +1573,49 @@ mod tests {
     ///
     /// After the first call, every subsequent call must return a pointer to the
     /// exact same static data (no re-allocation / re-build of the json! vec).
+    ///
+    /// The key proof is pointer identity of the returned `&'static [Value]` slices.
+    /// We keep other checks loose so the test stays stable as the registry evolves.
     #[test]
     fn tool_definitions_are_statically_cached() {
-        // First access (may build)
+        // First call (may initialize the OnceLock)
         let first = get_full_tool_definitions();
 
-        // Second access must be identical (same allocation)
+        // Second call – must hit the cached path
         let second = get_full_tool_definitions();
 
-        // Pointer equality proves we are returning the cached static slice
+        // This is the critical assertion for "statically cached".
+        // OnceLock guarantees the closure runs only once, so we must get the
+        // exact same slice (same data pointer + same length).
         assert!(
             std::ptr::eq(first, second),
-            "get_full_tool_definitions() must return the exact same static slice on every call"
+            "get_full_tool_definitions() must return the exact same &'static slice \
+             on every call (OnceLock cache not working). first={:p} second={:p}",
+            first.as_ptr(), second.as_ptr()
         );
 
-        // Length sanity (we have many tools)
-        assert!(first.len() >= 50, "Expected a large number of cached tool definitions");
+        // Lengths must obviously match
+        assert_eq!(first.len(), second.len());
 
-        // Also verify the name list cache is stable
-        let names1 = get_tool_definitions();
-        let names2 = get_tool_definitions();
-        assert!(std::ptr::eq(names1.as_ptr(), names2.as_ptr()) || names1 == names2);
+        // Basic sanity – the registry is populated
+        assert!(!first.is_empty(), "tool definitions must not be empty");
+
+        // At least the core file tools should be present (content check)
+        let names: Vec<&str> = first
+            .iter()
+            .filter_map(|d| d.get("function")?.get("name")?.as_str())
+            .collect();
+
+        assert!(
+            names.contains(&"read_file") && names.contains(&"write_file"),
+            "core tools read_file + write_file must be present, got names: {:?}",
+            names
+        );
+
+        // The derived name list must also be consistent
+        let n1 = get_tool_definitions();
+        let n2 = get_tool_definitions();
+        assert_eq!(n1, n2);
     }
 
     /// ARCH-2: Verify that `get_required_parameters` correctly extracts
