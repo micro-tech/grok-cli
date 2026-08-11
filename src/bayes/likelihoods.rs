@@ -10,9 +10,11 @@ pub fn likelihood_from_text(text: &str, weight: f32) -> HashMap<String, f32> {
     // Task 268.2: Use the zero-cost perf guard (only active under GROK_PERF=1)
     crate::perf_guard!("bayes.likelihood_from_text");
 
-    // Cheap short-circuit for trivial/empty input (Task 268 optimization)
+    // Cheap short-circuit for truly empty input only.
+    // We still want to process short inputs like "ok", "hi", "??"
+    // because they can legitimately trigger vagueness or question detection.
     let trimmed = text.trim();
-    if trimmed.len() < 3 {
+    if trimmed.is_empty() {
         return HashMap::new();
     }
 
