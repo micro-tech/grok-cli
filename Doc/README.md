@@ -36,4 +36,9 @@ When updating documentation:
 - Put detailed explanations, examples, and long-form content here in `Doc/`.
 - Use relative links (`[File](OtherFile.md)`) when linking between docs.
 
-Last updated: 2026-05-10
+Last updated: 2026-08 (Skill Builder catalog auto-refresh + slash command handling clarifications)
+
+### Recent Changes (last week)
+- **Skill Builder now auto-refreshes the catalog**: After creating a skill, `skill-builder` automatically runs `grok skills generate-catalog`. New skills immediately appear in `.grok/SKILLS_HOOKS_OPTIMIZATION.md` and are visible to the model.
+- **Slash command behavior documented**: Most commands (`/think`, `/clear`, `/help`, `/okf`, etc.) are handled locally as builtins and are **never forwarded to the LLM**. Only a few AI-assisted commands (`/plan`, `/review`, `/web`, `/commit`) are rewritten and sent.
+- **Tool error log clarification**: `grok-tool-error-log.log` contains both `TOOL-OK` (success) and `TOOL-ERROR` entries. Most entries are normal successes.

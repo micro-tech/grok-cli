@@ -75,7 +75,10 @@ Automatic security validation ensures skills only access what they need. Read-on
 ### 4. **Natural Language**
 Just describe what you need. Skill Builder handles the technical details.
 
-### 5. **Community-Friendly**
+### 5. **Catalog Auto-Refresh (Important)**
+After creating a skill, Skill Builder now automatically runs `grok skills generate-catalog` (or updates `.grok/SKILLS_HOOKS_OPTIMIZATION.md`). This makes the new skill visible to the model immediately on the next turn — no manual step required.
+
+### 6. **Community-Friendly**
 Create skills once, share with your team. Build your own skill library.
 
 ---

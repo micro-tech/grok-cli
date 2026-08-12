@@ -9,6 +9,41 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## Unreleased / Next (Recent Work)
+
+### Skill Builder Catalog Auto-Refresh (Major Reliability Improvement)
+
+- **Skill Builder** now **automatically refreshes the live catalog** after creating a skill.
+- Added `run_shell_command` to the allowed tools for `skill-builder`.
+- After every successful skill creation, the skill now runs:
+  ```bash
+  grok skills generate-catalog
+  ```
+- This updates `.grok/SKILLS_HOOKS_OPTIMIZATION.md` so the **SKILLS CATALOG** section immediately includes the new skill (name, description, tags, arbitration score, when to use).
+- The catalog is injected into context on every turn, so newly created skills are visible to the model without manual intervention or restart.
+- Updated `skill-builder/SKILL.md`, `Doc/SKILLS_QUICK_START.md`, `examples/skills/README.md`, and announcement docs.
+
+This solves the previous issue where users created skills but the model didn't know about them until a manual `generate-catalog`.
+
+### Slash Command Behavior Documentation
+
+- Clearly documented that the majority of slash commands are **handled locally as builtins** and are **never sent to the LLM**:
+  - Examples: `/think`, `/clear`, `/help`, `/okf`, `/goal`, `/bayes`, `/context`, `/tools`, `/rules`, `/compress`, etc.
+- Only a small number of commands are enhanced and forwarded to the model (`/plan`, `/review`, `/web`, `/commit`, `/explain`, etc.).
+- Updated README, QUICK_REFERENCE, and CHANGELOG.
+
+### Tool Error Log Clarification
+
+- Documented that `.grok/logs/grok-tool-error-log.log` is a combined audit log.
+- It contains both `TOOL-OK` (successes) and `TOOL-ERROR` (failures).
+- Most entries users see are normal successful tool calls (e.g. repeated `list_directory`).
+
+### Documentation Refresh
+
+- Updated root `README.md`, `Doc/README.md`, `Doc/QUICK_REFERENCE.md`, `Doc/SKILLS_QUICK_START.md`, `examples/skills/README.md`, `Doc/SKILL_BUILDER_ANNOUNCEMENT.md`, and `CHANGELOG.md` to reflect the above changes.
+
+---
+
 ## [0.2.5] — 2026-07-05
 
 ### Release Polish & Merge Preparation

@@ -6,7 +6,7 @@ This directory contains example skills that demonstrate the Agent Skills format 
 
 Skills are modular instruction sets that enhance the AI agent's capabilities in specific domains. Each skill is a directory containing a `SKILL.md` file with YAML frontmatter and markdown instructions.
 
-**New in v0.1.41**: Skills can now be created dynamically using the **Skill Builder** and activated immediately without restarting your session!
+**New in v0.1.41 + later updates**: Skills can now be created dynamically using the **Skill Builder** and activated immediately without restarting your session. The Skill Builder now automatically refreshes the catalog (`grok skills generate-catalog`) so newly created skills are visible to the model right away.
 
 ## Using These Skills
 
