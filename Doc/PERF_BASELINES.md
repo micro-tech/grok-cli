@@ -165,5 +165,24 @@ Keep the original baseline at the top so we always have the starting point.
 
 ---
 
-**Last updated**: (fill when you run the first real capture)
+**Last updated**: 2025 (partial real capture during perf task cleanup)
 **Related docs**: `Doc/PERF.md`
+
+---
+
+## Captured Measurements (Real runs with GROK_PERF=1)
+
+**Date**: 2025  
+**Build**: `cargo build --release`  
+**Environment**: Windows + cargo (release binary)  
+**Note**: Single sample only. Network latency dominates. Run multiple times for medians.
+
+| Scenario                        | Prompt                                      | Time     | Notes                     |
+|---------------------------------|---------------------------------------------|----------|---------------------------|
+| One-shot single-chat (no tools) | "Quick perf test: say hello"                | 2.77s    | `[perf] single-chat turn` |
+
+> **Recommendation**: Re-run with `GROK_PERF=1` on the same machine for 5–10 samples and compute median/P95.
+
+---
+
+## Scenario 1: Cold interactive start + first simple message (no tools)

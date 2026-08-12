@@ -1,4 +1,5 @@
 use crate::skills::{
+    generate_context_catalog, write_catalog_to_default_location,
     SkillRegistry, default_manifest_template, get_default_skills_dir, list_skills,
 };
 use anyhow::Result;
@@ -35,6 +36,9 @@ pub enum SkillsCommand {
         /// Name of the skill to disable
         name: String,
     },
+    /// Regenerate the self-updating SKILLS_HOOKS_OPTIMIZATION.md catalog
+    /// (Skills + Hooks + Optimization Heuristics). This keeps the model up-to-date.
+    GenerateCatalog,
 }
 
 const SKILL_MD_TEMPLATE: &str = r#"---
@@ -328,6 +332,16 @@ pub async fn handle_skills_command(command: SkillsCommand) -> Result<()> {
                 name.bright_yellow().bold()
             );
             println!("  {}", skill_path.display().to_string().dimmed());
+
+            // Auto-regenerate the live catalog so the model sees the new skill immediately
+            if let Ok(catalog_path) = write_catalog_to_default_location() {
+                println!(
+                    "  {} Updated catalog at {}",
+                    "↻".bright_cyan(),
+                    catalog_path.display().to_string().dimmed()
+                );
+            }
+
             println!();
             println!("  Files created:");
             println!(
@@ -343,6 +357,10 @@ pub async fn handle_skills_command(command: SkillsCommand) -> Result<()> {
                 "  Next: edit {} then activate with {}",
                 skill_path.join("SKILL.md").display().to_string().dimmed(),
                 format!("/activate {}", name).bright_cyan()
+            );
+            println!(
+                "  Run {} anytime to refresh the model-visible catalog.",
+                "grok skills generate-catalog".bright_cyan()
             );
         }
 
@@ -490,6 +508,28 @@ pub async fn handle_skills_command(command: SkillsCommand) -> Result<()> {
                 "  Re-enable with: {}",
                 format!("grok skills enable {}", name).bright_cyan()
             );
+        }
+
+        // ── Generate Catalog ─────────────────────────────────────────────────
+        SkillsCommand::GenerateCatalog => {
+            match write_catalog_to_default_location() {
+                Ok(path) => {
+                    println!(
+                        "{} Regenerated skills/hook/optimization catalog",
+                        "✓".bright_green()
+                    );
+                    println!("  {}", path.display().to_string().dimmed());
+                    println!();
+                    println!("  The model will see the updated catalog on the next turn.");
+                    println!("  Sections included:");
+                    println!("    • Skills Catalog (with triggers & arbitration)");
+                    println!("    • Hooks");
+                    println!("    • Optimization Heuristics");
+                }
+                Err(e) => {
+                    eprintln!("{} Failed to generate catalog: {}", "✗".bright_red(), e);
+                }
+            }
         }
     }
 

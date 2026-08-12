@@ -25,7 +25,7 @@ use crate::display::{
     format_welcome_banner,
 };
 use crate::router::AppRouter;
-use crate::skills::{AutoActivationEngine, list_skills};
+use crate::skills::{load_catalog_content, AutoActivationEngine, list_skills};
 use crate::tools::registry as tool_registry;
 use crate::tools::tool_context::ToolContext;
 use crate::utils::context::{
@@ -1238,6 +1238,16 @@ async fn send_to_grok(
             system_content.push_str("\n\n");
         }
         system_content.push_str(&skills_context);
+    }
+
+    // Inject the self-updating Skills / Hooks / Optimization catalog (if present)
+    // This gives the model accurate, up-to-date knowledge of available skills,
+    // hook behavior, and performance heuristics.
+    if let Some(catalog) = load_catalog_content() {
+        if !system_content.is_empty() {
+            system_content.push_str("\n\n");
+        }
+        system_content.push_str(&catalog);
     }
 
     if !system_content.is_empty() {
