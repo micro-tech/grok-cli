@@ -1,7 +1,7 @@
 {
   "tasks": [
     {
-      "id": 1,
+      "id": 273,
       "title": "Implement Self-Updating Skills/Hooks/Optimization Catalog",
       "description": "Create a single readable .grok/SKILLS_HOOKS_OPTIMIZATION.md file that is auto-generated. It contains clearly marked sections for Skills Catalog, Hooks, and Optimization Heuristics. The catalog is kept up-to-date by the skill-builder meta-skill and a new `grok skills generate-catalog` command. The file is injected into context so the model always has accurate knowledge of available skills, hooks, and perf patterns.",
       "status": "pending",
