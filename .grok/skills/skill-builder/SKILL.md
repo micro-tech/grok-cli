@@ -17,6 +17,7 @@ allowed-tools:
   - list_directory
   - find_path
   - grep
+  - run_shell_command
 ---
 
 # Skill Builder - Dynamic Skill Creation System
@@ -54,14 +55,25 @@ Create fully functional, secure, and well-documented skills from specifications 
 - Extend base skills with new capabilities
 - Merge multiple skill concepts
 
-### 2. Dynamic Installation
+### 2. Dynamic Installation (Critical — keep the model up to date)
 
 After creating a skill:
 1. Write SKILL.md to `~/.grok/skills/<skill-name>/`
-2. Validate for security issues
-3. Automatically add to session's `active_skills` list
-4. Make immediately available without restart
-5. Confirm activation with user feedback
+2. (Strongly recommended) Also write `skill.json` manifest (name, version, description, tags, arbitration_score, auto-activate rules, etc.).
+3. Validate for security issues.
+4. Add the skill to the session's `active_skills` list (if possible via the environment) or tell the user to run `/activate <name>`.
+5. Make it immediately available without restart.
+6. **Regenerate the live catalog — DO THIS EVERY TIME** (this is the most important post-creation step):
+   - **Preferred method**: Use the `run_shell_command` tool (now allowed) with exactly:
+     ```
+     {"command": "grok skills generate-catalog"}
+     ```
+     This calls the real CLI command that rewrites `.grok/SKILLS_HOOKS_OPTIMIZATION.md` with the full updated SKILLS CATALOG (including your new skill), HOOKS, and OPTIMIZATION HEURISTICS sections.
+   - **Alternative (if shell is blocked)**: Use `write_file` to directly overwrite `~/.grok/SKILLS_HOOKS_OPTIMIZATION.md`. You can read the current file first, then append a new `### <your-skill>` entry under the SKILLS CATALOG section, or ask the user to run the command.
+   - **Always** tell the user in your final message: "Catalog refreshed with `grok skills generate-catalog` so the model now knows about the new skill."
+   - Goal: The SKILLS CATALOG section in `.grok/SKILLS_HOOKS_OPTIMIZATION.md` must list the new skill with its description, tags, arbitration score, and activation hints. This is what the model reads on every future turn.
+
+7. Confirm activation + catalog refresh to the user and give them a ready-to-use example.
 
 ### 3. Security Validation
 
@@ -171,6 +183,17 @@ Always check if directory exists first
 - Search for similar skills
 - Find patterns in existing skills
 - Validate skill content
+
+### run_shell_command  ← CRITICAL FOR CATALOG REFRESH
+**Primary Use after creating a skill**: Regenerate the live model-visible catalog.
+**Exact command you must run** (after writing SKILL.md + skill.json):
+```
+{"command": "grok skills generate-catalog"}
+```
+This updates `.grok/SKILLS_HOOKS_OPTIMIZATION.md` so the **SKILLS CATALOG** section now includes the brand-new skill (with description, tags, arbitration score, auto-activation hints, etc.).
+The model reads this file on every subsequent turn. Skipping this step means the model won't know the new skill exists until someone manually runs the command.
+
+Always run this (or fall back to manually updating the catalog file) before telling the user the skill is ready.
 
 ## Skill Specification Format
 

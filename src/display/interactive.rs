@@ -25,7 +25,7 @@ use crate::display::{
     format_welcome_banner,
 };
 use crate::router::AppRouter;
-use crate::skills::{AutoActivationEngine, list_skills};
+use crate::skills::{load_catalog_content, AutoActivationEngine, list_skills};
 use crate::tools::registry as tool_registry;
 use crate::tools::tool_context::ToolContext;
 use crate::utils::context::{
@@ -34,7 +34,8 @@ use crate::utils::context::{
 use crate::utils::session::{list_sessions, load_session, save_session};
 use crate::utils::shell_permissions::{ApprovalMode, ShellPermissions};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+// Use cheap message builders (Task 267)
+use crate::utils::messages::{assistant, system, user};
 
 /// Interactive session state
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -43,7 +44,7 @@ pub struct InteractiveSession {
     pub model: String,
     pub temperature: f32,
     pub max_tokens: u32,
-    pub system_prompt: Option<String>,
+    pub system_prompt: Option<std::sync::Arc<str>>,
     pub conversation_history: Vec<ConversationItem>,
     pub current_directory: PathBuf,
     pub show_context_usage: bool,
@@ -74,10 +75,13 @@ fn default_auto_skills_enabled() -> bool {
 }
 
 /// Conversation item in the session
+///
+/// Uses `Arc<str>` for content to make cloning the history vector cheap
+/// (Task 264). The actual string data is shared, not copied.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConversationItem {
     pub role: String,
-    pub content: String,
+    pub content: std::sync::Arc<str>,
     pub timestamp: chrono::DateTime<chrono::Utc>,
     pub tokens_used: Option<u32>,
 }
@@ -128,7 +132,7 @@ impl InteractiveSession {
             active_skills: Vec::new(),
             auto_skills_enabled: true,
             simulate_mode: false,
-            system_prompt,
+            system_prompt: system_prompt.map(Into::into),
             conversation_history: Vec::new(),
             current_directory,
             show_context_usage: true,
@@ -137,11 +141,14 @@ impl InteractiveSession {
         }
     }
 
-    /// Add a conversation item to the history
+    /// Add a conversation item to the history.
+    ///
+    /// Content is stored as `Arc<str>` so that cloning the conversation
+    /// history (or individual items) is extremely cheap (Task 264).
     pub fn add_conversation_item(&mut self, role: &str, content: &str, tokens_used: Option<u32>) {
         let item = ConversationItem {
             role: role.to_string(),
-            content: content.to_string(),
+            content: content.into(), // cheap Arc<str> conversion
             timestamp: chrono::Utc::now(),
             tokens_used,
         };
@@ -348,7 +355,7 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
         let preview = if system.len() > 60 {
             format!("{}...", &system[..60])
         } else {
-            system.clone()
+            system.to_string()
         };
         println!("  System prompt: {}", preview.bright_green());
     }
@@ -422,113 +429,40 @@ async fn run_interactive_loop(
         PromptStyle::Minimal => "» ".to_string(),
     };
 
-    // Prepare suggestions
-    let suggestions = vec![
-        Suggestion {
-            text: "/clear".to_string(),
-            description: "Clear screen".to_string(),
-        },
-        Suggestion {
-            text: "/help".to_string(),
-            description: "Show help message".to_string(),
-        },
-        Suggestion {
-            text: "/history".to_string(),
-            description: "Show history".to_string(),
-        },
-        Suggestion {
-            text: "/list".to_string(),
-            description: "List saved sessions".to_string(),
-        },
-        Suggestion {
-            text: "/load".to_string(),
-            description: "Load a session".to_string(),
-        },
-        Suggestion {
-            text: "/model".to_string(),
-            description: "Change model".to_string(),
-        },
-        Suggestion {
-            text: "/quit".to_string(),
-            description: "Exit interactive mode".to_string(),
-        },
-        Suggestion {
-            text: "/reset".to_string(),
-            description: "Reset session".to_string(),
-        },
-        Suggestion {
-            text: "/save".to_string(),
-            description: "Save current session".to_string(),
-        },
-        Suggestion {
-            text: "/settings".to_string(),
-            description: "Open settings".to_string(),
-        },
-        Suggestion {
-            text: "/status".to_string(),
-            description: "Show status".to_string(),
-        },
-        Suggestion {
-            text: "/system".to_string(),
-            description: "Set system prompt".to_string(),
-        },
-        Suggestion {
-            text: "/tools".to_string(),
-            description: "List coding tools".to_string(),
-        },
-        Suggestion {
-            text: "/version".to_string(),
-            description: "Show version info".to_string(),
-        },
-        Suggestion {
-            text: "/config".to_string(),
-            description: "Show configuration info".to_string(),
-        },
-        Suggestion {
-            text: "/skills".to_string(),
-            description: "List available skills".to_string(),
-        },
-        Suggestion {
-            text: "/activate".to_string(),
-            description: "Activate a skill".to_string(),
-        },
-        Suggestion {
-            text: "/deactivate".to_string(),
-            description: "Deactivate a skill".to_string(),
-        },
-        Suggestion {
-            text: "/auto-skills".to_string(),
-            description: "Toggle skill auto-activation (on/off)".to_string(),
-        },
-        Suggestion {
-            text: "/simulate".to_string(),
-            description: "Dry-run simulation mode (on/off or status)".to_string(),
-        },
-        Suggestion {
-            text: "/image".to_string(),
-            description: "Attach an image for vision analysis".to_string(),
-        },
-        Suggestion {
-            text: "/init".to_string(),
-            description: "Initialize .grok/ project config".to_string(),
-        },
-        Suggestion {
-            text: "!ls".to_string(),
-            description: "List files (shell command)".to_string(),
-        },
-        Suggestion {
-            text: "!dir".to_string(),
-            description: "List files on Windows (shell command)".to_string(),
-        },
-        Suggestion {
-            text: "!git status".to_string(),
-            description: "Check git status (shell command)".to_string(),
-        },
-        Suggestion {
-            text: "!pwd".to_string(),
-            description: "Print working directory (shell command)".to_string(),
-        },
-    ];
+    // Prepare suggestions — now backed by a static to avoid rebuilding the
+    // 25+ item vec on every keystroke (Task 265).
+    static SUGGESTIONS: std::sync::LazyLock<Vec<Suggestion>> = std::sync::LazyLock::new(|| {
+        vec![
+            Suggestion { text: "/clear",        description: "Clear screen" },
+            Suggestion { text: "/help",         description: "Show help message" },
+            Suggestion { text: "/history",      description: "Show history" },
+            Suggestion { text: "/list",         description: "List saved sessions" },
+            Suggestion { text: "/load",         description: "Load a session" },
+            Suggestion { text: "/model",        description: "Change model" },
+            Suggestion { text: "/quit",         description: "Exit interactive mode" },
+            Suggestion { text: "/reset",        description: "Reset session" },
+            Suggestion { text: "/save",         description: "Save current session" },
+            Suggestion { text: "/settings",     description: "Open settings" },
+            Suggestion { text: "/status",       description: "Show status" },
+            Suggestion { text: "/system",       description: "Set system prompt" },
+            Suggestion { text: "/tools",        description: "List coding tools" },
+            Suggestion { text: "/version",      description: "Show version info" },
+            Suggestion { text: "/config",       description: "Show configuration info" },
+            Suggestion { text: "/skills",       description: "List available skills" },
+            Suggestion { text: "/activate",     description: "Activate a skill" },
+            Suggestion { text: "/deactivate",   description: "Deactivate a skill" },
+            Suggestion { text: "/auto-skills",  description: "Toggle skill auto-activation (on/off)" },
+            Suggestion { text: "/simulate",     description: "Dry-run simulation mode (on/off or status)" },
+            Suggestion { text: "/image",        description: "Attach an image for vision analysis" },
+            Suggestion { text: "/init",         description: "Initialize .grok/ project config" },
+            Suggestion { text: "!ls",           description: "List files (shell command)" },
+            Suggestion { text: "!dir",          description: "List files on Windows (shell command)" },
+            Suggestion { text: "!git status",   description: "Check git status (shell command)" },
+            Suggestion { text: "!pwd",          description: "Print working directory (shell command)" },
+        ]
+    });
+
+    let suggestions: &[Suggestion] = &SUGGESTIONS;
 
     // Read user input
     // Note: We're running blocking TUI code in an async context, which is generally bad,
@@ -782,7 +716,7 @@ async fn handle_special_commands(
         "system" => {
             if parts.len() > 1 {
                 let system_prompt = parts[1..].join(" ");
-                session.system_prompt = Some(system_prompt.clone());
+                session.system_prompt = Some(system_prompt.clone().into());
                 println!(
                     "{} System prompt set: {}",
                     "✓".bright_green(),
@@ -1187,7 +1121,7 @@ fn print_conversation_history(session: &InteractiveSession) {
         let content_preview = if item.content.len() > 100 {
             format!("{}...", &item.content[..97])
         } else {
-            item.content.clone()
+            item.content.to_string()
         };
 
         println!("   {}", content_preview);
@@ -1276,20 +1210,20 @@ async fn send_to_grok(
             messages.push(vision_msg);
         } else {
             // Fallback to normal text if image preparation fails
-            messages.push(json!({ "role": "user", "content": input }));
+            messages.push(user(input));
         }
     } else {
-        messages.push(json!({ "role": "user", "content": input }));
+        messages.push(user(input));
     }
 
     // Add user message to history (original text)
+    // Note: content is now Arc<str> internally for cheap clones (Task 264)
     session.add_conversation_item("user", input, None);
 
-    // Show thinking indicator
+    // Show thinking indicator + start timing (Task 266)
+    let turn_start = crate::utils::perf::start_turn();
     print!("{} ", "Thinking...".bright_yellow());
     io::stdout().flush()?;
-
-    // Prepare messages for API (we already have the first user message)
 
     // Build system prompt with active skills context
     let mut system_content = String::new();
@@ -1306,27 +1240,27 @@ async fn send_to_grok(
         system_content.push_str(&skills_context);
     }
 
-    if !system_content.is_empty() {
-        messages.push(json!({
-            "role": "system",
-            "content": system_content
-        }));
+    // Inject the self-updating Skills / Hooks / Optimization catalog (if present)
+    // This gives the model accurate, up-to-date knowledge of available skills,
+    // hook behavior, and performance heuristics.
+    if let Some(catalog) = load_catalog_content() {
+        if !system_content.is_empty() {
+            system_content.push_str("\n\n");
+        }
+        system_content.push_str(&catalog);
     }
 
-    // Add conversation history (keep last 10 messages to avoid context overflow)
-    let recent_history = session
-        .conversation_history
-        .iter()
-        .rev()
-        .take(10)
-        .rev()
-        .collect::<Vec<_>>();
+    if !system_content.is_empty() {
+        messages.push(system(system_content));
+    }
 
-    for item in recent_history {
-        messages.push(json!({
-            "role": item.role,
-            "content": item.content
-        }));
+    // Add conversation history (keep last 10 messages to avoid context overflow).
+    // Use cheap builders for the common roles (Task 267).
+    let history_len = session.conversation_history.len();
+    let start = history_len.saturating_sub(10);
+    for item in &session.conversation_history[start..] {
+        let c = item.content.to_string();
+        messages.push(if item.role == "user" { user(c) } else { assistant(c) });
     }
 
     // Get tool definitions for function calling
@@ -1351,6 +1285,9 @@ async fn send_to_grok(
         Ok(response_with_finish) => {
             let response_msg = response_with_finish.message;
             clear_current_line();
+
+            // Task 266: report per-turn timing (only if GROK_PERF=1)
+            crate::utils::perf::report_turn("interactive turn", turn_start);
 
             // Handle tool calls if present
             if let Some(tool_calls) = &response_msg.tool_calls
@@ -1419,6 +1356,7 @@ async fn run_simulation(
         "🔬 {}",
         "Running simulation (dry-run)…".bright_blue().dimmed()
     );
+    let sim_start = crate::utils::perf::start_turn();
     print!("{} ", "Thinking...".bright_yellow());
     io::stdout().flush()?;
 
@@ -1434,10 +1372,7 @@ async fn run_simulation(
     }
     sim_system.push_str(SIMULATION_SYSTEM_PROMPT);
 
-    messages.push(serde_json::json!({
-        "role": "system",
-        "content": sim_system
-    }));
+    messages.push(system(sim_system));
 
     // Include recent conversation history for context (last 6 turns)
     let recent: Vec<_> = session
@@ -1448,17 +1383,13 @@ async fn run_simulation(
         .rev()
         .collect();
     for item in recent {
-        messages.push(serde_json::json!({
-            "role": item.role,
-            "content": item.content
-        }));
+        // dynamic role from history; use cheap builders
+        let c = item.content.to_string();
+        messages.push(if item.role == "user" { user(c) } else { assistant(c) });
     }
 
     // The user's message being simulated
-    messages.push(serde_json::json!({
-        "role": "user",
-        "content": input
-    }));
+    messages.push(user(input));
 
     match client
         .chat_completion_with_history(
@@ -1473,6 +1404,7 @@ async fn run_simulation(
     {
         Ok(response_with_finish) => {
             clear_current_line();
+            crate::utils::perf::report_turn("simulation turn", sim_start);
             let raw = content_to_string(response_with_finish.message.content.as_ref());
             let result = parse_simulation_response(&raw);
             display_simulation_result(&result, input);
@@ -1880,7 +1812,7 @@ mod tests {
 
         assert_eq!(session.conversation_history.len(), 1);
         assert_eq!(session.total_tokens_used, 10);
-        assert_eq!(session.conversation_history[0].content, "Hello");
+        assert_eq!(session.conversation_history[0].content.as_ref(), "Hello");
     }
 
     #[test]

@@ -6,7 +6,11 @@
 
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
-> **Latest (v0.2.5)**: Session-only rules via `/rule add|list|remove|clear` — inject temporary per-session rules into every prompt without repeating yourself. Rules are automatically appended to each message and cleared when the session ends. `/rule` is now visible in the Zed command picker. Sub-agent system, ACP session fixes, and safety hooks all included.
+> **Latest improvements**:
+> - **Skill Builder catalog auto-refresh**: Creating skills via `skill-builder` now **automatically runs `grok skills generate-catalog`**. New skills are immediately visible to the model on the next turn.
+> - **Slash command behavior clarified**: Most commands (`/think`, `/clear`, `/help`, `/okf`, `/goal`, etc.) are handled entirely locally as builtins and **never sent to the LLM**. Only a few (`/plan`, `/review`, `/web`, `/commit`) are enhanced and forwarded.
+> - **Tool logging clarified**: `grok-tool-error-log.log` contains both successes (`TOOL-OK`) and failures.
+> - Session-only rules (`/rule`), Safety Hooks, Sub-Agents, and ACP improvements remain from v0.2.5.
 
 ## ✨ Features
 

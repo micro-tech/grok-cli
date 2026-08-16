@@ -909,7 +909,7 @@ mod tests {
 
     // Suppress unused import warning for Write — kept for future test helpers
     // that write to byte buffers directly.
-    #[expect(dead_code, reason = "test helper")]
+    #[allow(dead_code, reason = "test helper that forces the Write trait into scope to suppress unused-import warnings")]
     fn _assert_write_imported(_: &dyn Write) {}
 
     // ── Additional diagnostic tests ───────────────────────────────────────────

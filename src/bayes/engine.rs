@@ -33,7 +33,7 @@ const DEFAULT_BELIEF_DECAY_RATE: f32 = 0.95;
 const DEFAULT_PRIOR_PULL_RATE: f32 = 0.05;
 
 /// The core Bayesian inference engine.
-#[derive(Debug, Clone)]
+#[derive(Debug)]
 pub struct BayesianEngine {
     priors: HashMap<String, f32>,
     graph: BeliefGraph,
@@ -62,6 +62,38 @@ pub struct BayesianEngine {
 
     /// Pull strength toward long-term priors during decay.
     prior_pull_rate: f32,
+
+    // ── Task 268.3: Intent caching / short-circuit ────────────────────────────
+    /// Last user text we fully processed (trimmed). Used for identical-input fast path.
+    last_text: Option<String>,
+    /// Cached result of the most recent best_intent computation.
+    /// Uses Mutex so BayesianEngine stays Send + Sync (required by ACP thread boundaries).
+    cached_best_intent: std::sync::Mutex<Option<String>>,
+}
+
+impl Clone for BayesianEngine {
+    fn clone(&self) -> Self {
+        Self {
+            priors: self.priors.clone(),
+            graph: self.graph.clone(),
+            clarification_threshold: self.clarification_threshold,
+            uncertainty_threshold: self.uncertainty_threshold,
+            vagueness_threshold: self.vagueness_threshold,
+            intent_likelihood_weight: self.intent_likelihood_weight,
+            profile_learning_rate: self.profile_learning_rate,
+            belief_decay_rate: self.belief_decay_rate,
+            prior_pull_rate: self.prior_pull_rate,
+            last_text: self.last_text.clone(),
+            // Clone the cached value if possible; otherwise start empty.
+            // Losing the cache on clone is harmless (it's only a perf hint).
+            cached_best_intent: std::sync::Mutex::new(
+                self.cached_best_intent
+                    .lock()
+                    .ok()
+                    .and_then(|g| g.clone()),
+            ),
+        }
+    }
 }
 
 impl BayesianEngine {
@@ -143,6 +175,8 @@ impl BayesianEngine {
             profile_learning_rate,
             belief_decay_rate,
             prior_pull_rate,
+            last_text: None,
+            cached_best_intent: std::sync::Mutex::new(None),
         }
     }
 
@@ -193,6 +227,27 @@ impl BayesianEngine {
     /// Update beliefs from a text event (user message) using the configured
     /// likelihood weight.
     pub fn update_from_text(&mut self, text: &str) {
+        // Task 268.3: intent caching / short-circuit for identical consecutive inputs
+        let trimmed = text.trim().to_string();
+        if let Some(ref last) = self.last_text {
+            if *last == trimmed {
+                // Fast path: identical input, distribution unchanged.
+                // Still allow perf reporting of the cheap path.
+                if crate::utils::perf::perf_enabled() {
+                    // Emit a zero-cost marker for visibility under GROK_PERF
+                    eprintln!("[perf] bayes.update_from_text (cached identical)");
+                }
+                return;
+            }
+        }
+
+        // Task 268: instrument per-turn Bayesian cost
+        let _t = if crate::utils::perf::perf_enabled() {
+            Some(crate::utils::perf::start_turn())
+        } else {
+            None
+        };
+
         let likelihoods = likelihood_from_text(text, self.intent_likelihood_weight);
         bayes_update(
             &mut self.priors,
@@ -201,10 +256,23 @@ impl BayesianEngine {
             self.prior_pull_rate,
         );
         self.sync_graph();
+
+        // Update cache state for next short-circuit / best_intent
+        self.last_text = Some(trimmed);
+        if let Ok(mut guard) = self.cached_best_intent.lock() {
+            *guard = None;
+        }
+
+        if let Some(start) = _t {
+            crate::utils::perf::report_turn("bayes.update_from_text", start);
+        }
     }
 
     /// Update beliefs from a model-confidence score in `[0.0, 1.0]`.
     pub fn update_from_model_confidence(&mut self, score: f32) {
+        // Task 268.3: invalidate caches on any distribution mutation
+        self.invalidate_caches();
+
         let likelihoods = likelihood_from_model_confidence(score);
         bayes_update(
             &mut self.priors,
@@ -217,6 +285,8 @@ impl BayesianEngine {
 
     /// Update beliefs after a tool call failure.
     pub fn update_from_tool_failure(&mut self) {
+        // Task 268.3: invalidate caches on mutation
+        self.invalidate_caches();
         let likelihoods = likelihood_from_tool_failure();
         bayes_update(
             &mut self.priors,
@@ -230,6 +300,8 @@ impl BayesianEngine {
     /// Apply a multiplicative boost to a specific intent prior (used by Session DNA).
     /// The caller is responsible for re-normalising afterwards.
     pub fn boost_prior(&mut self, intent: &str, factor: f32) {
+        // Task 268.3: invalidate on mutation
+        self.invalidate_caches();
         if let Some(p) = self.priors.get_mut(intent) {
             *p *= factor;
         }
@@ -240,6 +312,9 @@ impl BayesianEngine {
     ///
     /// The boost magnitude is `self.profile_learning_rate` (e.g. 10 %).
     pub fn update_profile(&mut self, executed_intent: &str) {
+        // Task 268.3: invalidate caches on any distribution mutation
+        self.invalidate_caches();
+
         let intent_key = match executed_intent {
             "replace" | "write_file" => "intent_edit",
             "run_shell_command" => "intent_shell",
@@ -274,8 +349,26 @@ impl BayesianEngine {
 
     /// Return the intent key (`"intent_*"`) with the highest probability, or
     /// `None` when the graph is empty.
+    ///
+    /// Task 268.3: Returns a cached value when the distribution has not changed
+    /// since the last `update_from_text` (or when the identical-input fast path fired).
     pub fn best_intent(&self) -> Option<String> {
-        self.graph.best_key("intent_")
+        // Task 268.3 fast path: serve from cache if present
+        if let Some(cached) = self.cached_best_intent.lock().ok().and_then(|g| g.clone()) {
+            return Some(cached);
+        }
+
+        // Task 268.2: use the zero-cost guard (only emits under GROK_PERF=1)
+        crate::perf_guard!("bayes.best_intent (compute)");
+
+        // Compute and cache
+        let computed = self.graph.best_key("intent_");
+        if let Some(ref key) = computed {
+            if let Ok(mut guard) = self.cached_best_intent.lock() {
+                *guard = Some(key.clone());
+            }
+        }
+        computed
     }
 
     /// Return an ASCII bar-chart visualisation of the current belief state.
@@ -290,6 +383,17 @@ impl BayesianEngine {
             self.graph.set(k, *v);
         }
         self.graph.normalize();
+    }
+
+    // ── Task 268.3 helpers ────────────────────────────────────────────────────
+
+    /// Invalidate the identical-input short-circuit and best_intent cache.
+    /// Call this before/after any operation that mutates the prior distribution.
+    fn invalidate_caches(&mut self) {
+        self.last_text = None;
+        if let Ok(mut guard) = self.cached_best_intent.lock() {
+            *guard = None;
+        }
     }
 }
 
@@ -416,5 +520,31 @@ mod tests {
     fn test_visualize_returns_nonempty() {
         let engine = BayesianEngine::new();
         assert!(!engine.visualize().is_empty());
+    }
+
+    #[test]
+    fn test_268_3_intent_caching_and_identical_short_circuit() {
+        let mut engine = BayesianEngine::new_with_default_priors();
+
+        // First update should compute
+        engine.update_from_text("can you edit the config file");
+        let first = engine.best_intent();
+        assert_eq!(first, Some("intent_edit".to_string()));
+
+        // Identical input: should short-circuit (no change to distribution)
+        engine.update_from_text("can you edit the config file");
+        let second = engine.best_intent();
+        assert_eq!(first, second);
+
+        // Different input invalidates and recomputes
+        engine.update_from_text("please search the web for rust");
+        let third = engine.best_intent();
+        assert_eq!(third, Some("intent_search".to_string()));
+
+        // After a mutating call (update_profile), cache is invalidated
+        engine.update_profile("write_file");
+        // best_intent should still be consistent (may stay search or change depending on learning)
+        let after_profile = engine.best_intent();
+        assert!(after_profile.is_some());
     }
 }

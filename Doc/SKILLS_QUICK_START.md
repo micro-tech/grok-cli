@@ -96,7 +96,18 @@ Available Skills:
 
 ## Creating Your Own Skills
 
-### 1. Use the CLI
+### Dynamic Creation (Recommended)
+
+Use the **Skill Builder** skill:
+
+```
+> /activate skill-builder
+> Create a skill for Docker troubleshooting
+```
+
+**Important (Recent Improvement)**: The Skill Builder now **automatically runs `grok skills generate-catalog`** after creating a skill. This updates `.grok/SKILLS_HOOKS_OPTIMIZATION.md` so the new skill immediately appears in the **SKILLS CATALOG** section that the model reads on every turn. No manual refresh or restart needed.
+
+### 1. Use the CLI (for templates)
 
 ```bash
 grok skills new my-skill

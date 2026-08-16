@@ -364,6 +364,22 @@ what does the chart at https://.../metrics.png show?
 Temporary rules that apply to every message in the current ACP session.
 Grok injects them automatically — you never have to repeat yourself.
 
+### Slash Commands – Important Behavior Note
+Most slash commands are **handled locally** and are **never sent to the LLM**:
+- `/think`, `/clear`, `/help`, `/context`, `/tools`, `/okf`, `/goal`, `/bayes`, `/trace`, `/init`, `/compress`, `/rules`, etc. → All handled as builtins.
+- Only a few are enhanced and forwarded to the model: `/web`, `/plan`, `/review`, `/explain`, `/test`, `/fix`, `/commit`.
+
+This is intentional for speed and predictability.
+
+### Skills Catalog (Self-Updating)
+The model sees a live catalog in `.grok/SKILLS_HOOKS_OPTIMIZATION.md` (injected into context).
+
+- Contains: Skills (with descriptions, arbitration scores, when to use), Hooks guidance, and Optimization Heuristics.
+- **Auto-refreshed** when you create skills via the `skill-builder` skill.
+- You can manually refresh with: `grok skills generate-catalog`
+
+This ensures the model always knows about newly created skills without manual intervention.
+
 | Command | Description |
 |---------|-------------|
 | `/rule add <text>` | Add a rule for this session |

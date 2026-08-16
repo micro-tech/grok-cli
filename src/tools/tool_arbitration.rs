@@ -14,12 +14,12 @@ pub enum ArbitrationDecision {
     },
 }
 
-/// High-level arbitration entry point.
-/// - Validates tool name
-/// - Validates required arguments
-/// - Optionally normalizes / corrects args
+/// High-level arbitration entry point (Task 271 optimized).
+/// - Validates tool name (O(1) via static set)
+/// - Validates required arguments (O(1) via static map)
+/// - Only clones on the success path (and only once).
 pub fn arbitrate_tool_call(name: &str, args: &Value) -> Result<ArbitrationDecision> {
-    // 1) Validate tool name against the known set.
+    // 1) Validate tool name against the known set (fast O(1) path).
     if !is_known_tool(name) {
         return Ok(ArbitrationDecision::Reject {
             message: format!(
@@ -29,7 +29,7 @@ pub fn arbitrate_tool_call(name: &str, args: &Value) -> Result<ArbitrationDecisi
         });
     }
 
-    // 2) Tool-specific argument validation.
+    // 2) Tool-specific argument validation (fast O(1) path).
     let missing = missing_required_fields(name, args);
 
     if !missing.is_empty() {
@@ -44,8 +44,10 @@ pub fn arbitrate_tool_call(name: &str, args: &Value) -> Result<ArbitrationDecisi
         });
     }
 
-    // 3) (Optional) Argument normalization / correction hook.
-    let normalized_args = normalize_args(name, args)?;
+    // 3) Normalization hook (Task 271).
+    // We perform one clone on the happy path here.
+    // normalize_args takes ownership so the common no-op case does not clone again.
+    let normalized_args = normalize_args(name, args.clone())?;
 
     Ok(ArbitrationDecision::Execute {
         name: name.to_string(),
@@ -53,12 +55,12 @@ pub fn arbitrate_tool_call(name: &str, args: &Value) -> Result<ArbitrationDecisi
     })
 }
 
-/// Minimal known-tool check.
+/// Minimal known-tool check (Task 271 optimized).
 ///
-/// Delegates to the single source of truth in `registry::get_tool_definitions()`.
-/// This is part of ARCH-2 (unified tool registry).
+/// Uses a pre-computed static HashSet for O(1) lookup instead of O(n) Vec::contains.
+/// This is on the hot path for every tool call (arbitration before dispatch).
 pub(crate) fn is_known_tool(name: &str) -> bool {
-    crate::tools::registry::get_tool_definitions().contains(&name)
+    crate::tools::registry::is_known_tool_fast(name)
 }
 
 /// Return a list of missing required fields for a given tool.
@@ -74,10 +76,13 @@ fn missing_required_fields(name: &str, args: &Value) -> Vec<String> {
         .collect()
 }
 
-/// Hook for argument normalization / correction.
-/// Right now it's a no-op; you can grow this over time.
-fn normalize_args(_name: &str, args: &Value) -> Result<Value> {
-    // Example: coerce numeric strings, trim whitespace, etc.
-    // For now, just clone.
-    Ok(args.clone())
+/// Hook for argument normalization / correction (Task 271).
+///
+/// Takes ownership so callers can pass a clone they already paid for.
+/// Current implementation is a no-op (returns the value as-is).
+/// This is intentionally cheap on the hot path.
+fn normalize_args(_name: &str, args: Value) -> Result<Value> {
+    // Future: coerce numeric strings, trim, canonicalize paths, etc.
+    // For now we keep it zero-cost.
+    Ok(args)
 }

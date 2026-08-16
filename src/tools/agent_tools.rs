@@ -95,7 +95,7 @@ pub async fn run_agent_session(
 
     // ── 2. Tool filtering via ToolPermissions (allow/deny) ───────────────────
     let all_tools = crate::tools::registry::get_full_tool_definitions();
-    let filtered_tools = config.tool_permissions.filter_tools(all_tools);
+    let filtered_tools = config.tool_permissions.filter_tools(all_tools.to_vec());
 
     info!(
         model = %config.model,
@@ -122,8 +122,8 @@ pub async fn run_agent_session(
         )
     };
     let messages = vec![
-        serde_json::json!({"role": "system", "content": system}),
-        serde_json::json!({"role": "user",   "content": user_msg}),
+        crate::utils::messages::system(system),
+        crate::utils::messages::user(user_msg),
     ];
 
     // ── 4. Apply context budget ────────────────────────────────────────────

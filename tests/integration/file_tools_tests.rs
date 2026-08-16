@@ -42,7 +42,7 @@ async fn read_file_returns_content() {
 #[tokio::test]
 async fn read_file_missing_returns_err() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
     let missing = dir.path().join("does_not_exist.txt");
 
     let result = read_file(missing.to_str().unwrap(), &helpers::make_ctx(&dir)).await;
@@ -63,7 +63,7 @@ async fn read_file_missing_returns_err() {
 #[tokio::test]
 async fn read_file_valid_json_returned_verbatim() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
     let json_text = r#"{"version":1,"items":["a","b"]}"#;
     let file = helpers::write_fixture(&dir, "data.json", json_text);
 
@@ -82,7 +82,7 @@ async fn read_file_outside_trust_is_denied() {
     let trusted = TempDir::new().unwrap();
     let other = TempDir::new().unwrap();
     // Policy trusts only `trusted`, not `other`.
-    let policy = helpers::make_policy(&trusted);
+    let _policy = helpers::make_policy(&trusted);
     let secret = helpers::write_fixture(&other, "secret.txt", "classified");
 
     let result = read_file(secret.to_str().unwrap(), &helpers::make_ctx(&trusted)).await;
@@ -103,7 +103,7 @@ async fn read_file_outside_trust_is_denied() {
 #[tokio::test]
 async fn write_file_creates_file_with_content() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
     let path = dir.path().join("output.txt");
 
     write_file(path.to_str().unwrap(), "written content", &helpers::make_ctx(&dir), false)
@@ -118,7 +118,7 @@ async fn write_file_creates_file_with_content() {
 #[tokio::test]
 async fn write_file_creates_parent_directories() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
     // `deep/nested/` does not exist yet — write_file must create it.
     let path = dir.path().join("deep").join("nested").join("new.txt");
 
@@ -136,7 +136,7 @@ async fn write_file_creates_parent_directories() {
 async fn write_file_outside_trust_is_denied() {
     let trusted = TempDir::new().unwrap();
     let other = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&trusted);
+    let _policy = helpers::make_policy(&trusted);
     let path = other.path().join("intruder.txt");
 
     let result = write_file(path.to_str().unwrap(), "should not land", &helpers::make_ctx(&trusted), false).await;
@@ -162,7 +162,7 @@ async fn write_file_outside_trust_is_denied() {
 #[tokio::test]
 async fn replace_updates_file_content() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
     let file = helpers::write_fixture(&dir, "greet.txt", "Hello World");
 
     replace(
@@ -184,7 +184,7 @@ async fn replace_updates_file_content() {
 #[tokio::test]
 async fn replace_old_string_not_found_returns_err() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
     let file = helpers::write_fixture(&dir, "text.txt", "some content here");
 
     let result = replace(
@@ -209,7 +209,7 @@ async fn replace_old_string_not_found_returns_err() {
 #[tokio::test]
 async fn replace_nonexistent_file_returns_err() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
     let missing = dir.path().join("ghost.txt");
 
     let result = replace(
@@ -402,7 +402,7 @@ async fn security_path_inside_trust_is_accessible() {
 #[tokio::test]
 async fn security_system_path_outside_trust_is_denied() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
 
     #[cfg(windows)]
     let system_path = r"C:\Windows\System32\drivers\etc\hosts";
@@ -430,7 +430,7 @@ async fn security_system_path_outside_trust_is_denied() {
 #[tokio::test]
 async fn security_path_traversal_is_denied() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
 
     // Classic traversal — lands above the temp dir.
     let traversal = "../../etc/passwd";
@@ -464,7 +464,7 @@ async fn security_path_traversal_is_denied() {
 #[tokio::test]
 async fn replace_preserves_crlf_line_endings() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
     let path = dir.path().join("crlf.txt");
 
     // Write CRLF content directly, bypassing write_file.
@@ -500,7 +500,7 @@ async fn replace_preserves_crlf_line_endings() {
 #[tokio::test]
 async fn write_then_read_round_trip() {
     let dir = TempDir::new().unwrap();
-    let policy = helpers::make_policy(&dir);
+    let _policy = helpers::make_policy(&dir);
     let path = dir.path().join("roundtrip.txt");
     let content = "The quick brown fox jumps over the lazy dog.\n";
 

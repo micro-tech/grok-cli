@@ -42,6 +42,7 @@ pub fn make_ctx(dir: &TempDir) -> ToolContext {
 /// Write `.zed/task_list.json` in **Format A**: `{"tasks": [...]}`.
 ///
 /// This is the canonical grok-cli task format.
+#[allow(dead_code)]
 pub fn write_task_list_a(dir: &TempDir, tasks: Value) {
     let zed = dir.path().join(".zed");
     fs::create_dir_all(&zed).unwrap();
@@ -56,6 +57,7 @@ pub fn write_task_list_a(dir: &TempDir, tasks: Value) {
 ///
 /// `load_task_file` normalises this into `{"tasks":[…]}` on read, so
 /// callers using `task_get` / `task_update` should work transparently.
+#[allow(dead_code)]
 pub fn write_task_list_c(dir: &TempDir, tasks: &[Value]) {
     let zed = dir.path().join(".zed");
     fs::create_dir_all(&zed).unwrap();
@@ -75,6 +77,7 @@ pub fn write_task_list_c(dir: &TempDir, tasks: &[Value]) {
 /// directories first.  Panics on I/O errors — only intended for test setup.
 ///
 /// Returns the absolute [`std::path::PathBuf`] of the created file.
+#[allow(dead_code)]
 pub fn write_fixture(dir: &TempDir, relative_path: &str, content: &str) -> std::path::PathBuf {
     let full = dir.path().join(relative_path);
     if let Some(parent) = full.parent() {

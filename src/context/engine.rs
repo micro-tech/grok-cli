@@ -28,6 +28,16 @@ impl ContextEngine {
 
     /// Returns the final prompt text after applying delta logic.
     pub fn build_final_prompt(&mut self, base: &str, delta: &PromptDelta) -> String {
+        // Task 273 (268.1): Instrument ContextEngine build path
+        let _guard = if crate::utils::perf::perf_enabled() {
+            Some(crate::utils::perf::PerfGuard {
+                label: "context.build_final_prompt",
+                start: Some(crate::utils::perf::start_turn()),
+            })
+        } else {
+            None
+        };
+
         let mut prompt = apply_delta(base, delta);
 
         if self.budget.should_use_delta() {

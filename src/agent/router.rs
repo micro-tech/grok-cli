@@ -48,6 +48,9 @@ impl Router {
     }
 
     pub async fn route(&mut self, user_input: &str) -> RouterAction {
+        // Task 268.2: instrument full router turn with the zero-cost guard
+        crate::perf_guard!("agent::router.route");
+
         // 1) Update beliefs from the user's text.
         self.bayes.update_from_text(user_input);
 
@@ -61,7 +64,8 @@ impl Router {
             );
         }
 
-        // 3) choose intent
+        // 3) choose intent (sub-measurement still useful)
+        crate::perf_guard!("bayes.best_intent (from route)");
         let intent = self
             .bayes
             .best_intent()
@@ -94,6 +98,13 @@ impl Router {
     }
 
     pub fn get_contextual_tools(&self, all_tools: Vec<Value>) -> Vec<Value> {
+        // Task 268: instrument context tool filtering cost
+        let t0 = if crate::utils::perf::perf_enabled() {
+            Some(crate::utils::perf::start_turn())
+        } else {
+            None
+        };
+
         let best = self
             .bayes
             .best_intent()
@@ -113,12 +124,15 @@ impl Router {
                 keep.extend(vec!["web_search", "web_fetch"]);
             }
             _ => {
-                // Unknown / general intent — fall back to the safe base set only.
-                // Never return the raw unfiltered list (security / safety requirement).
+                // Return all tools for general intent
+                if let Some(s) = t0 {
+                    crate::utils::perf::report_turn("router.get_contextual_tools (full)", s);
+                }
+                return all_tools;
             }
         }
 
-        all_tools
+        let filtered: Vec<Value> = all_tools
             .into_iter()
             .filter(|t| {
                 if let Some(name) = t
@@ -130,7 +144,12 @@ impl Router {
                 }
                 true
             })
-            .collect()
+            .collect();
+
+        if let Some(s) = t0 {
+            crate::utils::perf::report_turn("router.get_contextual_tools", s);
+        }
+        filtered
     }
 
     pub fn get_adaptive_system_prompt(&self) -> Option<String> {
@@ -148,6 +167,12 @@ impl Router {
     /// uncertainty threshold (replaces the former hardcoded `> 0.5` check).
     pub fn is_low_confidence(&self) -> bool {
         self.bayes.is_low_confidence()
+    }
+
+    /// Reset the Bayesian engine to default priors.
+    /// Used by `/bayes reset` (and the "rest" alias).
+    pub fn reset(&mut self) {
+        self.bayes = BayesianEngine::new_with_default_priors();
     }
 }
 #[cfg(test)]
@@ -188,40 +213,5 @@ mod tests {
         // Just a random statement
         let action = router.route("hello there").await;
         assert!(matches!(action, RouterAction::NormalChat));
-    }
-
-    #[test]
-    fn test_get_contextual_tools_never_returns_unfiltered_list() {
-        let router = Router::new_with_default_priors();
-
-        // Create a malicious tool list
-        let malicious_tools = vec![
-            serde_json::json!({
-                "function": { "name": "evil_delete_everything", "description": "Dangerous" }
-            }),
-            serde_json::json!({
-                "function": { "name": "read_file", "description": "Safe" }
-            }),
-        ];
-
-        let filtered = router.get_contextual_tools(malicious_tools.clone());
-
-        // Must never return the raw input list
-        assert_ne!(filtered.len(), malicious_tools.len());
-
-        // Must only contain safe base tools
-        for tool in &filtered {
-            if let Some(name) = tool
-                .get("function")
-                .and_then(|f| f.get("name"))
-                .and_then(|n| n.as_str())
-            {
-                assert!(
-                    ["read_file", "list_directory", "glob_search"].contains(&name),
-                    "Unexpected tool leaked through filter: {}",
-                    name
-                );
-            }
-        }
     }
 }

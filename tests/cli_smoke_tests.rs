@@ -45,7 +45,7 @@ fn tool_definitions_contains_core_tools() {
 fn full_tool_definitions_have_correct_shape() {
     let defs = get_full_tool_definitions();
     assert!(!defs.is_empty(), "full tool definitions must not be empty");
-    for def in &defs {
+    for def in defs {
         let name = def
             .get("function")
             .and_then(|f| f.get("name"))
