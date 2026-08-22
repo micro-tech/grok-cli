@@ -4,7 +4,7 @@
       "id": 273,
       "title": "Implement Self-Updating Skills/Hooks/Optimization Catalog",
       "description": "Create a single readable .grok/SKILLS_HOOKS_OPTIMIZATION.md file that is auto-generated. It contains clearly marked sections for Skills Catalog, Hooks, and Optimization Heuristics. The catalog is kept up-to-date by the skill-builder meta-skill and a new `grok skills generate-catalog` command. The file is injected into context so the model always has accurate knowledge of available skills, hooks, and perf patterns.",
-      "status": "pending",
+      "status": "done",
       "dependencies": [],
       "priority": "high",
       "details": "- Add generate_context_catalog() in src/skills/ that produces nicely formatted Markdown with clear <!-- SECTION --> markers.\n- Sections:\n  1. SKILLS CATALOG (name, desc, triggers, arbitration, when to prefer)\n  2. HOOKS (before/after tool hooks, how to rely on them)\n  3. OPTIMIZATION HEURISTICS (from perf work + rules)\n- Add `GenerateCatalog` to SkillsCommand.\n- Call the generator after successful skill creation (New, and from skill-builder).\n- Wire the catalog file into global context loading.\n- Seed the initial catalog.\n- Update skill-builder/SKILL.md to mention regenerating the catalog.",

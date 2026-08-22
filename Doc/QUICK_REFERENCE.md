@@ -371,14 +371,33 @@ Most slash commands are **handled locally** and are **never sent to the LLM**:
 
 This is intentional for speed and predictability.
 
-### Skills Catalog (Self-Updating)
-The model sees a live catalog in `.grok/SKILLS_HOOKS_OPTIMIZATION.md` (injected into context).
+### Skills Catalog (Self-Updating) — Task 273
 
-- Contains: Skills (with descriptions, arbitration scores, when to use), Hooks guidance, and Optimization Heuristics.
-- **Auto-refreshed** when you create skills via the `skill-builder` skill.
-- You can manually refresh with: `grok skills generate-catalog`
+Grok CLI maintains a **live, self-updating catalog** that is injected into the system prompt on **every turn**.
 
-This ensures the model always knows about newly created skills without manual intervention.
+**Location:**
+- `.grok/SKILLS_HOOKS_OPTIMIZATION.md` (project)
+- `~/.grok-cli/SKILLS_HOOKS_OPTIMIZATION.md` (fallback)
+
+**Contents:**
+- **SKILLS CATALOG** — All skills ranked by arbitration score, with descriptions, tags, auto-activation hints, and exact activation syntax (`execute_skill "name"` or `/activate name`)
+- **HOOKS** — Documentation of `before_tool` / `after_tool` behavior
+- **OPTIMIZATION HEURISTICS** — Performance best practices the model is encouraged to follow
+
+**Key Behaviors:**
+- Automatically regenerated after `grok skills new <name>`
+- The `skill-builder` meta-skill runs `grok skills generate-catalog` automatically
+- The model sees the catalog on the **very next message** after a skill is created
+
+**Manual refresh:**
+```bash
+grok skills generate-catalog
+```
+
+**Why it matters:**
+Creating a skill now makes it immediately visible and usable by the model without restarts or manual explanation.
+
+See the full guide: [Doc/SKILLS_CATALOG.md](SKILLS_CATALOG.md)
 
 | Command | Description |
 |---------|-------------|

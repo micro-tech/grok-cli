@@ -105,7 +105,11 @@ Use the **Skill Builder** skill:
 > Create a skill for Docker troubleshooting
 ```
 
-**Important (Recent Improvement)**: The Skill Builder now **automatically runs `grok skills generate-catalog`** after creating a skill. This updates `.grok/SKILLS_HOOKS_OPTIMIZATION.md` so the new skill immediately appears in the **SKILLS CATALOG** section that the model reads on every turn. No manual refresh or restart needed.
+**Important (Recent Improvement — Task 273)**: The Skill Builder now **automatically runs `grok skills generate-catalog`** after creating a skill. 
+
+This updates `.grok/SKILLS_HOOKS_OPTIMIZATION.md` (the live catalog) so the new skill immediately appears in the ranked **SKILLS CATALOG** section. The model receives this catalog on **every single turn**.
+
+No manual refresh or restart needed. The model will know about your new skill right away.
 
 ### 1. Use the CLI (for templates)
 
@@ -349,9 +353,10 @@ $ grok skills show rust-expert
 ## Next Steps
 
 1. **Try the examples**: Copy from `examples/skills/` to `~/.grok-cli/skills/`
-2. **Create your first skill**: `grok skills new my-first-skill`
-3. **Explore the spec**: See `Doc/SKILL_SPECIFICATION.md` for details
-4. **Share skills**: Contribute useful skills back to the community
+2. **Create your first skill**: `grok skills new my-first-skill` (catalog auto-refreshes!)
+3. **Read the full catalog guide**: See [Doc/SKILLS_CATALOG.md](SKILLS_CATALOG.md)
+4. **Explore the spec**: See `Doc/SKILL_SPECIFICATION.md` for details
+5. **Share skills**: Contribute useful skills back to the community
 
 ### Validating Skills for Security
 

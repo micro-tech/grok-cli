@@ -1,5 +1,5 @@
 use crate::skills::{
-    generate_context_catalog, write_catalog_to_default_location,
+    write_catalog_to_default_location,
     SkillRegistry, default_manifest_template, get_default_skills_dir, list_skills,
 };
 use anyhow::Result;

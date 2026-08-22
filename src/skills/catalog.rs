@@ -11,7 +11,7 @@
 //! - OPTIMIZATION HEURISTICS
 
 use crate::skills::registry::SkillRegistry;
-use crate::skills::{get_default_skills_dir, list_skills};
+use crate::skills::get_default_skills_dir;
 use anyhow::Result;
 use std::fs;
 use std::path::Path;

@@ -1,6 +1,6 @@
 [package]
 name = "grok-cli"
-version = "0.2.8 PreRelease"
+version = "0.2.8-prerelease"
 edition = "2024"
 rust-version = "1.97.1"
 build = "build.rs"
