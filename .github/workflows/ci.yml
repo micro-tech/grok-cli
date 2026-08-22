@@ -9,11 +9,11 @@ env:
 
 jobs:
   msrv:
-    name: MSRV (1.85)
+    name: MSRV (1.97)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.85
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4 pinned
+      - uses: dtolnay/rust-toolchain@1.97
       - run: cargo check
       - run: cargo test
 
@@ -21,7 +21,7 @@ jobs:
     name: Stable
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4 pinned
       - uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
@@ -33,7 +33,7 @@ jobs:
     name: Windows (stable)
     runs-on: windows-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4 pinned
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check
       - run: cargo test -- --quiet
