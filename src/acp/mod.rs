@@ -462,14 +462,15 @@ impl GrokAcpAgent {
     fn create_capabilities() -> GrokAgentCapabilities {
         GrokAgentCapabilities {
             models: vec![
-                "grok-4".to_string(), // Current flagship
+                "grok-4".to_string(),             // Current flagship
                 "grok-4-latest".to_string(),
-                "grok-4.3".to_string(), // 1M context variant
+                "grok-4.3".to_string(),           // 1M context variant
+                "grok-4.5".to_string(),
+                "grok-4.6".to_string(),
+                "grok-4.20".to_string(),
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
-                "grok-coder".to_string(), // Specialized coding model
-                "grok-2-vision-1212".to_string(),
-                "grok-2".to_string(),
+                "grok-coder".to_string(),         // Specialized coding model
             ],
             // grok-4.3 (and select grok-4.x variants) expose a 1,048,576-token context window.
             // This is reported here so ACP clients (e.g. Zed) can make
@@ -2724,7 +2725,122 @@ fn estimate_tokens(messages: &[Value]) -> usize {
 ///   use `grok4_budget` for those.
 /// - All other models (grok-3, grok-2, …) use `legacy_budget`.
 #[inline]
+/// Detailed per-model context window knowledge.
+/// This is the single source of truth for context sizing decisions.
+/// We keep a small curated table for known models + sensible fallbacks.
+/// Future models can be added here without touching the rest of the code.
+#[derive(Debug, Clone)]
+pub struct ModelContextInfo {
+    pub context_window: usize,
+    pub recommended_budget: usize, // headroom for response + tools
+    pub family: &'static str,
+}
+
+static MODEL_CONTEXT_TABLE: &[(&str, ModelContextInfo)] = &[
+    // === Grok 4 family (from current pricing page) ===
+    // 1M context models
+    ("grok-4.3", ModelContextInfo {
+        context_window: 1_048_576,
+        recommended_budget: 950_000,
+        family: "grok-4",
+    }),
+    ("grok-4.20", ModelContextInfo {
+        context_window: 1_048_576,
+        recommended_budget: 950_000,
+        family: "grok-4",
+    }),
+    // 500k context models
+    ("grok-4.6", ModelContextInfo {
+        context_window: 524_288,
+        recommended_budget: 480_000,
+        family: "grok-4",
+    }),
+    ("grok-4.5", ModelContextInfo {
+        context_window: 524_288,
+        recommended_budget: 480_000,
+        family: "grok-4",
+    }),
+    // Base grok-4 (default to 1M as flagship)
+    ("grok-4", ModelContextInfo {
+        context_window: 1_048_576,
+        recommended_budget: 950_000,
+        family: "grok-4",
+    }),
+    ("grok-4-latest", ModelContextInfo {
+        context_window: 1_048_576,
+        recommended_budget: 950_000,
+        family: "grok-4",
+    }),
+
+    // Build / experimental
+    ("grok-build-0.1", ModelContextInfo {
+        context_window: 262_144,
+        recommended_budget: 220_000,
+        family: "grok-4",
+    }),
+
+    // === Grok 3 family ===
+    ("grok-3", ModelContextInfo {
+        context_window: 262_144,
+        recommended_budget: 220_000,
+        family: "grok-3",
+    }),
+    ("grok-3-mini", ModelContextInfo {
+        context_window: 262_144,
+        recommended_budget: 220_000,
+        family: "grok-3",
+    }),
+
+    // === Older generations ===
+    ("grok-2", ModelContextInfo {
+        context_window: 131_072,
+        recommended_budget: 110_000,
+        family: "grok-2",
+    }),
+    ("grok-2-latest", ModelContextInfo {
+        context_window: 131_072,
+        recommended_budget: 110_000,
+        family: "grok-2",
+    }),
+    ("grok-beta", ModelContextInfo {
+        context_window: 131_072,
+        recommended_budget: 110_000,
+        family: "grok-2",
+    }),
+];
+
+/// Returns rich context information for a model.
+/// Falls back to legacy 256k / 220k budget for unknown models.
+pub fn get_model_context_info(model: &str) -> ModelContextInfo {
+    let m = model.to_lowercase();
+    for (prefix, info) in MODEL_CONTEXT_TABLE {
+        if m.starts_with(prefix) || m.contains(prefix) {
+            return info.clone();
+        }
+    }
+    // Default legacy budget
+    ModelContextInfo {
+        context_window: 262_144,
+        recommended_budget: 220_000,
+        family: "legacy",
+    }
+}
+
+/// Model-aware context budget (headroom included).
+/// - grok-4.x models (grok-4.3 and later) have a 1 M token context window;
 fn model_context_budget(model: &str, legacy_budget: usize, grok4_budget: usize) -> usize {
+    let info = get_model_context_info(model);
+    if info.family == "grok-4" {
+        grok4_budget
+    } else {
+        legacy_budget
+    }
+}
+
+/// Returns the full context window size (no headroom) for a model.
+pub fn get_model_context_window(model: &str) -> usize {
+    get_model_context_info(model).context_window
+}
     if model.starts_with("grok-4") {
         grok4_budget
     } else {
