@@ -87,7 +87,10 @@ pub async fn run_shell_command(
     let timeout_secs = effective_timeout(security);
     let timeout_duration = Duration::from_secs(timeout_secs);
 
-    let spawn_result = if cfg!(target_os = "windows") {
+    // Windows branch is cfg-gated so that translate_powershell_and_chain
+    // (which is only defined on Windows) is not referenced on Linux/macOS.
+    #[cfg(target_os = "windows")]
+    let spawn_result = {
         // Bash-style `&&` means "run next command only if previous succeeded".
         // PowerShell `;` is unconditional (like `; ` in bash).
         // We translate `&&` chains into conditional blocks using $LASTEXITCODE.
@@ -105,12 +108,13 @@ pub async fn run_shell_command(
             ])
             .current_dir(&cwd)
             .output()
-    } else {
-        Command::new("sh")
-            .args(["-c", command])
-            .current_dir(&cwd)
-            .output()
     };
+
+    #[cfg(not(target_os = "windows"))]
+    let spawn_result = Command::new("sh")
+        .args(["-c", command])
+        .current_dir(&cwd)
+        .output();
 
     // Wrap execution in a hard timeout.
     let output = match timeout(timeout_duration, spawn_result).await {
