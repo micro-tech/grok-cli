@@ -23,7 +23,6 @@ path = "src/bin/github_mcp.rs"
 name = "perf_bench"
 harness = false
 
-
 [dependencies]
 # grok_api = { path = "../grok_crate/grok_api", version = "0.2.1" }
 # HTTP client with timeout support for network drops
