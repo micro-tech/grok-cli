@@ -155,31 +155,32 @@ async fn run_app(terminal: &mut Tui, app: &mut SettingsApp) -> Result<()> {
 
         if event::poll(Duration::from_millis(100))?
             && let Event::Key(key) = event::read()?
-                && key.kind == KeyEventKind::Press {
-                    match app.mode {
-                        EditMode::View => match key.code {
-                            KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
-                            KeyCode::Down | KeyCode::Char('j') => app.next(),
-                            KeyCode::Up | KeyCode::Char('k') => app.previous(),
-                            KeyCode::Enter | KeyCode::Char(' ') => app.handle_selection().await?,
-                            _ => {}
-                        },
-                        EditMode::Input => match key.code {
-                            KeyCode::Enter => app.submit_input().await?,
-                            KeyCode::Esc => {
-                                app.mode = EditMode::View;
-                                app.set_status("Cancelled", Color::Yellow);
-                            }
-                            KeyCode::Backspace => {
-                                app.input_buffer.pop();
-                            }
-                            KeyCode::Char(c) => {
-                                app.input_buffer.push(c);
-                            }
-                            _ => {}
-                        },
+            && key.kind == KeyEventKind::Press
+        {
+            match app.mode {
+                EditMode::View => match key.code {
+                    KeyCode::Char('q') | KeyCode::Esc => return Ok(()),
+                    KeyCode::Down | KeyCode::Char('j') => app.next(),
+                    KeyCode::Up | KeyCode::Char('k') => app.previous(),
+                    KeyCode::Enter | KeyCode::Char(' ') => app.handle_selection().await?,
+                    _ => {}
+                },
+                EditMode::Input => match key.code {
+                    KeyCode::Enter => app.submit_input().await?,
+                    KeyCode::Esc => {
+                        app.mode = EditMode::View;
+                        app.set_status("Cancelled", Color::Yellow);
                     }
-                }
+                    KeyCode::Backspace => {
+                        app.input_buffer.pop();
+                    }
+                    KeyCode::Char(c) => {
+                        app.input_buffer.push(c);
+                    }
+                    _ => {}
+                },
+            }
+        }
         if app.should_quit {
             return Ok(());
         }

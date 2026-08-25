@@ -33,7 +33,9 @@ async fn read_file_returns_content() {
     let _policy = helpers::make_policy(&dir);
     let file = helpers::write_fixture(&dir, "hello.txt", "Hello, Grok!");
 
-    let result = read_file(file.to_str().unwrap(), &helpers::make_ctx(&dir)).await.unwrap();
+    let result = read_file(file.to_str().unwrap(), &helpers::make_ctx(&dir))
+        .await
+        .unwrap();
 
     assert_eq!(result, "Hello, Grok!");
 }
@@ -67,7 +69,9 @@ async fn read_file_valid_json_returned_verbatim() {
     let json_text = r#"{"version":1,"items":["a","b"]}"#;
     let file = helpers::write_fixture(&dir, "data.json", json_text);
 
-    let result = read_file(file.to_str().unwrap(), &helpers::make_ctx(&dir)).await.unwrap();
+    let result = read_file(file.to_str().unwrap(), &helpers::make_ctx(&dir))
+        .await
+        .unwrap();
 
     assert_eq!(
         result, json_text,
@@ -106,9 +110,14 @@ async fn write_file_creates_file_with_content() {
     let _policy = helpers::make_policy(&dir);
     let path = dir.path().join("output.txt");
 
-    write_file(path.to_str().unwrap(), "written content", &helpers::make_ctx(&dir), false)
-        .await
-        .unwrap();
+    write_file(
+        path.to_str().unwrap(),
+        "written content",
+        &helpers::make_ctx(&dir),
+        false,
+    )
+    .await
+    .unwrap();
 
     let on_disk = fs::read_to_string(&path).unwrap();
     assert_eq!(on_disk, "written content");
@@ -122,9 +131,14 @@ async fn write_file_creates_parent_directories() {
     // `deep/nested/` does not exist yet — write_file must create it.
     let path = dir.path().join("deep").join("nested").join("new.txt");
 
-    write_file(path.to_str().unwrap(), "deep content", &helpers::make_ctx(&dir), false)
-        .await
-        .unwrap();
+    write_file(
+        path.to_str().unwrap(),
+        "deep content",
+        &helpers::make_ctx(&dir),
+        false,
+    )
+    .await
+    .unwrap();
 
     assert!(path.exists(), "file should be created at deep path");
     let on_disk = fs::read_to_string(&path).unwrap();
@@ -139,7 +153,13 @@ async fn write_file_outside_trust_is_denied() {
     let _policy = helpers::make_policy(&trusted);
     let path = other.path().join("intruder.txt");
 
-    let result = write_file(path.to_str().unwrap(), "should not land", &helpers::make_ctx(&trusted), false).await;
+    let result = write_file(
+        path.to_str().unwrap(),
+        "should not land",
+        &helpers::make_ctx(&trusted),
+        false,
+    )
+    .await;
 
     assert!(result.is_err(), "write outside trust must return Err");
     let msg = result.unwrap_err().to_string().to_lowercase();
@@ -504,11 +524,18 @@ async fn write_then_read_round_trip() {
     let path = dir.path().join("roundtrip.txt");
     let content = "The quick brown fox jumps over the lazy dog.\n";
 
-    write_file(path.to_str().unwrap(), content, &helpers::make_ctx(&dir), false)
+    write_file(
+        path.to_str().unwrap(),
+        content,
+        &helpers::make_ctx(&dir),
+        false,
+    )
+    .await
+    .unwrap();
+
+    let result = read_file(path.to_str().unwrap(), &helpers::make_ctx(&dir))
         .await
         .unwrap();
-
-    let result = read_file(path.to_str().unwrap(), &helpers::make_ctx(&dir)).await.unwrap();
     assert_eq!(result, content);
 }
 

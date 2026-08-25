@@ -1,8 +1,8 @@
 # Grok CLI
 
-[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/microtech/grok-cli)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Rust](https://img.shields.io/badge/rust-1.85%2B%20(Edition%202024)-orange.svg)](https://www.rust-lang.org)
+[![Build Status](https://img.shields.io/badge/build-passing-brightgreen.svg)](https://github.com/micro-tech/grok-cli)
+[![License: Custom](https://img.shields.io/badge/License-Custom%20Non--Commercial-blue.svg)](LICENSE)
+[![Rust](https://img.shields.io/badge/rust-1.97%2B%20(Edition%202024)-orange.svg)](https://www.rust-lang.org)
 
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
@@ -68,7 +68,7 @@ See [Doc/QUICK_REFERENCE.md](Doc/QUICK_REFERENCE.md) for the full command list a
 
 ```bash
 # Install / build
-git clone https://github.com/microtech/grok-cli
+git clone https://github.com/micro-tech/grok-cli
 cd grok-cli
 cargo build --release
 
@@ -147,7 +147,8 @@ See [Doc/CONTRIBUTING.md](Doc/CONTRIBUTING.md).
 
 ## 📄 License
 
-MIT — see [LICENSE](LICENSE).
+Custom non-commercial license — see [LICENSE](LICENSE).
+Redistribution and modification require clear attribution to the original author (john mcconnell, john.microtech@gmail.com).
 
 ---
 

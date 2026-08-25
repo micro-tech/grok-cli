@@ -1183,7 +1183,11 @@ async fn handle_extension_dispatch(
             let method = raw
                 .get("method")
                 .and_then(|m| m.as_str())
-                .or_else(|| raw.get("request").and_then(|r| r.get("method")).and_then(|m| m.as_str()))
+                .or_else(|| {
+                    raw.get("request")
+                        .and_then(|r| r.get("method"))
+                        .and_then(|m| m.as_str())
+                })
                 .unwrap_or("")
                 .to_string();
 
@@ -1194,19 +1198,13 @@ async fn handle_extension_dispatch(
                 .unwrap_or_else(|| json!({}));
 
             if method == "logout" || method.ends_with("/logout") {
-                return respond_with_handler_result(
-                    responder,
-                    handle_logout(&agent, &params),
-                )
-                .await;
+                return respond_with_handler_result(responder, handle_logout(&agent, &params))
+                    .await;
             }
 
             if method == "cancel" || method.ends_with("/cancel") {
-                return respond_with_handler_result(
-                    responder,
-                    handle_cancel(&agent, &params),
-                )
-                .await;
+                return respond_with_handler_result(responder, handle_cancel(&agent, &params))
+                    .await;
             }
 
             if method == "session/info_update" || method.ends_with("info_update") {
@@ -1218,11 +1216,8 @@ async fn handle_extension_dispatch(
             }
 
             if method == "model/config_options" || method.ends_with("config_options") {
-                return respond_with_handler_result(
-                    responder,
-                    handle_model_config_options(&agent),
-                )
-                .await;
+                return respond_with_handler_result(responder, handle_model_config_options(&agent))
+                    .await;
             }
 
             // Unknown method — fall back to legacy set_model for old clients,
@@ -1234,10 +1229,7 @@ async fn handle_extension_dispatch(
         Dispatch::Notification(notif) => {
             // Some clients (or older flows) may send cancel as a notification.
             if let Ok(v) = serde_json::to_value(&notif) {
-                let method = v
-                    .get("method")
-                    .and_then(|m| m.as_str())
-                    .unwrap_or("");
+                let method = v.get("method").and_then(|m| m.as_str()).unwrap_or("");
                 if method == "cancel" || method.ends_with("/cancel") {
                     let _ = handle_cancel(&agent, &v).await;
                 }

@@ -65,34 +65,37 @@ fn load_global_rules() -> Vec<AgentRule> {
         for name in AGENT_FILENAMES {
             let path = grok_dir.join(name);
             if path.exists()
-                && let Ok(content) = fs::read_to_string(&path) {
-                    rules.push(AgentRule {
-                        filename: name.to_string(),
-                        path,
-                        content,
-                        source: RuleSource::Global,
-                    });
-                }
+                && let Ok(content) = fs::read_to_string(&path)
+            {
+                rules.push(AgentRule {
+                    filename: name.to_string(),
+                    path,
+                    content,
+                    source: RuleSource::Global,
+                });
+            }
         }
 
         // ~/.grok/rules/*.md
         let rules_dir = grok_dir.join("rules");
         if rules_dir.exists()
-            && let Ok(entries) = fs::read_dir(&rules_dir) {
-                for entry in entries.flatten() {
-                    let path = entry.path();
-                    if path.extension().is_some_and(|e| e == "md")
-                        && let Ok(content) = fs::read_to_string(&path)
-                            && let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-                                rules.push(AgentRule {
-                                    filename: filename.to_string(),
-                                    path,
-                                    content,
-                                    source: RuleSource::Global,
-                                });
-                            }
+            && let Ok(entries) = fs::read_dir(&rules_dir)
+        {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.extension().is_some_and(|e| e == "md")
+                    && let Ok(content) = fs::read_to_string(&path)
+                    && let Some(filename) = path.file_name().and_then(|s| s.to_str())
+                {
+                    rules.push(AgentRule {
+                        filename: filename.to_string(),
+                        path,
+                        content,
+                        source: RuleSource::Global,
+                    });
                 }
             }
+        }
     }
 
     rules
@@ -127,35 +130,38 @@ fn load_directory_rules(start_dir: &Path) -> Vec<AgentRule> {
         for name in AGENT_FILENAMES {
             let path = dir.join(name);
             if path.exists()
-                && let Ok(content) = fs::read_to_string(&path) {
-                    rules.push(AgentRule {
-                        filename: name.to_string(),
-                        path,
-                        content,
-                        source: RuleSource::Directory(depth),
-                    });
-                }
+                && let Ok(content) = fs::read_to_string(&path)
+            {
+                rules.push(AgentRule {
+                    filename: name.to_string(),
+                    path,
+                    content,
+                    source: RuleSource::Directory(depth),
+                });
+            }
         }
 
         // Also check .grok/rules/ and .agents/rules/ inside each dir
         for rules_dir_name in &[".grok/rules", ".agents/rules"] {
             let rules_dir = dir.join(rules_dir_name);
             if rules_dir.exists()
-                && let Ok(entries) = fs::read_dir(&rules_dir) {
-                    for entry in entries.flatten() {
-                        let path = entry.path();
-                        if path.extension().is_some_and(|e| e == "md")
-                            && let Ok(content) = fs::read_to_string(&path)
-                                && let Some(filename) = path.file_name().and_then(|s| s.to_str()) {
-                                    rules.push(AgentRule {
-                                        filename: filename.to_string(),
-                                        path,
-                                        content,
-                                        source: RuleSource::Directory(depth),
-                                    });
-                                }
+                && let Ok(entries) = fs::read_dir(&rules_dir)
+            {
+                for entry in entries.flatten() {
+                    let path = entry.path();
+                    if path.extension().is_some_and(|e| e == "md")
+                        && let Ok(content) = fs::read_to_string(&path)
+                        && let Some(filename) = path.file_name().and_then(|s| s.to_str())
+                    {
+                        rules.push(AgentRule {
+                            filename: filename.to_string(),
+                            path,
+                            content,
+                            source: RuleSource::Directory(depth),
+                        });
                     }
                 }
+            }
         }
     }
 

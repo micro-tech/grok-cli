@@ -3,7 +3,7 @@
 //! Extracts deep semantic information (structs, enums, traits, impls, functions)
 //! using the syn crate for accurate Rust AST analysis.
 
-use syn::{File, Item, parse_file};
+use syn::{Item, parse_file};
 
 /// Extracts semantic entities from Rust source code.
 pub struct SynExtractor;
@@ -36,15 +36,15 @@ impl SynExtractor {
                     entities.push((f.sig.ident.to_string(), "function".to_string()));
                 }
                 Item::Impl(imp) => {
-                    if let Some((_, path, _)) = &imp.trait_ {
+                    if let Some((path, _)) = &imp.trait_ {
                         entities.push((
                             path.segments.last().unwrap().ident.to_string(),
                             "impl".to_string(),
                         ));
-                    } else if let syn::Type::Path(p) = &*imp.self_ty {
-                        if let Some(seg) = p.path.segments.last() {
-                            entities.push((seg.ident.to_string(), "impl".to_string()));
-                        }
+                    } else if let syn::Type::Path(p) = &*imp.self_ty
+                        && let Some(seg) = p.path.segments.last()
+                    {
+                        entities.push((seg.ident.to_string(), "impl".to_string()));
                     }
                 }
                 _ => {}

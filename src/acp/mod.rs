@@ -490,7 +490,7 @@ impl GrokAcpAgent {
             // automatically reflects any newly added tools without requiring
             // manual updates here.
             tools: crate::tools::registry::get_available_tool_definitions()
-                .into_iter()
+                .iter()
                 .filter_map(|v| {
                     let func = v.get("function")?;
                     Some(ToolDefinition {
@@ -2724,6 +2724,7 @@ fn estimate_tokens(messages: &[Value]) -> usize {
 /// - grok-4.x models (grok-4.3 and later) have a 1 M token context window;
 ///   use `grok4_budget` for those.
 /// - All other models (grok-3, grok-2, …) use `legacy_budget`.
+///
 /// Detailed per-model context window knowledge.
 /// This is the single source of truth for context sizing decisions.
 /// We keep a small curated table for known models + sensible fallbacks.

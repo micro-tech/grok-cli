@@ -10,8 +10,8 @@
 //! - HOOKS
 //! - OPTIMIZATION HEURISTICS
 
-use crate::skills::registry::SkillRegistry;
 use crate::skills::get_default_skills_dir;
+use crate::skills::registry::SkillRegistry;
 use anyhow::Result;
 use std::fs;
 use std::path::Path;
@@ -27,7 +27,9 @@ pub fn generate_context_catalog() -> Result<String> {
     // Header
     output.push_str("# Grok-CLI Skills, Hooks & Optimization Catalog\n\n");
     output.push_str("**Auto-generated and self-updating.**\n");
-    output.push_str("This file is regenerated when skills are created or via `grok skills generate-catalog`.\n");
+    output.push_str(
+        "This file is regenerated when skills are created or via `grok skills generate-catalog`.\n",
+    );
     output.push_str("The model should treat each clearly marked section as authoritative.\n\n");
     output.push_str("---\n\n");
 
@@ -37,7 +39,9 @@ pub fn generate_context_catalog() -> Result<String> {
     output.push_str("<!-- SKILLS CATALOG START -->\n");
     output.push_str("## 1. SKILLS CATALOG\n\n");
     output.push_str("**Purpose:** Live list of skills with everything the model needs for correct arbitration, activation, and `execute_skill` decisions.\n\n");
-    output.push_str("Skills appear in descending arbitration priority (highest influence first).\n\n");
+    output.push_str(
+        "Skills appear in descending arbitration priority (highest influence first).\n\n",
+    );
 
     let skills_dir = get_default_skills_dir();
 
@@ -56,29 +60,38 @@ pub fn generate_context_catalog() -> Result<String> {
                             output.push_str(&format!("**Tags:** {}\n", manifest.tags.join(", ")));
                         }
                         if !manifest.dependencies.is_empty() {
-                            output.push_str(&format!("**Depends on:** {}\n", manifest.dependencies.join(", ")));
+                            output.push_str(&format!(
+                                "**Depends on:** {}\n",
+                                manifest.dependencies.join(", ")
+                            ));
                         }
                     }
 
                     // Auto-activation hints (critical for the model)
-                    if let Some(ref aa) = entry.skill.config.auto_activate {
-                        if aa.enabled {
-                            output.push_str("**Auto-activation hints:**\n");
-                            if !aa.keywords.is_empty() {
-                                output.push_str(&format!("- Keywords: {}\n", aa.keywords.join(", ")));
-                            }
-                            if !aa.patterns.is_empty() {
-                                output.push_str(&format!("- Regex patterns: {}\n", aa.patterns.join(", ")));
-                            }
-                            if !aa.file_extensions.is_empty() {
-                                output.push_str(&format!("- File extensions: {}\n", aa.file_extensions.join(", ")));
-                            }
-                            output.push_str(&format!("- Minimum confidence: {}\n", aa.min_confidence));
+                    if let Some(ref aa) = entry.skill.config.auto_activate
+                        && aa.enabled
+                    {
+                        output.push_str("**Auto-activation hints:**\n");
+                        if !aa.keywords.is_empty() {
+                            output.push_str(&format!("- Keywords: {}\n", aa.keywords.join(", ")));
                         }
+                        if !aa.patterns.is_empty() {
+                            output.push_str(&format!(
+                                "- Regex patterns: {}\n",
+                                aa.patterns.join(", ")
+                            ));
+                        }
+                        if !aa.file_extensions.is_empty() {
+                            output.push_str(&format!(
+                                "- File extensions: {}\n",
+                                aa.file_extensions.join(", ")
+                            ));
+                        }
+                        output.push_str(&format!("- Minimum confidence: {}\n", aa.min_confidence));
                     }
 
                     output.push_str("**When to prefer / activate this skill:**\n");
-                    output.push_str(&format!("- Match the description and triggers above.\n"));
+                    output.push_str("- Match the description and triggers above.\n");
                     output.push_str(&format!("- Call with `execute_skill \"{}\" \"user input here\"` or activate via `/activate {}`.\n\n", entry.name(), entry.name()));
                 }
             }
@@ -103,7 +116,9 @@ pub fn generate_context_catalog() -> Result<String> {
     output.push_str("**before_tool**\n");
     output.push_str("- Executes before any tool call.\n");
     output.push_str("- Can block the call or add context.\n");
-    output.push_str("- Common uses: security policy, logging, auto-approval, input sanitization.\n\n");
+    output.push_str(
+        "- Common uses: security policy, logging, auto-approval, input sanitization.\n\n",
+    );
 
     output.push_str("**after_tool**\n");
     output.push_str("- Executes after tool completion.\n");
@@ -111,10 +126,13 @@ pub fn generate_context_catalog() -> Result<String> {
     output.push_str("- Common uses: post-processing, auditing, triggering side effects.\n\n");
 
     output.push_str("### Guidance for the Model\n");
-    output.push_str("- Trust that `before_tool` / `after_tool` will run when `tools.enable_hooks = true`.\n");
+    output.push_str(
+        "- Trust that `before_tool` / `after_tool` will run when `tools.enable_hooks = true`.\n",
+    );
     output.push_str("- Do not duplicate hook logic (e.g. don't manually add safety checks a hook already performs).\n");
     output.push_str("- If a tool is blocked by a hook, the response will usually explain why.\n");
-    output.push_str("- Prefer relying on existing hooks over writing new custom code in skills.\n\n");
+    output
+        .push_str("- Prefer relying on existing hooks over writing new custom code in skills.\n\n");
 
     output.push_str("<!-- HOOKS SECTION END -->\n\n");
     output.push_str("---\n\n");
@@ -133,19 +151,26 @@ pub fn generate_context_catalog() -> Result<String> {
 
     output.push_str("### History & Message Construction (cheap clones)\n");
     output.push_str("- Use `Arc<str>` for message content (already done in ConversationItem).\n");
-    output.push_str("- Avoid full history clones on every turn — prefer bounded windows + `std::mem::take`.\n");
+    output.push_str(
+        "- Avoid full history clones on every turn — prefer bounded windows + `std::mem::take`.\n",
+    );
     output.push_str("- Keep static prompt fragments and tool schemas cached.\n\n");
 
     output.push_str("### Prompt Building\n");
-    output.push_str("- Use `String::with_capacity` + `push_str` instead of repeated `format!` where hot.\n");
+    output.push_str(
+        "- Use `String::with_capacity` + `push_str` instead of repeated `format!` where hot.\n",
+    );
     output.push_str("- Prefer single owned values for system messages when possible.\n\n");
 
     output.push_str("### General Performance Rules\n");
-    output.push_str("- When `GROK_PERF=1` is set, pay attention to the reported per-turn timings.\n");
+    output
+        .push_str("- When `GROK_PERF=1` is set, pay attention to the reported per-turn timings.\n");
     output.push_str("- In ACP/sub-agent paths, minimize time spent holding locks.\n");
     output.push_str("- For interactive suggestions and UI, use `LazyLock` / statics (already applied to many suggestion lists).\n\n");
 
-    output.push_str("**Primary Goal:** Fewer tool-loop iterations + lower per-turn memory allocations.\n\n");
+    output.push_str(
+        "**Primary Goal:** Fewer tool-loop iterations + lower per-turn memory allocations.\n\n",
+    );
 
     output.push_str("<!-- OPTIMIZATION HEURISTICS END -->\n\n");
 
@@ -162,9 +187,7 @@ pub fn write_catalog_to_default_location() -> Result<std::path::PathBuf> {
     let dir = get_default_skills_dir()
         .ok_or_else(|| anyhow::anyhow!("Cannot determine skills directory"))?;
 
-    let catalog_path = dir.parent()
-        .unwrap_or(&dir)
-        .join(CATALOG_FILENAME);
+    let catalog_path = dir.parent().unwrap_or(&dir).join(CATALOG_FILENAME);
 
     fs::write(&catalog_path, &content)?;
     Ok(catalog_path)

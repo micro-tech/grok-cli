@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 
 /// Optimized Bayesian update (Task 268.2).
-/// 
+///
 /// - Early exit when there are no likelihoods (common for generic chat).
 /// - Single combined pass where possible.
 /// - Avoids repeated HashMap lookups.
@@ -18,10 +18,12 @@ pub fn bayes_update(
         // Still apply gentle decay toward long-term priors
         if decay_rate < 1.0 || pull_rate > 0.0 {
             let mut total = 0.0f32;
-            for (_intent, belief) in priors.iter_mut() {
+            for belief in priors.values_mut() {
                 let long_term = 0.0; // we don't have the original prior here, so just decay
                 *belief = *belief * decay_rate + long_term * pull_rate;
-                if *belief < 0.001 { *belief = 0.001; }
+                if *belief < 0.001 {
+                    *belief = 0.001;
+                }
                 total += *belief;
             }
             if total > f32::EPSILON {

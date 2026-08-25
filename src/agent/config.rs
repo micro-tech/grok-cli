@@ -28,8 +28,7 @@ use std::path::PathBuf;
 ///
 /// `allow = None` → all tools permitted (permissive default, use with care).
 /// `allow = Some([])` → no tools at all (pure text completion).
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ToolPermissions {
     /// Whitelist of tool names the agent may call.
     /// `None` = unrestricted (all tools available).
@@ -43,7 +42,6 @@ pub struct ToolPermissions {
     #[serde(default)]
     pub restricted: Vec<String>,
 }
-
 
 impl ToolPermissions {
     /// Return `true` if `tool_name` is permitted (not in deny, in allow or unrestricted).
@@ -257,8 +255,7 @@ impl Default for ContextBudget {
 // ── AgentSandbox ──────────────────────────────────────────────────────────────
 
 /// Filesystem isolation rules for a sub-agent.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[derive(Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct AgentSandbox {
     /// Whether to restrict the agent to the sandbox path.
     #[serde(default)]
@@ -273,7 +270,6 @@ pub struct AgentSandbox {
     #[serde(default)]
     pub keep: bool,
 }
-
 
 impl AgentSandbox {
     /// Resolve the sandbox to an absolute `PathBuf`, or `None` if disabled

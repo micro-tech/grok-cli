@@ -173,12 +173,13 @@ impl SecurityPolicy {
         }
 
         if abs.exists()
-            && let Ok(canonical) = abs.canonicalize() {
-                if suffix.as_os_str().is_empty() {
-                    return Ok(canonical);
-                }
-                return Ok(canonical.join(suffix));
+            && let Ok(canonical) = abs.canonicalize()
+        {
+            if suffix.as_os_str().is_empty() {
+                return Ok(canonical);
             }
+            return Ok(canonical.join(suffix));
+        }
 
         // Final fallback — at least give an absolute path under the working dir.
         // is_internal_path will still compare against trusted directories.

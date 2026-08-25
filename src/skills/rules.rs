@@ -43,24 +43,26 @@ pub fn load_all_rules(project_root: &Path) -> Result<Vec<RuleFile>> {
 
     // 1. Load global rules first
     if let Some(global_dir) = crate::skills::manager::get_global_rules_dir()
-        && global_dir.exists() {
-            for entry in fs::read_dir(&global_dir)? {
-                let entry = entry?;
-                if entry.file_type()?.is_file()
-                    && let Some(filename) = entry.file_name().to_str()
-                        && let Ok(content) = fs::read_to_string(entry.path()) {
-                            rules_by_name.insert(
-                                filename.to_string(),
-                                RuleFile {
-                                    filename: filename.to_string(),
-                                    path: entry.path(),
-                                    content,
-                                    source: RuleSource::Global,
-                                },
-                            );
-                        }
+        && global_dir.exists()
+    {
+        for entry in fs::read_dir(&global_dir)? {
+            let entry = entry?;
+            if entry.file_type()?.is_file()
+                && let Some(filename) = entry.file_name().to_str()
+                && let Ok(content) = fs::read_to_string(entry.path())
+            {
+                rules_by_name.insert(
+                    filename.to_string(),
+                    RuleFile {
+                        filename: filename.to_string(),
+                        path: entry.path(),
+                        content,
+                        source: RuleSource::Global,
+                    },
+                );
             }
         }
+    }
 
     // 2. Load project rules (override globals with same filename)
     let project_dir = crate::skills::manager::get_project_rules_dir(project_root);
@@ -69,18 +71,19 @@ pub fn load_all_rules(project_root: &Path) -> Result<Vec<RuleFile>> {
             let entry = entry?;
             if entry.file_type()?.is_file()
                 && let Some(filename) = entry.file_name().to_str()
-                    && let Ok(content) = fs::read_to_string(entry.path()) {
-                        // Project always wins
-                        rules_by_name.insert(
-                            filename.to_string(),
-                            RuleFile {
-                                filename: filename.to_string(),
-                                path: entry.path(),
-                                content,
-                                source: RuleSource::Project,
-                            },
-                        );
-                    }
+                && let Ok(content) = fs::read_to_string(entry.path())
+            {
+                // Project always wins
+                rules_by_name.insert(
+                    filename.to_string(),
+                    RuleFile {
+                        filename: filename.to_string(),
+                        path: entry.path(),
+                        content,
+                        source: RuleSource::Project,
+                    },
+                );
+            }
         }
     }
 

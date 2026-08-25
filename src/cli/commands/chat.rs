@@ -126,17 +126,18 @@ async fn handle_single_chat(
             let response = response_with_finish.message;
             // Handle tool calls if present
             if let Some(tool_calls) = &response.tool_calls
-                && !tool_calls.is_empty() {
-                    println!("{}", format_info("Executing requested operations..."));
-                    let mut security = SecurityPolicy::new();
-                    security.add_trusted_directory(&env::current_dir()?);
+                && !tool_calls.is_empty()
+            {
+                println!("{}", format_info("Executing requested operations..."));
+                let mut security = SecurityPolicy::new();
+                security.add_trusted_directory(&env::current_dir()?);
 
-                    for tool_call in tool_calls {
-                        execute_tool_call(tool_call, &security).await?;
-                    }
-                    println!("{}", format_success("All operations completed!"));
-                    return Ok(());
+                for tool_call in tool_calls {
+                    execute_tool_call(tool_call, &security).await?;
                 }
+                println!("{}", format_success("All operations completed!"));
+                return Ok(());
+            }
 
             // Regular text response
             println!("{}", format_success("Response received!"));
@@ -255,9 +256,12 @@ async fn handle_interactive_chat(
                 let lower_input = input.to_lowercase();
 
                 // Handle special commands using a command registry
-                if let Some(result) =
-                    handle_interactive_command(&lower_input, input, &mut conversation_history, &mut router)?
-                {
+                if let Some(result) = handle_interactive_command(
+                    &lower_input,
+                    input,
+                    &mut conversation_history,
+                    &mut router,
+                )? {
                     match result {
                         CommandResult::Exit => {
                             println!("{}", "Goodbye!".cyan());
@@ -376,10 +380,16 @@ async fn handle_interactive_chat(
                     let content_str = content_to_string(response_msg.content.as_ref());
                     let tool_calls_json: Vec<serde_json::Value> = tool_calls
                         .iter()
-                        .map(|tc| serde_json::to_value(tc).unwrap_or_else(|_| serde_json::json!({})))
+                        .map(|tc| {
+                            serde_json::to_value(tc).unwrap_or_else(|_| serde_json::json!({}))
+                        })
                         .collect();
                     conversation_history.push(assistant_with_tool_calls(
-                        if content_str.is_empty() { None } else { Some(content_str) },
+                        if content_str.is_empty() {
+                            None
+                        } else {
+                            Some(content_str)
+                        },
                         tool_calls_json,
                     ));
 
@@ -794,21 +804,20 @@ async fn handle_explorer_mode(client: AppRouter, query: &str, model: &str) -> Re
 
     let system_prompt = Mode::Explorer.system_prompt_additions();
 
-    let messages = vec![
-        system(system_prompt),
-        user(query),
-    ];
+    let messages = vec![system(system_prompt), user(query)];
 
     // Only allow read/search tools in explorer mode
-    let allowed_tools = ["fs_glob",
+    let allowed_tools = [
+        "fs_glob",
         "fs_read",
         "fs_grep",
         "list_directory",
-        "search_file_content"];
+        "search_file_content",
+    ];
 
     let all_tools = tools::get_available_tool_definitions();
     let filtered_tools: Vec<serde_json::Value> = all_tools
-        .into_iter()
+        .iter()
         .filter(|t| {
             t.get("function")
                 .and_then(|f| f.get("name"))

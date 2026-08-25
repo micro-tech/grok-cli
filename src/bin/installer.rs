@@ -124,7 +124,8 @@ fn install_windows(root_dir: PathBuf) {
                 needs_manual_replace = true;
                 println!(
                     "{}",
-                    "  Old binary is locked (probably running). Will install as grok-cli.exe.new".yellow()
+                    "  Old binary is locked (probably running). Will install as grok-cli.exe.new"
+                        .yellow()
                 );
             }
         } else {
@@ -138,7 +139,10 @@ fn install_windows(root_dir: PathBuf) {
 
     if needs_manual_replace {
         println!();
-        println!("{}", "MANUAL STEP REQUIRED (Windows file lock):".red().bold());
+        println!(
+            "{}",
+            "MANUAL STEP REQUIRED (Windows file lock):".red().bold()
+        );
         println!("The old grok-cli.exe is still in use.");
         println!("After you close ALL grok-cli / terminal windows that are using it:");
         println!();

@@ -1,6 +1,6 @@
 use crate::skills::{
-    write_catalog_to_default_location,
     SkillRegistry, default_manifest_template, get_default_skills_dir, list_skills,
+    write_catalog_to_default_location,
 };
 use anyhow::Result;
 use clap::Subcommand;
@@ -511,26 +511,24 @@ pub async fn handle_skills_command(command: SkillsCommand) -> Result<()> {
         }
 
         // ── Generate Catalog ─────────────────────────────────────────────────
-        SkillsCommand::GenerateCatalog => {
-            match write_catalog_to_default_location() {
-                Ok(path) => {
-                    println!(
-                        "{} Regenerated skills/hook/optimization catalog",
-                        "✓".bright_green()
-                    );
-                    println!("  {}", path.display().to_string().dimmed());
-                    println!();
-                    println!("  The model will see the updated catalog on the next turn.");
-                    println!("  Sections included:");
-                    println!("    • Skills Catalog (with triggers & arbitration)");
-                    println!("    • Hooks");
-                    println!("    • Optimization Heuristics");
-                }
-                Err(e) => {
-                    eprintln!("{} Failed to generate catalog: {}", "✗".bright_red(), e);
-                }
+        SkillsCommand::GenerateCatalog => match write_catalog_to_default_location() {
+            Ok(path) => {
+                println!(
+                    "{} Regenerated skills/hook/optimization catalog",
+                    "✓".bright_green()
+                );
+                println!("  {}", path.display().to_string().dimmed());
+                println!();
+                println!("  The model will see the updated catalog on the next turn.");
+                println!("  Sections included:");
+                println!("    • Skills Catalog (with triggers & arbitration)");
+                println!("    • Hooks");
+                println!("    • Optimization Heuristics");
             }
-        }
+            Err(e) => {
+                eprintln!("{} Failed to generate catalog: {}", "✗".bright_red(), e);
+            }
+        },
     }
 
     Ok(())

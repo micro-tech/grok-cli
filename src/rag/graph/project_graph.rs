@@ -1,6 +1,7 @@
 //! Project-wide semantic entity graph.
 
 use super::{GraphEdge, GraphNode, NodeId};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::PathBuf;
 

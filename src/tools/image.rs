@@ -75,12 +75,13 @@ pub fn extract_image_from_message(message: &str) -> Option<String> {
     // Quoted paths may contain spaces / parentheses.
     let quoted_re = regex::Regex::new(r#"(?i)"([^"]+\.(?:png|jpe?g|webp|gif))""#).ok()?;
     if let Some(caps) = quoted_re.captures(message)
-        && let Some(m) = caps.get(1) {
-            let path = m.as_str().trim();
-            if is_image_path(path) || is_image_url(path) {
-                return Some(path.to_string());
-            }
+        && let Some(m) = caps.get(1)
+    {
+        let path = m.as_str().trim();
+        if is_image_path(path) || is_image_url(path) {
+            return Some(path.to_string());
         }
+    }
 
     // Unquoted path/filename tokens — no spaces so we don't swallow
     // preceding prose like "look at this ./diagram.png".

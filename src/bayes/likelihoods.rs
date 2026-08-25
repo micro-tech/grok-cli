@@ -40,7 +40,10 @@ pub fn likelihood_from_text(text: &str, weight: f32) -> HashMap<String, f32> {
     //
     // "careful" / "don't delete" are strong risk signals, so we give
     // `need_clarification` a likelihood of 15.0.
-    if t.contains("careful") || t.contains("don't delete") || (t.contains("delete") && t.contains("don't")) {
+    if t.contains("careful")
+        || t.contains("don't delete")
+        || (t.contains("delete") && t.contains("don't"))
+    {
         map.insert("need_clarification".into(), 15.0);
         map.insert("low_confidence".into(), 5.0);
     }

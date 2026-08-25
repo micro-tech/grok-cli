@@ -459,22 +459,23 @@ fn detect_language_from_path(path: &str) -> Option<String> {
 fn extract_code_from_response(response: &str) -> String {
     // Try to find code blocks first
     if let Some(start) = response.find("```")
-        && let Some(end) = response[start + 3..].find("```") {
-            let code_block = &response[start + 3..start + 3 + end];
-            // Remove language identifier from first line if present
-            let lines: Vec<&str> = code_block.lines().collect();
-            if !lines.is_empty() {
-                let first_line = lines[0].trim();
-                if first_line
-                    .chars()
-                    .all(|c| c.is_alphabetic() || c == '+' || c == '#')
-                {
-                    // First line is likely a language identifier
-                    return lines[1..].join("\n").trim().to_string();
-                }
+        && let Some(end) = response[start + 3..].find("```")
+    {
+        let code_block = &response[start + 3..start + 3 + end];
+        // Remove language identifier from first line if present
+        let lines: Vec<&str> = code_block.lines().collect();
+        if !lines.is_empty() {
+            let first_line = lines[0].trim();
+            if first_line
+                .chars()
+                .all(|c| c.is_alphabetic() || c == '+' || c == '#')
+            {
+                // First line is likely a language identifier
+                return lines[1..].join("\n").trim().to_string();
             }
-            return code_block.trim().to_string();
         }
+        return code_block.trim().to_string();
+    }
 
     // If no code blocks found, return the entire response
     response.trim().to_string()

@@ -770,8 +770,8 @@ grok-cli interactive
 ```
 
 ### Support
-- GitHub Issues: https://github.com/microtech/grok-cli/issues
-- Repository: https://github.com/microtech/grok-cli
+- GitHub Issues: https://github.com/micro-tech/grok-cli/issues
+- Repository: https://github.com/micro-tech/grok-cli
 
 ---
 

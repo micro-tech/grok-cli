@@ -16,7 +16,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)
 Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 Author: John McConnell <john.microtech@gmail.com>
-Repository: https://github.com/microtech/grok-cli
+Repository: https://github.com/micro-tech/grok-cli
 Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---

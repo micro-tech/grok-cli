@@ -25,7 +25,7 @@ use crate::display::{
     format_welcome_banner,
 };
 use crate::router::AppRouter;
-use crate::skills::{load_catalog_content, AutoActivationEngine, list_skills};
+use crate::skills::{AutoActivationEngine, list_skills, load_catalog_content};
 use crate::tools::registry as tool_registry;
 use crate::tools::tool_context::ToolContext;
 use crate::utils::context::{
@@ -312,44 +312,46 @@ fn print_session_info(session: &InteractiveSession, config: &Config) {
         );
         // When hide_context_summary is false, show a short preview of the file
         if !config.ui.hide_context_summary
-            && let Ok(content) = std::fs::read_to_string(&context_path) {
-                let preview: Vec<&str> = content
-                    .lines()
-                    .filter(|l| !l.trim().is_empty())
-                    .take(3)
-                    .collect();
-                for line in preview {
-                    let truncated = if line.len() > 80 {
-                        format!("{}...", &line[..80])
-                    } else {
-                        line.to_string()
-                    };
-                    println!("      {}", truncated.dimmed());
-                }
+            && let Ok(content) = std::fs::read_to_string(&context_path)
+        {
+            let preview: Vec<&str> = content
+                .lines()
+                .filter(|l| !l.trim().is_empty())
+                .take(3)
+                .collect();
+            for line in preview {
+                let truncated = if line.len() > 80 {
+                    format!("{}...", &line[..80])
+                } else {
+                    line.to_string()
+                };
+                println!("      {}", truncated.dimmed());
             }
+        }
     }
 
     // Show available and active skills
     if let Some(skills_dir) = crate::skills::get_default_skills_dir()
-        && let Ok(skills) = crate::skills::list_skills(&skills_dir) {
-            let total = skills.len();
-            let active = session.active_skills.len();
-            if total > 0 {
-                println!(
-                    "  Skills: {} available, {} active",
-                    format!("{}", total).bright_blue(),
-                    format!("{}", active).bright_green()
-                );
-                if active > 0 {
-                    let skill_names: Vec<String> = session
-                        .active_skills
-                        .iter()
-                        .map(|s| s.bright_yellow().to_string())
-                        .collect();
-                    println!("    Active: {}", skill_names.join(", "));
-                }
+        && let Ok(skills) = crate::skills::list_skills(&skills_dir)
+    {
+        let total = skills.len();
+        let active = session.active_skills.len();
+        if total > 0 {
+            println!(
+                "  Skills: {} available, {} active",
+                format!("{}", total).bright_blue(),
+                format!("{}", active).bright_green()
+            );
+            if active > 0 {
+                let skill_names: Vec<String> = session
+                    .active_skills
+                    .iter()
+                    .map(|s| s.bright_yellow().to_string())
+                    .collect();
+                println!("    Active: {}", skill_names.join(", "));
             }
         }
+    }
 
     if let Some(system) = &session.system_prompt {
         let preview = if system.len() > 60 {
@@ -433,32 +435,110 @@ async fn run_interactive_loop(
     // 25+ item vec on every keystroke (Task 265).
     static SUGGESTIONS: std::sync::LazyLock<Vec<Suggestion>> = std::sync::LazyLock::new(|| {
         vec![
-            Suggestion { text: "/clear",        description: "Clear screen" },
-            Suggestion { text: "/help",         description: "Show help message" },
-            Suggestion { text: "/history",      description: "Show history" },
-            Suggestion { text: "/list",         description: "List saved sessions" },
-            Suggestion { text: "/load",         description: "Load a session" },
-            Suggestion { text: "/model",        description: "Change model" },
-            Suggestion { text: "/quit",         description: "Exit interactive mode" },
-            Suggestion { text: "/reset",        description: "Reset session" },
-            Suggestion { text: "/save",         description: "Save current session" },
-            Suggestion { text: "/settings",     description: "Open settings" },
-            Suggestion { text: "/status",       description: "Show status" },
-            Suggestion { text: "/system",       description: "Set system prompt" },
-            Suggestion { text: "/tools",        description: "List coding tools" },
-            Suggestion { text: "/version",      description: "Show version info" },
-            Suggestion { text: "/config",       description: "Show configuration info" },
-            Suggestion { text: "/skills",       description: "List available skills" },
-            Suggestion { text: "/activate",     description: "Activate a skill" },
-            Suggestion { text: "/deactivate",   description: "Deactivate a skill" },
-            Suggestion { text: "/auto-skills",  description: "Toggle skill auto-activation (on/off)" },
-            Suggestion { text: "/simulate",     description: "Dry-run simulation mode (on/off or status)" },
-            Suggestion { text: "/image",        description: "Attach an image for vision analysis" },
-            Suggestion { text: "/init",         description: "Initialize .grok/ project config" },
-            Suggestion { text: "!ls",           description: "List files (shell command)" },
-            Suggestion { text: "!dir",          description: "List files on Windows (shell command)" },
-            Suggestion { text: "!git status",   description: "Check git status (shell command)" },
-            Suggestion { text: "!pwd",          description: "Print working directory (shell command)" },
+            Suggestion {
+                text: "/clear",
+                description: "Clear screen",
+            },
+            Suggestion {
+                text: "/help",
+                description: "Show help message",
+            },
+            Suggestion {
+                text: "/history",
+                description: "Show history",
+            },
+            Suggestion {
+                text: "/list",
+                description: "List saved sessions",
+            },
+            Suggestion {
+                text: "/load",
+                description: "Load a session",
+            },
+            Suggestion {
+                text: "/model",
+                description: "Change model",
+            },
+            Suggestion {
+                text: "/quit",
+                description: "Exit interactive mode",
+            },
+            Suggestion {
+                text: "/reset",
+                description: "Reset session",
+            },
+            Suggestion {
+                text: "/save",
+                description: "Save current session",
+            },
+            Suggestion {
+                text: "/settings",
+                description: "Open settings",
+            },
+            Suggestion {
+                text: "/status",
+                description: "Show status",
+            },
+            Suggestion {
+                text: "/system",
+                description: "Set system prompt",
+            },
+            Suggestion {
+                text: "/tools",
+                description: "List coding tools",
+            },
+            Suggestion {
+                text: "/version",
+                description: "Show version info",
+            },
+            Suggestion {
+                text: "/config",
+                description: "Show configuration info",
+            },
+            Suggestion {
+                text: "/skills",
+                description: "List available skills",
+            },
+            Suggestion {
+                text: "/activate",
+                description: "Activate a skill",
+            },
+            Suggestion {
+                text: "/deactivate",
+                description: "Deactivate a skill",
+            },
+            Suggestion {
+                text: "/auto-skills",
+                description: "Toggle skill auto-activation (on/off)",
+            },
+            Suggestion {
+                text: "/simulate",
+                description: "Dry-run simulation mode (on/off or status)",
+            },
+            Suggestion {
+                text: "/image",
+                description: "Attach an image for vision analysis",
+            },
+            Suggestion {
+                text: "/init",
+                description: "Initialize .grok/ project config",
+            },
+            Suggestion {
+                text: "!ls",
+                description: "List files (shell command)",
+            },
+            Suggestion {
+                text: "!dir",
+                description: "List files on Windows (shell command)",
+            },
+            Suggestion {
+                text: "!git status",
+                description: "Check git status (shell command)",
+            },
+            Suggestion {
+                text: "!pwd",
+                description: "Print working directory (shell command)",
+            },
         ]
     });
 
@@ -468,7 +548,7 @@ async fn run_interactive_loop(
     // Note: We're running blocking TUI code in an async context, which is generally bad,
     // but for a CLI it's acceptable as we're awaiting user input anyway.
     let input =
-        tokio::task::spawn_blocking(move || read_input_with_suggestions(&prompt, &suggestions))
+        tokio::task::spawn_blocking(move || read_input_with_suggestions(&prompt, suggestions))
             .await??;
 
     let input = input.trim();
@@ -1260,7 +1340,11 @@ async fn send_to_grok(
     let start = history_len.saturating_sub(10);
     for item in &session.conversation_history[start..] {
         let c = item.content.to_string();
-        messages.push(if item.role == "user" { user(c) } else { assistant(c) });
+        messages.push(if item.role == "user" {
+            user(c)
+        } else {
+            assistant(c)
+        });
     }
 
     // Get tool definitions for function calling
@@ -1385,7 +1469,11 @@ async fn run_simulation(
     for item in recent {
         // dynamic role from history; use cheap builders
         let c = item.content.to_string();
-        messages.push(if item.role == "user" { user(c) } else { assistant(c) });
+        messages.push(if item.role == "user" {
+            user(c)
+        } else {
+            assistant(c)
+        });
     }
 
     // The user's message being simulated

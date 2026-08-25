@@ -8,13 +8,13 @@
 //! They are intentionally small and deterministic so they can be run quickly
 //! and compared before/after optimizations.
 
-use criterion::{black_box, criterion_group, criterion_main, Criterion};
+use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use std::time::Duration;
 
-use grok_cli::utils::perf;
-use grok_cli::bayes::BayesianEngine;
 use grok_cli::agent::router::Router;
+use grok_cli::bayes::BayesianEngine;
 use grok_cli::utils::messages;
+use grok_cli::utils::perf;
 
 // ---------------------------------------------------------------------------
 // 1. Perf harness itself (baseline — should be extremely cheap when disabled)

@@ -196,47 +196,49 @@ pub async fn read_file(path: &str, ctx: &crate::tools::ToolContext) -> Result<St
         .unwrap_or("")
         .to_ascii_lowercase();
 
-    if ext == "json" && !content.trim().is_empty()
-        && let Err(strict_err) = serde_json::from_str::<serde_json::Value>(&content) {
-            // Stage 2: try JSONC (trailing-comma cleanup).
-            let stripped = strip_jsonc_trailing_commas(&content);
-            if serde_json::from_str::<serde_json::Value>(&stripped).is_ok() {
-                // JSONC file — return the original, unmodified content so the
-                // LLM sees the real source.  Log at DEBUG so there is a record
-                // without spamming the user.
-                tracing::debug!(
-                    path = %resolved_path.display(),
-                    "read_file: JSONC detected (trailing commas) — returning raw content"
-                );
-                return Ok(content);
-            }
-
-            // Stage 3: genuinely malformed — warn and forward with a banner.
-            tracing::warn!(
+    if ext == "json"
+        && !content.trim().is_empty()
+        && let Err(strict_err) = serde_json::from_str::<serde_json::Value>(&content)
+    {
+        // Stage 2: try JSONC (trailing-comma cleanup).
+        let stripped = strip_jsonc_trailing_commas(&content);
+        if serde_json::from_str::<serde_json::Value>(&stripped).is_ok() {
+            // JSONC file — return the original, unmodified content so the
+            // LLM sees the real source.  Log at DEBUG so there is a record
+            // without spamming the user.
+            tracing::debug!(
                 path = %resolved_path.display(),
-                bytes = content.len(),
-                error = %strict_err,
-                "read_file: JSON validation failed — file was read but content is malformed"
+                "read_file: JSONC detected (trailing commas) — returning raw content"
             );
-            let preview_len = content.len().min(300);
-            let truncation_note = if content.len() > 300 {
-                "…[truncated]"
-            } else {
-                ""
-            };
-            return Ok(format!(
-                "READ_FILE_WARNING: '{}' was read ({} bytes) but failed JSON \
+            return Ok(content);
+        }
+
+        // Stage 3: genuinely malformed — warn and forward with a banner.
+        tracing::warn!(
+            path = %resolved_path.display(),
+            bytes = content.len(),
+            error = %strict_err,
+            "read_file: JSON validation failed — file was read but content is malformed"
+        );
+        let preview_len = content.len().min(300);
+        let truncation_note = if content.len() > 300 {
+            "…[truncated]"
+        } else {
+            ""
+        };
+        return Ok(format!(
+            "READ_FILE_WARNING: '{}' was read ({} bytes) but failed JSON \
                  validation.\nJSON error: {}\nContent preview ({} bytes):\n{}{}\n\
                  ---\nFull raw content:\n{}",
-                resolved_path.display(),
-                content.len(),
-                strict_err,
-                preview_len,
-                &content[..preview_len],
-                truncation_note,
-                content,
-            ));
-        }
+            resolved_path.display(),
+            content.len(),
+            strict_err,
+            preview_len,
+            &content[..preview_len],
+            truncation_note,
+            content,
+        ));
+    }
 
     Ok(content)
 }
@@ -894,14 +896,9 @@ mod tests {
         let ctx = make_ctx(&dir);
         let path = dir.path().join("src.rs");
         let path_str = path.to_str().unwrap();
-        write_file(
-            path_str,
-            "pub fn foo() {}\nstruct Bar {}",
-            &ctx,
-            false,
-        )
-        .await
-        .unwrap();
+        write_file(path_str, "pub fn foo() {}\nstruct Bar {}", &ctx, false)
+            .await
+            .unwrap();
 
         let result = list_code_definitions(path_str, &ctx).await.unwrap();
         assert!(result.contains("fn foo") || result.contains("struct Bar"));
@@ -909,7 +906,10 @@ mod tests {
 
     // Suppress unused import warning for Write — kept for future test helpers
     // that write to byte buffers directly.
-    #[allow(dead_code, reason = "test helper that forces the Write trait into scope to suppress unused-import warnings")]
+    #[allow(
+        dead_code,
+        reason = "test helper that forces the Write trait into scope to suppress unused-import warnings"
+    )]
     fn _assert_write_imported(_: &dyn Write) {}
 
     // ── Additional diagnostic tests ───────────────────────────────────────────

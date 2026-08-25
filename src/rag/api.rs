@@ -61,10 +61,10 @@ impl TgsRagContextProvider {
 
     /// Create a provider by loading a persisted graph if available.
     pub fn from_persisted(dir: &std::path::Path, config: TgsRagConfig) -> Option<Self> {
-        if crate::rag::persistence::graph_exists(dir) {
-            if let Ok(graph) = crate::rag::persistence::load_graph(dir) {
-                return Some(Self::new(graph, config));
-            }
+        if crate::rag::persistence::graph_exists(dir)
+            && let Ok(graph) = crate::rag::persistence::load_graph(dir)
+        {
+            return Some(Self::new(graph, config));
         }
         None
     }

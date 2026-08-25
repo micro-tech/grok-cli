@@ -11,8 +11,8 @@ Thank you for your interest in contributing to Grok CLI, a powerful command-line
 
 There are many ways to contribute to Grok CLI, including:
 
-- **Reporting Bugs**: If you find a bug, please open an issue on our [GitHub Issues page](https://github.com/microtech/grok-cli/issues) with detailed steps to reproduce it.
-- **Suggesting Features**: Have an idea for a new feature or improvement? Share it in [GitHub Discussions](https://github.com/microtech/grok-cli/discussions).
+- **Reporting Bugs**: If you find a bug, please open an issue on our [GitHub Issues page](https://github.com/micro-tech/grok-cli/issues) with detailed steps to reproduce it.
+- **Suggesting Features**: Have an idea for a new feature or improvement? Share it in [GitHub Discussions](https://github.com/micro-tech/grok-cli/discussions).
 - **Code Contributions**: Submit pull requests with bug fixes, new features, or enhancements.
 - **Documentation**: Help improve our documentation by correcting typos, clarifying instructions, or adding examples.
 - **Testing**: Test new features or bug fixes and provide feedback.
@@ -22,7 +22,7 @@ There are many ways to contribute to Grok CLI, including:
 To set up the project for development:
 
 ```bash
-git clone https://github.com/microtech/grok-cli
+git clone https://github.com/micro-tech/grok-cli
 cd grok-cli
 cargo test
 cargo clippy
@@ -49,7 +49,7 @@ We aim to maintain a high-quality, consistent codebase:
 
 ## Community
 
-Join the conversation in our [GitHub Discussions](https://github.com/microtech/grok-cli/discussions) or reach out via email at john.microtech@gmail.com for direct support.
+Join the conversation in our [GitHub Discussions](https://github.com/micro-tech/grok-cli/discussions) or reach out via email at john.microtech@gmail.com for direct support.
 
 ## License
 

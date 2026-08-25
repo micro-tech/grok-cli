@@ -10,6 +10,18 @@ license-file = "LICENSE"
 repository = "https://github.com/micro-tech/grok-cli"
 keywords = ["cli", "ai", "grok", "x-api"]
 categories = ["command-line-utilities"]
+exclude = [
+    ".agents/**",
+    ".doc/**",
+    ".grok/**",
+    ".zed/**",
+    "Doc/ai-generated-summaries/**",
+    "code_review.md",
+    "dataflow_map.md",
+    "session_dna.json",
+    "bot_default_model .md",
+    "1.png",
+]
 
 [[bin]]
 name = "grok-cli"
@@ -64,7 +76,7 @@ indicatif = "0.18"
 # File I/O and paths
 dirs = "6.0"
 # UUID generation
-uuid = { version = "1.24.0", features = ["v4"] }
+uuid = { version = "1.24.0", features = ["v4", "serde"] }
 # TGS-RAG dependencies (gated behind "tgs-rag" feature)
 tree-sitter = { version = "0.26.12", optional = true }
 tree-sitter-rust = { version = "0.24.2", optional = true }

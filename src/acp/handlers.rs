@@ -9,7 +9,7 @@
 use crate::acp::GrokAcpAgent;
 use crate::acp::protocol::SessionId;
 use anyhow::Result;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tracing::{info, warn};
 
 /// Handle the `logout` method — cleanly ends the authenticated session
@@ -18,7 +18,7 @@ pub async fn handle_logout(_agent: &GrokAcpAgent, params: &Value) -> Result<Valu
     let session_id = params
         .get("sessionId")
         .and_then(|v| v.as_str())
-        .map(|s| SessionId::new(s));
+        .map(SessionId::new);
 
     if let Some(sid) = session_id {
         info!("Logout requested for session {}", sid.0);
@@ -42,7 +42,7 @@ pub async fn handle_cancel(agent: &GrokAcpAgent, params: &Value) -> Result<Value
     let session_id = params
         .get("sessionId")
         .and_then(|v| v.as_str())
-        .map(|s| SessionId::new(s));
+        .map(SessionId::new);
 
     if let Some(ref sid) = session_id {
         info!(
@@ -58,10 +58,7 @@ pub async fn handle_cancel(agent: &GrokAcpAgent, params: &Value) -> Result<Value
 }
 
 /// Handle `session/info_update` — agent pushes metadata (title, status, …) to client.
-pub async fn handle_session_info_update(
-    _agent: &GrokAcpAgent,
-    params: &Value,
-) -> Result<Value> {
+pub async fn handle_session_info_update(_agent: &GrokAcpAgent, params: &Value) -> Result<Value> {
     let session_id = params
         .get("sessionId")
         .and_then(|v| v.as_str())

@@ -77,10 +77,7 @@ fn translate_powershell_and_chain(cmd: &str) -> String {
 /// The timeout is determined in priority order by: the `GROK_SHELL_TIMEOUT_SECS`
 /// environment variable, `tools.shell.command_timeout_secs` in `config.toml`,
 /// or a 300 s compiled-in fallback.
-pub async fn run_shell_command(
-    command: &str,
-    security: &SecurityPolicy,
-) -> Result<String> {
+pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Result<String> {
     security.validate_shell_command(command)?;
 
     let cwd = security.working_directory().to_path_buf();
@@ -150,7 +147,9 @@ pub async fn run_shell_command(
         // can distinguish success from failure and propagate errors properly.
         return Err(anyhow!(
             "Command failed with code {}:\nStdout: {}\nStderr: {}",
-            output.status, stdout, stderr
+            output.status,
+            stdout,
+            stderr
         ));
     }
 
@@ -217,16 +216,10 @@ mod tests {
         let policy = SecurityPolicy::new();
         // First part fails (exit 1), second part must NOT execute.
         // COR-10: non-zero exit now returns Err (with the failure message inside).
-        let result = run_shell_command(
-            "cmd /c exit 1 && echo SHOULD_NOT_APPEAR_IN_OUTPUT",
-            &policy,
-        )
-        .await;
+        let result =
+            run_shell_command("cmd /c exit 1 && echo SHOULD_NOT_APPEAR_IN_OUTPUT", &policy).await;
 
-        assert!(
-            result.is_err(),
-            "failing command must return Err (COR-10)"
-        );
+        assert!(result.is_err(), "failing command must return Err (COR-10)");
         let err = result.unwrap_err().to_string();
         assert!(
             !err.contains("SHOULD_NOT_APPEAR_IN_OUTPUT"),
@@ -244,8 +237,7 @@ mod tests {
     #[tokio::test]
     async fn windows_and_chain_runs_second_on_success() {
         let policy = SecurityPolicy::new();
-        let result =
-            run_shell_command("cmd /c exit 0 && echo CHAIN_SUCCESS_MARKER", &policy).await;
+        let result = run_shell_command("cmd /c exit 0 && echo CHAIN_SUCCESS_MARKER", &policy).await;
 
         assert!(result.is_ok(), "successful chain should succeed");
         let out = result.unwrap();

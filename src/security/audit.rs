@@ -160,11 +160,12 @@ impl AuditLogger {
         // Lazy directory creation: only create when we are actually going to write.
         // This ensures new(false) and test constructions have zero FS side-effects.
         if let Some(parent) = self.log_file_path.parent()
-            && !parent.exists() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| anyhow!("Failed to create audit log directory: {}", e))?;
-                info!("Created audit log directory: {:?}", parent);
-            }
+            && !parent.exists()
+        {
+            fs::create_dir_all(parent)
+                .map_err(|e| anyhow!("Failed to create audit log directory: {}", e))?;
+            info!("Created audit log directory: {:?}", parent);
+        }
 
         // Serialize to JSON
         let json = serde_json::to_string(&log)
@@ -414,9 +415,10 @@ impl Drop for AuditLogger {
     fn drop(&mut self) {
         // Best-effort flush of any buffered data on drop.
         if let Ok(mut guard) = self.writer.lock()
-            && let Some(writer) = guard.as_mut() {
-                let _ = writer.flush();
-            }
+            && let Some(writer) = guard.as_mut()
+        {
+            let _ = writer.flush();
+        }
     }
 }
 

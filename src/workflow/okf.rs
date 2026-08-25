@@ -107,9 +107,10 @@ async fn send_trace_once(trace: &WorkflowTrace, cfg: &OkfConfig) -> bool {
     let mut request = client.post(&url).json(trace);
 
     if let Some(key) = &cfg.api_key
-        && !key.trim().is_empty() {
-            request = request.bearer_auth(key.trim());
-        }
+        && !key.trim().is_empty()
+    {
+        request = request.bearer_auth(key.trim());
+    }
 
     match request.send().await {
         Ok(resp) => {

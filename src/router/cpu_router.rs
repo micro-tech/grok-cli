@@ -295,9 +295,10 @@ impl CpuRouter {
                 .iter()
                 .all(|s| !matches!(s, WorkflowStep::LlmGeneratedCode(_)))
                 && let Some(text) = &resp.text
-                    && !text.trim().is_empty() {
-                        workflow.push(WorkflowStep::LlmGeneratedCode(text.clone()));
-                    }
+                && !text.trim().is_empty()
+            {
+                workflow.push(WorkflowStep::LlmGeneratedCode(text.clone()));
+            }
 
             let assistant_msg = resp.into_message_with_finish_reason().message;
             if let Ok(v) = serde_json::to_value(&assistant_msg) {
@@ -419,10 +420,7 @@ mod tests {
     }
 
     fn make_request(model: &str) -> RouterRequest {
-        RouterRequest::new(
-            model,
-            vec![crate::utils::messages::user("hello")],
-        )
+        RouterRequest::new(model, vec![crate::utils::messages::user("hello")])
     }
 
     // ── Original tests (must continue to pass) ────────────────────────────────

@@ -22,18 +22,18 @@ pub async fn handle_tools_command(command: crate::ToolsAction) -> Result<()> {
                         .get("function")
                         .and_then(|f| f.get("name"))
                         .and_then(|n| n.as_str())
-                        && let Some(desc) = v
-                            .get("function")
-                            .and_then(|f| f.get("description"))
-                            .and_then(|d| d.as_str())
-                        {
-                            println!(
-                                "  {} {}  [{}]",
-                                "•".bright_white(),
-                                name.bright_yellow().bold(),
-                                desc.dimmed()
-                            );
-                        }
+                    && let Some(desc) = v
+                        .get("function")
+                        .and_then(|f| f.get("description"))
+                        .and_then(|d| d.as_str())
+                {
+                    println!(
+                        "  {} {}  [{}]",
+                        "•".bright_white(),
+                        name.bright_yellow().bold(),
+                        desc.dimmed()
+                    );
+                }
             }
 
             println!();

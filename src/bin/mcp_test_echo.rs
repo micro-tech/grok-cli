@@ -62,7 +62,7 @@ fn main() {
                         }
                     }
                 })
-            },
+            }
 
             "tools/call" => {
                 let empty = json!({});

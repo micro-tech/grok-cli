@@ -9,7 +9,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
-## Unreleased / Next (Recent Work)
+## [0.2.8] — 2026-08-24
 
 ### Self-Updating Skills / Hooks / Optimization Catalog (Task 273)
 
@@ -390,6 +390,6 @@ See the full archive in [Doc/CHANGELOG_FULL.md](Doc/CHANGELOG_FULL.md) for detai
 
 **Links**
 
-- Repository: https://github.com/microtech/grok-cli
-- Issues: https://github.com/microtech/grok-cli/issues
+- Repository: https://github.com/micro-tech/grok-cli
+- Issues: https://github.com/micro-tech/grok-cli/issues
 - Buy Me a Coffee: https://buymeacoffee.com/micro.tech
