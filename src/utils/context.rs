@@ -385,30 +385,44 @@ pub fn get_all_context_file_paths<P: AsRef<Path>>(start_dir: P) -> Vec<PathBuf> 
 ///
 /// Returns the path to the first available context file, or None if no file exists.
 /// Get the path of the first context file found
+///
+/// Never returns paths inside the legacy ~/.grok directory. Global context
+/// is served from ~/.grok-cli (grok_data_dir).
 pub fn get_context_file_path<P: AsRef<Path>>(start_dir: P) -> Option<PathBuf> {
     // Find project root by walking up directory tree
     let Ok(project_root) = find_project_root(start_dir) else {
         return None;
     };
 
-    // Check project directory
-    if project_root.exists() && project_root.is_dir() {
+    // Check project directory — but never treat the home directory (or anything
+    // under legacy ~/.grok) as a project for context purposes.
+    if project_root.exists()
+        && project_root.is_dir()
+        && !is_legacy_grok_path(&project_root)
+    {
         for file_name in CONTEXT_FILE_NAMES {
             let file_path = project_root.join(file_name);
             if file_path.exists() && file_path.is_file() {
+                if is_legacy_grok_path(&file_path) {
+                    continue;
+                }
                 return Some(file_path);
             }
         }
     }
 
-    // 2. Check global directory
+    // 2. Check global directory (canonical ~/.grok-cli only)
     if let Some(global_dir) = get_global_context_dir()
         && global_dir.exists()
         && global_dir.is_dir()
+        && !is_legacy_grok_path(&global_dir)
     {
         for file_name in GLOBAL_CONTEXT_FILE_NAMES {
             let file_path = global_dir.join(file_name);
             if file_path.exists() && file_path.is_file() {
+                if is_legacy_grok_path(&file_path) {
+                    continue;
+                }
                 return Some(file_path);
             }
         }
