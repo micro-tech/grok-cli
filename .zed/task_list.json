@@ -15,7 +15,7 @@
           "title": "Extract context trimming logic into dedicated module",
           "description": "Move per-message truncation, count-based trim, token-budget trim, and smart compression into src/acp/context_trim.rs or similar.",
           "priority": "high",
-          "status": "pending",
+          "status": "done",
           "dependencies": [
             280
           ],
@@ -27,7 +27,7 @@
           "title": "Extract tool loop orchestration",
           "description": "Pull the main tool loop (loop_count, max_loops, guards, finish_reason handling) into a cleaner coordinator.",
           "priority": "high",
-          "status": "pending",
+          "status": "done",
           "dependencies": [
             280
           ],
@@ -39,7 +39,7 @@
           "title": "Extract message history management",
           "description": "Create clear ownership model for messages during the tool loop (reduce clones per Task 269 philosophy).",
           "priority": "high",
-          "status": "pending",
+          "status": "done",
           "dependencies": [
             280
           ],
@@ -51,7 +51,7 @@
           "title": "Extract status bar, thinking, and event emission helpers",
           "description": "Move all ACP protocol update emission (ContextUsageUpdate, ThinkingBlockUpdate, StatusBarUpdate, ToolCall, AgentActivity) into dedicated helpers or status_bar.rs.",
           "priority": "medium",
-          "status": "pending",
+          "status": "done",
           "dependencies": [
             280
           ],
@@ -63,7 +63,7 @@
           "title": "Add cancellation + permission gate extraction",
           "description": "Isolate the cancellation flag checks and the permission bridge interaction.",
           "priority": "medium",
-          "status": "pending",
+          "status": "done",
           "dependencies": [
             280
           ],

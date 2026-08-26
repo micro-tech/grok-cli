@@ -120,7 +120,7 @@ impl ChatTurn {
         event_sender: Option<&tokio::sync::mpsc::UnboundedSender<SessionUpdate>>,
         permission_bridge: Option<&Arc<PermissionBridge>>,
         local_always_allow: &std::collections::HashSet<String>,
-        start_time: std::time::Instant,
+        _start_time: std::time::Instant,
     ) -> Result<String> {
         let tool_defs = crate::tools::get_available_tool_definitions();
 
@@ -246,14 +246,10 @@ impl ChatTurn {
 
             info!("🛠️  Processing {} tool calls", tool_calls.len());
 
-            // Borrow messages mutably and the rest of the turn immutably where possible.
-            // To avoid E0499 (double mutable borrow of self), we pass only what we need.
-            let tool_calls_ref = tool_calls; // already &[grok_api::ToolCall] from the response
             process_tool_calls(
                 agent,
                 session_id,
-                tool_calls_ref,
-                &mut self.messages,
+                tool_calls,
                 self,
                 event_sender,
                 permission_bridge,
@@ -387,7 +383,6 @@ pub async fn process_tool_calls(
     agent: &GrokAcpAgent,
     session_id: &crate::acp::protocol::SessionId,
     tool_calls: &[grok_api::ToolCall],
-    messages: &mut Vec<Value>,
     turn: &mut ChatTurn,
     event_sender: Option<&tokio::sync::mpsc::UnboundedSender<SessionUpdate>>,
     permission_bridge: Option<&Arc<PermissionBridge>>,
@@ -419,7 +414,7 @@ pub async fn process_tool_calls(
         {
             let hooks = agent.get_hook_manager().read().await;
             if !hooks.execute_before_tool(function_name, &args)? {
-                messages.push(json!({
+                turn.messages.push(json!({
                     "role": "tool",
                     "tool_call_id": tool_call.id,
                     "content": "Tool execution blocked by hook."
@@ -449,7 +444,7 @@ pub async fn process_tool_calls(
                     match tokio::time::timeout(timeout, rx).await {
                         Ok(Ok(outcome)) => {
                             if outcome.is_cancelled() {
-                                messages.push(json!({
+                                turn.messages.push(json!({
                                     "role": "tool",
                                     "tool_call_id": tool_call.id,
                                     "content": "User rejected the tool execution."
@@ -536,14 +531,14 @@ pub async fn process_tool_calls(
             hooks.execute_after_tool(function_name, &args, &content)?;
         }
 
-        messages.push(json!({
+        turn.messages.push(json!({
             "role": "tool",
             "tool_call_id": tool_call.id,
             "content": content
         }));
 
         // Final-answer guard (helps prevent max-loop)
-        messages.push(json!({
+        turn.messages.push(json!({
             "role": "system",
             "content": "Tool result received. Produce your final answer now. Do NOT call any more tools unless the user explicitly asks for additional actions."
         }));

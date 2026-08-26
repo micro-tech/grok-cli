@@ -10,8 +10,7 @@ use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::sync::{RwLock, mpsc, oneshot};
-use tokio::time::{Duration, sleep};
-use tracing::{debug, error, info, warn};
+use tracing::{debug, info, warn};
 
 use crate::config::{Config, ThinkingMode};
 use crate::content_to_string;
@@ -772,12 +771,12 @@ impl GrokAcpAgent {
         // TODO: make compression lock-free (currently makes an async API call
         //       while holding the write lock — known limitation).
         let (
-            mut messages,
+            messages,
             temperature,
             max_tokens,
             model,
             thinking_mode,
-            mut local_bayes,
+            local_bayes,
             local_always_allow,
         ) = {
             let mut sessions = self.sessions.write().await;
