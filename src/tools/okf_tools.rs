@@ -11,10 +11,10 @@ use anyhow::{Result, anyhow};
 use crate::config::Config;
 use crate::knowledge::okf::{OkfBundle, OkfConcept, load_okf_bundles};
 use chrono;
-use reqwest::Client;
 use std::path::PathBuf;
 use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
+use reqwest::Client;
 
 /// Global cache of loaded OKF bundles for the current process.
 /// Uses RwLock so we can invalidate it after `okf_create`.

@@ -303,7 +303,9 @@ fn validate_key_format(key: &str) -> Result<()> {
 /// can cause 20-30 second connection drops.  Returns the first model ID as
 /// a friendly confirmation string.
 async fn verify_api_key_with_retries(api_key: &str) -> Result<String> {
-    let client = reqwest::Client::builder()
+    // Use the centralized HTTP client builder (Task 281) so we get pooling + consistent config,
+    // then override timeout for the short verification calls.
+    let client = crate::utils::http::http_client_builder()
         .timeout(Duration::from_secs(VERIFY_TIMEOUT_SECS))
         .build()
         .context("Failed to build HTTP client")?;

@@ -1,5 +1,601 @@
 {
   "tasks": [
-
+    {
+      "id": 280,
+      "title": "Code Review 2026 Follow-up: Refactor handle_chat_completion (ARCH-7)",
+      "description": "Break up the massive ~1000+ line handle_chat_completion in src/acp/mod.rs. This is currently the biggest maintainability risk.",
+      "priority": "high",
+      "status": "done",
+      "dependencies": [],
+      "details": "Refactor complete (Task 280). \n\n- 280.1: context_trim.rs fully extracted and in use.\n- 280.2/280.3: Tool loop orchestration + message ownership moved to ChatTurn (chat_turn.rs) with new `ChatTurn::run()` method. handle_chat_completion is now a thin Phase-1 setup + delegation.\n- 280.4: emit_context_and_status + thinking/status emission extracted.\n- 280.5: Permission gate + cancellation checks isolated in process_tool_calls.\n\nDeprecated duplicate helpers (estimate_tokens, trim_to_token_budget, model_context_budget, truncate_tool_results, build_archive_notice, old ModelContextInfo table) removed from mod.rs.\n\nhandle_chat_completion is now ~80 lines of setup + one `turn.run(...)` call.\n\nFull cargo test recommended. Subtasks marked done.",
+      "testStrategy": "After refactor, run full cargo test. Add targeted unit tests for extracted modules. Manual smoke test via 'grok acp stdio' + Zed if available.",
+      "subtasks": [
+        {
+          "id": 280.1,
+          "title": "Extract context trimming logic into dedicated module",
+          "description": "Move per-message truncation, count-based trim, token-budget trim, and smart compression into src/acp/context_trim.rs or similar.",
+          "priority": "high",
+          "status": "pending",
+          "dependencies": [
+            280
+          ],
+          "details": "Include model-aware budget calculation (grok-4 1M vs legacy). Keep the compression (summarise + archive) logic clean.",
+          "testStrategy": "Unit tests for estimate_tokens, trim_to_token_budget, truncate_tool_results, and compression path (with mock router)."
+        },
+        {
+          "id": 280.2,
+          "title": "Extract tool loop orchestration",
+          "description": "Pull the main tool loop (loop_count, max_loops, guards, finish_reason handling) into a cleaner coordinator.",
+          "priority": "high",
+          "status": "pending",
+          "dependencies": [
+            280
+          ],
+          "details": "Separate the 'should we call the model again?' decision logic from the message building.",
+          "testStrategy": "Test loop termination conditions and max iteration errors in isolation."
+        },
+        {
+          "id": 280.3,
+          "title": "Extract message history management",
+          "description": "Create clear ownership model for messages during the tool loop (reduce clones per Task 269 philosophy).",
+          "priority": "high",
+          "status": "pending",
+          "dependencies": [
+            280
+          ],
+          "details": "Document when we take(), when we put back, and visibility for save/restore operations.",
+          "testStrategy": "Verify that history is correctly restored at end of turn. Test save/load mid-conversation."
+        },
+        {
+          "id": 280.4,
+          "title": "Extract status bar, thinking, and event emission helpers",
+          "description": "Move all ACP protocol update emission (ContextUsageUpdate, ThinkingBlockUpdate, StatusBarUpdate, ToolCall, AgentActivity) into dedicated helpers or status_bar.rs.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            280
+          ],
+          "details": "Keep the emission logic out of the main control flow.",
+          "testStrategy": "Existing status bar tests + new tests for thinking block ordering."
+        },
+        {
+          "id": 280.5,
+          "title": "Add cancellation + permission gate extraction",
+          "description": "Isolate the cancellation flag checks and the permission bridge interaction.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            280
+          ],
+          "details": "Make it easier to reason about when permission is checked vs when tools actually run.",
+          "testStrategy": "Cancellation tests in cancellation_test.rs should still pass."
+        }
+      ]
+    },
+    {
+      "id": 281,
+      "title": "Centralize reqwest HTTP Client (PERF-1 + Resilience)",
+      "description": "Stop creating new reqwest::Client on every call. Create one well-configured shared client.",
+      "priority": "high",
+      "status": "in_progress",
+      "dependencies": [],
+      "details": "Started 281.1: Created src/utils/http.rs with LazyLock shared client, get_http_client(), builder, and retry helper. Updated utils/mod.rs exports. Now migrating call sites (281.2).",
+      "testStrategy": "All network tests must pass. Add a test that verifies only one client instance is created for the main paths.",
+      "subtasks": [
+        {
+          "id": 281.1,
+          "title": "Create shared HttpClient in src/utils/http.rs",
+          "description": "Build a single LazyLock<reqwest::Client> with proper timeouts, connection pooling, http2, native-tls, and Starlink retry middleware if possible.",
+          "priority": "high",
+          "status": "done",
+          "dependencies": [
+            281
+          ],
+          "details": "Expose get_http_client() and optionally a builder for test overrides. Include connect_timeout and total timeout from config.",
+          "testStrategy": "Unit test that the client is reused across modules."
+        },
+        {
+          "id": 281.2,
+          "title": "Migrate all call sites to use the shared client",
+          "description": "Update web_fetch, web_search, setup verification, discovery tools, OKF tools, MCP client, and any direct uses.",
+          "priority": "high",
+          "status": "in_progress",
+          "dependencies": [
+            281.1
+          ],
+          "details": "Remove all local Client::new() and Client::builder() calls.",
+          "testStrategy": "cargo test + manual network calls where possible."
+        },
+        {
+          "id": 281.3,
+          "title": "Unify Starlink / retry logic around the shared client",
+          "description": "Move retry_with_backoff usage and network drop detection into the HTTP layer where possible.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            281.2
+          ],
+          "details": "Ensure grok_client_ext, ACP handler, and web tools all benefit from the same policy.",
+          "testStrategy": "Test retry behavior with mockito."
+        }
+      ]
+    },
+    {
+      "id": 282,
+      "title": "Strengthen Tool Registry & Reduce Manual Sync (ARCH-2 / ARCH-8)",
+      "description": "Continue the excellent work from Task 260/271. Reduce the number of places that must stay in sync when adding tools.",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [],
+      "details": "Currently: schemas in get_full_tool_definitions(), dispatch match in execute_tool, required params (now derived but still fragile), arbitration, and tests.",
+      "testStrategy": "The 'every_tool_schema_has_corresponding_handler' test must continue to pass after any change.",
+      "subtasks": [
+        {
+          "id": 282.1,
+          "title": "Evaluate declarative tool definition approach",
+          "description": "Research small macro or table-driven approach so one definition generates schema + handler stub + required params.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            282
+          ],
+          "details": "Do not over-engineer. A simple const table of (name, schema, handler) could be a good middle ground.",
+          "testStrategy": "Prototype in a branch. Measure compile time and ergonomics."
+        },
+        {
+          "id": 282.2,
+          "title": "Improve arbitration + schema coupling",
+          "description": "Make tool_arbitration rely even more strictly on the schema definitions.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            282
+          ],
+          "details": "Remove any remaining hard-coded knowledge about specific tools in arbitration.",
+          "testStrategy": "Add new tool and verify arbitration works without touching arbitration code."
+        },
+        {
+          "id": 282.3,
+          "title": "Add compile-time or test-time guard for handler completeness",
+          "description": "Strengthen the existing runtime guard + test so drift is caught immediately.",
+          "priority": "high",
+          "status": "pending",
+          "dependencies": [
+            282
+          ],
+          "details": "Consider a build.rs check or a more aggressive test.",
+          "testStrategy": "Intentionally add a schema without handler and confirm the test fails loudly."
+        }
+      ]
+    },
+    {
+      "id": 283,
+      "title": "Audit & Centralize Magic Numbers and Defaults",
+      "description": "Find and centralize scattered constants (16_384, 0.75, 300s, 200_000, compression ratios, context budgets, etc.).",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": [],
+      "details": "Sources: acp/mod.rs, config defaults, shell timeout, token estimates, retry delays, etc.",
+      "testStrategy": "Create a central constants.rs or put them under config with good documentation. Update all references.",
+      "subtasks": [
+        {
+          "id": 283.1,
+          "title": "Inventory all magic numbers",
+          "description": "Grep for numeric literals in hot paths and config-related code.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            283
+          ],
+          "details": "Focus on context windows, timeouts, token estimates, thresholds.",
+          "testStrategy": "Document findings in a comment or small markdown note."
+        },
+        {
+          "id": 283.2,
+          "title": "Introduce centralized constants module",
+          "description": "Create src/constants.rs or extend config with typed defaults.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            283.1
+          ],
+          "details": "Make model-aware budgets (grok4_1m, legacy_220k) first-class.",
+          "testStrategy": "All previous numeric values must be replaced by named constants."
+        }
+      ]
+    },
+    {
+      "id": 284,
+      "title": "Expand Integration & Security Testing",
+      "description": "Add higher-level tests that cover the full paths mentioned in the review.",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": [],
+      "details": "Current strength is unit tests on individual tools. We are weak on end-to-end ACP + permission + security flows.",
+      "testStrategy": "New tests must run in CI without network where possible (use mockito + temp dirs).",
+      "subtasks": [
+        {
+          "id": 284.1,
+          "title": "End-to-end TrustAlways round-trip test",
+          "description": "Second read of an external path in same session should not prompt again.",
+          "priority": "high",
+          "status": "pending",
+          "dependencies": [
+            284
+          ],
+          "details": "Use ACP test harness or direct security + file_tools calls.",
+          "testStrategy": "Assert no second approval prompt and audit log shows 'approved_always'."
+        },
+        {
+          "id": 284.2,
+          "title": "RequireConfirmation enforcement test for both write and replace",
+          "description": "Verify that SafetyDecision::RequireConfirmation actually blocks both operations.",
+          "priority": "high",
+          "status": "pending",
+          "dependencies": [
+            284
+          ],
+          "details": "Currently covered somewhat, but make it explicit.",
+          "testStrategy": "Inject a safety hook that returns RequireConfirmation and assert Err."
+        },
+        {
+          "id": 284.3,
+          "title": "Full tool-using ACP turn with permission + security",
+          "description": "Simulate a multi-tool turn that triggers external path approval and permission bridge.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            284
+          ],
+          "details": "Can live in tests/acp_permission_flow.rs or a new integration test.",
+          "testStrategy": "Assert correct audit entries and that denied operations never reach the filesystem."
+        },
+        {
+          "id": 284.4,
+          "title": "Shell non-zero exit + && chain behavior test",
+          "description": "Ensure COR-10 behavior is tested on both Windows and Unix.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            284
+          ],
+          "details": "Already has some tests — expand coverage.",
+          "testStrategy": "Existing non_zero_exit_returns_err_cor10 + windows chain tests must stay green."
+        }
+      ]
+    },
+    {
+      "id": 285,
+      "title": "Move session_dna.json under .grok/ (SEC-5)",
+      "description": "Currently at repo root. Should be project-local under .grok/session_dna.json or similar.",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": [],
+      "details": "Update loading, saving, .gitignore, and any documentation references.",
+      "testStrategy": "After move, 'grok' and ACP startup must still load DNA correctly. Add a test that verifies location.",
+      "subtasks": [
+        {
+          "id": 285.1,
+          "title": "Update SessionDna load/save paths",
+          "description": "Change default location to .grok/session_dna.json (project) with fallback to system.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            285
+          ],
+          "details": "Respect hierarchical config if possible.",
+          "testStrategy": "Test both project and global locations."
+        },
+        {
+          "id": 285.2,
+          "title": "Update .gitignore and documentation",
+          "description": "Remove root session_dna.json from excludes if needed. Update README/Doc.",
+          "priority": "low",
+          "status": "pending",
+          "dependencies": [
+            285.1
+          ],
+          "details": "",
+          "testStrategy": "Verify no accidental commits of the file."
+        },
+        {
+          "id": 285.3,
+          "title": "Update installer to source from .grok/session_dna.json",
+          "description": "Modify setup_session_dna() in src/bin/installer.rs to prefer .grok/session_dna.json as the source during installation.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            285
+          ],
+          "details": "The installer currently has partial logic that checks .grok/ first. Ensure it:\n- Prefers .grok/session_dna.json as the canonical source for new installs.\n- Gracefully skips or ignores a bare root-level session_dna.json (for transition safety).\n- Updates console messages and comments to reflect the recommended .grok/ location.\n- Copies the file to ~/.grok-cli/session_dna.json as before.",
+          "testStrategy": "1. Create a temp project with both .grok/session_dna.json and a root session_dna.json.\n2. Run installer logic (or the installer binary).\n3. Verify it copies from .grok/ (not the bare root file).\n4. Confirm messages mention the .grok/ path."
+        }
+      ]
+    },
+    {
+      "id": 286,
+      "title": "Clean up process::exit usage (SEC-4)",
+      "description": "Library code must never call process::exit. Only binaries should.",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": [],
+      "details": "require_api_key is fixed. Remaining sites are in binaries (installer, acp command).",
+      "testStrategy": "grep for process::exit and ensure all are in src/bin/ or main.rs.",
+      "subtasks": [
+        {
+          "id": 286.1,
+          "title": "Audit and document all process::exit calls",
+          "description": "Confirm they are only in binary entry points.",
+          "priority": "low",
+          "status": "pending",
+          "dependencies": [
+            286
+          ],
+          "details": "Add a comment explaining why each is acceptable.",
+          "testStrategy": "Static check or simple test that lib crate does not contain the call."
+        }
+      ]
+    },
+    {
+      "id": 287,
+      "title": "Unify Retry & Network Resilience Logic",
+      "description": "Starlink handling, timeouts, and backoff are spread across multiple modules.",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": [
+        281
+      ],
+      "details": "grok_client_ext, utils/network.rs, ACP handler, web tools all have pieces.",
+      "testStrategy": "All network error paths should go through the same retry policy.",
+      "subtasks": [
+        {
+          "id": 287.1,
+          "title": "Create a single RetryPolicy / Backoff configuration",
+          "description": "Move defaults into config or constants. Make it injectable for tests.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            287
+          ],
+          "details": "Include max retries, base delay, max delay, jitter, and which errors are retriable.",
+          "testStrategy": "Test with deterministic backoff in unit tests."
+        },
+        {
+          "id": 287.2,
+          "title": "Consolidate detect_network_drop and retry helpers",
+          "description": "Have one canonical implementation used by router, web tools, and client ext.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            287.1
+          ],
+          "details": "",
+          "testStrategy": "Remove duplicated error pattern matching."
+        }
+      ]
+    },
+    {
+      "id": 288,
+      "title": "Security Polish & Remaining Items",
+      "description": "Address lower-priority security and policy items from the review.",
+      "priority": "medium",
+      "status": "pending",
+      "dependencies": [],
+      "details": "",
+      "testStrategy": "Run security-related tests + manual review of external access flows.",
+      "subtasks": [
+        {
+          "id": 288.1,
+          "title": "Tighten STARLINK_ERROR_PATTERNS",
+          "description": "Current patterns are too broad (generic 'connection refused', 'network error'). Make them more precise.",
+          "priority": "low",
+          "status": "pending",
+          "dependencies": [
+            288
+          ],
+          "details": "Keep useful ones, remove overly generic ones that cause false retries.",
+          "testStrategy": "Review with network error examples."
+        },
+        {
+          "id": 288.2,
+          "title": "Review shell command allow/denylist coverage",
+          "description": "Ensure dangerous patterns are still blocked after recent shell changes.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            288
+          ],
+          "details": "Especially around the improved Windows && handling.",
+          "testStrategy": "Add blocked command tests for new edge cases."
+        }
+      ]
+    },
+    {
+      "id": 289,
+      "title": "Performance & Locking Improvements",
+      "description": "Address remaining performance concerns raised in the review.",
+      "priority": "low",
+      "status": "pending",
+      "dependencies": [
+        280,
+        281
+      ],
+      "details": "",
+      "testStrategy": "Run benches/ if available + manual profiling of hot paths.",
+      "subtasks": [
+        {
+          "id": 289.1,
+          "title": "Review AuditLogger flush behavior",
+          "description": "Currently flushes on every write. Evaluate periodic flush or buffered writer.",
+          "priority": "low",
+          "status": "pending",
+          "dependencies": [
+            289
+          ],
+          "details": "Trade-off between durability and latency.",
+          "testStrategy": "Benchmark audit logging under load."
+        },
+        {
+          "id": 289.2,
+          "title": "Reduce lock contention in ACP sessions",
+          "description": "After the big refactor (280), re-evaluate where we still take write locks.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            280
+          ],
+          "details": "Look for opportunities to use finer-grained locks or channels.",
+          "testStrategy": "Add simple contention metrics or just review the code."
+        }
+      ]
+    },
+    {
+      "id": 290,
+      "title": "Library vs Binary Separation Cleanup",
+      "description": "Continue the migration documented in src/lib.rs.",
+      "priority": "low",
+      "status": "pending",
+      "dependencies": [],
+      "details": "cli::*, display::*, and some terminal I/O still leak into the library.",
+      "testStrategy": "The crate should be usable as a pure library without pulling in ratatui/crossterm for non-CLI use.",
+      "subtasks": [
+        {
+          "id": 290.1,
+          "title": "Audit remaining direct I/O in library code",
+          "description": "Mark or move println!/eprintln! and progress bars that belong in binary.",
+          "priority": "low",
+          "status": "pending",
+          "dependencies": [
+            290
+          ],
+          "details": "Use the existing #[deprecated] pattern where appropriate.",
+          "testStrategy": "Try to build a minimal example that only uses the library crate."
+        }
+      ]
+    },
+    {
+      "id": 291,
+      "title": "Rate Limiter Review & Implementation",
+      "description": "RateLimitConfig exists but is largely a no-op.",
+      "priority": "low",
+      "status": "pending",
+      "dependencies": [],
+      "details": "Either implement proper token-bucket enforcement in the router/client layer or document that it is intentionally advisory.",
+      "testStrategy": "If implemented, add tests that verify throttling behavior.",
+      "subtasks": [
+        {
+          "id": 291.1,
+          "title": "Decide fate of RateLimitConfig",
+          "description": "Implement, remove, or clearly mark as future work.",
+          "priority": "low",
+          "status": "pending",
+          "dependencies": [
+            291
+          ],
+          "details": "",
+          "testStrategy": "Update docs + code comments accordingly."
+        }
+      ]
+    },
+    {
+      "id": 292,
+      "title": "Documentation, Cleanup & Tech Debt",
+      "description": "Address miscellaneous items from the review.",
+      "priority": "low",
+      "status": "pending",
+      "dependencies": [],
+      "details": "",
+      "testStrategy": "cargo clippy -- -D warnings must pass. No stray backup files.",
+      "subtasks": [
+        {
+          "id": 292.1,
+          "title": "Clean stray backup files and dead code",
+          "description": "Remove any *.rs_bak, excessive #[allow(dead_code)], and outdated TODOs.",
+          "priority": "low",
+          "status": "pending",
+          "dependencies": [
+            292
+          ],
+          "details": "Especially check acp/ directory.",
+          "testStrategy": "grep for _bak and dead_code allowances."
+        },
+        {
+          "id": 292.2,
+          "title": "Update code_review.md with current status",
+          "description": "Mark completed items and add new findings from this review cycle.",
+          "priority": "low",
+          "status": "pending",
+          "dependencies": [
+            292
+          ],
+          "details": "Keep the grumpy old reviewer voice or update it.",
+          "testStrategy": "The document should reflect reality after the above tasks."
+        },
+        {
+          "id": 292.3,
+          "title": "Improve tool error handling (consider ToolError type)",
+          "description": "Reduce sprinkling of anyhow! in the tools layer.",
+          "priority": "low",
+          "status": "pending",
+          "dependencies": [
+            292
+          ],
+          "details": "Long-term improvement suggested in the review.",
+          "testStrategy": "New tools should use a more structured error type."
+        }
+      ]
+    },
+    {
+      "id": 293,
+      "title": "Shell Command Translation Hardening (COR-3 follow-up)",
+      "description": "Even though the && translation was improved, continue monitoring and hardening cross-platform shell behavior.",
+      "priority": "low",
+      "status": "pending",
+      "dependencies": [],
+      "details": "PowerShell vs bash differences remain a source of subtle bugs.",
+      "testStrategy": "Add more complex command chain tests on both platforms.",
+      "subtasks": []
+    },
+    {
+      "id": 294,
+      "title": "Final Sign-off & Release Readiness for Review Items",
+      "description": "Umbrella task to verify all high/medium items from the 2026 code review are addressed before next release.",
+      "priority": "high",
+      "status": "pending",
+      "dependencies": [
+        280,
+        281,
+        282,
+        284
+      ],
+      "details": "Run full test suite, clippy, and a manual ACP + CLI smoke test. Update CHANGELOG.",
+      "testStrategy": "All subtasks of 280-292 that are marked high or medium must be done or explicitly deferred with rationale.",
+      "subtasks": [
+        {
+          "id": 294.1,
+          "title": "Run full verification suite",
+          "description": "cargo test, cargo clippy -D warnings, cargo build --release",
+          "priority": "high",
+          "status": "pending",
+          "dependencies": [
+            294
+          ],
+          "details": "",
+          "testStrategy": "Zero warnings and all tests green."
+        },
+        {
+          "id": 294.2,
+          "title": "Update code_review.md and this task list",
+          "description": "Mark completed work and note any deferred items.",
+          "priority": "medium",
+          "status": "pending",
+          "dependencies": [
+            294.1
+          ],
+          "details": "",
+          "testStrategy": "Documents should be consistent with actual state."
+        }
+      ]
+    }
   ]
 }

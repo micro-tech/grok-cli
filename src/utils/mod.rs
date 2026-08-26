@@ -9,6 +9,7 @@ pub mod chat_logger;
 pub mod client;
 pub mod context;
 pub mod history_compressor;
+pub mod http;   // Centralized reqwest client (Task 281)
 pub mod messages;
 pub mod network;
 pub mod perf;
@@ -19,3 +20,6 @@ pub mod telemetry;
 pub mod tool_logger;
 
 // Re-export commonly used utilities
+
+// Re-export the central HTTP client for convenience
+pub use http::{get_http_client, http_client_builder};
