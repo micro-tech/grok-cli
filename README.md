@@ -7,6 +7,12 @@
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
 > **Latest improvements**:
+> - **Self-Updater System** (Task 296): New built-in update mechanism.
+>   - Run `grok update` (or `grok update --check`) to check GitHub releases.
+>   - Full guided update flow is provided by the dedicated **`self-updater`** skill.
+>   - Safe downloads to temp + binary replacement (with Windows `.old` backup).
+>   - Respects `general.disable_auto_update` (use `--force` to override).
+>   - Activate with `/activate self-updater` in interactive sessions or let it auto-activate on keywords like "update" / "upgrade".
 > - **Self-Updating Skills Catalog** (Task 273): The model now receives a live, self-updating `.grok/SKILLS_HOOKS_OPTIMIZATION.md` on every turn. It contains:
 >   - A ranked **SKILLS CATALOG** with descriptions, arbitration scores, tags, dependencies, and auto-activation hints
 >   - **HOOKS** documentation (`before_tool` / `after_tool`)
@@ -61,8 +67,29 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
   - See [Doc/SUBAGENTS.md](Doc/SUBAGENTS.md) for full reference
 - **Bayesian Stabilization** — Configurable belief decay (`belief_decay_rate` / `prior_pull_rate`) prevents extreme intent dominance while keeping routing responsive
 - **Commit Message Generator** — `/commit` slash command + `generate_commit_message` tool that produces high-quality Conventional Commits messages from the current git diff (respects `commit_message_instructions` config and Session DNA)
+- **Self-Updater** — `grok update` command + dedicated `self-updater` skill. Safely checks GitHub releases, downloads to a temp file, and performs platform-aware binary replacement (with rollback guidance on Windows). Respects `disable_auto_update` config. Fully integrated with the skills system (auto-activation, catalog, `/activate self-updater`).
 
 See [Doc/QUICK_REFERENCE.md](Doc/QUICK_REFERENCE.md) for the full command list and [Doc/FEATURES.md](Doc/FEATURES.md) (coming soon) for details.
+
+### Updating Grok CLI
+
+Grok CLI can update itself:
+
+```bash
+grok update                 # Check for updates and run guided update
+grok update --check         # Only check, do not download
+grok update --force         # Force update even if disabled in config
+```
+
+The full safe update protocol (download to temp, verification, platform-specific replacement) is provided by the built-in **`self-updater`** skill.
+
+In an interactive session you can also do:
+```bash
+> /activate self-updater
+> update to the latest version
+```
+
+The skill will guide you through the process with appropriate safety checks.
 
 ## 🚀 Quick Start
 
@@ -115,6 +142,7 @@ Full options: [Doc/CONFIGURATION.md](Doc/CONFIGURATION.md)
 | `/rule add <text>`   | Add a session-only rule (injected into every prompt) |
 | `/visualize`         | Show pipeline diagram                    |
 | `/bayes show`        | Inspect Bayesian priors                  |
+| `grok update [--check] [--force]` | Check for or perform a self-update of grok-cli |
 | `grok skills generate-catalog` | Regenerate the live skills/hooks/optimization catalog for the model |
 
 See [Doc/QUICK_REFERENCE.md](Doc/QUICK_REFERENCE.md) for the complete list.

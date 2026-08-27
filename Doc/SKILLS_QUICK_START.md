@@ -220,6 +220,30 @@ grok interactive
 
 ## Example Skills Included
 
+### self-updater
+
+**Covers:**
+- Checking for new releases on GitHub
+- Safe download to a temporary file
+- Platform-aware binary replacement (Windows `.exe` handling with `.old` backup, Unix `chmod +x` + rename)
+- Respecting `disable_auto_update` config (override with `--force`)
+- Rollback guidance and source-build warnings
+
+**Activate when:** You want to update Grok CLI, or say things like "update", "upgrade", "check for updates", or run `grok update`.
+
+**Usage:**
+```bash
+grok update                 # Check + guided update
+grok update --check         # Only check, no download
+grok update --force         # Ignore disable_auto_update
+
+# Or inside an interactive session:
+> /activate self-updater
+> update to the latest version
+```
+
+The skill provides the full safe protocol. The `grok update` command is a convenient entry point that also works without activating the skill.
+
 ### rust-expert
 
 **Covers:**

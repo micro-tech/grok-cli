@@ -330,6 +330,38 @@ grok-cli config set experimental.extensions.enabled true
 | `/version` | Show version info |
 | `/commit [instructions]` | Generate Conventional Commits message from git diff |
 | `/image <path|url> [prompt]` | Attach an image (local file or URL) for vision models |
+| `/update`                  | Show guidance for updating Grok CLI (full flow via `self-updater` skill) |
+
+### Updating Grok CLI
+
+Grok CLI includes a built-in self-update system:
+
+```bash
+# Check for updates (recommended first step)
+grok update --check
+
+# Perform update (downloads to temp, then replaces binary safely)
+grok update
+
+# Force update even if disabled in config
+grok update --force
+```
+
+The complete safe update protocol lives in the **`self-updater`** skill.
+
+In an interactive session:
+```bash
+> /activate self-updater
+> update to the latest version
+```
+
+**Safety features:**
+- Downloads to a temporary file first
+- Platform-specific replacement (Windows uses `.old` backup)
+- Respects `general.disable_auto_update` in config
+- Clear warnings for source builds vs. release builds
+
+See also: `grok --help | grep -A 5 update` and the `self-updater` skill documentation.
 
 ### Image / Vision Support
 
