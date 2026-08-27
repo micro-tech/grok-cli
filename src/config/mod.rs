@@ -561,12 +561,12 @@ impl Config {
 
     /// Returns true if the given directory is the user's home directory.
     /// Used to prevent treating ~/.grok/ as a project config location.
-    fn is_user_home_directory(dir: &PathBuf, home: &Option<PathBuf>) -> bool {
+    fn is_user_home_directory(dir: &std::path::Path, home: &Option<PathBuf>) -> bool {
         if let Some(home) = home {
             // Normalize both paths for comparison (important on Windows)
             // Fall back to non-canonicalized comparison if canonicalize fails
             // (e.g. path doesn't exist yet or permission issues).
-            let dir_norm = dir.canonicalize().unwrap_or_else(|_| dir.clone());
+            let dir_norm = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
             let home_norm = home.canonicalize().unwrap_or_else(|_| home.clone());
 
             if dir_norm == home_norm {
@@ -591,10 +591,10 @@ impl Config {
     ///
     /// This is used aggressively to stop treating old global data as "project"
     /// configuration. All global data should live under `~/.grok-cli` now.
-    fn is_legacy_home_grok(path: &PathBuf) -> bool {
+    fn is_legacy_home_grok(path: &std::path::Path) -> bool {
         if let Some(home) = dirs::home_dir() {
             let legacy_root = home.join(".grok");
-            let p = path.canonicalize().unwrap_or_else(|_| path.clone());
+            let p = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
             let legacy = legacy_root.canonicalize().unwrap_or(legacy_root);
 
             p.starts_with(&legacy)

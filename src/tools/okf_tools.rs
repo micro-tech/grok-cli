@@ -14,7 +14,6 @@ use chrono;
 use std::path::PathBuf;
 use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
-use reqwest::Client;
 
 /// Global cache of loaded OKF bundles for the current process.
 /// Uses RwLock so we can invalidate it after `okf_create`.
@@ -311,7 +310,9 @@ async fn push_concept_to_remote(
     bundle: &str,
     api_key: &Option<String>,
 ) -> Result<()> {
-    let client = Client::builder().timeout(Duration::from_secs(15)).build()?;
+    let client = crate::utils::http::http_client_builder()
+        .timeout(Duration::from_secs(15))
+        .build()?;
 
     let url = format!(
         "{}/bundles/{}/concepts",

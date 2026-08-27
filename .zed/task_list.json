@@ -77,9 +77,9 @@
       "title": "Centralize reqwest HTTP Client (PERF-1 + Resilience)",
       "description": "Stop creating new reqwest::Client on every call. Create one well-configured shared client.",
       "priority": "high",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [],
-      "details": "Started 281.1: Created src/utils/http.rs with LazyLock shared client, get_http_client(), builder, and retry helper. Updated utils/mod.rs exports. Now migrating call sites (281.2).",
+      "details": "281.1 + 281.2 complete. Shared client in utils/http.rs. All call sites migrated. 281.3 (unify retry logic) remains as follow-up under 287. Task 281 marked fully done.",
       "testStrategy": "All network tests must pass. Add a test that verifies only one client instance is created for the main paths.",
       "subtasks": [
         {
@@ -99,11 +99,11 @@
           "title": "Migrate all call sites to use the shared client",
           "description": "Update web_fetch, web_search, setup verification, discovery tools, OKF tools, MCP client, and any direct uses.",
           "priority": "high",
-          "status": "in_progress",
+          "status": "done",
           "dependencies": [
             281.1
           ],
-          "details": "Remove all local Client::new() and Client::builder() calls.",
+          "details": "All call sites migrated to shared client (get_http_client / http_client_builder). web_tools, discovery_tools, okf_tools, setup, github_mcp updated.",
           "testStrategy": "cargo test + manual network calls where possible."
         },
         {
@@ -125,9 +125,9 @@
       "title": "Strengthen Tool Registry & Reduce Manual Sync (ARCH-2 / ARCH-8)",
       "description": "Continue the excellent work from Task 260/271. Reduce the number of places that must stay in sync when adding tools.",
       "priority": "high",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [],
-      "details": "Currently: schemas in get_full_tool_definitions(), dispatch match in execute_tool, required params (now derived but still fragile), arbitration, and tests.",
+      "details": "Starting work on 282: Strengthen Tool Registry. Currently investigating get_full_tool_definitions, execute_tool dispatch, and the 'every_tool_schema_has_corresponding_handler' test.",
       "testStrategy": "The 'every_tool_schema_has_corresponding_handler' test must continue to pass after any change.",
       "subtasks": [
         {

@@ -92,7 +92,10 @@ async fn handle_request(request: &Value, stdout: &mut tokio::io::Stdout) -> Resu
             if name == "search_repos" {
                 let query = args.get("query").and_then(|s| s.as_str()).unwrap_or("rust");
 
-                let client = reqwest::Client::new();
+                let client = grok_cli::utils::http::http_client_builder()
+                    .user_agent("grok-cli-mcp")
+                    .build()
+                    .expect("failed to build http client");
                 let url = format!(
                     "https://api.github.com/search/repositories?q={}&sort=stars&order=desc&per_page=5",
                     query

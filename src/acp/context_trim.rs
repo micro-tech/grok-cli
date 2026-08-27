@@ -141,8 +141,8 @@ pub fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
                 }
             } else if let Some(arr) = content.as_array_mut() {
                 for item in arr.iter_mut() {
-                    if let Some(text) = item.get_mut("text").and_then(|t| t.as_str()) {
-                        if text.len() > max_chars {
+                    if let Some(text) = item.get_mut("text").and_then(|t| t.as_str())
+                        && text.len() > max_chars {
                             let mut end = max_chars;
                             while end > 0 && !text.is_char_boundary(end) {
                                 end -= 1;
@@ -154,7 +154,6 @@ pub fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
                                 text.len() - end
                             ));
                         }
-                    }
                 }
             }
         }

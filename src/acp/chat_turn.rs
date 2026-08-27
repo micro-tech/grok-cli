@@ -151,7 +151,7 @@ impl ChatTurn {
 
             // Use extracted retrying API caller (Task 280.2)
             let response_with_finish =
-                perform_api_call_with_retries(agent, self, &tool_defs).await?;
+                perform_api_call_with_retries(agent, self, tool_defs).await?;
 
             let api_duration = std::time::Instant::now() - loop_start;
             info!("✅ Grok API responded in {:?}", api_duration);
@@ -161,14 +161,13 @@ impl ChatTurn {
             let thinking_content = response_with_finish.thinking_content;
 
             // Emit thinking if present (Task 280.4)
-            if let Some(ref tc) = thinking_content {
-                if agent.config.acp.stream_thinking
+            if let Some(ref tc) = thinking_content
+                && agent.config.acp.stream_thinking
                     && let Some(sender) = event_sender
                 {
                     let blk = crate::acp::protocol::ThinkingBlockUpdate::new(tc, false);
                     let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk));
                 }
-            }
 
             self.messages.push(serde_json::to_value(&response_msg)?);
 
@@ -428,8 +427,8 @@ pub async fn process_tool_calls(
             && !local_always_allow.contains(function_name.as_str())
             && !turn.newly_always_allowed.contains(function_name);
 
-        if needs_permission {
-            if let Some(bridge) = permission_bridge {
+        if needs_permission
+            && let Some(bridge) = permission_bridge {
                 let req_id = uuid::Uuid::new_v4().to_string();
                 let params = crate::acp::protocol::RequestPermissionParams::new(
                     session_id.clone(),
@@ -460,7 +459,6 @@ pub async fn process_tool_calls(
                     }
                 }
             }
-        }
         // === END PERMISSION GATE ===
 
         // Execute via unified registry
