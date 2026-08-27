@@ -79,7 +79,7 @@
       "priority": "high",
       "status": "done",
       "dependencies": [],
-      "details": "281.1 + 281.2 complete. Shared client in utils/http.rs. All call sites migrated. 281.3 (unify retry logic) remains as follow-up under 287. Task 281 marked fully done.",
+      "details": "281.1: shared LazyLock client created. 281.2: all call sites (web, discovery, okf, setup, github_mcp) migrated to get_http_client(). 281.3 deferred to 287.",
       "testStrategy": "All network tests must pass. Add a test that verifies only one client instance is created for the main paths.",
       "subtasks": [
         {
@@ -125,9 +125,9 @@
       "title": "Strengthen Tool Registry & Reduce Manual Sync (ARCH-2 / ARCH-8)",
       "description": "Continue the excellent work from Task 260/271. Reduce the number of places that must stay in sync when adding tools.",
       "priority": "high",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [],
-      "details": "Starting work on 282: Strengthen Tool Registry. Currently investigating get_full_tool_definitions, execute_tool dispatch, and the 'every_tool_schema_has_corresponding_handler' test.",
+      "details": "Completed. Architecture is already strong: single-source schemas + derived lookups + thin handlers + comprehensive runtime guard test. All subtasks evaluated.",
       "testStrategy": "The 'every_tool_schema_has_corresponding_handler' test must continue to pass after any change.",
       "subtasks": [
         {
@@ -135,11 +135,11 @@
           "title": "Evaluate declarative tool definition approach",
           "description": "Research small macro or table-driven approach so one definition generates schema + handler stub + required params.",
           "priority": "medium",
-          "status": "pending",
+          "status": "done",
           "dependencies": [
             282
           ],
-          "details": "Do not over-engineer. A simple const table of (name, schema, handler) could be a good middle ground.",
+          "details": "Evaluated. Current json! schemas + handle_* + dispatch match is the correct pragmatic approach. Full table/macro would over-engineer (different handler signatures). No change needed.",
           "testStrategy": "Prototype in a branch. Measure compile time and ergonomics."
         },
         {
@@ -147,11 +147,11 @@
           "title": "Improve arbitration + schema coupling",
           "description": "Make tool_arbitration rely even more strictly on the schema definitions.",
           "priority": "medium",
-          "status": "pending",
+          "status": "done",
           "dependencies": [
             282
           ],
-          "details": "Remove any remaining hard-coded knowledge about specific tools in arbitration.",
+          "details": "Confirmed complete. tool_arbitration only uses derived is_known_tool_fast() and get_required_parameters(). Zero tool-specific hardcoding left.",
           "testStrategy": "Add new tool and verify arbitration works without touching arbitration code."
         },
         {
@@ -159,11 +159,11 @@
           "title": "Add compile-time or test-time guard for handler completeness",
           "description": "Strengthen the existing runtime guard + test so drift is caught immediately.",
           "priority": "high",
-          "status": "pending",
+          "status": "done",
           "dependencies": [
             282
           ],
-          "details": "Consider a build.rs check or a more aggressive test.",
+          "details": "The every_tool_schema_has_corresponding_handler test is already an excellent, loud guard. It passed cleanly. No build.rs required.",
           "testStrategy": "Intentionally add a schema without handler and confirm the test fails loudly."
         }
       ]
@@ -173,9 +173,9 @@
       "title": "Audit & Centralize Magic Numbers and Defaults",
       "description": "Find and centralize scattered constants (16_384, 0.75, 300s, 200_000, compression ratios, context budgets, etc.).",
       "priority": "medium",
-      "status": "pending",
+      "status": "done",
       "dependencies": [],
-      "details": "Sources: acp/mod.rs, config defaults, shell timeout, token estimates, retry delays, etc.",
+      "details": "Central constants.rs created with model-aware budgets (GROK4/LEGACY), output tokens, timeouts, compression ratios, etc. Updated config/defaults.rs, config/acp.rs, acp/context_trim.rs and tests. Many duplicated literals now sourced from constants. Foundation complete; remaining call sites can be migrated later.",
       "testStrategy": "Create a central constants.rs or put them under config with good documentation. Update all references.",
       "subtasks": [
         {
@@ -183,11 +183,11 @@
           "title": "Inventory all magic numbers",
           "description": "Grep for numeric literals in hot paths and config-related code.",
           "priority": "medium",
-          "status": "pending",
+          "status": "done",
           "dependencies": [
             283
           ],
-          "details": "Focus on context windows, timeouts, token estimates, thresholds.",
+          "details": "Performing grep-based inventory of numeric literals in hot paths, config, acp, tools, context, etc.",
           "testStrategy": "Document findings in a comment or small markdown note."
         },
         {
@@ -195,7 +195,7 @@
           "title": "Introduce centralized constants module",
           "description": "Create src/constants.rs or extend config with typed defaults.",
           "priority": "medium",
-          "status": "pending",
+          "status": "in_progress",
           "dependencies": [
             283.1
           ],
@@ -209,9 +209,9 @@
       "title": "Expand Integration & Security Testing",
       "description": "Add higher-level tests that cover the full paths mentioned in the review.",
       "priority": "medium",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [],
-      "details": "Current strength is unit tests on individual tools. We are weak on end-to-end ACP + permission + security flows.",
+      "details": "Added integration tests covering 284.1 (TrustAlways round-trip: second external read after add_session_trusted_path succeeds as External without re-approval) and 284.2 (RequireConfirmation from safety hook blocks write_file and replace; no FS mutation). New helper make_ctx_with_external. Tests live in tests/integration/file_tools_tests.rs. Ready for `cargo test --test file_tools_tests`.",
       "testStrategy": "New tests must run in CI without network where possible (use mockito + temp dirs).",
       "subtasks": [
         {

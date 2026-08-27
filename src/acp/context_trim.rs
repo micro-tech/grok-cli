@@ -4,6 +4,11 @@
 //! These functions handle per-message truncation, count-based trimming,
 //! token-budget trimming, and smart compression (summarise + archive).
 
+use crate::constants::{
+    get_context_budget, get_context_window, get_default_max_output_tokens,
+    GROK4_CONTEXT_BUDGET, GROK4_CONTEXT_WINDOW, LEGACY_CONTEXT_BUDGET, LEGACY_CONTEXT_WINDOW,
+    MAX_TOOL_RESULT_CHARS,
+};
 use crate::memory::context_archive::ContextChunk;
 use serde_json::{json, Value};
 
@@ -49,17 +54,17 @@ pub struct ModelContextInfo {
 }
 
 static MODEL_CONTEXT_TABLE: &[(&str, ModelContextInfo)] = &[
-    // Grok-4 family (1M context)
-    ("grok-4", ModelContextInfo { is_grok4_family: true, context_window: 1_048_576 }),
-    ("grok-4.3", ModelContextInfo { is_grok4_family: true, context_window: 1_048_576 }),
-    ("grok-4-latest", ModelContextInfo { is_grok4_family: true, context_window: 1_048_576 }),
-    ("grok-4.5", ModelContextInfo { is_grok4_family: true, context_window: 1_048_576 }),
-    ("grok-4.6", ModelContextInfo { is_grok4_family: true, context_window: 1_048_576 }),
-    ("grok-4.20", ModelContextInfo { is_grok4_family: true, context_window: 1_048_576 }),
+    // Grok-4 family (1M context) - values now also live in crate::constants
+    ("grok-4", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
+    ("grok-4.3", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
+    ("grok-4-latest", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
+    ("grok-4.5", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
+    ("grok-4.6", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
+    ("grok-4.20", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
     // Legacy / smaller models
-    ("grok-3", ModelContextInfo { is_grok4_family: false, context_window: 131_072 }),
-    ("grok-3-mini", ModelContextInfo { is_grok4_family: false, context_window: 131_072 }),
-    ("grok-coder", ModelContextInfo { is_grok4_family: false, context_window: 131_072 }),
+    ("grok-3", ModelContextInfo { is_grok4_family: false, context_window: LEGACY_CONTEXT_WINDOW }),
+    ("grok-3-mini", ModelContextInfo { is_grok4_family: false, context_window: LEGACY_CONTEXT_WINDOW }),
+    ("grok-coder", ModelContextInfo { is_grok4_family: false, context_window: LEGACY_CONTEXT_WINDOW }),
 ];
 
 /// Returns context info for a model (model-aware).
@@ -73,7 +78,7 @@ pub fn get_model_context_info(model: &str) -> ModelContextInfo {
     // Default to legacy budget for unknown models
     ModelContextInfo {
         is_grok4_family: false,
-        context_window: 220_000,
+        context_window: LEGACY_CONTEXT_WINDOW,
     }
 }
 
@@ -95,14 +100,7 @@ pub fn get_model_context_window(model: &str) -> usize {
 
 /// Default max output tokens for a given model.
 pub fn model_default_max_tokens(model: &str) -> u32 {
-    let m = model.to_ascii_lowercase();
-    if m.starts_with("grok-4") {
-        16_384
-    } else if m.contains("mini") {
-        4_096
-    } else {
-        8_192
-    }
+    get_default_max_output_tokens(model)
 }
 
 /// Trim messages until estimated tokens fit inside the budget.
@@ -232,20 +230,20 @@ mod tests {
 
     #[test]
     fn test_model_context_budget_grok4_uses_grok4_budget() {
-        assert_eq!(model_context_budget("grok-4.3", 220_000, 950_000), 950_000);
+        assert_eq!(model_context_budget("grok-4.3", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET), GROK4_CONTEXT_BUDGET);
         assert_eq!(
-            model_context_budget("grok-4-latest", 220_000, 950_000),
-            950_000
+            model_context_budget("grok-4-latest", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET),
+            GROK4_CONTEXT_BUDGET
         );
-        assert_eq!(model_context_budget("grok-4", 220_000, 950_000), 950_000);
+        assert_eq!(model_context_budget("grok-4", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET), GROK4_CONTEXT_BUDGET);
     }
 
     #[test]
     fn test_model_context_budget_legacy_models_use_legacy_budget() {
-        assert_eq!(model_context_budget("grok-3", 220_000, 950_000), 220_000);
-        assert_eq!(model_context_budget("grok-3-mini", 220_000, 950_000), 220_000);
-        assert_eq!(model_context_budget("grok-2-latest", 220_000, 950_000), 220_000);
-        assert_eq!(model_context_budget("grok-beta", 220_000, 950_000), 220_000);
+        assert_eq!(model_context_budget("grok-3", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET), LEGACY_CONTEXT_BUDGET);
+        assert_eq!(model_context_budget("grok-3-mini", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET), LEGACY_CONTEXT_BUDGET);
+        assert_eq!(model_context_budget("grok-2-latest", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET), LEGACY_CONTEXT_BUDGET);
+        assert_eq!(model_context_budget("grok-beta", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET), LEGACY_CONTEXT_BUDGET);
     }
 
     #[test]
