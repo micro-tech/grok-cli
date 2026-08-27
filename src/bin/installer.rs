@@ -79,6 +79,9 @@ fn install_windows(root_dir: PathBuf) {
 
     if !status.success() {
         eprintln!("{}", "Build failed. Aborting installation.".red());
+        // SEC-4: process::exit is acceptable here — this is the installer *binary*
+        // (src/bin/installer.rs), not library code. Fatal setup errors must
+        // terminate immediately with a clear non-zero status.
         std::process::exit(1);
     }
 
@@ -96,6 +99,9 @@ fn install_windows(root_dir: PathBuf) {
             "Source binary not found at:".red(),
             source_exe.display()
         );
+        // SEC-4: process::exit is acceptable here — this is the installer *binary*
+        // (src/bin/installer.rs), not library code. Fatal setup errors must
+        // terminate immediately with a clear non-zero status.
         std::process::exit(1);
     }
 

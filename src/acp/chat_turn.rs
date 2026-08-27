@@ -291,15 +291,20 @@ impl ChatTurn {
 }
 
 /// Performs one model call with Starlink-aware retries.
-/// Extracted from the giant loop in handle_chat_completion (Task 280.2).
+/// Now uses the unified `RetryPolicy` (Task 287) for consistent backoff.
 pub async fn perform_api_call_with_retries(
     agent: &GrokAcpAgent,
     turn: &ChatTurn,
     tool_defs: &[Value],
 ) -> Result<crate::MessageWithFinishReason> {
-    const MAX_API_RETRIES: u32 = 5;
-    const BASE_RETRY_DELAY_SECS: u64 = 5;
-    const MAX_RETRY_DELAY_SECS: u64 = 60;
+    use crate::utils::network::RetryPolicy;
+
+    // Build policy from config when possible; fall back to Starlink defaults.
+    let policy = if agent.config.network.starlink_optimizations {
+        RetryPolicy::from_config(&agent.config.network)
+    } else {
+        RetryPolicy::default_starlink()
+    };
 
     let mut attempt = 0u32;
 
@@ -335,21 +340,16 @@ pub async fn perform_api_call_with_retries(
                     ));
                 }
 
-                let is_retriable = crate::utils::network::detect_network_drop(&e)
+                let is_retriable = policy.should_retry(attempt.saturating_sub(1), &e)
                     || lower.contains("timeout")
                     || lower.contains("timed out")
                     || lower.contains("reset")
                     || lower.contains("connection")
                     || lower.contains("network error")
-                    || lower.contains("error sending request")
-                    || lower.contains("503")
-                    || lower.contains("502")
-                    || lower.contains("504");
+                    || lower.contains("error sending request");
 
-                if attempt <= MAX_API_RETRIES && is_retriable {
-                    let delay = BASE_RETRY_DELAY_SECS
-                        .saturating_mul(1u64 << (attempt - 1).min(6))
-                        .min(MAX_RETRY_DELAY_SECS);
+                if is_retriable && attempt <= policy.max_retries {
+                    let delay = policy.delay_for_attempt(attempt.saturating_sub(1));
 
                     let err_kind = if lower.contains("timeout") || lower.contains("timed out") {
                         format!("TIMEOUT (real={})", agent.config.timeout_secs)
@@ -358,10 +358,10 @@ pub async fn perform_api_call_with_retries(
                     };
 
                     warn!(
-                        "API retry {}/{} [{}]: {}. Waiting {}s...",
-                        attempt, MAX_API_RETRIES, err_kind, e, delay
+                        "API retry {}/{} [{}]: {}. Waiting {:?}...",
+                        attempt, policy.max_retries, err_kind, e, delay
                     );
-                    tokio::time::sleep(std::time::Duration::from_secs(delay)).await;
+                    tokio::time::sleep(delay).await;
                     continue;
                 } else {
                     let tip = if lower.contains("timeout") {

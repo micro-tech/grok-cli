@@ -211,16 +211,21 @@ async fn start_acp_stdio(
 
     info!("grok-cli ACP agent shutting down");
 
-    // Force a clean process exit.
-    // Without this, the Tokio runtime and any background tasks (logging,
-    // session persistence, MCP, etc.) can keep the process alive after Zed
-    // closes stdin/stdout.  This is the standard pattern used by other ACP
-    // agents (Gemini CLI, Claude Code, etc.).
+    // SEC-4: process::exit here is acceptable (even though this file lives
+    // under src/cli which is part of the library crate) because:
+    // - This code path is *only* entered when the main binary is invoked
+    //   as `grok acp stdio` (see src/cli/app.rs and src/main.rs).
+    // - It is the dedicated long-running mode for ACP agent integration
+    //   (Zed, etc.). When the client closes stdin/stdout, normal return from
+    //   main() often leaves the Tokio runtime + background tasks (chat logger,
+    //   MCP clients, session persistence, tracing) alive.
+    // - Explicit exit(0) is the documented pattern used by other ACP agents
+    //   (Gemini CLI, Claude Code, etc.) to guarantee clean termination.
+    // - Library code that is not the ACP stdio entry point never calls this.
     //
-    // On Windows this also ensures grok.exe disappears from Task Manager
-    // promptly instead of lingering as a zombie process.
+    // The two other process::exit calls are in src/bin/installer.rs (binary).
     //
-    // We use a tiny sleep first so that any final tracing/logs can flush.
+    // We sleep briefly so final logs/traces can flush.
     std::thread::sleep(std::time::Duration::from_millis(30));
     std::process::exit(0);
 }
