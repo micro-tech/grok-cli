@@ -540,20 +540,6 @@ impl Config {
         }
     }
 
-    /// Get system-level config path (legacy TOML).
-    /// This is intentionally kept pointing at the *old* ~/.grok location only for
-    /// migration / warning purposes. The real system config now lives at
-    /// `default_config_path()` (i.e. ~/.grok-cli/config.toml or %APPDATA%\grok-cli).
-    #[expect(
-        dead_code,
-        reason = "kept for migration awareness and potential future warnings"
-    )]
-    fn get_system_config_path() -> Result<PathBuf> {
-        let home_dir =
-            dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-        Ok(home_dir.join(".grok").join("config.toml"))
-    }
-
     /// Get system-level .env path
     fn get_system_env_path() -> Result<PathBuf> {
         Ok(grok_config_dir().join(".env"))

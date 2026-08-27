@@ -3,7 +3,7 @@
 //! The engine maintains a probability distribution over possible user intents
 //! and meta-states (confidence, vagueness, clarification need).  It is updated
 //! on every user message and after each tool call, and its internal state is
-//! persisted to `~/.grok/bayes_profile.json` so the router learns from usage
+//! persisted to `~/.grok-cli/bayes_profile.json` (via grok_data_dir()) so the router learns from usage
 //! over time.
 //!
 //! ## Configuration
@@ -99,7 +99,7 @@ impl BayesianEngine {
     /// Create a new engine using compiled-in defaults.
     ///
     /// The prior distribution is loaded from the saved profile on disk
-    /// (`~/.grok/bayes_profile.json`) and falls back to the built-in default
+    /// (`~/.grok-cli/bayes_profile.json` via grok_data_dir()) and falls back to the built-in default
     /// priors when no profile exists yet.
     pub fn new() -> Self {
         let priors = crate::bayes::profile::load_profile().unwrap_or_else(default_priors);

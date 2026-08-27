@@ -54,51 +54,67 @@ fn find_repo_root(start: &Path) -> PathBuf {
     }
 }
 
-/// Load global rules from ~/.grok/
+/// Load global rules from the canonical user data dir (~/.grok-cli/agents/rules or similar).
+///
+/// Falls back to legacy ~/.grok/ for migration compatibility.
+/// Global rules live under the user data directory (grok_data_dir()), not project .grok/.
 fn load_global_rules() -> Vec<AgentRule> {
     let mut rules = Vec::new();
 
+    // Canonical location: ~/.grok-cli/ (via grok_data_dir)
+    let canonical_grok = crate::config::grok_data_dir();
+
+    // Try canonical first
+    load_rules_from_dir(&canonical_grok, &mut rules, RuleSource::Global);
+
+    // Legacy fallback: ~/.grok/ (for users who have not migrated)
     if let Some(home) = dirs::home_dir() {
-        let grok_dir = home.join(".grok");
-
-        // ~/.grok/AGENTS.md (and variants)
-        for name in AGENT_FILENAMES {
-            let path = grok_dir.join(name);
-            if path.exists()
-                && let Ok(content) = fs::read_to_string(&path)
-            {
-                rules.push(AgentRule {
-                    filename: name.to_string(),
-                    path,
-                    content,
-                    source: RuleSource::Global,
-                });
-            }
-        }
-
-        // ~/.grok/rules/*.md
-        let rules_dir = grok_dir.join("rules");
-        if rules_dir.exists()
-            && let Ok(entries) = fs::read_dir(&rules_dir)
-        {
-            for entry in entries.flatten() {
-                let path = entry.path();
-                if path.extension().is_some_and(|e| e == "md")
-                    && let Ok(content) = fs::read_to_string(&path)
-                    && let Some(filename) = path.file_name().and_then(|s| s.to_str())
-                {
-                    rules.push(AgentRule {
-                        filename: filename.to_string(),
-                        path,
-                        content,
-                        source: RuleSource::Global,
-                    });
-                }
-            }
+        let legacy = home.join(".grok");
+        if legacy != canonical_grok {
+            load_rules_from_dir(&legacy, &mut rules, RuleSource::Global);
         }
     }
 
     rules
+}
+
+/// Helper: load AGENTS.md variants and *.md from a rules/ subdir (if present).
+fn load_rules_from_dir(base: &std::path::Path, out: &mut Vec<AgentRule>, source: RuleSource) {
+    // base/AGENTS.md (and variants)
+    for name in AGENT_FILENAMES {
+        let path = base.join(name);
+        if path.exists()
+            && let Ok(content) = fs::read_to_string(&path)
+        {
+            out.push(AgentRule {
+                filename: name.to_string(),
+                path,
+                content,
+                source,
+            });
+        }
+    }
+
+    // base/rules/*.md (if the dir exists)
+    let rules_dir = base.join("rules");
+    if rules_dir.exists()
+        && let Ok(entries) = fs::read_dir(&rules_dir)
+    {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.extension().is_some_and(|e| e == "md")
+                && let Ok(content) = fs::read_to_string(&path)
+                && let Some(filename) = path.file_name().and_then(|s| s.to_str())
+            {
+                out.push(AgentRule {
+                    filename: filename.to_string(),
+                    path,
+                    content,
+                    source,
+                });
+            }
+        }
+    }
 }
 
 /// Load rules by walking from repo root to current directory

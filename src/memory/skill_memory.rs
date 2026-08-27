@@ -526,9 +526,9 @@ impl SkillMemory {
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn grok_dir() -> Result<PathBuf> {
-    dirs::home_dir()
-        .map(|h| h.join(".grok"))
-        .ok_or_else(|| anyhow::anyhow!("Cannot determine home directory"))
+    // Use canonical user data dir (~/.grok-cli) for skill history/affinity.
+    // Project-local .grok/ is only for context markers inside repositories.
+    Ok(crate::config::grok_data_dir())
 }
 
 fn affinity_key(project_hash: &str, skill_name: &str) -> String {

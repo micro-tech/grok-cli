@@ -135,7 +135,7 @@ pub async fn handle_setup() -> Result<()> {
     }
 
     // ── Step 6: Save the key ──────────────────────────────────────────────────
-    print!("[2/2] {}", "Saving key to ~/.grok/.env…".dimmed());
+    print!("[2/2] {}", "Saving key to ~/.grok-cli/.env…".dimmed());
     io::stdout().flush().ok();
 
     let saved_path = save_api_key(&api_key).context("Failed to save API key")?;

@@ -432,9 +432,10 @@ mod tests {
 
     #[test]
     fn test_calculate_retry_delay_delegates() {
-        // Should delegate to RetryPolicy (even if deprecated)
-        let delay1 = calculate_retry_delay(1);
-        let delay2 = calculate_retry_delay(2);
+        // Test the recommended RetryPolicy API (calculate_retry_delay is deprecated)
+        let policy = RetryPolicy::default_starlink();
+        let delay1 = policy.delay_for_attempt(1);
+        let delay2 = policy.delay_for_attempt(2);
         assert!(delay2 >= delay1);
         assert!(delay1 >= Duration::from_millis(1000)); // base 2s + jitter
     }

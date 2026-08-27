@@ -23,10 +23,12 @@ use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberI
 /// Returns `()` — any failure to open the log file is handled gracefully
 /// (stderr-only logging is used as the fallback).
 fn setup_logging() {
-    // ── Log file path: ~/.grok/logs/grok-errors.log ──────────────────────────
-    let log_file_path = dirs::home_dir()
-        .map(|h| h.join(".grok").join("logs").join("grok-errors.log"))
-        .unwrap_or_else(|| std::path::PathBuf::from("grok-errors.log"));
+    // ── Log file path: ~/.grok-cli/logs/grok-errors.log ──────────────────────
+    // Uses grok_data_dir() so it follows the canonical user data location
+    // (not the legacy ~/.grok used for project-local markers).
+    let log_file_path = grok_cli::config::grok_data_dir()
+        .join("logs")
+        .join("grok-errors.log");
 
     if let Some(parent) = log_file_path.parent() {
         let _ = std::fs::create_dir_all(parent);

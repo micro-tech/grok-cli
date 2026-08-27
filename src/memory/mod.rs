@@ -719,6 +719,7 @@ mod tests {
     fn project_with_context(content: &str) -> tempfile::TempDir {
         let dir = tempdir().unwrap();
         fs::create_dir(dir.path().join(".git")).unwrap();
+        // Test uses a temp dir simulating project; .grok here is project marker (acceptable)
         let grok = dir.path().join(".grok");
         fs::create_dir(&grok).unwrap();
         fs::write(grok.join("context.md"), content).unwrap();

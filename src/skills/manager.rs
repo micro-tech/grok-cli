@@ -6,8 +6,10 @@ use walkdir::WalkDir;
 use crate::skills::config::{Skill, SkillConfig};
 
 /// Default location for global skills
+///
+/// Uses the canonical user data directory (~/.grok-cli/skills).
 pub fn get_default_skills_dir() -> Option<PathBuf> {
-    dirs::home_dir().map(|home| home.join(".grok").join("skills"))
+    Some(crate::config::grok_data_dir().join("skills"))
 }
 
 /// Default location for **global** agent rules.

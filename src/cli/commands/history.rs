@@ -419,9 +419,8 @@ fn get_logger_config() -> ChatLoggerConfig {
         .ok()
         .map(PathBuf::from)
         .unwrap_or_else(|| {
-            dirs::home_dir()
-                .unwrap_or_else(|| PathBuf::from("."))
-                .join(".grok")
+            // Use canonical user data dir (~/.grok-cli/logs/chat_sessions)
+            crate::config::grok_data_dir()
                 .join("logs")
                 .join("chat_sessions")
         });

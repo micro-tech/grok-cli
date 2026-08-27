@@ -115,9 +115,12 @@ impl ShellPermissions {
 
     /// Get the path to the persistent policy file
     fn get_policy_path() -> Result<PathBuf> {
-        let home_dir =
+        // We only care whether a home dir can be determined (for error propagation);
+        // the actual path comes from the canonical grok_data_dir helper.
+        let _home_dir =
             dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-        Ok(home_dir.join(".grok").join("shell_policy.json"))
+        // Canonical user data location under ~/.grok-cli
+        Ok(crate::config::grok_data_dir().join("shell_policy.json"))
     }
 
     /// Load policy from disk

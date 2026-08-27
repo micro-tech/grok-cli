@@ -125,13 +125,12 @@ impl AuditLogger {
 
     /// Get the audit log directory path
     ///
-    /// Returns ~/.grok/audit on Unix-like systems
-    /// Returns %LOCALAPPDATA%\.grok\audit on Windows
+    /// Uses the canonical user data directory: ~/.grok-cli/audit
+    /// (or equivalent on Windows/macOS via grok_data_dir()).
     fn get_audit_log_dir() -> Result<PathBuf> {
-        let base_dir = dirs::data_local_dir()
-            .ok_or_else(|| anyhow!("Could not determine local data directory"))?;
-
-        Ok(base_dir.join(".grok").join("audit"))
+        // Use grok_data_dir() so audit logs live alongside other user data
+        // (sessions, memory, logs, etc.) under ~/.grok-cli instead of legacy ~/.grok.
+        Ok(crate::config::grok_data_dir().join("audit"))
     }
 
     /// Log an external file access attempt

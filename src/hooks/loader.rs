@@ -172,9 +172,8 @@ impl ExtensionLoader {
 
     /// Get the default extension directory
     fn get_default_extension_dir(&self) -> Result<PathBuf> {
-        let home_dir =
-            dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-        Ok(home_dir.join(".grok").join("extensions"))
+        // Canonical user data directory: ~/.grok-cli/extensions
+        Ok(crate::config::grok_data_dir().join("extensions"))
     }
 
     /// Load and register all enabled extensions
