@@ -90,7 +90,7 @@ pub async fn mcp_call(
                 Ok(_) => break,
 
                 Err(e) if attempt < 2 => {
-                    let delay = crate::utils::network::calculate_retry_delay(attempt);
+                    let delay = crate::utils::network::RetryPolicy::default_starlink().delay_for_attempt(attempt);
                     tracing::warn!(
                         tool     = "mcp_call",
                         error    = %e,

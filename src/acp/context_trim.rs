@@ -4,11 +4,10 @@
 //! These functions handle per-message truncation, count-based trimming,
 //! token-budget trimming, and smart compression (summarise + archive).
 
-use crate::constants::{
-    get_context_budget, get_context_window, get_default_max_output_tokens,
-    GROK4_CONTEXT_BUDGET, GROK4_CONTEXT_WINDOW, LEGACY_CONTEXT_BUDGET, LEGACY_CONTEXT_WINDOW,
-    MAX_TOOL_RESULT_CHARS,
-};
+use crate::constants::{get_default_max_output_tokens, GROK4_CONTEXT_WINDOW, LEGACY_CONTEXT_WINDOW};
+
+#[cfg(test)]
+use crate::constants::{GROK4_CONTEXT_BUDGET, LEGACY_CONTEXT_BUDGET};
 use crate::memory::context_archive::ContextChunk;
 use serde_json::{json, Value};
 

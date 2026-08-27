@@ -76,7 +76,7 @@ pub fn http_client_builder() -> reqwest::ClientBuilder {
 /// Convenience helper: perform a GET and return the response text,
 /// using the shared client + basic Starlink retry (delegates to network module).
 pub async fn get_text_with_retry(url: &str, max_retries: u32) -> anyhow::Result<String> {
-    use crate::utils::network::{calculate_retry_delay, detect_network_drop};
+    use crate::utils::network::{detect_network_drop, RetryPolicy};
 
     for attempt in 0..=max_retries {
         match get_http_client().get(url).send().await {
@@ -88,7 +88,7 @@ pub async fn get_text_with_retry(url: &str, max_retries: u32) -> anyhow::Result<
                 }
             }
             Err(e) if attempt < max_retries && detect_network_drop(&anyhow::anyhow!("{}", e)) => {
-                let delay = calculate_retry_delay(attempt);
+                let delay = RetryPolicy::default_starlink().delay_for_attempt(attempt);
                 tracing::warn!(attempt = attempt + 1, url = %url, "network drop, retrying in {:?}", delay);
                 tokio::time::sleep(delay).await;
             }

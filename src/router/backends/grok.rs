@@ -7,7 +7,6 @@
 //! immediately so we don't burn quota on bad keys.
 
 use async_trait::async_trait;
-use std::time::Duration;
 use tracing::{debug, warn};
 
 use grok_api::MessageContent;
