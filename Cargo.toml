@@ -44,7 +44,9 @@ reqwest = { version = "0.13.4", features = [
     "json",
     "native-tls-vendored",
     "http2",
+    "stream",
 ], default-features = false }
+futures-util = "0.3"
 # Async runtime
 tokio = { version = "1.53.1", features = ["full"] }
 # JSON handling

@@ -9,11 +9,11 @@
 //! the `self-updater` skill and the `grok update` command.
 
 use anyhow::{Context, Result, anyhow};
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::env;
 
-use crate::utils::version::{GitHubRelease, ReleaseAsset, current_platform_asset_pattern};
+use crate::utils::version::{GitHubRelease, ReleaseAsset};
 
 /// Returns the path to the currently running executable.
 pub fn current_exe_path() -> Result<PathBuf> {
@@ -25,9 +25,9 @@ pub fn is_running_from_source() -> bool {
     // Heuristic: if the exe is inside target/debug or target/release, or we see "cargo"
     let exe = current_exe_path().unwrap_or_default();
     let path_str = exe.to_string_lossy().to_lowercase();
-    path_str.contains("target/debug") ||
-    path_str.contains("target/release") ||
-    env::var("CARGO").is_ok()
+    path_str.contains("target/debug")
+        || path_str.contains("target/release")
+        || env::var("CARGO").is_ok()
 }
 
 /// Download a release asset to a temporary file and return the path.
@@ -45,7 +45,10 @@ pub async fn download_asset(asset: &ReleaseAsset) -> Result<PathBuf> {
         .context("Failed to start download")?;
 
     if !response.status().is_success() {
-        return Err(anyhow!("Download failed with status: {}", response.status()));
+        return Err(anyhow!(
+            "Download failed with status: {}",
+            response.status()
+        ));
     }
 
     let total_size = asset.size;
@@ -71,7 +74,10 @@ pub async fn download_asset(asset: &ReleaseAsset) -> Result<PathBuf> {
         // Simple progress hint (can be improved with indicatif later)
         if total_size > 0 && downloaded % (1024 * 512) == 0 {
             let pct = (downloaded as f64 / total_size as f64 * 100.0) as u32;
-            eprintln!("  Download progress: {}% ({}/{} bytes)", pct, downloaded, total_size);
+            eprintln!(
+                "  Download progress: {}% ({}/{} bytes)",
+                pct, downloaded, total_size
+            );
         }
     }
 
@@ -82,7 +88,11 @@ pub async fn download_asset(asset: &ReleaseAsset) -> Result<PathBuf> {
     let metadata = fs::metadata(&temp_path)?;
     if metadata.len() != asset.size && asset.size > 0 {
         // Some releases don't report accurate size; only warn
-        tracing::warn!("Downloaded size {} differs from declared {}", metadata.len(), asset.size);
+        tracing::warn!(
+            "Downloaded size {} differs from declared {}",
+            metadata.len(),
+            asset.size
+        );
     }
 
     Ok(temp_path)
@@ -139,12 +149,13 @@ pub fn replace_binary(downloaded_path: &Path, target_path: &Path) -> Result<()> 
     }
 
     // Move the new binary into place
-    fs::rename(downloaded_path, target_path)
-        .with_context(|| format!(
+    fs::rename(downloaded_path, target_path).with_context(|| {
+        format!(
             "Failed to replace binary at {}. The new binary is at: {}",
             target_path.display(),
             downloaded_path.display()
-        ))?;
+        )
+    })?;
 
     // On Unix we can try to remove the backup
     #[cfg(unix)]
@@ -159,7 +170,7 @@ pub fn replace_binary(downloaded_path: &Path, target_path: &Path) -> Result<()> 
 /// Returns the path that was written.
 pub async fn perform_self_update(
     asset: &ReleaseAsset,
-    target_path: Option<PathBuf>,   // None = use current_exe
+    target_path: Option<PathBuf>, // None = use current_exe
 ) -> Result<PathBuf> {
     let target = match target_path {
         Some(p) => p,
@@ -189,9 +200,14 @@ pub async fn perform_self_update(
 
 /// Convenience: given a full GitHubRelease, pick the best asset and update.
 pub async fn update_to_release(release: &GitHubRelease) -> Result<PathBuf> {
-    let asset = crate::utils::version::find_best_asset_for_current_platform(release)
-        .ok_or_else(|| anyhow!("No suitable binary found for your platform ({}-{}) in this release.",
-            std::env::consts::OS, std::env::consts::ARCH))?;
+    let asset =
+        crate::utils::version::find_best_asset_for_current_platform(release).ok_or_else(|| {
+            anyhow!(
+                "No suitable binary found for your platform ({}-{}) in this release.",
+                std::env::consts::OS,
+                std::env::consts::ARCH
+            )
+        })?;
 
     println!("Selected asset: {} ({} bytes)", asset.name, asset.size);
 

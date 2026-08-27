@@ -8,7 +8,7 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use crate::utils::version::{check_for_update, current_version};
+use crate::utils::version::check_for_update;
 use crate::config::Config;
 
 /// Handle the `grok update` subcommand.

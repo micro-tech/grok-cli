@@ -9,15 +9,17 @@ pub mod chat_logger;
 pub mod client;
 pub mod context;
 pub mod history_compressor;
-pub mod http;   // Centralized reqwest client (Task 281)
+pub mod http; // Centralized reqwest client (Task 281)
 pub mod messages;
 pub mod network;
 pub mod perf;
 pub mod rate_limiter;
+pub mod self_update;
 pub mod session;
 pub mod shell_permissions;
 pub mod telemetry;
 pub mod tool_logger;
+pub mod version;
 
 // Re-export commonly used utilities
 
