@@ -44,7 +44,7 @@ impl SecurityPolicy {
             trusted_directories: vec![canonical_cwd],
             working_directory,
             external_access_config: ExternalAccessConfig::default(),
-            shell_timeout_secs: 300,
+            shell_timeout_secs: crate::constants::DEFAULT_SHELL_TIMEOUT_SECS,
         }
     }
 
@@ -64,7 +64,7 @@ impl SecurityPolicy {
             trusted_directories: vec![canonical],
             working_directory,
             external_access_config: ExternalAccessConfig::default(),
-            shell_timeout_secs: 300,
+            shell_timeout_secs: crate::constants::DEFAULT_SHELL_TIMEOUT_SECS,
         }
     }
 

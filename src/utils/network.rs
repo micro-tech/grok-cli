@@ -300,8 +300,11 @@ impl RetryPolicy {
             1u64 << (attempt.min(3))
         };
 
-        let base = self.base_delay.as_secs().saturating_mul(exp_factor);
-        let capped = base.min(self.max_delay.as_secs());
+        // Use as_millis to preserve sub-second precision for test policies
+        let base_ms = self.base_delay.as_millis() as u64;
+        let base = base_ms.saturating_mul(exp_factor);
+        let max_ms = self.max_delay.as_millis() as u64;
+        let capped = base.min(max_ms);
 
         let jitter = if self.jitter_ms > 0 {
             rand::random::<u64>() % (self.jitter_ms + 1)
@@ -309,7 +312,7 @@ impl RetryPolicy {
             0
         };
 
-        Duration::from_millis(capped * 1000 + jitter)
+        Duration::from_millis(capped + jitter)
     }
 
     /// Convenience: sleep using this policy's delay for the given attempt.

@@ -7,7 +7,7 @@
       "priority": "high",
       "status": "done",
       "dependencies": [],
-      "details": "Refactor complete (Task 280). \n\n- 280.1: context_trim.rs fully extracted and in use.\n- 280.2/280.3: Tool loop orchestration + message ownership moved to ChatTurn (chat_turn.rs) with new `ChatTurn::run()` method. handle_chat_completion is now a thin Phase-1 setup + delegation.\n- 280.4: emit_context_and_status + thinking/status emission extracted.\n- 280.5: Permission gate + cancellation checks isolated in process_tool_calls.\n\nDeprecated duplicate helpers (estimate_tokens, trim_to_token_budget, model_context_budget, truncate_tool_results, build_archive_notice, old ModelContextInfo table) removed from mod.rs.\n\nhandle_chat_completion is now ~80 lines of setup + one `turn.run(...)` call.\n\nFull cargo test recommended. Subtasks marked done.",
+      "details": "Refactor complete. handle_chat_completion is now a thin coordinator (~80 lines). All logic extracted to context_trim.rs, chat_turn.rs, status_bar.rs etc. Subtasks 280.1-280.5 done.",
       "testStrategy": "After refactor, run full cargo test. Add targeted unit tests for extracted modules. Manual smoke test via 'grok acp stdio' + Zed if available.",
       "subtasks": [
         {
@@ -79,7 +79,7 @@
       "priority": "high",
       "status": "done",
       "dependencies": [],
-      "details": "All subtasks complete. Shared client centralized + retry logic unified in 287 (which covered 281.3).",
+      "details": "Complete. src/utils/http.rs provides LazyLock shared client + http_client_builder(). All major call sites (setup, web tools, etc.) migrated. Retry unified in 287.",
       "testStrategy": "All network tests must pass. Add a test that verifies only one client instance is created for the main paths.",
       "subtasks": [
         {
@@ -111,11 +111,11 @@
           "title": "Unify Starlink / retry logic around the shared client",
           "description": "Move retry_with_backoff usage and network drop detection into the HTTP layer where possible.",
           "priority": "medium",
-          "status": "pending",
+          "status": "done",
           "dependencies": [
             281.2
           ],
-          "details": "Ensure grok_client_ext, ACP handler, and web tools all benefit from the same policy.",
+          "details": "Completed as part of the broader retry unification in Task 287. RetryPolicy + detect_network_drop now centralize Starlink/transient handling. All major call sites (Grok backend, chat_turn, web tools, discovery, agent tools, http layer) now go through the unified policy. The shared HTTP client (from 281.1/281.2) benefits from this. No separate retry_with_backoff wrapper was needed; the policy is used directly.",
           "testStrategy": "Test retry behavior with mockito."
         }
       ]
@@ -271,7 +271,7 @@
       "priority": "medium",
       "status": "done",
       "dependencies": [],
-      "details": "All subtasks 285.1, 285.2, 285.3 completed. Load/save logic, .gitignore, docs, and installer updated to prefer .grok/session_dna.json (VCS-safe). Bare root ignored and now explicitly gitignored. .grok/session_dna.json exists. Cargo exclude remains safe. Task closed.",
+      "details": "Complete. Code now loads from .grok/session_dna.json (project) with system fallback. Root file can be ignored. Installer/docs updated.",
       "testStrategy": "After move, 'grok' and ACP startup must still load DNA correctly. Add a test that verifies location.",
       "subtasks": [
         {
@@ -345,7 +345,7 @@
       "dependencies": [
         281
       ],
-      "details": "Completed: Introduced central RetryPolicy in utils/network.rs (from_config, default_starlink, for_tests, should_retry, delay_for_attempt). Extended NetworkConfig with max_retries + jitter. Migrated GrokBackend + ACP chat_turn. detect_network_drop is now canonical. Duplicated retry loops / constants / pattern lists consolidated. calculate_retry_delay is now a thin deprecated wrapper. All major network error paths (router, acp, tools, http) use the unified policy. Subtasks 287.1 and 287.2 also completed as part of this.",
+      "details": "Complete. Central RetryPolicy + detect_network_drop in utils/network.rs. All paths (router, acp, web, setup) use it. Deprecated old calculate_retry_delay.",
       "testStrategy": "All network error paths should go through the same retry policy.",
       "subtasks": [
         {
@@ -415,12 +415,12 @@
       "title": "Performance & Locking Improvements",
       "description": "Address remaining performance concerns raised in the review.",
       "priority": "low",
-      "status": "pending",
+      "status": "done",
       "dependencies": [
         280,
         281
       ],
-      "details": "",
+      "details": "Complete. 289.1: AuditLogger now uses periodic flush (every 20 writes) + writes_since_flush. 289.2: ACP sessions use brief write locks only (mem::take for history, lock-free tool loop in ChatTurn).",
       "testStrategy": "Run benches/ if available + manual profiling of hot paths.",
       "subtasks": [
         {

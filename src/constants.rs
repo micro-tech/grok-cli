@@ -54,6 +54,16 @@ pub const MAX_TOOL_RESULT_CHARS: usize = 30_000;
 pub const MAX_HISTORY_MESSAGES: usize = 40;
 
 /// ---------------------------------------------------------------------------
+/// Tool output truncation defaults (used by config + file tools)
+/// ---------------------------------------------------------------------------
+
+/// Default character threshold before truncating tool output in the UI / logs.
+pub const DEFAULT_TRUNCATE_TOOL_OUTPUT_THRESHOLD: u32 = 10_000;
+
+/// Default number of lines to keep when truncating tool output.
+pub const DEFAULT_TRUNCATE_TOOL_OUTPUT_LINES: u32 = 100;
+
+/// ---------------------------------------------------------------------------
 /// Timeouts (in seconds)
 /// ---------------------------------------------------------------------------
 

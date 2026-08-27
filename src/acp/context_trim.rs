@@ -129,8 +129,12 @@ pub fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
         if let Some(content) = msg.get_mut("content") {
             if let Some(s) = content.as_str() {
                 if s.len() > max_chars {
-                    let mut end = max_chars;
-                    // Try to respect UTF-8 boundaries
+                    // Reserve room for the truncation suffix ("… [truncated NNNNN chars]" is ~25 bytes)
+                    // so the final string length stays reasonable relative to max_chars.
+                    let suffix_overhead = 30;
+                    let target = max_chars.saturating_sub(suffix_overhead);
+
+                    let mut end = target.min(s.len());
                     while end > 0 && !s.is_char_boundary(end) {
                         end -= 1;
                     }
@@ -141,7 +145,10 @@ pub fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
                 for item in arr.iter_mut() {
                     if let Some(text) = item.get_mut("text").and_then(|t| t.as_str())
                         && text.len() > max_chars {
-                            let mut end = max_chars;
+                            let suffix_overhead = 30;
+                            let target = max_chars.saturating_sub(suffix_overhead);
+
+                            let mut end = target.min(text.len());
                             while end > 0 && !text.is_char_boundary(end) {
                                 end -= 1;
                             }

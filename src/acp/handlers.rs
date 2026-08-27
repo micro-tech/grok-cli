@@ -111,7 +111,7 @@ pub async fn handle_model_config_options(_agent: &GrokAcpAgent) -> Result<Value>
                 "id": "max_tokens",
                 "name": "Max Output Tokens",
                 "type": "integer",
-                "default": 16384,
+                "default": crate::constants::DEFAULT_MAX_OUTPUT_TOKENS_GROK4,
                 "min": 256,
                 "max": 131072,
                 "description": "Maximum number of tokens the model may generate in one response."

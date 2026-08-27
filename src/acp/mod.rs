@@ -1215,7 +1215,7 @@ impl GrokAcpAgent {
     /// to that tool within the same session skip the permission prompt.
     ///
     /// Silently no-ops if the session no longer exists.
-    #[allow(dead_code)]
+    #[allow(dead_code, reason = "kept for symmetry with is_always_allowed and potential future ACP use")]
     pub(crate) async fn set_always_allowed(&self, session_id: &SessionId, tool_name: &str) {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(&session_id.0) {
