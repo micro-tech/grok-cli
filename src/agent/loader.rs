@@ -97,12 +97,13 @@ pub fn list_available_agents() -> Vec<(String, PathBuf)> {
             for entry in entries.flatten() {
                 let path = entry.path();
                 if path.extension().map(|e| e == "toml").unwrap_or(false)
-                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str()) {
-                        // Don't duplicate if already found in a higher-priority dir
-                        if !found.iter().any(|(n, _)| n == stem) {
-                            found.push((stem.to_string(), path));
-                        }
+                    && let Some(stem) = path.file_stem().and_then(|s| s.to_str())
+                {
+                    // Don't duplicate if already found in a higher-priority dir
+                    if !found.iter().any(|(n, _)| n == stem) {
+                        found.push((stem.to_string(), path));
                     }
+                }
             }
         }
     }

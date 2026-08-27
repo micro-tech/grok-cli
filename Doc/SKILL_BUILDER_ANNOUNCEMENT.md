@@ -250,8 +250,8 @@ Created an amazing skill? Share it with the community!
 
 ### Get Help
 - 📖 Documentation: See links above
-- 💬 Discussions: https://github.com/microtech/grok-cli/discussions
-- 🐛 Issues: https://github.com/microtech/grok-cli/issues
+- 💬 Discussions: https://github.com/micro-tech/grok-cli/discussions
+- 🐛 Issues: https://github.com/micro-tech/grok-cli/issues
 
 ---
 

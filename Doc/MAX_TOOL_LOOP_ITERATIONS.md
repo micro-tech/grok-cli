@@ -321,7 +321,7 @@ A: The AI will continue to improve, but complex tasks will always require many s
 
 Found an issue or have suggestions? Please:
 
-1. Check existing issues: https://github.com/microtech/grok-cli/issues
+1. Check existing issues: https://github.com/micro-tech/grok-cli/issues
 2. Create a new issue with details about your use case
 3. Include the number of iterations your task required
 
@@ -341,6 +341,6 @@ This fix was implemented based on:
 
 **Questions or Issues?**
 
-- GitHub: https://github.com/microtech/grok-cli/issues
+- GitHub: https://github.com/micro-tech/grok-cli/issues
 - Documentation: [README.md](../../README.md)
 - Support the project: https://buymeacoffee.com/micro.tech

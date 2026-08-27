@@ -60,11 +60,18 @@ pub struct AuditLogger {
     cache: Mutex<Vec<ExternalAccessLog>>,
     /// Flag indicating the cache may be stale (needs reload from disk).
     cache_dirty: Mutex<bool>,
+    /// Number of writes since last flush. Used for periodic flushing.
+    writes_since_flush: Mutex<usize>,
 }
 
 /// Maximum number of entries to keep in the in-memory stats cache.
 /// Prevents unbounded memory growth for very long sessions.
 const MAX_CACHE_ENTRIES: usize = 10_000;
+
+/// Flush the audit log buffer to disk every N writes instead of on every write.
+/// This reduces I/O pressure while still providing reasonable durability for
+/// security audit events (trade-off between latency and persistence).
+const FLUSH_EVERY_N_WRITES: usize = 20;
 
 impl AuditLogger {
     /// Create a new audit logger using the standard audit directory.
@@ -94,6 +101,7 @@ impl AuditLogger {
             writer: Mutex::new(None),
             cache: Mutex::new(Vec::new()),
             cache_dirty: Mutex::new(true),
+            writes_since_flush: Mutex::new(0),
         })
     }
 
@@ -111,18 +119,18 @@ impl AuditLogger {
             writer: Mutex::new(None),
             cache: Mutex::new(Vec::new()),
             cache_dirty: Mutex::new(true),
+            writes_since_flush: Mutex::new(0),
         }
     }
 
     /// Get the audit log directory path
     ///
-    /// Returns ~/.grok/audit on Unix-like systems
-    /// Returns %LOCALAPPDATA%\.grok\audit on Windows
+    /// Uses the canonical user data directory: ~/.grok-cli/audit
+    /// (or equivalent on Windows/macOS via grok_data_dir()).
     fn get_audit_log_dir() -> Result<PathBuf> {
-        let base_dir = dirs::data_local_dir()
-            .ok_or_else(|| anyhow!("Could not determine local data directory"))?;
-
-        Ok(base_dir.join(".grok").join("audit"))
+        // Use grok_data_dir() so audit logs live alongside other user data
+        // (sessions, memory, logs, etc.) under ~/.grok-cli instead of legacy ~/.grok.
+        Ok(crate::config::grok_data_dir().join("audit"))
     }
 
     /// Log an external file access attempt
@@ -160,11 +168,12 @@ impl AuditLogger {
         // Lazy directory creation: only create when we are actually going to write.
         // This ensures new(false) and test constructions have zero FS side-effects.
         if let Some(parent) = self.log_file_path.parent()
-            && !parent.exists() {
-                fs::create_dir_all(parent)
-                    .map_err(|e| anyhow!("Failed to create audit log directory: {}", e))?;
-                info!("Created audit log directory: {:?}", parent);
-            }
+            && !parent.exists()
+        {
+            fs::create_dir_all(parent)
+                .map_err(|e| anyhow!("Failed to create audit log directory: {}", e))?;
+            info!("Created audit log directory: {:?}", parent);
+        }
 
         // Serialize to JSON
         let json = serde_json::to_string(&log)
@@ -185,11 +194,20 @@ impl AuditLogger {
             if let Some(writer) = writer_guard.as_mut() {
                 writeln!(writer, "{}", json)
                     .map_err(|e| anyhow!("Failed to write to audit log: {}", e))?;
-                // Flush on every write for audit durability (cheap with BufWriter)
-                // The main win is avoiding repeated open/close per entry.
-                writer
-                    .flush()
-                    .map_err(|e| anyhow!("Failed to flush audit log: {}", e))?;
+
+                // Periodic flush for better performance.
+                // We flush every FLUSH_EVERY_N_WRITES writes instead of every single write.
+                // This significantly reduces fsync / syscall pressure for high-volume audit logging
+                // while still providing good durability (worst case ~20 lost entries on crash).
+                let mut writes = self.writes_since_flush.lock().unwrap();
+                *writes += 1;
+
+                if *writes >= FLUSH_EVERY_N_WRITES {
+                    writer
+                        .flush()
+                        .map_err(|e| anyhow!("Failed to flush audit log: {}", e))?;
+                    *writes = 0;
+                }
             }
         }
 
@@ -391,10 +409,14 @@ impl AuditLogger {
             cache.clear();
             *self.cache_dirty.lock().unwrap() = true;
         }
-        // Also drop any open writer handle
+        // Also drop any open writer handle and reset flush counter
         {
             let mut writer = self.writer.lock().unwrap();
             *writer = None;
+        }
+        {
+            let mut writes = self.writes_since_flush.lock().unwrap();
+            *writes = 0;
         }
         Ok(())
     }
@@ -413,10 +435,16 @@ impl AuditLogger {
 impl Drop for AuditLogger {
     fn drop(&mut self) {
         // Best-effort flush of any buffered data on drop.
+        // This ensures we don't lose the last batch of audit entries.
         if let Ok(mut guard) = self.writer.lock()
-            && let Some(writer) = guard.as_mut() {
-                let _ = writer.flush();
-            }
+            && let Some(writer) = guard.as_mut()
+        {
+            let _ = writer.flush();
+        }
+        // Reset counter (not strictly needed but keeps state clean)
+        if let Ok(mut writes) = self.writes_since_flush.lock() {
+            *writes = 0;
+        }
     }
 }
 

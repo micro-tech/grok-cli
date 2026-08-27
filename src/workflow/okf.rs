@@ -14,7 +14,6 @@
 use crate::config::OkfConfig;
 use crate::workflow::WorkflowTrace;
 use anyhow::Result;
-use reqwest::Client;
 use std::sync::LazyLock;
 use std::sync::Mutex;
 use std::time::Duration;
@@ -93,7 +92,7 @@ async fn send_trace_once(trace: &WorkflowTrace, cfg: &OkfConfig) -> bool {
     let host = cfg.server.trim_end_matches('/');
     let url = format!("{}://{}:{}{}", scheme, host, cfg.port, cfg.endpoint);
 
-    let client = match Client::builder()
+    let client = match crate::utils::http::http_client_builder()
         .timeout(Duration::from_secs(cfg.timeout_secs.max(1)))
         .build()
     {
@@ -107,9 +106,10 @@ async fn send_trace_once(trace: &WorkflowTrace, cfg: &OkfConfig) -> bool {
     let mut request = client.post(&url).json(trace);
 
     if let Some(key) = &cfg.api_key
-        && !key.trim().is_empty() {
-            request = request.bearer_auth(key.trim());
-        }
+        && !key.trim().is_empty()
+    {
+        request = request.bearer_auth(key.trim());
+    }
 
     match request.send().await {
         Ok(resp) => {

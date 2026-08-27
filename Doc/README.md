@@ -20,6 +20,8 @@ The root [`README.md`](../README.md) and [`CHANGELOG.md`](../CHANGELOG.md) are k
 | [TASK_GRAPH_DATA_FLOW.md](TASK_GRAPH_DATA_FLOW.md) | Task graph engine details             |
 | [EXTERNAL_ACCESS_QUICK_START.md](EXTERNAL_ACCESS_QUICK_START.md) | External file access guide     |
 | [SKILLS_QUICK_START.md](SKILLS_QUICK_START.md) | Skills system quick start               |
+| [SKILLS_CATALOG.md](SKILLS_CATALOG.md)         | Self-updating skills catalog (Task 273) |
+| Self-updater skill (`skills/self-updater/SKILL.md`) | Built-in self-update system (Task 296) — `grok update` + safe binary replacement |
 | [CONFIG_QUICK_START.md](CONFIG_QUICK_START.md) | Configuration quick start               |
 | [acp-migration-map.md](acp-migration-map.md) | ACP migration status & plan             |
 | [CHANGELOG_FULL.md](CHANGELOG_FULL.md)   | Complete detailed changelog history             |
@@ -36,9 +38,12 @@ When updating documentation:
 - Put detailed explanations, examples, and long-form content here in `Doc/`.
 - Use relative links (`[File](OtherFile.md)`) when linking between docs.
 
-Last updated: 2026-08 (Skill Builder catalog auto-refresh + slash command handling clarifications)
+Last updated: 2026-08 (Self-Updating Skills Catalog + Skill Builder improvements)
 
-### Recent Changes (last week)
-- **Skill Builder now auto-refreshes the catalog**: After creating a skill, `skill-builder` automatically runs `grok skills generate-catalog`. New skills immediately appear in `.grok/SKILLS_HOOKS_OPTIMIZATION.md` and are visible to the model.
-- **Slash command behavior documented**: Most commands (`/think`, `/clear`, `/help`, `/okf`, etc.) are handled locally as builtins and are **never forwarded to the LLM**. Only a few AI-assisted commands (`/plan`, `/review`, `/web`, `/commit`) are rewritten and sent.
-- **Tool error log clarification**: `grok-tool-error-log.log` contains both `TOOL-OK` (success) and `TOOL-ERROR` entries. Most entries are normal successes.
+### Recent Changes
+- **Self-Updating Skills Catalog (Task 273)**: New dedicated system that maintains `.grok/SKILLS_HOOKS_OPTIMIZATION.md`. The model receives a ranked SKILLS CATALOG, HOOKS documentation, and OPTIMIZATION HEURISTICS on **every turn**. See [SKILLS_CATALOG.md](SKILLS_CATALOG.md).
+- **Skill Builder now auto-refreshes the catalog**: After creating a skill, `skill-builder` automatically runs `grok skills generate-catalog`. New skills immediately appear in the live catalog.
+- **New command**: `grok skills generate-catalog` for manual refreshes.
+- **Self-Updater System (Task 296)**: `grok update [--check] [--force]` + dedicated `self-updater` skill. Safe GitHub release downloads + platform-aware binary replacement. See `skills/self-updater/SKILL.md` and `grok update --help`.
+- **Slash command behavior documented**: Most commands (`/think`, `/clear`, `/help`, `/okf`, etc.) are handled locally as builtins and are **never forwarded to the LLM**.
+- **Tool error log clarification**: `grok-tool-error-log.log` contains both `TOOL-OK` (success) and `TOOL-ERROR` entries.

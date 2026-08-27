@@ -351,12 +351,13 @@ impl Config {
     /// Load configuration with hierarchical priority: project → system → defaults.
     ///
     /// Priority order:
-    /// 1. Project-local: `.grok/config.toml` and `.grok/.env`
-    /// 2. System-level config
+    /// 1. Project-local: `.grok/config.toml` and `.grok/.env`  (only inside real projects, never ~/)
+    /// 2. System-level config (~/.grok-cli/config.toml or platform equivalent)
     /// 3. Built-in defaults
     /// 4. Environment variables (highest priority)
     ///
-    /// Settings from higher priority sources override lower priority sources.
+    /// Legacy `~/.grok` is **never** treated as project or system config.
+    /// All global user data lives under `~/.grok-cli`.
     pub async fn load_hierarchical() -> Result<Self> {
         debug!("Loading configuration with hierarchical priority");
 
@@ -451,6 +452,16 @@ impl Config {
         let system_path = loaded_system_config.or(loaded_system_env);
         let project_path = loaded_project_config.or(loaded_project_env);
 
+        // Extra safety: aggressively reject anything under the legacy ~/.grok as "project".
+        // Global data must live in ~/.grok-cli.
+        let project_path = project_path.filter(|p| {
+            if Self::is_legacy_home_grok(p) {
+                debug!("Downgrading legacy ~/.grok path to non-project (use ~/.grok-cli): {:?}", p);
+                return false;
+            }
+            true
+        });
+
         config.config_source = Some(if project_path.is_some() || system_path.is_some() {
             ConfigSource::Hierarchical {
                 project: project_path,
@@ -478,47 +489,55 @@ impl Config {
         Ok(config)
     }
 
-    /// Find project-local config by walking up directory tree
+    /// Find project-local config by walking up directory tree.
+    ///
+    /// CRITICAL: We must **never** treat `~/.grok/` (or anything under it) as a
+    /// project configuration. `~/.grok` is the legacy global location.
+    /// All global data now lives under `~/.grok-cli` (via `grok_config_dir()` / `grok_data_dir()`).
+    ///
+    /// Real project configs are only accepted when the `.grok/` directory is
+    /// inside an actual project (git repo, etc.) that is **not** the user's home.
     fn find_project_config() -> Result<PathBuf> {
         let mut current_dir = std_env::current_dir()?;
+        let home_dir = dirs::home_dir();
 
         loop {
-            let config_path = current_dir.join(".grok").join("config.toml");
+            let grok_dir = current_dir.join(".grok");
+            let config_path = grok_dir.join("config.toml");
+
             if config_path.exists() {
-                return Ok(config_path);
+                let is_home = Self::is_user_home_directory(&current_dir, &home_dir);
+                let is_legacy = is_home || Self::is_legacy_home_grok(&config_path);
+
+                if is_legacy {
+                    debug!(
+                        "Ignoring legacy ~/.grok config (global data belongs in ~/.grok-cli): {:?}",
+                        config_path
+                    );
+                    // Continue walking up — do NOT treat home .grok as project
+                } else {
+                    return Ok(config_path);
+                }
             }
 
-            // Also check for project root markers (.git, Cargo.toml, etc.)
-            let has_project_marker = current_dir.join(".git").exists()
-                || current_dir.join("Cargo.toml").exists()
-                || current_dir.join("package.json").exists()
-                || current_dir.join(".grok").exists();
+            // Only accept real project markers if we are NOT in/at the home directory.
+            let is_home = Self::is_user_home_directory(&current_dir, &home_dir);
+            let has_real_project_marker = !is_home
+                && (current_dir.join(".git").exists()
+                    || current_dir.join("Cargo.toml").exists()
+                    || current_dir.join("package.json").exists());
 
-            // If we found a project root but no config, stop searching
-            if has_project_marker && !current_dir.join(".grok").join("config.toml").exists() {
+            // If we're at a genuine project root but it has no .grok/config, stop.
+            if has_real_project_marker && !grok_dir.join("config.toml").exists() {
                 return Err(anyhow!("No project config found"));
             }
 
-            // Move to parent directory
             if let Some(parent) = current_dir.parent() {
                 current_dir = parent.to_path_buf();
             } else {
-                // Reached filesystem root
                 return Err(anyhow!("No project config found"));
             }
         }
-    }
-
-    /// Get system-level config path (legacy TOML).
-    /// Currently unused in favor of `default_config_path()`.
-    #[expect(
-        dead_code,
-        reason = "superseded by default_config_path(); retained for potential future use"
-    )]
-    fn get_system_config_path() -> Result<PathBuf> {
-        let home_dir =
-            dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-        Ok(home_dir.join(".grok").join("config.toml"))
     }
 
     /// Get system-level .env path
@@ -526,32 +545,86 @@ impl Config {
         Ok(grok_config_dir().join(".env"))
     }
 
-    /// Find project-local .env file by walking up directory tree
+    /// Returns true if the given directory is the user's home directory.
+    /// Used to prevent treating ~/.grok/ as a project config location.
+    fn is_user_home_directory(dir: &std::path::Path, home: &Option<PathBuf>) -> bool {
+        if let Some(home) = home {
+            // Normalize both paths for comparison (important on Windows)
+            // Fall back to non-canonicalized comparison if canonicalize fails
+            // (e.g. path doesn't exist yet or permission issues).
+            let dir_norm = dir.canonicalize().unwrap_or_else(|_| dir.to_path_buf());
+            let home_norm = home.canonicalize().unwrap_or_else(|_| home.clone());
+
+            if dir_norm == home_norm {
+                return true;
+            }
+
+            // Extra safety on Windows: compare as strings case-insensitively
+            // if canonicalize didn't resolve them.
+            #[cfg(windows)]
+            {
+                let d = dir_norm.to_string_lossy().to_lowercase();
+                let h = home_norm.to_string_lossy().to_lowercase();
+                if d == h {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+
+    /// Returns true if this path lives inside the legacy `~/.grok` directory.
+    ///
+    /// This is used aggressively to stop treating old global data as "project"
+    /// configuration. All global data should live under `~/.grok-cli` now.
+    fn is_legacy_home_grok(path: &std::path::Path) -> bool {
+        if let Some(home) = dirs::home_dir() {
+            let legacy_root = home.join(".grok");
+            let p = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+            let legacy = legacy_root.canonicalize().unwrap_or(legacy_root);
+
+            p.starts_with(&legacy)
+        } else {
+            false
+        }
+    }
+
+    /// Find project-local .env file by walking up directory tree.
+    ///
+    /// Same home directory protection as `find_project_config`.
     fn find_project_env() -> Result<PathBuf> {
         let mut current_dir = std_env::current_dir()?;
+        let home_dir = dirs::home_dir();
 
         loop {
             let env_path = current_dir.join(".grok").join(".env");
             if env_path.exists() {
-                return Ok(env_path);
+                let is_home = Self::is_user_home_directory(&current_dir, &home_dir);
+                let is_legacy = is_home || Self::is_legacy_home_grok(&env_path);
+
+                if is_legacy {
+                    debug!(
+                        "Ignoring legacy ~/.grok/.env (global data belongs in ~/.grok-cli): {:?}",
+                        env_path
+                    );
+                } else {
+                    return Ok(env_path);
+                }
             }
 
-            // Also check for project root markers (.git, Cargo.toml, etc.)
-            let has_project_marker = current_dir.join(".git").exists()
-                || current_dir.join("Cargo.toml").exists()
-                || current_dir.join("package.json").exists()
-                || current_dir.join(".grok").exists();
+            let is_home = Self::is_user_home_directory(&current_dir, &home_dir);
+            let has_real_project_marker = !is_home
+                && (current_dir.join(".git").exists()
+                    || current_dir.join("Cargo.toml").exists()
+                    || current_dir.join("package.json").exists());
 
-            // If we found a project root but no .env, stop searching
-            if has_project_marker && !current_dir.join(".grok").join(".env").exists() {
+            if has_real_project_marker && !current_dir.join(".grok").join(".env").exists() {
                 return Err(anyhow!("No project .env found"));
             }
 
-            // Move to parent directory
             if let Some(parent) = current_dir.parent() {
                 current_dir = parent.to_path_buf();
             } else {
-                // Reached filesystem root
                 return Err(anyhow!("No project .env found"));
             }
         }
@@ -728,12 +801,13 @@ impl Config {
 
         // Validate ACP port range
         if let Some(port) = self.acp.default_port
-            && port < 1024 {
-                warn!(
-                    "ACP port {} is below 1024, may require elevated privileges",
-                    port
-                );
-            }
+            && port < 1024
+        {
+            warn!(
+                "ACP port {} is below 1024, may require elevated privileges",
+                port
+            );
+        }
 
         Ok(())
     }
@@ -830,5 +904,17 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(loaded_config.default_model, "test-model");
+    }
+
+    #[test]
+    fn test_is_user_home_directory() {
+        // This test is best-effort; it mainly verifies the function doesn't panic
+        // and correctly identifies obvious cases.
+        let home = dirs::home_dir();
+        if let Some(h) = &home {
+            assert!(Config::is_user_home_directory(h, &home));
+            let other = h.join("some_subdir");
+            assert!(!Config::is_user_home_directory(&other, &home));
+        }
     }
 }

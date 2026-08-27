@@ -351,9 +351,10 @@ pub fn task_get(id: f64, security: &SecurityPolicy) -> Result<String> {
             return (n - target).abs() < 0.001;
         }
         if let Some(s) = val["id"].as_str()
-            && let Ok(n) = s.parse::<f64>() {
-                return (n - target).abs() < 0.001;
-            }
+            && let Ok(n) = s.parse::<f64>()
+        {
+            return (n - target).abs() < 0.001;
+        }
         false
     }
 

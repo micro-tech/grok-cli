@@ -1,5 +1,5 @@
 use crate::config::RateLimitConfig;
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::path::PathBuf;
@@ -100,8 +100,9 @@ impl UsageStats {
 }
 
 fn get_usage_stats_path() -> Result<PathBuf> {
-    let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-    Ok(home_dir.join(".grok").join("usage_stats.json"))
+    // Use canonical data dir for usage stats (grok_data_dir already handles home dir fallback)
+    let _ = dirs::home_dir(); // retained only for potential future error handling; value unused
+    Ok(crate::config::grok_data_dir().join("usage_stats.json"))
 }
 
 #[cfg(test)]

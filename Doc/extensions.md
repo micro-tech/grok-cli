@@ -449,7 +449,7 @@ See `CONTRIBUTING.md` for more details.
 - [Example Extensions](../examples/extensions/)
 - [Hook API Reference](hooks-api.md)
 - [Configuration Guide](configuration.md)
-- [GitHub Repository](https://github.com/microtech/grok-cli)
+- [GitHub Repository](https://github.com/micro-tech/grok-cli)
 
 ## Support
 

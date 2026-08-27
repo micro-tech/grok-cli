@@ -2,7 +2,6 @@
 
 use crate::rag::graph::{GraphNode, ProjectGraph};
 use crate::rag::index::bm25::Bm25Index;
-use std::collections::HashMap;
 
 pub struct HybridRetriever {
     bm25: Bm25Index,

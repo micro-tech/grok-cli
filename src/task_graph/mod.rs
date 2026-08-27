@@ -3,7 +3,7 @@ use std::future::Future;
 use std::pin::Pin;
 
 use crate::tools::{ToolContext, execute_tool};
-use anyhow::{anyhow, Result};
+use anyhow::{Result, anyhow};
 use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -21,8 +21,7 @@ pub struct ToolCall {
 
 /// Boxed async result type used by [`TaskGraph::execute`].
 /// Now returns a map of node_id -> tool output string on success (Task 237 parallel support).
-type ExecuteFuture<'a> =
-    Pin<Box<dyn Future<Output = Result<HashMap<String, String>>> + Send + 'a>>;
+type ExecuteFuture<'a> = Pin<Box<dyn Future<Output = Result<HashMap<String, String>>> + Send + 'a>>;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct TaskGraph {
@@ -100,7 +99,9 @@ impl TaskGraph {
                     let id_clone = id.clone();
 
                     join_set.spawn(async move {
-                        let res = execute_tool(&node.action.tool_name, &node.action.arguments, &ctx).await;
+                        let res =
+                            execute_tool(&node.action.tool_name, &node.action.arguments, &ctx)
+                                .await;
                         (id_clone, res)
                     });
                 }

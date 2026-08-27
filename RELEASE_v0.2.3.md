@@ -64,7 +64,7 @@ commit_message_instructions = "Use Conventional Commits with scope and breaking-
 
 ```bash
 # From source
-git clone https://github.com/microtech/grok-cli
+git clone https://github.com/micro-tech/grok-cli
 cd grok-cli
 cargo build --release
 
@@ -80,4 +80,4 @@ Special thanks to everyone who contributed to making commit message generation f
 
 ---
 
-**Full Changelog:** https://github.com/microtech/grok-cli/blob/main/CHANGELOG.md
+**Full Changelog:** https://github.com/micro-tech/grok-cli/blob/main/CHANGELOG.md

@@ -113,10 +113,10 @@ impl Planner {
             && let Some(client) = client
             && let Ok(evidence) =
                 crate::agent::explorer::run_explorer_mode(client, user_input, model).await
-            {
-                repo_evidence = Some(serde_json::to_value(evidence)?);
-                debug!("Planner: Explorer evidence collected");
-            }
+        {
+            repo_evidence = Some(serde_json::to_value(evidence)?);
+            debug!("Planner: Explorer evidence collected");
+        }
 
         // Boot the FSM.
         // ReasoningEngineState::new() takes no args; set goal with builder.

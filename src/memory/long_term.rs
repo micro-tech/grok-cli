@@ -353,7 +353,10 @@ fn grok_dir() -> Result<PathBuf> {
         std::fs::create_dir_all(&path)?;
         return Ok(path);
     }
-    Ok(crate::config::grok_config_dir())
+    // Use the data directory ( ~/.grok-cli ) for long-term memory, not the
+    // config directory. This matches the documented layout and the context
+    // loader's global directory.
+    Ok(crate::config::grok_data_dir())
 }
 
 /// Deserialise `Vec<MemoryEntry>` from a JSON file.

@@ -85,9 +85,8 @@ pub fn list_traces() -> Result<Vec<PathBuf>> {
         .map(|entry| entry.path())
         .filter(|p| {
             p.extension().is_some_and(|ext| ext == "json")
-                && p.file_name().is_some_and(|name| {
-                    name.to_string_lossy().starts_with("workflow-")
-                })
+                && p.file_name()
+                    .is_some_and(|name| name.to_string_lossy().starts_with("workflow-"))
         })
         .collect();
 

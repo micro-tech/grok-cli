@@ -413,7 +413,7 @@ If you're still experiencing issues:
    ```
 
 4. **Report issues:**
-   - GitHub: https://github.com/microtech/grok-cli/issues
+   - GitHub: https://github.com/micro-tech/grok-cli/issues
    - Include: version, error message, steps to reproduce
 
 ---

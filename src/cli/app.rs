@@ -216,6 +216,25 @@ pub enum Commands {
         #[arg(long)]
         force: bool,
     },
+
+    /// Check for and apply updates to grok-cli itself.
+    ///
+    /// This uses the built-in `self-updater` skill and GitHub releases.
+    /// By default it performs a version check.
+    ///
+    /// Examples:
+    ///   grok update           # check for updates
+    ///   grok update --check   # same as above
+    ///   grok update --force   # ignore disable_auto_update setting
+    Update {
+        /// Only check for updates, do not suggest installation.
+        #[arg(long)]
+        check: bool,
+
+        /// Force the update check even if auto-updates are disabled in config.
+        #[arg(long)]
+        force: bool,
+    },
 }
 
 /// Main application entry point
@@ -462,6 +481,12 @@ pub async fn run() -> Result<()> {
                 show_banner_fn();
             }
             crate::cli::commands::init::handle_init(*force).await?;
+        }
+        Some(Commands::Update { check, force }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::update::handle_update_command(*check, *force, &config).await?;
         }
         None => {
             // Default to interactive mode

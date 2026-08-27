@@ -9,7 +9,56 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
-## Unreleased / Next (Recent Work)
+## [0.2.8] — 2026-08-24
+
+### Self-Updating Skills / Hooks / Optimization Catalog (Task 273)
+
+A major new system that keeps the model permanently up-to-date with all available skills, hooks behavior, and performance best practices — **without requiring session restarts**.
+
+- New `src/skills/catalog.rs` generates a single, authoritative Markdown file at `~/.grok/SKILLS_HOOKS_OPTIMIZATION.md` (or project-local).
+- The file is **injected into the system prompt on every turn** in interactive mode.
+- Clearly structured with three sections and HTML comment markers for reliable parsing:
+
+  1. **SKILLS CATALOG** — Live, ranked list of skills (by arbitration score)
+     - Name, description, version, tags, dependencies
+     - Arbitration score (higher = stronger influence)
+     - Auto-activation hints (keywords, regex patterns, file extensions, min confidence)
+     - Explicit "When to prefer / activate" guidance with exact `execute_skill "name"` and `/activate name` syntax
+
+  2. **HOOKS** — Authoritative documentation of the hooks system
+     - `before_tool` and `after_tool` semantics and common use cases
+     - Guidance telling the model to **rely on hooks** instead of re-implementing the same logic
+
+  3. **OPTIMIZATION HEURISTICS** — Concrete performance patterns the model should follow
+     - Prefer `execute_skill` over primitive tool loops
+     - Use `Arc<str>` for cheap history clones
+     - Prompt building tips (`String::with_capacity`, cached statics)
+     - `GROK_PERF=1` awareness, lock minimization, etc.
+
+- New CLI command: `grok skills generate-catalog`
+- Automatically regenerated after `grok skills new <name>`
+- The `skill-builder` meta-skill was updated with strong instructions to run `grok skills generate-catalog` (via `run_shell_command`) after every skill creation
+- Uses the modern `SkillRegistry` (manifest-aware) so arbitration scores, tags, and enabled flags are respected
+- Unit tests ensure all three sections and purpose markers are always present
+
+**Impact**:
+- Newly created skills become visible to the model **immediately** on the next turn
+- The model has accurate, ranked knowledge of every skill’s triggers and purpose
+- Hooks and performance guidance are now first-class, living context
+- Eliminates the previous "create a skill but the model doesn't know about it" problem
+
+This is the foundation that makes dynamic skill creation truly seamless and is a major step toward truly user-extensible AI behavior inside Grok CLI.
+
+**Related commands**:
+- `grok skills generate-catalog` — manually refresh the catalog
+- `grok skills new <name>` — creates a skill + auto-refreshes the catalog
+- `grok skills list` — shows available skills (now consistent with what the model sees)
+
+**Files involved**:
+- `src/skills/catalog.rs` (generator + loader)
+- `src/cli/commands/skills.rs` (CLI command + auto-regen after `new`)
+- `src/display/interactive.rs` (injection into system prompt)
+- `.grok/skills/skill-builder/SKILL.md` + examples (updated instructions)
 
 ### Skill Builder Catalog Auto-Refresh (Major Reliability Improvement)
 
@@ -341,6 +390,6 @@ See the full archive in [Doc/CHANGELOG_FULL.md](Doc/CHANGELOG_FULL.md) for detai
 
 **Links**
 
-- Repository: https://github.com/microtech/grok-cli
-- Issues: https://github.com/microtech/grok-cli/issues
+- Repository: https://github.com/micro-tech/grok-cli
+- Issues: https://github.com/micro-tech/grok-cli/issues
 - Buy Me a Coffee: https://buymeacoffee.com/micro.tech

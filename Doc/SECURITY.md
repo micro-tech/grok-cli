@@ -632,7 +632,7 @@ Most AI agent systems lack comprehensive skill validation:
 1. Do not activate it
 2. Run `grok skills validate skill-name`
 3. Save security report
-4. Report: https://github.com/microtech/grok-cli/security/advisories
+4. Report: https://github.com/micro-tech/grok-cli/security/advisories
 
 **Found a validation bypass?**
 1. Document the bypass
@@ -732,7 +732,7 @@ The skill security validation system provides comprehensive protection against m
 - [Quick Start](../Doc/SKILLS_QUICK_START.md)
 - [Example Skills](../examples/skills/)
 - [CHANGELOG](../CHANGELOG.md)
-- [GitHub Security](https://github.com/microtech/grok-cli/security)
+- [GitHub Security](https://github.com/micro-tech/grok-cli/security)
 
 ## Credits
 

@@ -19,12 +19,13 @@ pub fn parse_explorer_json(text: &str) -> Result<RepoEvidence> {
         Err(e) => {
             // Try to extract a JSON object heuristically
             if let Some(start) = cleaned.find('{')
-                && let Some(end) = cleaned.rfind('}') {
-                    let candidate = &cleaned[start..=end];
-                    if let Ok(ev) = serde_json::from_str::<RepoEvidence>(candidate) {
-                        return Ok(ev);
-                    }
+                && let Some(end) = cleaned.rfind('}')
+            {
+                let candidate = &cleaned[start..=end];
+                if let Ok(ev) = serde_json::from_str::<RepoEvidence>(candidate) {
+                    return Ok(ev);
                 }
+            }
             Err(anyhow!("Failed to parse explorer JSON: {}", e))
         }
     }

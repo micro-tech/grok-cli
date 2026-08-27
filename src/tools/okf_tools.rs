@@ -11,7 +11,6 @@ use anyhow::{Result, anyhow};
 use crate::config::Config;
 use crate::knowledge::okf::{OkfBundle, OkfConcept, load_okf_bundles};
 use chrono;
-use reqwest::Client;
 use std::path::PathBuf;
 use std::sync::{OnceLock, RwLock};
 use std::time::Duration;
@@ -311,7 +310,9 @@ async fn push_concept_to_remote(
     bundle: &str,
     api_key: &Option<String>,
 ) -> Result<()> {
-    let client = Client::builder().timeout(Duration::from_secs(15)).build()?;
+    let client = crate::utils::http::http_client_builder()
+        .timeout(Duration::from_secs(15))
+        .build()?;
 
     let url = format!(
         "{}/bundles/{}/concepts",
@@ -322,9 +323,10 @@ async fn push_concept_to_remote(
     let mut req = client.post(&url).json(concept);
 
     if let Some(key) = api_key
-        && !key.trim().is_empty() {
-            req = req.bearer_auth(key.trim());
-        }
+        && !key.trim().is_empty()
+    {
+        req = req.bearer_auth(key.trim());
+    }
 
     let resp = req.send().await?;
 

@@ -8,25 +8,37 @@ use anyhow::{Error, anyhow};
 use std::time::{Duration, Instant};
 use tracing::{debug, info, warn};
 
-/// Patterns that indicate Starlink or satellite network issues
+/// Patterns that indicate Starlink or satellite network issues.
+///
+/// These are deliberately kept fairly specific to reduce false-positive retries
+/// on legitimate errors (e.g. "connection refused" can mean a real service is down
+/// or a misconfiguration, not necessarily a transient satellite handover).
+///
+/// Broader transient errors (generic timeouts, 5xx) are handled by the
+/// `RetryPolicy::should_retry` logic and callers.
 const STARLINK_ERROR_PATTERNS: &[&str] = &[
+    // Strong indicators of abrupt connection drops (common on Starlink handovers)
+    "connection reset by peer",
     "connection reset",
     "connection dropped",
+    "broken pipe",
+
+    // Routing / reachability that often recovers quickly on satellite
     "network unreachable",
     "no route to host",
-    "broken pipe",
-    "connection refused",
-    "timeout",
-    "dns resolution failed",
-    "temporary failure in name resolution",
-    "network is down",
-    "network error",
-    "error sending request",
     "host is unreachable",
-    "service unavailable",
+
+    // Service-side transient unavailability (model provider overloaded / flapping)
     "service temporarily unavailable",
     "the model did not respond",
     "currently unavailable",
+
+    // Explicit "error sending request" from reqwest (very common on drops)
+    "error sending request for url",
+    "error sending request",
+
+    // Cloudflare / proxy transient codes (often seen in front of xAI)
+    "520", "521", "522", "523", "524",
 ];
 
 /// HTTP status codes that commonly occur during satellite network issues
@@ -176,13 +188,140 @@ pub async fn test_connectivity(timeout: Duration) -> Result<Duration, Error> {
 /// This uses a satellite-friendly exponential backoff (longer tail than
 /// standard clients) because Starlink and similar connections can experience
 /// 20-60s handovers. Callers should use this for any transient network error.
+///
+/// Deprecated in favor of `RetryPolicy::delay_for_attempt`. Kept for
+/// backward compatibility during the unification (Task 287).
+#[deprecated(since = "0.3.0", note = "Use RetryPolicy::delay_for_attempt instead")]
 pub fn calculate_retry_delay(attempt: u32) -> Duration {
-    // Satellite-friendly exponential backoff (longer tail than usual)
-    let base_delay = Duration::from_secs(2_u64.pow(attempt.min(4)));
+    RetryPolicy::default_starlink().delay_for_attempt(attempt)
+}
 
-    // Add jitter to prevent thundering herd
-    let jitter = Duration::from_millis(rand::random::<u64>() % 1000);
-    base_delay + jitter
+/// Convenience: create a policy from the current config (or sensible defaults).
+pub fn default_retry_policy() -> RetryPolicy {
+    // We try to read a live config if possible; otherwise fall back.
+    // Most call sites that have a &Config should prefer RetryPolicy::from_config(&cfg.network).
+    RetryPolicy::default_starlink()
+}
+
+/// Unified retry policy for transient network / Starlink errors.
+///
+/// Central place for:
+/// - max retries
+/// - base / max delay
+/// - jitter
+/// - retriable error classification
+///
+/// Created from `NetworkConfig` (recommended) or with explicit values for tests.
+///
+/// Example:
+/// ```ignore
+/// let policy = RetryPolicy::from_config(&config.network);
+/// if policy.should_retry(attempt, &err) {
+///     let delay = policy.delay_for_attempt(attempt);
+///     tokio::time::sleep(delay).await;
+/// }
+/// ```
+#[derive(Debug, Clone)]
+pub struct RetryPolicy {
+    /// Maximum number of *retry* attempts (not counting the initial try).
+    pub max_retries: u32,
+    /// Base delay before first retry.
+    pub base_delay: Duration,
+    /// Hard cap on any computed delay.
+    pub max_delay: Duration,
+    /// Random jitter range in milliseconds (0 .. jitter_ms).
+    pub jitter_ms: u64,
+    /// When true, use longer tail backoff suitable for satellite links.
+    pub starlink_mode: bool,
+}
+
+impl RetryPolicy {
+    /// Construct from the hierarchical `NetworkConfig`.
+    pub fn from_config(cfg: &crate::config::NetworkConfig) -> Self {
+        Self {
+            max_retries: cfg.max_retries,
+            base_delay: Duration::from_secs(cfg.base_retry_delay.max(1)),
+            max_delay: Duration::from_secs(cfg.max_retry_delay.max(5)),
+            jitter_ms: cfg.jitter_ms,
+            starlink_mode: cfg.starlink_optimizations,
+        }
+    }
+
+    /// Conservative "Starlink-friendly" defaults (used when no config is available).
+    pub fn default_starlink() -> Self {
+        Self {
+            max_retries: 5,
+            base_delay: Duration::from_secs(2),
+            max_delay: Duration::from_secs(60),
+            jitter_ms: 500,
+            starlink_mode: true,
+        }
+    }
+
+    /// Simple defaults for unit tests (deterministic, short delays).
+    pub fn for_tests() -> Self {
+        Self {
+            max_retries: 3,
+            base_delay: Duration::from_millis(10),
+            max_delay: Duration::from_millis(100),
+            jitter_ms: 0,
+            starlink_mode: false,
+        }
+    }
+
+    /// Returns true if we should attempt a retry for this error on this attempt number.
+    ///
+    /// `attempt` is the *current* failure count (0 = first try just failed).
+    pub fn should_retry(&self, attempt: u32, error: &anyhow::Error) -> bool {
+        if attempt >= self.max_retries {
+            return false;
+        }
+        // Use the existing detector + a few extra transient patterns.
+        if detect_network_drop(error) {
+            return true;
+        }
+        let msg = error.to_string().to_lowercase();
+        msg.contains("timeout")
+            || msg.contains("timed out")
+            || msg.contains("reset")
+            || msg.contains("connection")
+            || msg.contains("503")
+            || msg.contains("502")
+            || msg.contains("504")
+            || msg.contains("service unavailable")
+    }
+
+    /// Compute the delay before the *next* attempt (attempt is 0-based failure count).
+    pub fn delay_for_attempt(&self, attempt: u32) -> Duration {
+        let exp_factor = if self.starlink_mode {
+            // Longer tail for satellite handovers (2^attempt but capped)
+            1u64 << (attempt.min(5))
+        } else {
+            1u64 << (attempt.min(3))
+        };
+
+        // Use as_millis to preserve sub-second precision for test policies
+        let base_ms = self.base_delay.as_millis() as u64;
+        let base = base_ms.saturating_mul(exp_factor);
+        let max_ms = self.max_delay.as_millis() as u64;
+        let capped = base.min(max_ms);
+
+        let jitter = if self.jitter_ms > 0 {
+            rand::random::<u64>() % (self.jitter_ms + 1)
+        } else {
+            0
+        };
+
+        Duration::from_millis(capped + jitter)
+    }
+
+    /// Convenience: sleep using this policy's delay for the given attempt.
+    pub async fn sleep_for_attempt(&self, attempt: u32) {
+        let d = self.delay_for_attempt(attempt);
+        if d > Duration::from_millis(5) {
+            tokio::time::sleep(d).await;
+        }
+    }
 }
 
 /// Network health monitor for continuous connection quality assessment
@@ -292,14 +431,44 @@ mod tests {
     }
 
     #[test]
-    fn test_calculate_retry_delay() {
-        let delay1 = calculate_retry_delay(1);
-        let delay2 = calculate_retry_delay(2);
+    fn test_calculate_retry_delay_delegates() {
+        // Test the recommended RetryPolicy API (calculate_retry_delay is deprecated)
+        let policy = RetryPolicy::default_starlink();
+        let delay1 = policy.delay_for_attempt(1);
+        let delay2 = policy.delay_for_attempt(2);
         assert!(delay2 >= delay1);
+        assert!(delay1 >= Duration::from_millis(1000)); // base 2s + jitter
+    }
 
-        let delay = calculate_retry_delay(1);
-        // Satellite-friendly backoff should be reasonable (>= 1s base + jitter)
-        assert!(delay >= Duration::from_secs(1));
+    #[test]
+    fn test_retry_policy_defaults() {
+        let p = RetryPolicy::default_starlink();
+        assert!(p.max_retries >= 3);
+        assert!(p.starlink_mode);
+        assert!(p.base_delay >= Duration::from_secs(1));
+    }
+
+    #[test]
+    fn test_retry_policy_for_tests_is_deterministic() {
+        let p = RetryPolicy::for_tests();
+        assert_eq!(p.jitter_ms, 0);
+        let d0 = p.delay_for_attempt(0);
+        let d1 = p.delay_for_attempt(1);
+        // With 0 jitter and small base, delays should be predictable
+        assert!(d1 > d0);
+    }
+
+    #[test]
+    fn test_retry_policy_should_retry() {
+        let p = RetryPolicy::for_tests();
+
+        assert!(p.should_retry(0, &anyhow!("connection reset by peer")));
+        assert!(p.should_retry(0, &anyhow!("timeout")));
+        assert!(p.should_retry(0, &anyhow!("HTTP 503")));
+        assert!(!p.should_retry(0, &anyhow!("invalid api key")));
+
+        // Respects max_retries
+        assert!(!p.should_retry(p.max_retries, &anyhow!("timeout")));
     }
 
     #[test]

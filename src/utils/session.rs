@@ -4,9 +4,10 @@ use std::fs;
 use std::path::PathBuf;
 
 /// Get the sessions directory path
+///
+/// Uses the canonical user data directory (~/.grok-cli/sessions).
 fn get_sessions_dir() -> Result<PathBuf> {
-    let home_dir = dirs::home_dir().ok_or_else(|| anyhow!("Could not determine home directory"))?;
-    Ok(home_dir.join(".grok").join("sessions"))
+    Ok(crate::config::grok_data_dir().join("sessions"))
 }
 
 /// Save a session to disk

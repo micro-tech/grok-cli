@@ -7,31 +7,15 @@
 //! immediately so we don't burn quota on bad keys.
 
 use async_trait::async_trait;
-use rand::RngExt;
-use std::time::Duration;
-use tokio::time::sleep;
 use tracing::{debug, warn};
 
 use grok_api::MessageContent;
 
 use crate::GrokClient;
 use crate::router::{Backend, BackendKind, RouterError, RouterRequest, RouterResponse};
+use crate::utils::network::{RetryPolicy, detect_network_drop};
 
-// ── Retry knobs ──────────────────────────────────────────────────────────────
-
-/// Maximum number of retry attempts (not counting the first try).
-const MAX_RETRIES: u32 = 4;
-
-/// Base delay for exponential back-off (seconds).
-const BASE_DELAY_SECS: u64 = 2;
-
-/// Maximum back-off delay to cap runaway waits (seconds).
-const MAX_DELAY_SECS: u64 = 30;
-
-/// Maximum jitter added on top of the computed delay (milliseconds).
-const MAX_JITTER_MS: u64 = 500;
-
-/// Default temperature when the caller does not specify one.
+// Default temperature when the caller does not specify one.
 const DEFAULT_TEMPERATURE: f32 = 0.7;
 
 /// Default max-tokens when the caller does not specify one.
@@ -89,18 +73,6 @@ impl GrokBackend {
         })
     }
 
-    /// Compute an exponential back-off delay with jitter.
-    ///
-    /// ```text
-    /// delay = min(BASE * 2^attempt, MAX) + rand(0..MAX_JITTER_MS)
-    /// ```
-    fn backoff_delay(attempt: u32) -> Duration {
-        let exp = BASE_DELAY_SECS.saturating_mul(2u64.saturating_pow(attempt));
-        let capped = exp.min(MAX_DELAY_SECS);
-        let jitter = rand::rng().random_range(0..MAX_JITTER_MS);
-        Duration::from_millis(capped * 1_000 + jitter)
-    }
-
     /// Classify an `anyhow::Error` from the Grok client into a [`RouterError`].
     fn classify_error(err: &anyhow::Error) -> RouterError {
         let msg = err.to_string().to_lowercase();
@@ -124,8 +96,17 @@ impl GrokBackend {
     }
 
     /// Returns `true` for errors that are worth retrying (transient).
+    /// Delegates to the canonical `RetryPolicy` + `detect_network_drop`.
     fn is_retryable(err: &RouterError) -> bool {
-        matches!(err, RouterError::Network(_) | RouterError::RateLimit)
+        if matches!(err, RouterError::Network(_) | RouterError::RateLimit) {
+            return true;
+        }
+        // Also treat raw network strings that the policy would catch.
+        if let RouterError::Network(msg) = err {
+            let e = anyhow::anyhow!("{}", msg);
+            return detect_network_drop(&e);
+        }
+        false
     }
 }
 
@@ -168,18 +149,19 @@ impl Backend for GrokBackend {
             None
         };
 
-        // ── Retry loop ───────────────────────────────────────────────────────
+        // ── Retry loop (now uses the unified RetryPolicy from Task 287) ─────────
+        let policy = RetryPolicy::default_starlink();
         let mut last_err = RouterError::Unknown;
 
-        for attempt in 0..=MAX_RETRIES {
+        for attempt in 0..=policy.max_retries {
             if attempt > 0 {
-                let delay = Self::backoff_delay(attempt - 1);
+                let delay = policy.delay_for_attempt(attempt - 1);
                 warn!(
                     attempt,
                     delay_ms = delay.as_millis(),
                     "Grok backend: retrying after transient error"
                 );
-                sleep(delay).await;
+                tokio::time::sleep(delay).await;
             }
 
             debug!(attempt, model = %req.model, "Grok backend: sending request");
@@ -275,20 +257,20 @@ mod tests {
 
     #[test]
     fn backoff_delay_grows_with_attempt() {
-        let d0 = GrokBackend::backoff_delay(0);
-        let d1 = GrokBackend::backoff_delay(1);
-        let d2 = GrokBackend::backoff_delay(2);
-        // Each delay (ignoring jitter) should be >= the previous one.
-        assert!(d1.as_secs() >= d0.as_secs());
-        assert!(d2.as_secs() >= d1.as_secs());
+        // Now exercised via the unified RetryPolicy (Task 287)
+        let policy = crate::utils::network::RetryPolicy::default_starlink();
+        let d0 = policy.delay_for_attempt(0);
+        let d1 = policy.delay_for_attempt(1);
+        let d2 = policy.delay_for_attempt(2);
+        assert!(d1 >= d0);
+        assert!(d2 >= d1);
     }
 
     #[test]
     fn backoff_delay_is_capped() {
-        // At a very high attempt number the delay must not exceed MAX_DELAY_SECS + jitter.
-        let max_possible = Duration::from_millis(MAX_DELAY_SECS * 1_000 + MAX_JITTER_MS);
-        let high = GrokBackend::backoff_delay(20);
-        assert!(high <= max_possible);
+        let policy = crate::utils::network::RetryPolicy::default_starlink();
+        let high = policy.delay_for_attempt(20);
+        assert!(high <= policy.max_delay + std::time::Duration::from_millis(policy.jitter_ms));
     }
 
     #[test]

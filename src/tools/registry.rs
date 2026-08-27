@@ -85,7 +85,11 @@ async fn handle_read_multiple_files(args: &Value, ctx: &ToolContext) -> Result<S
     let paths_val = require_array(args, "paths")?;
     let paths: Result<Vec<String>> = paths_val
         .iter()
-        .map(|v| v.as_str().ok_or_else(|| anyhow!("Invalid path entry")).map(str::to_string))
+        .map(|v| {
+            v.as_str()
+                .ok_or_else(|| anyhow!("Invalid path entry"))
+                .map(str::to_string)
+        })
         .collect();
     file_tools::read_multiple_files(paths?, ctx).await
 }
@@ -109,23 +113,35 @@ async fn handle_replace(args: &Value, ctx: &ToolContext) -> Result<String> {
     file_tools::replace(path, old_string, new_string, expected, ctx, false).await
 }
 
-fn handle_list_directory(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+fn handle_list_directory(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let path = require_str(args, "path")?;
     file_tools::list_directory(path, policy)
 }
 
-fn handle_glob_search(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+fn handle_glob_search(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let pattern = require_str(args, "pattern")?;
     file_tools::glob_search(pattern, policy)
 }
 
-fn handle_search_file_content(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+fn handle_search_file_content(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let path = require_str(args, "path")?;
     let pattern = require_str(args, "pattern")?;
     file_tools::search_file_content(path, pattern, policy)
 }
 
-async fn handle_run_shell_command(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+async fn handle_run_shell_command(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let command = require_str(args, "command")?;
     // timeout_secs is accepted in schema for compat but ignored (derived from SecurityPolicy)
     let _ = args["timeout_secs"].as_u64();
@@ -163,7 +179,10 @@ async fn handle_execute_task_graph(args: &Value, ctx: &ToolContext) -> Result<St
     task_graph_tools::execute_task_graph(graph_json, ctx).await
 }
 
-fn handle_task_create(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+fn handle_task_create(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let title = require_str(args, "title")?;
     let description = args["description"].as_str().unwrap_or("");
     let priority = args["priority"].as_str().unwrap_or("medium");
@@ -174,7 +193,16 @@ fn handle_task_create(args: &Value, policy: &crate::acp::security::SecurityPolic
     let details = args["details"].as_str().unwrap_or("");
     let test_strategy = args["testStrategy"].as_str().unwrap_or("");
     let subtasks: Vec<Value> = args["subtasks"].as_array().cloned().unwrap_or_default();
-    task_tools::task_create(title, description, priority, deps, details, test_strategy, subtasks, policy)
+    task_tools::task_create(
+        title,
+        description,
+        priority,
+        deps,
+        details,
+        test_strategy,
+        subtasks,
+        policy,
+    )
 }
 
 fn handle_task_get(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
@@ -182,7 +210,10 @@ fn handle_task_get(args: &Value, policy: &crate::acp::security::SecurityPolicy) 
     task_tools::task_get(id, policy)
 }
 
-fn handle_task_update(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+fn handle_task_update(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let id = require_f64(args, "id")?;
     let status = args["status"].as_str();
     let title = args["title"].as_str();
@@ -199,18 +230,27 @@ fn handle_exit_plan_mode(_args: &Value) -> Result<String> {
     plan_tools::exit_plan_mode()
 }
 
-async fn handle_enter_worktree(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+async fn handle_enter_worktree(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let branch = require_str(args, "branch")?;
     let path = require_str(args, "path")?;
     plan_tools::enter_worktree(branch, path, policy).await
 }
 
-async fn handle_exit_worktree(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+async fn handle_exit_worktree(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let merge = args["merge"].as_bool().unwrap_or(false);
     plan_tools::exit_worktree(merge, policy).await
 }
 
-fn handle_notebook_edit(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+fn handle_notebook_edit(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let path = require_str(args, "path")?;
     let cell_index = args["cell_index"].as_u64().unwrap_or(0) as usize;
     let source = require_str(args, "source")?;
@@ -241,14 +281,25 @@ async fn handle_spawn_agent(args: &Value, _ctx: &ToolContext) -> Result<String> 
 
     if has_config {
         let mut builder = crate::agent::SubAgentConfig::builder().max_tokens(max_tokens);
-        if let Some(m) = args["model"].as_str() { builder = builder.model(m); }
-        if let Some(p) = args["system_prompt"].as_str() { builder = builder.system_prompt(p); }
+        if let Some(m) = args["model"].as_str() {
+            builder = builder.model(m);
+        }
+        if let Some(p) = args["system_prompt"].as_str() {
+            builder = builder.system_prompt(p);
+        }
         if let Some(tools) = args["allowed_tools"].as_array() {
-            let names: Vec<String> = tools.iter().filter_map(|v| v.as_str().map(str::to_string)).collect();
+            let names: Vec<String> = tools
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect();
             builder = builder.allow_tools(names.iter().map(|s| s.as_str()).collect());
         }
         if let Some(dirs) = args["trusted_dirs"].as_array() {
-            for d in dirs { if let Some(s) = d.as_str() { builder = builder.trusted_dir(s); } }
+            for d in dirs {
+                if let Some(s) = d.as_str() {
+                    builder = builder.trusted_dir(s);
+                }
+            }
         }
         if let Some(n) = args["max_tool_iterations"].as_u64() {
             builder = builder.max_tool_iterations(n as u32);
@@ -270,7 +321,11 @@ fn handle_team_create(args: &Value) -> Result<String> {
     let name = require_str(args, "name")?;
     let members: Vec<String> = args["members"]
         .as_array()
-        .map(|a| a.iter().filter_map(|v| v.as_str().map(str::to_string)).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        })
         .unwrap_or_default();
     let description = args["description"].as_str().unwrap_or("");
     agent_tools::team_create(name, members, description)
@@ -324,7 +379,10 @@ async fn handle_join_agents(args: &Value) -> Result<String> {
     agent_tools::join_agents(ids).await
 }
 
-async fn handle_mcp_call(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+async fn handle_mcp_call(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let server_command = require_str(args, "server_command")?;
     let tool_name = require_str(args, "tool_name")?;
     let arguments = args["arguments"].clone();
@@ -337,23 +395,31 @@ fn handle_mcp_list(_args: &Value) -> Result<String> {
         Ok(serde_json::json!({
             "connected_servers": 0,
             "message": "No MCP servers are currently connected."
-        }).to_string())
+        })
+        .to_string())
     } else {
-        let servers: Vec<_> = discovered.iter().map(|(name, tools)| {
-            serde_json::json!({
-                "server": name,
-                "tool_count": tools.len(),
-                "tools": tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+        let servers: Vec<_> = discovered
+            .iter()
+            .map(|(name, tools)| {
+                serde_json::json!({
+                    "server": name,
+                    "tool_count": tools.len(),
+                    "tools": tools.iter().map(|t| &t.name).collect::<Vec<_>>()
+                })
             })
-        }).collect();
+            .collect();
         Ok(serde_json::json!({
             "connected_servers": discovered.len(),
             "servers": servers
-        }).to_string())
+        })
+        .to_string())
     }
 }
 
-async fn handle_lsp_query(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+async fn handle_lsp_query(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     let file = require_str(args, "file")?;
     let line = args["line"].as_u64().unwrap_or(0) as u32;
     let character = args["character"].as_u64().unwrap_or(0) as u32;
@@ -395,7 +461,12 @@ async fn handle_recall_context(args: &Value) -> Result<String> {
                 } else {
                     format!(
                         "\n\nKey facts:\n{}",
-                        chunk.key_facts.iter().map(|f| format!("• {}", f)).collect::<Vec<_>>().join("\n")
+                        chunk
+                            .key_facts
+                            .iter()
+                            .map(|f| format!("• {}", f))
+                            .collect::<Vec<_>>()
+                            .join("\n")
                     )
                 };
                 Ok(format!(
@@ -411,7 +482,10 @@ async fn handle_recall_context(args: &Value) -> Result<String> {
     }
 }
 
-async fn handle_ai_tool(args: &Value, policy: &crate::acp::security::SecurityPolicy) -> Result<String> {
+async fn handle_ai_tool(
+    args: &Value,
+    policy: &crate::acp::security::SecurityPolicy,
+) -> Result<String> {
     ai_tools::run(args, policy).await
 }
 
@@ -438,7 +512,9 @@ async fn handle_okf_create(args: &Value) -> Result<String> {
     let body = require_str(args, "body")?;
     let description = args["description"].as_str();
     let tags: Option<Vec<String>> = args["tags"].as_array().map(|a| {
-        a.iter().filter_map(|v| v.as_str().map(|s| s.to_string())).collect()
+        a.iter()
+            .filter_map(|v| v.as_str().map(|s| s.to_string()))
+            .collect()
     });
     let resource = args["resource"].as_str();
     let id = args["id"].as_str();
@@ -554,7 +630,8 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                 unknown => Err(anyhow!(
                     "Tool '{}' is declared in get_full_tool_definitions() but has no handler. \
                      This is an ARCH-2 inconsistency. Add a handle_{} function and a match arm.",
-                    unknown, unknown
+                    unknown,
+                    unknown
                 )),
             }
         }
@@ -611,7 +688,8 @@ pub fn get_tool_definitions() -> Vec<&'static str> {
 /// Static cache for the full tool definitions.
 /// Built exactly once (via OnceLock) to eliminate repeated allocation of 50+
 /// `serde_json::json!` objects on every call to hot paths.
-static FULL_TOOL_DEFINITIONS: std::sync::OnceLock<Vec<serde_json::Value>> = std::sync::OnceLock::new();
+static FULL_TOOL_DEFINITIONS: std::sync::OnceLock<Vec<serde_json::Value>> =
+    std::sync::OnceLock::new();
 
 /// Task 271: Pre-computed static lookup structures for hot-path tool execution.
 ///
@@ -622,15 +700,14 @@ static FULL_TOOL_DEFINITIONS: std::sync::OnceLock<Vec<serde_json::Value>> = std:
 static KNOWN_TOOLS: std::sync::OnceLock<std::collections::HashSet<&'static str>> =
     std::sync::OnceLock::new();
 
-static REQUIRED_PARAMS_MAP: std::sync::OnceLock<std::collections::HashMap<&'static str, Vec<String>>> =
-    std::sync::OnceLock::new();
+static REQUIRED_PARAMS_MAP: std::sync::OnceLock<
+    std::collections::HashMap<&'static str, Vec<String>>,
+> = std::sync::OnceLock::new();
 
 /// Initialize (or return) the fast lookup caches.
 /// Called lazily from the hot-path accessors.
 fn get_known_tools() -> &'static std::collections::HashSet<&'static str> {
-    KNOWN_TOOLS.get_or_init(|| {
-        get_tool_definitions().into_iter().collect()
-    })
+    KNOWN_TOOLS.get_or_init(|| get_tool_definitions().into_iter().collect())
 }
 
 fn get_required_params_map() -> &'static std::collections::HashMap<&'static str, Vec<String>> {
@@ -1633,7 +1710,8 @@ mod tests {
             std::ptr::eq(first, second),
             "get_full_tool_definitions() must return the exact same &'static slice \
              on every call (OnceLock cache not working). first={:p} second={:p}",
-            first.as_ptr(), second.as_ptr()
+            first.as_ptr(),
+            second.as_ptr()
         );
 
         // Lengths must obviously match
@@ -1751,9 +1829,8 @@ mod tests {
     #[tokio::test]
     async fn execute_tool_round_trip_write_read_unknown_missing() {
         let dir = tempfile::TempDir::new().unwrap();
-        let policy = crate::acp::security::SecurityPolicy::with_working_directory(
-            dir.path().to_path_buf(),
-        );
+        let policy =
+            crate::acp::security::SecurityPolicy::with_working_directory(dir.path().to_path_buf());
         let ctx = crate::tools::ToolContext::new(policy);
 
         let test_file = dir
@@ -1858,13 +1935,15 @@ mod tests {
     #[tokio::test]
     async fn every_tool_schema_has_corresponding_handler() {
         let dir = tempfile::TempDir::new().unwrap();
-        let policy = crate::acp::security::SecurityPolicy::with_working_directory(
-            dir.path().to_path_buf(),
-        );
+        let policy =
+            crate::acp::security::SecurityPolicy::with_working_directory(dir.path().to_path_buf());
         let ctx = crate::tools::ToolContext::new(policy);
 
         let all_tools = get_tool_definitions();
-        assert!(!all_tools.is_empty(), "Registry must define at least one tool");
+        assert!(
+            !all_tools.is_empty(),
+            "Registry must define at least one tool"
+        );
 
         for tool_name in &all_tools {
             // Use empty args. Arbitration will either:
@@ -1883,7 +1962,9 @@ mod tests {
                 !err_string.contains("has no handler"),
                 "CRITICAL ARCH-2 DRIFT: Tool '{}' has a schema but NO handler implementation. \
                  Add handle_{}() + a dispatch line. Error was: {}",
-                tool_name, tool_name, err_string
+                tool_name,
+                tool_name,
+                err_string
             );
 
             // For tools that require arguments, we should get a proper missing-args response
@@ -1894,13 +1975,19 @@ mod tests {
                 assert!(
                     result.is_ok(),
                     "Tool '{}' with required args should return structured response, got hard error: {:?}",
-                    tool_name, result.err()
+                    tool_name,
+                    result.err()
                 );
                 let s = result.unwrap().to_lowercase();
                 assert!(
-                    s.contains("missing") || s.contains("required") || s.contains("arguments") || s.contains("error"),
+                    s.contains("missing")
+                        || s.contains("required")
+                        || s.contains("arguments")
+                        || s.contains("error"),
                     "Tool '{}' with required fields '{}' must produce a clear missing-arguments response, got: {}",
-                    tool_name, required.join(", "), s
+                    tool_name,
+                    required.join(", "),
+                    s
                 );
             } else {
                 // Zero-required tools should generally succeed or give a benign response.
@@ -1922,10 +2009,18 @@ mod tests {
 
         // error paths - messages must mention the key
         let err = require_str(&args, "missing_key").unwrap_err().to_string();
-        assert!(err.contains("missing_key"), "error message should name the missing key: {}", err);
+        assert!(
+            err.contains("missing_key"),
+            "error message should name the missing key: {}",
+            err
+        );
 
         let err = require_u64(&args, "foo").unwrap_err().to_string(); // wrong type
-        assert!(err.contains("foo"), "error must mention key on type mismatch: {}", err);
+        assert!(
+            err.contains("foo"),
+            "error must mention key on type mismatch: {}",
+            err
+        );
     }
 
     // Note: optional_* helpers were removed for now (they were unused in production code).

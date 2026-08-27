@@ -135,7 +135,7 @@ pub async fn handle_setup() -> Result<()> {
     }
 
     // ── Step 6: Save the key ──────────────────────────────────────────────────
-    print!("[2/2] {}", "Saving key to ~/.grok/.env…".dimmed());
+    print!("[2/2] {}", "Saving key to ~/.grok-cli/.env…".dimmed());
     io::stdout().flush().ok();
 
     let saved_path = save_api_key(&api_key).context("Failed to save API key")?;
@@ -213,34 +213,34 @@ fn read_masked() -> Result<String> {
             && let Event::Key(KeyEvent {
                 code, modifiers, ..
             }) = event::read()?
-            {
-                match code {
-                    // Finish on Enter
-                    KeyCode::Enter => {
-                        break Ok(key);
-                    }
-                    // Abort on Ctrl-C / Ctrl-D
-                    KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        break Err(anyhow!("Setup cancelled (Ctrl-C)."));
-                    }
-                    KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
-                        break Err(anyhow!("Setup cancelled (Ctrl-D)."));
-                    }
-                    // Backspace: erase last char
-                    KeyCode::Backspace | KeyCode::Delete if key.pop().is_some() => {
-                        // Move back, overwrite with space, move back again
-                        write!(stdout, "\x08 \x08")?;
-                        stdout.flush()?;
-                    }
-                    // Regular character
-                    KeyCode::Char(c) => {
-                        key.push(c);
-                        write!(stdout, "*")?;
-                        stdout.flush()?;
-                    }
-                    _ => {}
+        {
+            match code {
+                // Finish on Enter
+                KeyCode::Enter => {
+                    break Ok(key);
                 }
+                // Abort on Ctrl-C / Ctrl-D
+                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    break Err(anyhow!("Setup cancelled (Ctrl-C)."));
+                }
+                KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => {
+                    break Err(anyhow!("Setup cancelled (Ctrl-D)."));
+                }
+                // Backspace: erase last char
+                KeyCode::Backspace | KeyCode::Delete if key.pop().is_some() => {
+                    // Move back, overwrite with space, move back again
+                    write!(stdout, "\x08 \x08")?;
+                    stdout.flush()?;
+                }
+                // Regular character
+                KeyCode::Char(c) => {
+                    key.push(c);
+                    write!(stdout, "*")?;
+                    stdout.flush()?;
+                }
+                _ => {}
             }
+        }
     };
 
     // Always restore terminal before returning, even on error.
@@ -303,7 +303,9 @@ fn validate_key_format(key: &str) -> Result<()> {
 /// can cause 20-30 second connection drops.  Returns the first model ID as
 /// a friendly confirmation string.
 async fn verify_api_key_with_retries(api_key: &str) -> Result<String> {
-    let client = reqwest::Client::builder()
+    // Use the centralized HTTP client builder (Task 281) so we get pooling + consistent config,
+    // then override timeout for the short verification calls.
+    let client = crate::utils::http::http_client_builder()
         .timeout(Duration::from_secs(VERIFY_TIMEOUT_SECS))
         .build()
         .context("Failed to build HTTP client")?;

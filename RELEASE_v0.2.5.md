@@ -57,7 +57,7 @@ No changes to storage layout. Session rules are in-memory only and reset on sess
 
 ```bash
 # From source (Windows)
-git clone https://github.com/microtech/grok-cli
+git clone https://github.com/micro-tech/grok-cli
 cd grok-cli
 cargo build --release
 cargo run --bin installer
@@ -74,4 +74,4 @@ Buy me a coffee: https://buymeacoffee.com/micro.tech
 
 ---
 
-**Full Changelog:** https://github.com/microtech/grok-cli/blob/main/CHANGELOG.md
+**Full Changelog:** https://github.com/micro-tech/grok-cli/blob/main/CHANGELOG.md

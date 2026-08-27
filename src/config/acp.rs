@@ -3,6 +3,11 @@
 use serde::{Deserialize, Serialize};
 
 use super::ThinkingMode;
+use crate::constants::{
+    COMPRESSION_CHUNK_RATIO, COMPRESSION_THRESHOLD, DEFAULT_MAX_TOOL_LOOP_ITERATIONS,
+    DEFAULT_PERMISSION_TIMEOUT_SECS, GROK4_CONTEXT_BUDGET, LEGACY_CONTEXT_BUDGET,
+    MAX_HISTORY_MESSAGES, MAX_TOOL_RESULT_CHARS,
+};
 
 /// ACP-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -56,14 +61,14 @@ pub struct AcpConfig {
     /// count fits within this limit.  Leave ~36 k headroom for the model
     /// response and tool definitions.
     /// Grok-3 / grok-beta context window = 256 k tokens.
-    /// Default: 220_000  (for grok-3 / grok-2 — see grok4_max_context_tokens for grok-4.x)
+    /// Default: LEGACY_CONTEXT_BUDGET (220_000)  (for grok-3 / grok-2 — see grok4_max_context_tokens for grok-4.x)
     #[serde(default = "default_max_context_tokens")]
     pub max_context_tokens: usize,
 
     /// Soft token budget for grok-4.x models (grok-4 and later).
-    /// Certain grok-4.x variants expose a 1,048,576-token context window.
+    /// Certain grok-4.x variants expose a 1_048_576-token context window.
     /// This budget leaves ~50 k headroom for model response + tool definitions.
-    /// Default: 950_000
+    /// Default: GROK4_CONTEXT_BUDGET (950_000)
     #[serde(default = "default_grok4_max_context_tokens")]
     pub grok4_max_context_tokens: usize,
 
@@ -72,7 +77,7 @@ pub struct AcpConfig {
     /// context-window overflow; truncating them here keeps the history
     /// manageable without losing the conversation structure.
     /// 0 = no per-message truncation.
-    /// Default: 30_000  (~7 500 tokens)
+    /// Default: MAX_TOOL_RESULT_CHARS (30_000 ~7 500 tokens)
     #[serde(default = "default_max_tool_result_chars")]
     pub max_tool_result_chars: usize,
 
@@ -88,14 +93,14 @@ pub struct AcpConfig {
     /// Fraction of `max_context_tokens` at which auto-compression fires (0.0–1.0).
     /// When estimated prompt tokens exceed `max_context_tokens * compression_threshold`,
     /// the oldest chunk is summarized and archived.
-    /// Default: 0.75  (fires at 75 % of the token budget)
+    /// Default: COMPRESSION_THRESHOLD (0.75)  (fires at 75 % of the token budget)
     #[serde(default = "default_compression_threshold")]
     pub compression_threshold: f32,
 
     /// Fraction of current non-system messages to compress per compression event.
     /// E.g. 0.40 compresses the oldest 40 % of messages each time.
     /// Minimum of 4 messages is always enforced.
-    /// Default: 0.40
+    /// Default: COMPRESSION_CHUNK_RATIO (0.40)
     #[serde(default = "default_compression_chunk_ratio")]
     pub compression_chunk_ratio: f32,
 
@@ -138,21 +143,21 @@ fn default_true_permission() -> bool {
 }
 
 fn default_max_tool_loop_iterations() -> u32 {
-    25
+    DEFAULT_MAX_TOOL_LOOP_ITERATIONS
 }
 
 fn default_max_history_messages() -> usize {
-    40
+    MAX_HISTORY_MESSAGES
 }
 
 fn default_max_context_tokens() -> usize {
     // grok-3 / grok-2 budget (256 k window, ~36 k headroom)
-    220_000
+    LEGACY_CONTEXT_BUDGET
 }
 
 fn default_grok4_max_context_tokens() -> usize {
-    // grok-4.3 budget: 1,048,576-token window, ~50 k headroom for response + tools
-    950_000
+    // grok-4.x budget: 1_048_576-token window, ~50 k headroom for response + tools
+    GROK4_CONTEXT_BUDGET
 }
 
 fn default_auto_compress() -> bool {
@@ -160,19 +165,19 @@ fn default_auto_compress() -> bool {
 }
 
 fn default_compression_threshold() -> f32 {
-    0.75
+    COMPRESSION_THRESHOLD
 }
 
 fn default_compression_chunk_ratio() -> f32 {
-    0.40
+    COMPRESSION_CHUNK_RATIO
 }
 
 fn default_max_tool_result_chars() -> usize {
-    30_000
+    MAX_TOOL_RESULT_CHARS
 }
 
 fn default_permission_timeout_secs() -> u64 {
-    300
+    DEFAULT_PERMISSION_TIMEOUT_SECS
 }
 
 impl Default for AcpConfig {

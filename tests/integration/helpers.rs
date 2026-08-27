@@ -35,6 +35,19 @@ pub fn make_ctx(dir: &TempDir) -> ToolContext {
     ToolContext::new(make_security(dir))
 }
 
+/// Create a ToolContext with external access enabled (for TrustAlways / external tests).
+#[allow(dead_code)]
+pub fn make_ctx_with_external(dir: &TempDir) -> ToolContext {
+    use grok_cli::config::ExternalAccessConfig;
+    let mut sec = SecurityPolicy::with_working_directory(dir.path().to_path_buf());
+    let mut ext_cfg = ExternalAccessConfig::default();
+    ext_cfg.enabled = true;
+    ext_cfg.require_approval = true;
+    ext_cfg.logging = true;
+    sec = sec.with_external_access_config(ext_cfg);
+    ToolContext::new(sec)
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 // Task-list fixture helpers
 // ─────────────────────────────────────────────────────────────────────────────

@@ -9,6 +9,7 @@ use std::sync::LazyLock;
 use tracing::warn;
 
 use crate::tools::ToolContext;
+use crate::utils::http::get_http_client;
 
 // ── Compiled regex patterns (compiled once) ───────────────────────────────────
 
@@ -25,32 +26,8 @@ static RE_SEARCH_SIMPLE: LazyLock<Regex> = LazyLock::new(|| {
 static RE_STRIP_TAGS: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"<[^>]*>").expect("BUG: invalid static RE_STRIP_TAGS pattern"));
 
-// ── Shared HTTP client (connection pooling + single initialization) ───────────
-
-/// Shared reqwest client used by all web tools.
-///
-/// Created once via `std::sync::LazyLock`. Provides connection reuse, keep-alive,
-/// and avoids the cost of new TCP/TLS handshakes on every request.
-/// Configured with a 30s timeout and a reasonable user-agent.
-static HTTP_CLIENT: LazyLock<reqwest::Client> = LazyLock::new(|| {
-    #[cfg(test)]
-    CLIENT_CREATION_COUNT.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-    reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .user_agent(
-            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) \
-             AppleWebKit/537.36 (KHTML, like Gecko) \
-             Chrome/124.0.0.0 Safari/537.36 (grok-cli/0.2)",
-        )
-        .build()
-        .expect("Failed to build shared HTTP client")
-});
-
-/// Test-only counter to verify the shared client is initialized exactly once.
-#[cfg(test)]
-pub static CLIENT_CREATION_COUNT: std::sync::atomic::AtomicUsize =
-    std::sync::atomic::AtomicUsize::new(0);
+// Note: The central shared client lives in crate::utils::http.
+// We no longer maintain a second static here. All web tools now use get_http_client().
 
 // ── Public helpers ────────────────────────────────────────────────────────────
 
@@ -83,7 +60,7 @@ pub async fn web_search(query: &str, _ctx: &ToolContext) -> Result<String> {
         match duckduckgo_search(query).await {
             Ok(result) => return Ok(result),
             Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
-                let delay = crate::utils::network::calculate_retry_delay(attempt);
+                let delay = crate::utils::network::RetryPolicy::default_starlink().delay_for_attempt(attempt);
                 warn!(
                     attempt = attempt + 1,
                     max_attempts = MAX_RETRIES + 1,
@@ -115,7 +92,7 @@ pub async fn web_search(query: &str, _ctx: &ToolContext) -> Result<String> {
 pub async fn web_fetch(url: &str, _ctx: &ToolContext) -> Result<String> {
     const MAX_RETRIES: u32 = 3;
     for attempt in 0..=MAX_RETRIES {
-        let send_result = HTTP_CLIENT.get(url).send().await.map_err(|e| {
+        let send_result = get_http_client().get(url).send().await.map_err(|e| {
             anyhow!(
                 "Failed to fetch URL '{}': {}\n\
                     This could be due to:\n\
@@ -159,7 +136,7 @@ pub async fn web_fetch(url: &str, _ctx: &ToolContext) -> Result<String> {
                 return Ok(truncated.to_string());
             }
             Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
-                let delay = crate::utils::network::calculate_retry_delay(attempt);
+                let delay = crate::utils::network::RetryPolicy::default_starlink().delay_for_attempt(attempt);
                 warn!(
                     attempt = attempt + 1,
                     max_attempts = MAX_RETRIES + 1,
@@ -186,7 +163,7 @@ async fn duckduckgo_search(query: &str) -> Result<String> {
         urlencoding::encode(query)
     );
 
-    let response = HTTP_CLIENT
+    let response = get_http_client()
         .get(&url)
         .send()
         .await
@@ -289,18 +266,19 @@ mod tests {
 
     #[test]
     fn shared_http_client_constructed_only_once() {
-        // Force initialization (other tests may have already touched HTTP_CLIENT
-        // because it's a process-wide static Lazy, so we only assert that
-        // repeated access does not increment the counter further).
-        let _ = &*HTTP_CLIENT;
-        let count_after_first = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::Relaxed);
+        // Use the centralized client from utils::http (Task 281).
+        // The counter lives in crate::utils::http.
+        let _ = crate::utils::http::get_http_client();
+        let count_after_first = crate::utils::http::CLIENT_CREATION_COUNT
+            .load(std::sync::atomic::Ordering::Relaxed);
 
-        // Second and third access must not create additional clients
-        let _ = &*HTTP_CLIENT;
-        let count_after_second = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::Relaxed);
+        let _ = crate::utils::http::get_http_client();
+        let count_after_second = crate::utils::http::CLIENT_CREATION_COUNT
+            .load(std::sync::atomic::Ordering::Relaxed);
 
-        let _ = &*HTTP_CLIENT;
-        let count_after_third = CLIENT_CREATION_COUNT.load(std::sync::atomic::Ordering::Relaxed);
+        let _ = crate::utils::http::get_http_client();
+        let count_after_third = crate::utils::http::CLIENT_CREATION_COUNT
+            .load(std::sync::atomic::Ordering::Relaxed);
 
         assert_eq!(
             count_after_first, count_after_second,

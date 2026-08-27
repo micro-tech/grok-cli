@@ -114,19 +114,17 @@ impl GrokClient {
                     // Vision / multimodal: collect text parts and image references
                     // so the model receives both the prompt and image information.
                     arr.iter()
-                        .filter_map(|part| {
-                            match part.get("type").and_then(|t| t.as_str()) {
-                                Some("text") => part
-                                    .get("text")
-                                    .and_then(|t| t.as_str())
-                                    .map(|s| s.to_string()),
-                                Some("image_url") => part
-                                    .get("image_url")
-                                    .and_then(|i| i.get("url"))
-                                    .and_then(|u| u.as_str())
-                                    .map(|u| format!("[Attached image: {}]", u)),
-                                _ => None,
-                            }
+                        .filter_map(|part| match part.get("type").and_then(|t| t.as_str()) {
+                            Some("text") => part
+                                .get("text")
+                                .and_then(|t| t.as_str())
+                                .map(|s| s.to_string()),
+                            Some("image_url") => part
+                                .get("image_url")
+                                .and_then(|i| i.get("url"))
+                                .and_then(|u| u.as_str())
+                                .map(|u| format!("[Attached image: {}]", u)),
+                            _ => None,
                         })
                         .collect::<Vec<_>>()
                         .join(" ")
@@ -162,8 +160,7 @@ impl GrokClient {
                         // This ensures the model sees the result even if native tool role is not supported
                         Some(ChatMessage::user(format!(
                             "Tool result (ID: {}): {}",
-                            tool_call_id,
-                            content
+                            tool_call_id, content
                         )))
                     }
                     _ => None,

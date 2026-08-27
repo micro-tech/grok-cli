@@ -123,9 +123,10 @@ impl OkfBundle {
             }
 
             if path.extension().is_some_and(|e| e == "md")
-                && let Ok(concept) = Self::parse_concept(&path, base, bundle_name) {
-                    out.push(concept);
-                }
+                && let Ok(concept) = Self::parse_concept(&path, base, bundle_name)
+            {
+                out.push(concept);
+            }
         }
         Ok(())
     }

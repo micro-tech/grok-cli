@@ -41,18 +41,20 @@ impl SessionDna {
         let project_grok = std::path::Path::new(".grok").join("session_dna.json");
         if project_grok.exists()
             && let Ok(content) = fs::read_to_string(&project_grok)
-                && let Ok(dna) = serde_json::from_str(&content) {
-                    return dna;
-                }
+            && let Ok(dna) = serde_json::from_str(&content)
+        {
+            return dna;
+        }
 
         // 2. Global user file
         if let Some(home) = dirs::home_dir() {
             let path = home.join(".grok-cli").join("session_dna.json");
             if path.exists()
                 && let Ok(content) = fs::read_to_string(&path)
-                    && let Ok(dna) = serde_json::from_str(&content) {
-                        return dna;
-                    }
+                && let Ok(dna) = serde_json::from_str(&content)
+            {
+                return dna;
+            }
         }
 
         tracing::warn!("No session_dna.json found – using defaults");

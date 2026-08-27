@@ -417,8 +417,8 @@ grok audit external-access --count 50
 - **Test Plan:** `.zed/EXTERNAL_ACCESS_TEST_PLAN.md`
 
 ### Share Feedback
-- GitHub Issues: https://github.com/microtech/grok-cli/issues
-- Discussions: https://github.com/microtech/grok-cli/discussions
+- GitHub Issues: https://github.com/micro-tech/grok-cli/issues
+- Discussions: https://github.com/micro-tech/grok-cli/discussions
 - Email: john.microtech@gmail.com
 
 ### Support the Project
@@ -517,6 +517,6 @@ You're now set up to access external files securely!
 ---
 
 **Author:** john mcconnell (john.microtech@gmail.com)  
-**Repository:** https://github.com/microtech/grok-cli  
+**Repository:** https://github.com/micro-tech/grok-cli  
 **Version:** 1.0 - Feature Complete  
 **Last Updated:** 2024

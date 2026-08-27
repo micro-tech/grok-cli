@@ -127,6 +127,10 @@ nul
 .grok/
 .grok/config.toml
 .grok/agents/
+
+# Legacy root-level Session DNA (SEC-5)
+# All project DNA must live under .grok/ to stay out of VCS
+session_dna.json
 # Legacy global config (pre 0.2.5)
 _back/
 

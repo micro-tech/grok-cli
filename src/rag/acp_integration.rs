@@ -5,7 +5,6 @@
 
 use crate::rag::api::TgsRagContextProvider;
 use crate::rag::config::TgsRagConfig;
-use crate::rag::graph::ProjectGraph;
 use std::path::Path;
 
 /// High-level integration point for ACP sessions.

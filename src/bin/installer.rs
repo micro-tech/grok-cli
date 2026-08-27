@@ -79,6 +79,9 @@ fn install_windows(root_dir: PathBuf) {
 
     if !status.success() {
         eprintln!("{}", "Build failed. Aborting installation.".red());
+        // SEC-4: process::exit is acceptable here — this is the installer *binary*
+        // (src/bin/installer.rs), not library code. Fatal setup errors must
+        // terminate immediately with a clear non-zero status.
         std::process::exit(1);
     }
 
@@ -96,6 +99,9 @@ fn install_windows(root_dir: PathBuf) {
             "Source binary not found at:".red(),
             source_exe.display()
         );
+        // SEC-4: process::exit is acceptable here — this is the installer *binary*
+        // (src/bin/installer.rs), not library code. Fatal setup errors must
+        // terminate immediately with a clear non-zero status.
         std::process::exit(1);
     }
 
@@ -124,7 +130,8 @@ fn install_windows(root_dir: PathBuf) {
                 needs_manual_replace = true;
                 println!(
                     "{}",
-                    "  Old binary is locked (probably running). Will install as grok-cli.exe.new".yellow()
+                    "  Old binary is locked (probably running). Will install as grok-cli.exe.new"
+                        .yellow()
                 );
             }
         } else {
@@ -138,7 +145,10 @@ fn install_windows(root_dir: PathBuf) {
 
     if needs_manual_replace {
         println!();
-        println!("{}", "MANUAL STEP REQUIRED (Windows file lock):".red().bold());
+        println!(
+            "{}",
+            "MANUAL STEP REQUIRED (Windows file lock):".red().bold()
+        );
         println!("The old grok-cli.exe is still in use.");
         println!("After you close ALL grok-cli / terminal windows that are using it:");
         println!();

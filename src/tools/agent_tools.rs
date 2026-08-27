@@ -237,7 +237,7 @@ async fn call_subagent_api(task: &str, context: &str, max_tokens: u32) -> Result
                 if attempt < SUBAGENT_MAX_RETRIES
                     && crate::utils::network::detect_network_drop(&e) =>
             {
-                let delay = crate::utils::network::calculate_retry_delay(attempt);
+                let delay = crate::utils::network::RetryPolicy::default_starlink().delay_for_attempt(attempt);
                 warn!(
                     attempt = attempt + 1,
                     max_attempts = SUBAGENT_MAX_RETRIES + 1,

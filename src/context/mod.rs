@@ -305,7 +305,11 @@ impl ContextEngine {
         if !recent_tools.is_empty() {
             summary.push_str("Recent Tool Usage:\n");
             for call in recent_tools {
-                let status = if call.error.is_some() { "ERROR" } else { "SUCCESS" };
+                let status = if call.error.is_some() {
+                    "ERROR"
+                } else {
+                    "SUCCESS"
+                };
                 summary.push_str("- ");
                 summary.push_str(&call.tool_name);
                 summary.push_str(": ");

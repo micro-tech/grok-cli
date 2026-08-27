@@ -20,5 +20,6 @@ pub mod settings;
 pub mod setup;
 pub mod skills;
 pub mod tools;
+pub mod update;
 
 // Re-export all command handlers

@@ -31,26 +31,58 @@ const MAX_CONTEXT_SIZE: u64 = 5 * 1024 * 1024;
 /// Standard context file names to search for in the global configuration directory
 const GLOBAL_CONTEXT_FILE_NAMES: &[&str] = &["context.md", "CONTEXT.md", "memory.md"];
 
-/// Get the global context directory (e.g., ~/.grok)
+/// Get the global context directory (e.g., ~/.grok-cli)
+///
+/// Uses the canonical data directory (`~/.grok-cli`) so we don't pick up
+/// legacy `~/.grok/` files. All global memory, agents, skills etc. live in
+/// `.grok-cli` now.
 fn get_global_context_dir() -> Option<PathBuf> {
     if let Ok(path) = std::env::var("GROK_GLOBAL_CONTEXT_DIR") {
         return Some(PathBuf::from(path));
     }
-    dirs::home_dir().map(|home| home.join(".grok"))
+    Some(crate::config::grok_data_dir())
+}
+
+/// Returns true if the path is inside the legacy `~/.grok` directory.
+fn is_legacy_grok_path(path: &Path) -> bool {
+    if let Some(home) = dirs::home_dir() {
+        let legacy = home.join(".grok");
+        let p = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let leg = legacy.canonicalize().unwrap_or(legacy);
+        p.starts_with(&leg)
+    } else {
+        false
+    }
 }
 
 /// Find project root by walking up directory tree
 ///
-/// Searches for project markers like .git, Cargo.toml, package.json, or .grok directory
+/// Searches for project markers like .git, Cargo.toml, package.json, or .grok directory.
+///
+/// IMPORTANT: We deliberately ignore a `.grok` directory that lives directly
+/// inside the user's home directory. That is considered legacy global data
+/// (now migrated to ~/.grok-cli). Real project roots should not be the home dir.
 fn find_project_root<P: AsRef<Path>>(start_dir: P) -> Result<PathBuf> {
     let mut current_dir = start_dir.as_ref().to_path_buf();
+    let home_dir = dirs::home_dir();
 
     loop {
         // Check for project root markers
-        let has_project_marker = current_dir.join(".git").exists()
+        let has_grok = current_dir.join(".grok").exists();
+        let has_other_marker = current_dir.join(".git").exists()
             || current_dir.join("Cargo.toml").exists()
-            || current_dir.join("package.json").exists()
-            || current_dir.join(".grok").exists();
+            || current_dir.join("package.json").exists();
+
+        let is_home = if let Some(ref home) = home_dir {
+            let norm_current = current_dir.canonicalize().unwrap_or_else(|_| current_dir.clone());
+            let norm_home = home.canonicalize().unwrap_or_else(|_| home.clone());
+            norm_current == norm_home
+        } else {
+            false
+        };
+
+        // Only treat .grok as a project marker if it's NOT in the home directory
+        let has_project_marker = has_other_marker || (has_grok && !is_home);
 
         if has_project_marker {
             return Ok(current_dir);
@@ -87,11 +119,18 @@ pub fn load_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Option<Strin
     let project_root = find_project_root(start_dir)?;
 
     // 1. Check project directory
-    if project_root.exists() && project_root.is_dir() {
+    // IMPORTANT: Never treat files inside the legacy ~/.grok directory as project context.
+    // Global facts live in ~/.grok-cli/memory.md (via LongTermMemory).
+    if project_root.exists() && project_root.is_dir() && !is_legacy_grok_path(&project_root) {
         for file_name in CONTEXT_FILE_NAMES {
             let file_path = project_root.join(file_name);
 
             if file_path.exists() && file_path.is_file() {
+                // Double-guard: skip anything that resolves into legacy ~/.grok
+                if is_legacy_grok_path(&file_path) {
+                    continue;
+                }
+
                 // Check file size before reading
                 let metadata = match fs::metadata(&file_path) {
                     Ok(m) => m,
@@ -127,15 +166,20 @@ pub fn load_project_context<P: AsRef<Path>>(start_dir: P) -> Result<Option<Strin
         }
     }
 
-    // 2. Check global directory
+    // 2. Check global directory (must be the canonical ~/.grok-cli, never legacy ~/.grok)
     if let Some(global_dir) = get_global_context_dir()
         && global_dir.exists()
         && global_dir.is_dir()
+        && !is_legacy_grok_path(&global_dir)
     {
         for file_name in GLOBAL_CONTEXT_FILE_NAMES {
             let file_path = global_dir.join(file_name);
 
             if file_path.exists() && file_path.is_file() {
+                if is_legacy_grok_path(&file_path) {
+                    continue;
+                }
+
                 let metadata = match fs::metadata(&file_path) {
                     Ok(m) => m,
                     Err(e) => {
@@ -341,30 +385,44 @@ pub fn get_all_context_file_paths<P: AsRef<Path>>(start_dir: P) -> Vec<PathBuf> 
 ///
 /// Returns the path to the first available context file, or None if no file exists.
 /// Get the path of the first context file found
+///
+/// Never returns paths inside the legacy ~/.grok directory. Global context
+/// is served from ~/.grok-cli (grok_data_dir).
 pub fn get_context_file_path<P: AsRef<Path>>(start_dir: P) -> Option<PathBuf> {
     // Find project root by walking up directory tree
     let Ok(project_root) = find_project_root(start_dir) else {
         return None;
     };
 
-    // Check project directory
-    if project_root.exists() && project_root.is_dir() {
+    // Check project directory — but never treat the home directory (or anything
+    // under legacy ~/.grok) as a project for context purposes.
+    if project_root.exists()
+        && project_root.is_dir()
+        && !is_legacy_grok_path(&project_root)
+    {
         for file_name in CONTEXT_FILE_NAMES {
             let file_path = project_root.join(file_name);
             if file_path.exists() && file_path.is_file() {
+                if is_legacy_grok_path(&file_path) {
+                    continue;
+                }
                 return Some(file_path);
             }
         }
     }
 
-    // 2. Check global directory
+    // 2. Check global directory (canonical ~/.grok-cli only)
     if let Some(global_dir) = get_global_context_dir()
         && global_dir.exists()
         && global_dir.is_dir()
+        && !is_legacy_grok_path(&global_dir)
     {
         for file_name in GLOBAL_CONTEXT_FILE_NAMES {
             let file_path = global_dir.join(file_name);
             if file_path.exists() && file_path.is_file() {
+                if is_legacy_grok_path(&file_path) {
+                    continue;
+                }
                 return Some(file_path);
             }
         }

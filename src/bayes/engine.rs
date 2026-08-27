@@ -3,7 +3,7 @@
 //! The engine maintains a probability distribution over possible user intents
 //! and meta-states (confidence, vagueness, clarification need).  It is updated
 //! on every user message and after each tool call, and its internal state is
-//! persisted to `~/.grok/bayes_profile.json` so the router learns from usage
+//! persisted to `~/.grok-cli/bayes_profile.json` (via grok_data_dir()) so the router learns from usage
 //! over time.
 //!
 //! ## Configuration
@@ -87,10 +87,7 @@ impl Clone for BayesianEngine {
             // Clone the cached value if possible; otherwise start empty.
             // Losing the cache on clone is harmless (it's only a perf hint).
             cached_best_intent: std::sync::Mutex::new(
-                self.cached_best_intent
-                    .lock()
-                    .ok()
-                    .and_then(|g| g.clone()),
+                self.cached_best_intent.lock().ok().and_then(|g| g.clone()),
             ),
         }
     }
@@ -102,7 +99,7 @@ impl BayesianEngine {
     /// Create a new engine using compiled-in defaults.
     ///
     /// The prior distribution is loaded from the saved profile on disk
-    /// (`~/.grok/bayes_profile.json`) and falls back to the built-in default
+    /// (`~/.grok-cli/bayes_profile.json` via grok_data_dir()) and falls back to the built-in default
     /// priors when no profile exists yet.
     pub fn new() -> Self {
         let priors = crate::bayes::profile::load_profile().unwrap_or_else(default_priors);
@@ -229,16 +226,16 @@ impl BayesianEngine {
     pub fn update_from_text(&mut self, text: &str) {
         // Task 268.3: intent caching / short-circuit for identical consecutive inputs
         let trimmed = text.trim().to_string();
-        if let Some(ref last) = self.last_text {
-            if *last == trimmed {
-                // Fast path: identical input, distribution unchanged.
-                // Still allow perf reporting of the cheap path.
-                if crate::utils::perf::perf_enabled() {
-                    // Emit a zero-cost marker for visibility under GROK_PERF
-                    eprintln!("[perf] bayes.update_from_text (cached identical)");
-                }
-                return;
+        if let Some(ref last) = self.last_text
+            && *last == trimmed
+        {
+            // Fast path: identical input, distribution unchanged.
+            // Still allow perf reporting of the cheap path.
+            if crate::utils::perf::perf_enabled() {
+                // Emit a zero-cost marker for visibility under GROK_PERF
+                eprintln!("[perf] bayes.update_from_text (cached identical)");
             }
+            return;
         }
 
         // Task 268: instrument per-turn Bayesian cost
@@ -363,10 +360,10 @@ impl BayesianEngine {
 
         // Compute and cache
         let computed = self.graph.best_key("intent_");
-        if let Some(ref key) = computed {
-            if let Ok(mut guard) = self.cached_best_intent.lock() {
-                *guard = Some(key.clone());
-            }
+        if let Some(ref key) = computed
+            && let Ok(mut guard) = self.cached_best_intent.lock()
+        {
+            *guard = Some(key.clone());
         }
         computed
     }

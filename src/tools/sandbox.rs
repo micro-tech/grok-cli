@@ -43,9 +43,10 @@ impl PluginSandbox {
             let entry = entry?;
             let path = entry.path();
             if path.extension() == Some(std::ffi::OsStr::new("rs"))
-                && let Err(e) = self.compile_and_load(&path) {
-                    tracing::error!("Failed to load {}: {}", path.display(), e);
-                }
+                && let Err(e) = self.compile_and_load(&path)
+            {
+                tracing::error!("Failed to load {}: {}", path.display(), e);
+            }
         }
 
         Ok(())

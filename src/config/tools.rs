@@ -58,7 +58,7 @@ fn default_true() -> bool {
 }
 
 fn default_shell_command_timeout() -> u64 {
-    300
+    crate::constants::DEFAULT_SHELL_TIMEOUT_SECS
 }
 
 impl Default for ToolsConfig {
@@ -73,8 +73,8 @@ impl Default for ToolsConfig {
             call_command: String::new(),
             use_ripgrep: true,
             enable_tool_output_truncation: true,
-            truncate_tool_output_threshold: 10000,
-            truncate_tool_output_lines: 100,
+            truncate_tool_output_threshold: crate::constants::DEFAULT_TRUNCATE_TOOL_OUTPUT_THRESHOLD,
+            truncate_tool_output_lines: crate::constants::DEFAULT_TRUNCATE_TOOL_OUTPUT_LINES,
             enable_message_bus_integration: true,
             enable_hooks: false,
         }

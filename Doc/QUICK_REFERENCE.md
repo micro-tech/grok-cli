@@ -330,6 +330,38 @@ grok-cli config set experimental.extensions.enabled true
 | `/version` | Show version info |
 | `/commit [instructions]` | Generate Conventional Commits message from git diff |
 | `/image <path|url> [prompt]` | Attach an image (local file or URL) for vision models |
+| `/update`                  | Show guidance for updating Grok CLI (full flow via `self-updater` skill) |
+
+### Updating Grok CLI
+
+Grok CLI includes a built-in self-update system:
+
+```bash
+# Check for updates (recommended first step)
+grok update --check
+
+# Perform update (downloads to temp, then replaces binary safely)
+grok update
+
+# Force update even if disabled in config
+grok update --force
+```
+
+The complete safe update protocol lives in the **`self-updater`** skill.
+
+In an interactive session:
+```bash
+> /activate self-updater
+> update to the latest version
+```
+
+**Safety features:**
+- Downloads to a temporary file first
+- Platform-specific replacement (Windows uses `.old` backup)
+- Respects `general.disable_auto_update` in config
+- Clear warnings for source builds vs. release builds
+
+See also: `grok --help | grep -A 5 update` and the `self-updater` skill documentation.
 
 ### Image / Vision Support
 
@@ -371,14 +403,33 @@ Most slash commands are **handled locally** and are **never sent to the LLM**:
 
 This is intentional for speed and predictability.
 
-### Skills Catalog (Self-Updating)
-The model sees a live catalog in `.grok/SKILLS_HOOKS_OPTIMIZATION.md` (injected into context).
+### Skills Catalog (Self-Updating) — Task 273
 
-- Contains: Skills (with descriptions, arbitration scores, when to use), Hooks guidance, and Optimization Heuristics.
-- **Auto-refreshed** when you create skills via the `skill-builder` skill.
-- You can manually refresh with: `grok skills generate-catalog`
+Grok CLI maintains a **live, self-updating catalog** that is injected into the system prompt on **every turn**.
 
-This ensures the model always knows about newly created skills without manual intervention.
+**Location:**
+- `.grok/SKILLS_HOOKS_OPTIMIZATION.md` (project)
+- `~/.grok-cli/SKILLS_HOOKS_OPTIMIZATION.md` (fallback)
+
+**Contents:**
+- **SKILLS CATALOG** — All skills ranked by arbitration score, with descriptions, tags, auto-activation hints, and exact activation syntax (`execute_skill "name"` or `/activate name`)
+- **HOOKS** — Documentation of `before_tool` / `after_tool` behavior
+- **OPTIMIZATION HEURISTICS** — Performance best practices the model is encouraged to follow
+
+**Key Behaviors:**
+- Automatically regenerated after `grok skills new <name>`
+- The `skill-builder` meta-skill runs `grok skills generate-catalog` automatically
+- The model sees the catalog on the **very next message** after a skill is created
+
+**Manual refresh:**
+```bash
+grok skills generate-catalog
+```
+
+**Why it matters:**
+Creating a skill now makes it immediately visible and usable by the model without restarts or manual explanation.
+
+See the full guide: [Doc/SKILLS_CATALOG.md](SKILLS_CATALOG.md)
 
 | Command | Description |
 |---------|-------------|
@@ -751,8 +802,8 @@ grok-cli interactive
 ```
 
 ### Support
-- GitHub Issues: https://github.com/microtech/grok-cli/issues
-- Repository: https://github.com/microtech/grok-cli
+- GitHub Issues: https://github.com/micro-tech/grok-cli/issues
+- Repository: https://github.com/micro-tech/grok-cli
 
 ---
 

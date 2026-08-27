@@ -157,7 +157,7 @@ mod tests {
 
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
-        let ctx = ToolContext::new(security.clone());  // use ToolContext for SEC-9 aligned replace
+        let ctx = ToolContext::new(security.clone()); // use ToolContext for SEC-9 aligned replace
 
         fs::write(&file_path, "Hello world, hello universe").unwrap();
 

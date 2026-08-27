@@ -516,9 +516,8 @@ impl SessionToolSummary {
 // ─────────────────────────────────────────────────────────────────────────────
 
 fn tool_history_path() -> Result<PathBuf> {
-    dirs::home_dir()
-        .map(|h| h.join(".grok").join(TOOL_HISTORY_FILE))
-        .ok_or_else(|| anyhow::anyhow!("cannot determine home directory"))
+    // Canonical user data location: ~/.grok-cli/tool_history.json
+    Ok(crate::config::grok_data_dir().join(TOOL_HISTORY_FILE))
 }
 
 /// Truncate a string to `max_chars`, appending `…` if truncated.

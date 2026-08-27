@@ -39,7 +39,10 @@ pub fn system(content: impl Into<String>) -> Value {
 pub fn tool_result(tool_call_id: &str, content: impl Into<String>) -> Value {
     let mut m = Map::with_capacity(3);
     m.insert("role".to_string(), Value::String("tool".to_string()));
-    m.insert("tool_call_id".to_string(), Value::String(tool_call_id.to_string()));
+    m.insert(
+        "tool_call_id".to_string(),
+        Value::String(tool_call_id.to_string()),
+    );
     m.insert("content".to_string(), Value::String(content.into()));
     Value::Object(m)
 }

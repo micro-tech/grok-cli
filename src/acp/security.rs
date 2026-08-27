@@ -44,7 +44,7 @@ impl SecurityPolicy {
             trusted_directories: vec![canonical_cwd],
             working_directory,
             external_access_config: ExternalAccessConfig::default(),
-            shell_timeout_secs: 300,
+            shell_timeout_secs: crate::constants::DEFAULT_SHELL_TIMEOUT_SECS,
         }
     }
 
@@ -64,7 +64,7 @@ impl SecurityPolicy {
             trusted_directories: vec![canonical],
             working_directory,
             external_access_config: ExternalAccessConfig::default(),
-            shell_timeout_secs: 300,
+            shell_timeout_secs: crate::constants::DEFAULT_SHELL_TIMEOUT_SECS,
         }
     }
 
@@ -173,12 +173,13 @@ impl SecurityPolicy {
         }
 
         if abs.exists()
-            && let Ok(canonical) = abs.canonicalize() {
-                if suffix.as_os_str().is_empty() {
-                    return Ok(canonical);
-                }
-                return Ok(canonical.join(suffix));
+            && let Ok(canonical) = abs.canonicalize()
+        {
+            if suffix.as_os_str().is_empty() {
+                return Ok(canonical);
             }
+            return Ok(canonical.join(suffix));
+        }
 
         // Final fallback — at least give an absolute path under the working dir.
         // is_internal_path will still compare against trusted directories.

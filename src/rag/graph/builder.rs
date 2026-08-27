@@ -34,14 +34,14 @@ impl GraphBuilder {
         for entry in WalkDir::new(root)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "rs"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
         {
             let path = entry.path().to_path_buf();
             if let Ok(source) = std::fs::read_to_string(&path) {
-                if let Ok(meta) = std::fs::metadata(&path) {
-                    if let Ok(mtime) = meta.modified() {
-                        self.file_mtimes.insert(path.clone(), mtime);
-                    }
+                if let Ok(meta) = std::fs::metadata(&path)
+                    && let Ok(mtime) = meta.modified()
+                {
+                    self.file_mtimes.insert(path.clone(), mtime);
                 }
                 self.add_file_to_graph(&mut graph, &path, &source);
             }
@@ -89,10 +89,10 @@ impl GraphBuilder {
         }
 
         // Update mtime
-        if let Ok(meta) = std::fs::metadata(path) {
-            if let Ok(mtime) = meta.modified() {
-                self.file_mtimes.insert(path.clone(), mtime);
-            }
+        if let Ok(meta) = std::fs::metadata(path)
+            && let Ok(mtime) = meta.modified()
+        {
+            self.file_mtimes.insert(path.clone(), mtime);
         }
     }
 
@@ -104,7 +104,7 @@ impl GraphBuilder {
         for entry in WalkDir::new(root)
             .into_iter()
             .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().map_or(false, |ext| ext == "rs"))
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "rs"))
         {
             let path = entry.path().to_path_buf();
 
@@ -115,13 +115,11 @@ impl GraphBuilder {
             let is_stale = self
                 .file_mtimes
                 .get(&path)
-                .map_or(true, |&last| current_mtime > last);
+                .is_none_or(|&last| current_mtime > last);
 
-            if is_stale {
-                if let Ok(source) = std::fs::read_to_string(&path) {
-                    self.add_file_to_graph(graph, &path, &source);
-                    updated += 1;
-                }
+            if is_stale && let Ok(source) = std::fs::read_to_string(&path) {
+                self.add_file_to_graph(graph, &path, &source);
+                updated += 1;
             }
         }
 

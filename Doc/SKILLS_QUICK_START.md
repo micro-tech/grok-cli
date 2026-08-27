@@ -105,7 +105,11 @@ Use the **Skill Builder** skill:
 > Create a skill for Docker troubleshooting
 ```
 
-**Important (Recent Improvement)**: The Skill Builder now **automatically runs `grok skills generate-catalog`** after creating a skill. This updates `.grok/SKILLS_HOOKS_OPTIMIZATION.md` so the new skill immediately appears in the **SKILLS CATALOG** section that the model reads on every turn. No manual refresh or restart needed.
+**Important (Recent Improvement — Task 273)**: The Skill Builder now **automatically runs `grok skills generate-catalog`** after creating a skill. 
+
+This updates `.grok/SKILLS_HOOKS_OPTIMIZATION.md` (the live catalog) so the new skill immediately appears in the ranked **SKILLS CATALOG** section. The model receives this catalog on **every single turn**.
+
+No manual refresh or restart needed. The model will know about your new skill right away.
 
 ### 1. Use the CLI (for templates)
 
@@ -215,6 +219,30 @@ grok interactive
 ```
 
 ## Example Skills Included
+
+### self-updater
+
+**Covers:**
+- Checking for new releases on GitHub
+- Safe download to a temporary file
+- Platform-aware binary replacement (Windows `.exe` handling with `.old` backup, Unix `chmod +x` + rename)
+- Respecting `disable_auto_update` config (override with `--force`)
+- Rollback guidance and source-build warnings
+
+**Activate when:** You want to update Grok CLI, or say things like "update", "upgrade", "check for updates", or run `grok update`.
+
+**Usage:**
+```bash
+grok update                 # Check + guided update
+grok update --check         # Only check, no download
+grok update --force         # Ignore disable_auto_update
+
+# Or inside an interactive session:
+> /activate self-updater
+> update to the latest version
+```
+
+The skill provides the full safe protocol. The `grok update` command is a convenient entry point that also works without activating the skill.
 
 ### rust-expert
 
@@ -349,9 +377,10 @@ $ grok skills show rust-expert
 ## Next Steps
 
 1. **Try the examples**: Copy from `examples/skills/` to `~/.grok-cli/skills/`
-2. **Create your first skill**: `grok skills new my-first-skill`
-3. **Explore the spec**: See `Doc/SKILL_SPECIFICATION.md` for details
-4. **Share skills**: Contribute useful skills back to the community
+2. **Create your first skill**: `grok skills new my-first-skill` (catalog auto-refreshes!)
+3. **Read the full catalog guide**: See [Doc/SKILLS_CATALOG.md](SKILLS_CATALOG.md)
+4. **Explore the spec**: See `Doc/SKILL_SPECIFICATION.md` for details
+5. **Share skills**: Contribute useful skills back to the community
 
 ### Validating Skills for Security
 

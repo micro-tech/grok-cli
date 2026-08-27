@@ -19,10 +19,10 @@ pub fn expand_with_neighbors<'a>(
         // Find neighbors via edges (simplified: look for nodes in same file)
         if let Some(neighbors) = graph.file_index.get(&node.file_path) {
             for nid in neighbors.iter().take(max_neighbors) {
-                if let Some(n) = graph.nodes.get(nid) {
-                    if seen.insert(*nid) {
-                        results.push(n);
-                    }
+                if let Some(n) = graph.nodes.get(nid)
+                    && seen.insert(*nid)
+                {
+                    results.push(n);
                 }
             }
         }

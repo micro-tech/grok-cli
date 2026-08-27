@@ -3,7 +3,6 @@
 //! This module provides fast, incremental parsing to identify code regions
 //! (functions, structs, modules, etc.) without full semantic extraction.
 
-use std::path::Path;
 use tree_sitter::{Parser, Tree};
 
 /// Scans a Rust source file and returns structural boundaries.

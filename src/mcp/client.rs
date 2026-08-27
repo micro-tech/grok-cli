@@ -174,9 +174,10 @@ impl McpClient {
 
         // 6. Optional but recommended: check serverInfo
         if let Some(server_info) = result.get("serverInfo")
-            && let Some(name) = server_info.get("name").and_then(|v| v.as_str()) {
-                debug!("Connected to MCP server: {}", name);
-            }
+            && let Some(name) = server_info.get("name").and_then(|v| v.as_str())
+        {
+            debug!("Connected to MCP server: {}", name);
+        }
 
         Ok(())
     }
@@ -212,7 +213,10 @@ impl McpClient {
     ///
     /// This is the preferred method for 2026 stateless clients that want to respect
     /// server-provided caching hints.
-    pub async fn list_tools_with_meta(&self, server_name: &str) -> Result<(Vec<Tool>, Option<crate::mcp::protocol::ToolListMeta>)> {
+    pub async fn list_tools_with_meta(
+        &self,
+        server_name: &str,
+    ) -> Result<(Vec<Tool>, Option<crate::mcp::protocol::ToolListMeta>)> {
         let connection = self
             .servers
             .get(server_name)
@@ -227,9 +231,10 @@ impl McpClient {
 
         // 2026+ stateless mode: always put client identity in _meta (no handshake needed)
         if !connection.use_legacy_handshake
-            && let Some(obj) = msg.as_object_mut() {
-                obj.insert("_meta".to_string(), self.client_meta());
-            }
+            && let Some(obj) = msg.as_object_mut()
+        {
+            obj.insert("_meta".to_string(), self.client_meta());
+        }
 
         self.send_message(connection, &msg).await?;
         let response = self.read_response(connection).await?;
@@ -242,14 +247,14 @@ impl McpClient {
                 .unwrap_or_default();
 
             // 2026+ support: extract _meta for ttlMs / cacheScope
-            let meta = result
-                .get("_meta")
-                .and_then(|m| serde_json::from_value::<crate::mcp::protocol::ToolListMeta>(m.clone()).ok());
+            let meta = result.get("_meta").and_then(|m| {
+                serde_json::from_value::<crate::mcp::protocol::ToolListMeta>(m.clone()).ok()
+            });
 
-            if let Some(ref m) = meta {
-                if let Some(ttl) = m.ttl_ms {
-                    debug!("MCP tools/list for '{}' has ttlMs={}", server_name, ttl);
-                }
+            if let Some(ref m) = meta
+                && let Some(ttl) = m.ttl_ms
+            {
+                debug!("MCP tools/list for '{}' has ttlMs={}", server_name, ttl);
             }
 
             return Ok((tools, meta));
@@ -281,9 +286,10 @@ impl McpClient {
 
         // Phase 0 (2026 readiness): inject client info via _meta when using stateless mode
         if !connection.use_legacy_handshake
-            && let Some(obj) = msg.as_object_mut() {
-                obj.insert("_meta".to_string(), self.client_meta());
-            }
+            && let Some(obj) = msg.as_object_mut()
+        {
+            obj.insert("_meta".to_string(), self.client_meta());
+        }
 
         self.send_message(connection, &msg).await?;
         let response = self.read_response(connection).await?;
@@ -333,9 +339,10 @@ impl McpClient {
         });
 
         if !connection.use_legacy_handshake
-            && let Some(obj) = msg.as_object_mut() {
-                obj.insert("_meta".to_string(), self.client_meta());
-            }
+            && let Some(obj) = msg.as_object_mut()
+        {
+            obj.insert("_meta".to_string(), self.client_meta());
+        }
 
         self.send_message(connection, &msg).await?;
         let response = self.read_response(connection).await?;

@@ -1,11 +1,9 @@
 //! System tools — sleep and structured output generation.
 
+use crate::constants::MAX_SLEEP_SECS;
 use anyhow::{Result, anyhow};
 use serde_json::Value;
 use tracing::warn;
-
-/// Maximum sleep duration (5 minutes) to prevent runaway waits.
-const MAX_SLEEP_SECS: u64 = 300;
 
 /// Wait for the given number of seconds (capped at 300 s / 5 min).
 ///

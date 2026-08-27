@@ -101,22 +101,36 @@ edition = "2021"
         rt.block_on(async { graph.execute(&ctx).await })
             .unwrap_or_else(|e| {
                 // On graph error, return empty results; individual steps will be marked failed below
-                tracing::warn!("Task graph execution error (falling back to recorded failure): {}", e);
+                tracing::warn!(
+                    "Task graph execution error (falling back to recorded failure): {}",
+                    e
+                );
                 std::collections::HashMap::new()
             })
     };
 
     // Map graph results back into WorkflowTrace as individual ToolRun steps.
     // This keeps the trace complete and human-readable even though execution was parallel.
-    let check_out = graph_results.get("check").cloned().unwrap_or_else(|| "Graph node did not produce output (may have failed early)".to_string());
-    let clippy_out = graph_results.get("clippy").cloned().unwrap_or_else(|| "Graph node did not produce output (may have failed early)".to_string());
-    let test_out = graph_results.get("test").cloned().unwrap_or_else(|| "Graph node did not produce output (may have failed early or skipped)".to_string());
+    let check_out = graph_results
+        .get("check")
+        .cloned()
+        .unwrap_or_else(|| "Graph node did not produce output (may have failed early)".to_string());
+    let clippy_out = graph_results
+        .get("clippy")
+        .cloned()
+        .unwrap_or_else(|| "Graph node did not produce output (may have failed early)".to_string());
+    let test_out = graph_results.get("test").cloned().unwrap_or_else(|| {
+        "Graph node did not produce output (may have failed early or skipped)".to_string()
+    });
 
     // We consider success if the output does not contain obvious failure markers.
     // The real cargo exit code is reflected in whether the tool succeeded.
     let check_ok = !check_out.to_lowercase().contains("error") && !check_out.contains("aborting");
-    let clippy_ok = !clippy_out.to_lowercase().contains("error") && !clippy_out.contains("aborting");
-    let test_ok = !test_out.to_lowercase().contains("error") && !test_out.contains("aborting") && graph_results.contains_key("test");
+    let clippy_ok =
+        !clippy_out.to_lowercase().contains("error") && !clippy_out.contains("aborting");
+    let test_ok = !test_out.to_lowercase().contains("error")
+        && !test_out.contains("aborting")
+        && graph_results.contains_key("test");
 
     trace.push(WorkflowStep::ToolRun {
         tool: "cargo check".to_string(),

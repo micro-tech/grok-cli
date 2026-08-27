@@ -206,17 +206,8 @@ pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Res
         return Err(e);
     }
 
-    let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(30))
-        .build()
-        .map_err(|e| {
-            let err = anyhow!("Failed to build HTTP client: {}", e);
-            tracing::warn!(
-                error = %err,
-                "discovery_tools: failed to build reqwest client"
-            );
-            err
-        })?;
+    // Use the centralized shared HTTP client (Task 281)
+    let client = crate::utils::http::get_http_client();
 
     // ── method validation ─────────────────────────────────────────────────────
     // Reject unknown methods immediately, before spending any network budget.
@@ -287,7 +278,7 @@ pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Res
             Ok(response_text) => return Ok(response_text),
 
             Err(e) if attempt < MAX_RETRIES && crate::utils::network::detect_network_drop(&e) => {
-                let delay = crate::utils::network::calculate_retry_delay(attempt);
+                let delay = crate::utils::network::RetryPolicy::default_starlink().delay_for_attempt(attempt);
                 tracing::warn!(
                     attempt  = attempt + 1,
                     delay_ms = delay.as_millis() as u64,

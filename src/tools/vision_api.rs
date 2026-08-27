@@ -39,13 +39,14 @@ pub fn create_vision_message(text: &str, image_path_or_url: &str) -> Result<Valu
 /// Check if a message (as JSON) already contains image content.
 pub fn message_has_image(msg: &Value) -> bool {
     if let Some(content) = msg.get("content")
-        && content.is_array() {
-            return content
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|part| part.get("type").and_then(|t| t.as_str()) == Some("image_url"));
-        }
+        && content.is_array()
+    {
+        return content
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|part| part.get("type").and_then(|t| t.as_str()) == Some("image_url"));
+    }
     false
 }
 
