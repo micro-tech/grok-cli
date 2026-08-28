@@ -167,7 +167,13 @@ mod tests {
         assert_eq!(get_context_budget("grok-3"), LEGACY_CONTEXT_BUDGET);
 
         assert_eq!(get_default_max_output_tokens("grok-4.20"), DEFAULT_MAX_OUTPUT_TOKENS_GROK4);
+        assert_eq!(get_default_max_output_tokens("grok-4.3"), DEFAULT_MAX_OUTPUT_TOKENS_GROK4);
+        assert_eq!(get_default_max_output_tokens("grok-4-latest"), DEFAULT_MAX_OUTPUT_TOKENS_GROK4);
         assert_eq!(get_default_max_output_tokens("grok-3-mini"), DEFAULT_MAX_OUTPUT_TOKENS_MINI);
         assert_eq!(get_default_max_output_tokens("grok-3"), DEFAULT_MAX_OUTPUT_TOKENS_STANDARD);
+        assert_eq!(get_default_max_output_tokens("grok-coder"), DEFAULT_MAX_OUTPUT_TOKENS_STANDARD);
+        assert_eq!(get_default_max_output_tokens("Grok-Coder-v2"), DEFAULT_MAX_OUTPUT_TOKENS_STANDARD);
+        assert_eq!(get_default_max_output_tokens("unknown-model"), DEFAULT_MAX_OUTPUT_TOKENS_STANDARD);
+        assert_eq!(get_default_max_output_tokens("grok-2"), DEFAULT_MAX_OUTPUT_TOKENS_STANDARD);
     }
 }
