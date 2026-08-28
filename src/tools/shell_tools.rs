@@ -84,29 +84,36 @@ pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Resu
     let timeout_secs = effective_timeout(security);
     let timeout_duration = Duration::from_secs(timeout_secs);
 
-    let spawn_result = if cfg!(target_os = "windows") {
-        // Bash-style `&&` means "run next command only if previous succeeded".
-        // PowerShell `;` is unconditional (like `; ` in bash).
-        // We translate `&&` chains into conditional blocks using $LASTEXITCODE.
-        // This works on both Windows PowerShell 5.1 and PowerShell 7+ (pwsh).
-        let ps_command = translate_powershell_and_chain(command);
+    // Compile-time platform branching so that `translate_powershell_and_chain`
+    // (which only exists on Windows) is never referenced on other platforms.
+    let spawn_result = {
+        #[cfg(target_os = "windows")]
+        {
+            // Bash-style `&&` means "run next command only if previous succeeded".
+            // PowerShell `;` is unconditional (like `; ` in bash).
+            // We translate `&&` chains into conditional blocks using $LASTEXITCODE.
+            // This works on both Windows PowerShell 5.1 and PowerShell 7+ (pwsh).
+            let ps_command = translate_powershell_and_chain(command);
 
-        Command::new("powershell")
-            .args([
-                "-NonInteractive",
-                "-NoProfile",
-                "-ExecutionPolicy",
-                "Bypass",
-                "-Command",
-                &ps_command,
-            ])
-            .current_dir(&cwd)
-            .output()
-    } else {
-        Command::new("sh")
-            .args(["-c", command])
-            .current_dir(&cwd)
-            .output()
+            Command::new("powershell")
+                .args([
+                    "-NonInteractive",
+                    "-NoProfile",
+                    "-ExecutionPolicy",
+                    "Bypass",
+                    "-Command",
+                    &ps_command,
+                ])
+                .current_dir(&cwd)
+                .output()
+        }
+        #[cfg(not(target_os = "windows"))]
+        {
+            Command::new("sh")
+                .args(["-c", command])
+                .current_dir(&cwd)
+                .output()
+        }
     };
 
     // Wrap execution in a hard timeout.
