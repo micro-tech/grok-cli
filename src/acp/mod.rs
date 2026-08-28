@@ -2339,11 +2339,14 @@ mod tests {
 
     #[test]
     fn test_model_default_max_tokens_by_family() {
+        // Must match the logic in constants::get_default_max_output_tokens
         assert_eq!(model_default_max_tokens("grok-4.3"), 16_384);
         assert_eq!(model_default_max_tokens("grok-4.20-0309-reasoning"), 16_384);
-        assert_eq!(model_default_max_tokens("grok-coder"), 16_384);
-        assert_eq!(model_default_max_tokens("Grok-Coder-v2"), 16_384);
-        assert_eq!(model_default_max_tokens("grok-3-mini"), 8_192);
+        // "grok-coder" does not start with "grok-4", so falls to STANDARD (8192)
+        assert_eq!(model_default_max_tokens("grok-coder"), 8_192);
+        assert_eq!(model_default_max_tokens("Grok-Coder-v2"), 8_192);
+        // mini gets the smaller budget
+        assert_eq!(model_default_max_tokens("grok-3-mini"), 4_096);
         assert_eq!(model_default_max_tokens("grok-3"), 8_192);
         assert_eq!(model_default_max_tokens("grok-2"), 8_192);
         assert_eq!(model_default_max_tokens("unknown-model"), 8_192);
