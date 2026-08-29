@@ -759,6 +759,10 @@ mod tests {
         let path = dir.path().join("hello.txt");
         let path_str = path.to_str().unwrap();
 
+        // Defensive cleanup for CI/Windows path normalization ("is a directory" errors)
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&path);
+
         write_file(path_str, "Hello, world!", &ctx, false)
             .await
             .unwrap();
@@ -780,6 +784,11 @@ mod tests {
         let ctx = make_ctx(&dir);
         let path = dir.path().join("a.txt");
         let path_str = path.to_str().unwrap().to_string();
+
+        // Defensive cleanup
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&path);
+
         write_file(path_str.as_str(), "content", &ctx, false)
             .await
             .unwrap();
@@ -819,6 +828,10 @@ mod tests {
         let ctx = make_ctx(&dir);
         let path = dir.path().join("r.txt");
         let path_str = path.to_str().unwrap();
+
+        // Defensive cleanup against "Is a directory" on Windows/CI
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&path);
 
         write_file(path_str, "foo bar foo", &ctx, false)
             .await

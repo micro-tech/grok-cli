@@ -222,6 +222,10 @@ mod tests {
         let security = make_security(&dir);
         let path = dir.path().join("test.ipynb");
 
+        // Defensive cleanup for "Is a directory" / stale artifacts on Windows CI
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&path);
+
         let result = notebook_edit(
             path.to_str().unwrap(),
             0,
@@ -243,6 +247,10 @@ mod tests {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
         let path = dir.path().join("nb.ipynb");
+
+        // Defensive cleanup against "Is a directory (os error 21)" on Windows/CI
+        let _ = std::fs::remove_file(&path);
+        let _ = std::fs::remove_dir_all(&path);
 
         notebook_edit(path.to_str().unwrap(), 0, "first", "code", &security).unwrap();
         notebook_edit(path.to_str().unwrap(), 99, "second", "markdown", &security).unwrap();

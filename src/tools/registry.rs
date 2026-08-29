@@ -1830,18 +1830,29 @@ mod tests {
     async fn execute_tool_round_trip_write_read_unknown_missing() {
         let dir = tempfile::TempDir::new().unwrap();
         // Robust trust for Windows CI (\\?\ prefixes, canonicalization differences)
+        let raw = dir.path().to_path_buf();
         let mut policy =
-            crate::acp::security::SecurityPolicy::with_working_directory(dir.path().to_path_buf());
-        if let Ok(can) = dir.path().canonicalize() {
-            policy.add_trusted_directory(can);
+            crate::acp::security::SecurityPolicy::with_working_directory(raw.clone());
+        if let Ok(can) = raw.canonicalize() {
+            policy.add_trusted_directory(&can);
         }
+        // Explicitly trust the raw form as well (Windows path prefix differences)
+        policy.add_trusted_directory(&raw);
         let ctx = crate::tools::ToolContext::new(policy);
 
-        let test_file = dir
-            .path()
-            .join("roundtrip_via_execute_tool.txt")
-            .to_string_lossy()
-            .to_string();
+        // Use a *unique* filename (uuid) placed directly in the temp dir.
+        // This completely eliminates any chance of name collision with directories
+        // created by create_dir_all, previous test runs, or path-resolution edge cases
+        // on CI runners (Linux or Windows).
+        let unique_name = format!("roundtrip_via_execute_tool_{}.txt", uuid::Uuid::new_v4());
+        let test_file_path = dir.path().join(&unique_name);
+        let test_file = test_file_path.to_string_lossy().to_string();
+
+        // Very defensive cleanup: remove both file and any accidental directory with this name.
+        // This prevents "Is a directory (os error 21)" when a prior partial run or
+        // path normalization left a dir at the target location.
+        let _ = std::fs::remove_file(&test_file_path);
+        let _ = std::fs::remove_dir_all(&test_file_path);
 
         // ── Happy path: write_file via dispatch ─────────────────────────────
         let write_args = serde_json::json!({
