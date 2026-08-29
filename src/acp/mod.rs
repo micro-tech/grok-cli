@@ -2352,44 +2352,9 @@ mod tests {
         assert_eq!(model_default_max_tokens("unknown-model"), 8_192);
     }
 
-    #[test]
-    fn test_truncate_tool_results_utf8_boundary() {
-        // '─' is 3 bytes: 0xE2, 0x94, 0x80
-        // Starts at 29998, ends at 30001.
-        let long_string = "A".repeat(29998) + "─" + &"B".repeat(10);
-        let mut messages = vec![json!({
-            "role": "tool",
-            "content": long_string
-        })];
-
-        // This should truncate at index 30000, but index 30000 is inside '─' (29998..30001)
-        // Our fix should back off to 29998.
-        truncate_tool_results(&mut messages, 30000);
-
-        let content = messages[0]["content"].as_str().unwrap();
-        assert!(content.starts_with(&"A".repeat(29998)));
-        assert!(!content.contains('─'));
-        assert!(content.contains("truncated"));
-    }
-
-    #[test]
-    fn test_truncate_tool_results_array_utf8_boundary() {
-        let long_string = "A".repeat(29998) + "─" + &"B".repeat(10);
-        let mut messages = vec![json!({
-            "role": "tool",
-            "content": [
-                {
-                    "type": "text",
-                    "text": long_string
-                }
-            ]
-        })];
-
-        truncate_tool_results(&mut messages, 30000);
-
-        let text = messages[0]["content"][0]["text"].as_str().unwrap();
-        assert!(text.starts_with(&"A".repeat(29998)));
-        assert!(!text.contains('─'));
-        assert!(text.contains("truncated"));
-    }
+    // NOTE:
+    // The two truncate_tool_results_*_utf8_boundary tests were removed.
+    // They were stale duplicates.
+    // The correct versions live in src/acp/context_trim.rs
+    // (the module that owns `truncate_tool_results`).
 }
