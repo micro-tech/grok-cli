@@ -738,7 +738,14 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_security(dir: &TempDir) -> SecurityPolicy {
-        SecurityPolicy::with_working_directory(dir.path().to_path_buf())
+        // Use canonicalize when possible. On Windows this produces the \\?\ prefix
+        // that resolve_path / is_path_trusted may return. Adding both the original
+        // and the canonical form makes tests robust across local runs and CI.
+        let mut policy = SecurityPolicy::with_working_directory(dir.path().to_path_buf());
+        if let Ok(canonical) = dir.path().canonicalize() {
+            policy.add_trusted_directory(canonical);
+        }
+        policy
     }
 
     fn make_ctx(dir: &TempDir) -> crate::tools::ToolContext {

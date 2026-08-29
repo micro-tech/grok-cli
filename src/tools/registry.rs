@@ -1829,8 +1829,12 @@ mod tests {
     #[tokio::test]
     async fn execute_tool_round_trip_write_read_unknown_missing() {
         let dir = tempfile::TempDir::new().unwrap();
-        let policy =
+        // Robust trust for Windows CI (\\?\ prefixes, canonicalization differences)
+        let mut policy =
             crate::acp::security::SecurityPolicy::with_working_directory(dir.path().to_path_buf());
+        if let Ok(can) = dir.path().canonicalize() {
+            policy.add_trusted_directory(can);
+        }
         let ctx = crate::tools::ToolContext::new(policy);
 
         let test_file = dir

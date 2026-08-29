@@ -207,7 +207,13 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_security(dir: &TempDir) -> SecurityPolicy {
-        SecurityPolicy::with_working_directory(dir.path().to_path_buf())
+        // Robust for Windows + CI: trust both the provided path and its canonical form
+        // (resolve_path / is_path_trusted often return canonical \\?\ paths on Windows).
+        let mut policy = SecurityPolicy::with_working_directory(dir.path().to_path_buf());
+        if let Ok(canonical) = dir.path().canonicalize() {
+            policy.add_trusted_directory(canonical);
+        }
+        policy
     }
 
     #[test]

@@ -36,6 +36,10 @@ mod tests {
 
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
+        // On Windows/CI, also trust the canonical form (\\?\ prefix etc.)
+        if let Ok(can) = temp_dir.path().canonicalize() {
+            security.add_trusted_directory(can);
+        }
         let ctx = ToolContext::new(security.clone());
 
         // Test write_file (now takes &ToolContext)
@@ -63,6 +67,9 @@ mod tests {
 
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
+        if let Ok(can) = temp_dir.path().canonicalize() {
+            security.add_trusted_directory(can);
+        }
         let ctx = ToolContext::new(security.clone());
 
         let paths = vec![
@@ -101,6 +108,9 @@ mod tests {
 
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
+        if let Ok(can) = temp_dir.path().canonicalize() {
+            security.add_trusted_directory(can);
+        }
         let ctx = ToolContext::new(security.clone());
 
         let result = list_code_definitions(file_path.to_str().unwrap(), &ctx).await;
@@ -157,6 +167,9 @@ mod tests {
 
         let mut security = SecurityPolicy::new();
         security.add_trusted_directory(temp_dir.path());
+        if let Ok(can) = temp_dir.path().canonicalize() {
+            security.add_trusted_directory(can);
+        }
         let ctx = ToolContext::new(security.clone()); // use ToolContext for SEC-9 aligned replace
 
         fs::write(&file_path, "Hello world, hello universe").unwrap();
