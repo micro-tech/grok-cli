@@ -263,8 +263,12 @@ mod tests {
         truncate_tool_results(&mut messages, 30000);
 
         let content = messages[0]["content"].as_str().unwrap();
-        assert!(content.len() <= 30020); // small overhead for truncation marker
-        assert!(content.contains("truncated"));
+        assert!(content.contains("truncated"), "should indicate truncation");
+        // Current implementation reserves ~30 chars for the suffix, so we keep fewer leading chars.
+        // The important thing is that we did not cut in the middle of the multi-byte char
+        // and the result is still valid (starts with a prefix of the original).
+        assert!(content.starts_with(&"A".repeat(29900)), "should keep a substantial ASCII prefix");
+        assert!(content.len() <= 30020);
     }
 
     #[test]
@@ -278,6 +282,11 @@ mod tests {
         truncate_tool_results(&mut messages, 30000);
 
         let text = messages[0]["content"][0]["text"].as_str().unwrap();
-        assert!(text.contains("truncated"));
+        assert!(text.contains("truncated"), "should indicate truncation");
+        // The implementation subtracts overhead for the marker, so we only
+        // keep a prefix (roughly max_chars - 30). Verify we didn't cut the
+        // multi-byte char in the middle and that truncation happened.
+        assert!(text.starts_with(&"A".repeat(29900)), "should keep a substantial ASCII prefix");
+        assert!(text.len() <= 30020);
     }
 }

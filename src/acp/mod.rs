@@ -2344,6 +2344,8 @@ mod tests {
         assert_eq!(model_default_max_tokens("grok-4.20-0309-reasoning"), 16_384);
         // "grok-coder" does not start with "grok-4", so falls to STANDARD (8192)
         assert_eq!(model_default_max_tokens("grok-coder"), 8_192);
+        // Also verify a grok-4 variant gets the higher budget
+        assert_eq!(model_default_max_tokens("grok-4"), 16_384);
         assert_eq!(model_default_max_tokens("Grok-Coder-v2"), 8_192);
         // mini gets the smaller budget
         assert_eq!(model_default_max_tokens("grok-3-mini"), 4_096);
