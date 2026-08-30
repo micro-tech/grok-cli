@@ -1840,17 +1840,17 @@ mod tests {
         policy.add_trusted_directory(&raw);
         let ctx = crate::tools::ToolContext::new(policy);
 
-        // Use a *unique* filename (uuid) placed directly in the temp dir.
-        // This completely eliminates any chance of name collision with directories
-        // created by create_dir_all, previous test runs, or path-resolution edge cases
-        // on CI runners (Linux or Windows).
-        let unique_name = format!("roundtrip_via_execute_tool_{}.txt", uuid::Uuid::new_v4());
-        let test_file_path = dir.path().join(&unique_name);
+        // Extremely robust construction for GitHub CI Windows flakes.
+        // Create a *fresh subdirectory* we fully control, then place the target
+        // file name inside it.  Because we just created the subdir ourselves,
+        // the leaf name inside it cannot possibly be a directory from any
+        // previous artifact, TempDir internals, or canonicalize side-effect.
+        let subdir = dir.path().join(format!("wr_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&subdir).expect("failed to create test subdir");
+        let test_file_path = subdir.join("target.txt");
         let test_file = test_file_path.to_string_lossy().to_string();
 
-        // Very defensive cleanup: remove both file and any accidental directory with this name.
-        // This prevents "Is a directory (os error 21)" when a prior partial run or
-        // path normalization left a dir at the target location.
+        // Belt-and-suspenders cleanup (in case a previous run left something weird)
         let _ = std::fs::remove_file(&test_file_path);
         let _ = std::fs::remove_dir_all(&test_file_path);
 
@@ -1860,6 +1860,20 @@ mod tests {
             "content": "hello from TEST-2 round-trip"
         });
         let write_result = execute_tool("write_file", &write_args, &ctx).await;
+
+        // Extra diagnostics for CI (visible when test fails or with --nocapture)
+        if write_result.is_err() {
+            eprintln!(
+                "DEBUG registry roundtrip: target={:?} exists={} is_dir={} trusted={:?} cwd={:?} err={:?}",
+                test_file_path,
+                test_file_path.exists(),
+                test_file_path.is_dir(),
+                ctx.policy.trusted_directories(),
+                std::env::current_dir().ok(),
+                write_result.as_ref().err()
+            );
+        }
+
         assert!(
             write_result.is_ok(),
             "write_file dispatch must succeed, got error: {:?}",

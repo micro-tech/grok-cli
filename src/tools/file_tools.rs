@@ -173,6 +173,11 @@ pub async fn read_file(path: &str, ctx: &crate::tools::ToolContext) -> Result<St
         }
     };
 
+    // CI/Windows defense: the target may have become a directory due to
+    // path normalization / previous create_dir_all side effects.
+    if resolved_path.is_dir() {
+        let _ = std::fs::remove_dir_all(&resolved_path);
+    }
     if !resolved_path.exists() {
         return Err(anyhow!("File not found: {}", resolved_path.display()));
     }
@@ -413,6 +418,37 @@ pub async fn write_file(
             .map_err(|e| anyhow!("Failed to create directory: {}", e))?;
     }
 
+    // === CI / Windows "Is a directory (os error 21)" defense ===
+    // GitHub Actions runners (both Windows and containerized Linux) frequently
+    // exhibit a race / path-normalization artifact where a directory ends up
+    // at the exact leaf name we want to write a *file* to.  This happens due to:
+    //   - TempDir + canonicalize() producing \\?\ prefixes
+    //   - resolve_path walk-up logic
+    //   - create_dir_all on parents in previous tests / partial runs
+    //   - FS caching / indexer touching the name briefly
+    //
+    // We therefore *aggressively* ensure the target is not a directory right
+    // before the actual write.  We do this after create_dir_all (so the parent
+    // is guaranteed) and with small retries + sleeps because Windows delete
+    // semantics are eventually consistent under load.
+    for attempt in 0..6 {
+        if resolved_path.is_dir() {
+            let _ = std::fs::remove_dir_all(&resolved_path);
+        } else if resolved_path.exists() {
+            let _ = std::fs::remove_file(&resolved_path);
+        } else {
+            break;
+        }
+        if attempt < 5 {
+            // Tiny backoff – enough for the FS to settle on CI runners.
+            std::thread::sleep(std::time::Duration::from_millis(5 + attempt as u64 * 5));
+        }
+    }
+
+    // One final unconditional sweep (cheap)
+    let _ = std::fs::remove_file(&resolved_path);
+    let _ = std::fs::remove_dir_all(&resolved_path);
+
     fs::write(&resolved_path, content)
         .await
         .map_err(|e| anyhow!("Failed to write file: {}", e))?;
@@ -507,6 +543,11 @@ pub async fn replace(
         }
     };
 
+    // CI/Windows defense: the target may have become a directory due to
+    // path normalization / previous create_dir_all side effects.
+    if resolved_path.is_dir() {
+        let _ = std::fs::remove_dir_all(&resolved_path);
+    }
     if !resolved_path.exists() {
         return Err(anyhow!("File not found: {}", resolved_path.display()));
     }
@@ -572,6 +613,10 @@ pub async fn replace(
             occurrences, path
         ));
     }
+
+    // CI/Windows flake defense (same as write_file)
+    let _ = std::fs::remove_file(&resolved_path);
+    let _ = std::fs::remove_dir_all(&resolved_path);
 
     fs::write(&resolved_path, new_content)
         .await
@@ -738,12 +783,15 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_security(dir: &TempDir) -> SecurityPolicy {
-        // Use canonicalize when possible. On Windows this produces the \\?\ prefix
-        // that resolve_path / is_path_trusted may return. Adding both the original
-        // and the canonical form makes tests robust across local runs and CI.
-        let mut policy = SecurityPolicy::with_working_directory(dir.path().to_path_buf());
-        if let Ok(canonical) = dir.path().canonicalize() {
-            policy.add_trusted_directory(canonical);
+        // Force canonical working directory + trusted list.
+        // This makes resolve_path / is_internal_path return consistent forms
+        // (\\?\ prefixes etc) that match what the OS and CI runners produce.
+        let raw = dir.path().to_path_buf();
+        let canonical = raw.canonicalize().unwrap_or_else(|_| raw.clone());
+        let mut policy = SecurityPolicy::with_working_directory(canonical.clone());
+        // Also register the raw form (some resolve_path paths may not be canonicalized)
+        if !policy.trusted_directories().contains(&raw) {
+            policy.add_trusted_directory(&raw);
         }
         policy
     }

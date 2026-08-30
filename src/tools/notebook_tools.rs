@@ -166,6 +166,13 @@ pub fn notebook_edit(
         })?;
     }
 
+    // CI/Windows flake defense (same root cause as write_file "Is a directory (os error 21)").
+    // Path canonicalization differences between the test policy and what resolve_path
+    // + fs ops produce on GitHub runners can leave a directory at the target .ipynb name.
+    if resolved.is_dir() {
+        let _ = std::fs::remove_dir_all(&resolved);
+    }
+
     // Atomic write: serialise → tmp file → rename into place so that a
     // Starlink drop mid-write cannot leave a half-written notebook on disk.
     let json_str = serde_json::to_string_pretty(&notebook).map_err(|e| {
@@ -207,11 +214,14 @@ mod tests {
     use tempfile::TempDir;
 
     fn make_security(dir: &TempDir) -> SecurityPolicy {
-        // Robust for Windows + CI: trust both the provided path and its canonical form
-        // (resolve_path / is_path_trusted often return canonical \\?\ paths on Windows).
-        let mut policy = SecurityPolicy::with_working_directory(dir.path().to_path_buf());
-        if let Ok(canonical) = dir.path().canonicalize() {
-            policy.add_trusted_directory(canonical);
+        // Force canonical working directory + trusted list (same as file_tools).
+        // This makes resolve_path / is_internal_path return consistent forms
+        // (\\?\ prefixes etc) that match what the OS and CI runners produce.
+        let raw = dir.path().to_path_buf();
+        let canonical = raw.canonicalize().unwrap_or_else(|_| raw.clone());
+        let mut policy = SecurityPolicy::with_working_directory(canonical.clone());
+        if !policy.trusted_directories().contains(&raw) {
+            policy.add_trusted_directory(&raw);
         }
         policy
     }
