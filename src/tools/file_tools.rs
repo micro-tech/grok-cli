@@ -502,12 +502,6 @@ pub async fn write_file(
         resolved_path.display()
     );
     Ok(format!("Successfully wrote to {}", resolved_path.display()))
-    info!(
-        "Wrote {} bytes to {}",
-        content.len(),
-        resolved_path.display()
-    );
-    Ok(format!("Successfully wrote to {}", resolved_path.display()))
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
