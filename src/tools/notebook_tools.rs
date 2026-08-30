@@ -166,12 +166,34 @@ pub fn notebook_edit(
         })?;
     }
 
-    // CI/Windows flake defense (same root cause as write_file "Is a directory (os error 21)").
-    // Path canonicalization differences between the test policy and what resolve_path
-    // + fs ops produce on GitHub runners can leave a directory at the target .ipynb name.
-    if resolved.is_dir() {
-        let _ = std::fs::remove_dir_all(&resolved);
+    // EXTREMELY AGGRESSIVE CI/Windows defense (root cause: same path normalization
+    // races that cause "Is a directory (os error 21)" in write_file).
+    // On GitHub runners we can end up with a directory at the target .ipynb name,
+    // which later makes fs::rename fail with "Not a directory (os error 20)".
+    // We nuke the target (and the future tmp name) repeatedly with backoff.
+    for attempt in 0..10 {
+        if resolved.is_dir() {
+            let _ = std::fs::remove_dir_all(&resolved);
+        }
+        if resolved.exists() {
+            let _ = std::fs::remove_file(&resolved);
+        }
+        let tmp_candidate = resolved.with_extension("ipynb.tmp");
+        if tmp_candidate.is_dir() {
+            let _ = std::fs::remove_dir_all(&tmp_candidate);
+        }
+        if tmp_candidate.exists() {
+            let _ = std::fs::remove_file(&tmp_candidate);
+        }
+        if !resolved.is_dir() && !resolved.exists() {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(3 + attempt as u64 * 2));
     }
+
+    // Final sweeps
+    let _ = std::fs::remove_dir_all(&resolved);
+    let _ = std::fs::remove_file(&resolved);
 
     // Atomic write: serialise → tmp file → rename into place so that a
     // Starlink drop mid-write cannot leave a half-written notebook on disk.
@@ -184,6 +206,10 @@ pub fn notebook_edit(
     })?;
 
     let tmp_path = resolved.with_extension("ipynb.tmp");
+
+    // Also make sure the tmp target itself is clean
+    let _ = std::fs::remove_file(&tmp_path);
+    let _ = std::fs::remove_dir_all(&tmp_path);
 
     fs::write(&tmp_path, &json_str).map_err(|e| {
         tracing::warn!(

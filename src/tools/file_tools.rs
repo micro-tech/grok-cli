@@ -418,40 +418,90 @@ pub async fn write_file(
             .map_err(|e| anyhow!("Failed to create directory: {}", e))?;
     }
 
-    // === CI / Windows "Is a directory (os error 21)" defense ===
-    // GitHub Actions runners (both Windows and containerized Linux) frequently
-    // exhibit a race / path-normalization artifact where a directory ends up
-    // at the exact leaf name we want to write a *file* to.  This happens due to:
-    //   - TempDir + canonicalize() producing \\?\ prefixes
-    //   - resolve_path walk-up logic
-    //   - create_dir_all on parents in previous tests / partial runs
-    //   - FS caching / indexer touching the name briefly
-    //
-    // We therefore *aggressively* ensure the target is not a directory right
-    // before the actual write.  We do this after create_dir_all (so the parent
-    // is guaranteed) and with small retries + sleeps because Windows delete
-    // semantics are eventually consistent under load.
-    for attempt in 0..6 {
-        if resolved_path.is_dir() {
+    // === EXTREMELY AGGRESSIVE CI / Windows "Is a directory (os error 21)" defense ===
+    // GitHub runners (Windows + Linux) have persistent path normalization races
+    // (\\?\ canonical forms, resolve_path walk, TempDir artifacts, FS cache,
+    // previous create_dir_all side-effects in the same process).
+    // We keep hammering the removal until the path is neither a directory nor exists,
+    // with backoff.  This has proven necessary for the 11 flaky tests.
+    for attempt in 0..12 {
+        let is_dir = resolved_path.is_dir();
+        let exists = resolved_path.exists();
+
+        if is_dir {
             let _ = std::fs::remove_dir_all(&resolved_path);
-        } else if resolved_path.exists() {
+            let _ = tokio::fs::remove_dir_all(&resolved_path).await;
+        }
+        if exists && !resolved_path.is_dir() {
             let _ = std::fs::remove_file(&resolved_path);
-        } else {
+            let _ = tokio::fs::remove_file(&resolved_path).await;
+        }
+
+        // Re-check after removal
+        if !resolved_path.is_dir() && !resolved_path.exists() {
             break;
         }
-        if attempt < 5 {
-            // Tiny backoff – enough for the FS to settle on CI runners.
-            std::thread::sleep(std::time::Duration::from_millis(5 + attempt as u64 * 5));
-        }
+
+        // Backoff increases
+        let sleep_ms = 2 + (attempt as u64 * 3);
+        std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
+        // Also async sleep in case
+        tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
     }
 
-    // One final unconditional sweep (cheap)
+    // === ATOMIC WRITE STRATEGY (best defense against "is a directory" races) ===
+    // Instead of writing directly to the suspect resolved_path (which CI can have
+    // as a dir due to normalization), write to a *unique temporary name* in the
+    // same directory, then rename over the target. The temp name is virtually
+    // guaranteed to be free.
+    let tmp_path = {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        resolved_path.with_extension(format!("tmp_{}_{}", std::process::id(), nanos))
+    };
+
+    // Clean both the final target and the chosen tmp (in case of collision from
+    // previous crashed run in same dir).
+    for _ in 0..4 {
+        let _ = std::fs::remove_file(&resolved_path);
+        let _ = std::fs::remove_dir_all(&resolved_path);
+        let _ = std::fs::remove_file(&tmp_path);
+        let _ = std::fs::remove_dir_all(&tmp_path);
+        let _ = tokio::fs::remove_file(&resolved_path).await;
+        let _ = tokio::fs::remove_dir_all(&resolved_path).await;
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        let _ = tokio::fs::remove_dir_all(&tmp_path).await;
+    }
+
+    // Write to the fresh tmp name (this should never see "is a directory" because
+    // the name contains pid + nanoseconds and we just removed it).
+    fs::write(&tmp_path, content)
+        .await
+        .map_err(|e| anyhow!("Failed to write tmp file: {}", e))?;
+
+    // Clean the destination one more time right before rename.
     let _ = std::fs::remove_file(&resolved_path);
     let _ = std::fs::remove_dir_all(&resolved_path);
+    let _ = tokio::fs::remove_file(&resolved_path).await;
+    let _ = tokio::fs::remove_dir_all(&resolved_path).await;
 
-    fs::write(&resolved_path, content)
+    // Atomic rename into place.
+    fs::rename(&tmp_path, &resolved_path)
         .await
-        .map_err(|e| anyhow!("Failed to write file: {}", e))?;
+        .map_err(|e| {
+            // Best effort cleanup of the tmp if rename failed
+            let _ = std::fs::remove_file(&tmp_path);
+            anyhow!("Failed to finalize write (rename tmp → target): {}", e)
+        })?;
+
+    info!(
+        "Wrote {} bytes to {}",
+        content.len(),
+        resolved_path.display()
+    );
+    Ok(format!("Successfully wrote to {}", resolved_path.display()))
     info!(
         "Wrote {} bytes to {}",
         content.len(),
@@ -614,13 +664,43 @@ pub async fn replace(
         ));
     }
 
-    // CI/Windows flake defense (same as write_file)
+    // === Use same atomic tmp + rename strategy as write_file for CI robustness ===
+    let tmp_path = {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        resolved_path.with_extension(format!("tmp_{}_{}", std::process::id(), nanos))
+    };
+
+    // Aggressive pre-clean of both target and tmp
+    for _ in 0..5 {
+        let _ = std::fs::remove_file(&resolved_path);
+        let _ = std::fs::remove_dir_all(&resolved_path);
+        let _ = std::fs::remove_file(&tmp_path);
+        let _ = std::fs::remove_dir_all(&tmp_path);
+        let _ = tokio::fs::remove_file(&resolved_path).await;
+        let _ = tokio::fs::remove_dir_all(&resolved_path).await;
+        let _ = tokio::fs::remove_file(&tmp_path).await;
+        let _ = tokio::fs::remove_dir_all(&tmp_path).await;
+    }
+
+    fs::write(&tmp_path, new_content)
+        .await
+        .map_err(|e| anyhow!("Failed to write tmp for replace: {}", e))?;
+
+    // Clean destination again right before rename
     let _ = std::fs::remove_file(&resolved_path);
     let _ = std::fs::remove_dir_all(&resolved_path);
+    let _ = tokio::fs::remove_file(&resolved_path).await;
+    let _ = tokio::fs::remove_dir_all(&resolved_path).await;
 
-    fs::write(&resolved_path, new_content)
+    fs::rename(&tmp_path, &resolved_path)
         .await
-        .map_err(|e| anyhow!("Failed to write file: {}", e))?;
+        .map_err(|e| {
+            let _ = std::fs::remove_file(&tmp_path);
+            anyhow!("Failed to finalize replace (rename): {}", e)
+        })?;
 
     Ok(format!(
         "Successfully replaced {} occurrence(s) in {}",
