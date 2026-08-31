@@ -9,6 +9,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [0.2.9] — 2026-08-31
+
+### Fix: atomic write ENOTDIR on Linux CI (11 tests)
+
+- **Root cause**: `write_file` and `notebook_edit` used `resolved_path.with_extension("tmp_...")` to generate
+  the temporary file path. When `resolve_path` returns a bare directory path (no file component),
+  `with_extension` places the temp file **one level up** in the parent directory, so the final
+  `rename(tmp_file, existing_dir)` fails with `ENOTDIR` (Linux error 20).
+- **Fix**: Replace `with_extension(...)` with `parent.join(".grok_tmp_<uuid>")`, which is
+  **always** co-located with the target on the same filesystem. Also add an upfront `is_dir()` guard
+  that removes the target path if it's a directory before writing. Removed the fragile multi-pass
+  cleanup loops that made the logic opaque and occasionally interfered with the write.
+- **Files changed**: `src/tools/file_tools.rs` (`write_file`, `replace`),
+  `src/tools/notebook_tools.rs` (`notebook_edit`).
+- **Tests fixed**: all 11 previously-failing file/notebook/registry tests now pass on Linux CI.
+
 ## [0.2.8] — 2026-08-24
 
 ### Self-Updating Skills / Hooks / Optimization Catalog (Task 273)

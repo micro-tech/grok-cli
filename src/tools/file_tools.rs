@@ -411,90 +411,53 @@ pub async fn write_file(
         }
     };
 
-    // Now that we know the write is allowed, we can safely create parent dirs.
-    if let Some(parent) = resolved_path.parent() {
-        fs::create_dir_all(parent)
+    // Create the parent directory now that the write is approved.
+    let parent = resolved_path.parent().ok_or_else(|| {
+        anyhow!(
+            "Cannot determine parent directory of {}",
+            resolved_path.display()
+        )
+    })?;
+
+    fs::create_dir_all(parent)
+        .await
+        .map_err(|e| anyhow!("Failed to create directory {}: {}", parent.display(), e))?;
+
+    // If the target exists as a directory (can happen on Windows CI via path-normalization
+    // races, or on Linux when resolve_path returns a dir), remove it so the subsequent
+    // rename succeeds.  rename(file, dir) returns ENOTDIR on Linux / ERROR_ACCESS_DENIED
+    // on Windows, which is the root cause of the historic CI failures.
+    if resolved_path.is_dir() {
+        fs::remove_dir_all(&resolved_path)
             .await
-            .map_err(|e| anyhow!("Failed to create directory: {}", e))?;
+            .map_err(|e| anyhow!("Failed to remove directory at target path: {}", e))?;
     }
 
-    // === EXTREMELY AGGRESSIVE CI / Windows "Is a directory (os error 21)" defense ===
-    // GitHub runners (Windows + Linux) have persistent path normalization races
-    // (\\?\ canonical forms, resolve_path walk, TempDir artifacts, FS cache,
-    // previous create_dir_all side-effects in the same process).
-    // We keep hammering the removal until the path is neither a directory nor exists,
-    // with backoff.  This has proven necessary for the 11 flaky tests.
-    for attempt in 0..12 {
-        let is_dir = resolved_path.is_dir();
-        let exists = resolved_path.exists();
+    // Atomic write: write to a UUID-named temp file placed explicitly in the same
+    // directory as the target, then rename into place.
+    //
+    // Using `parent.join(uuid)` instead of `resolved_path.with_extension(...)` is
+    // critical: with_extension puts the tmp file one level *up* when resolved_path
+    // has no extension (e.g. when it resolves to a bare directory name), making
+    // rename fail with ENOTDIR because it crosses into the parent.
+    let tmp_name = format!(".grok_tmp_{}", uuid::Uuid::new_v4().simple());
+    let tmp_path = parent.join(&tmp_name);
 
-        if is_dir {
-            let _ = std::fs::remove_dir_all(&resolved_path);
-            let _ = tokio::fs::remove_dir_all(&resolved_path).await;
-        }
-        if exists && !resolved_path.is_dir() {
-            let _ = std::fs::remove_file(&resolved_path);
-            let _ = tokio::fs::remove_file(&resolved_path).await;
-        }
-
-        // Re-check after removal
-        if !resolved_path.is_dir() && !resolved_path.exists() {
-            break;
-        }
-
-        // Backoff increases
-        let sleep_ms = 2 + (attempt as u64 * 3);
-        std::thread::sleep(std::time::Duration::from_millis(sleep_ms));
-        // Also async sleep in case
-        tokio::time::sleep(std::time::Duration::from_millis(sleep_ms)).await;
-    }
-
-    // === ATOMIC WRITE STRATEGY (best defense against "is a directory" races) ===
-    // Instead of writing directly to the suspect resolved_path (which CI can have
-    // as a dir due to normalization), write to a *unique temporary name* in the
-    // same directory, then rename over the target. The temp name is virtually
-    // guaranteed to be free.
-    let tmp_path = {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        resolved_path.with_extension(format!("tmp_{}_{}", std::process::id(), nanos))
-    };
-
-    // Clean both the final target and the chosen tmp (in case of collision from
-    // previous crashed run in same dir).
-    for _ in 0..4 {
-        let _ = std::fs::remove_file(&resolved_path);
-        let _ = std::fs::remove_dir_all(&resolved_path);
+    fs::write(&tmp_path, content).await.map_err(|e| {
         let _ = std::fs::remove_file(&tmp_path);
-        let _ = std::fs::remove_dir_all(&tmp_path);
-        let _ = tokio::fs::remove_file(&resolved_path).await;
-        let _ = tokio::fs::remove_dir_all(&resolved_path).await;
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        let _ = tokio::fs::remove_dir_all(&tmp_path).await;
+        anyhow!("Failed to write to {}: {}", tmp_path.display(), e)
+    })?;
+
+    // Remove any stale target file right before the rename.
+    if resolved_path.exists() && !resolved_path.is_dir() {
+        let _ = fs::remove_file(&resolved_path).await;
     }
 
-    // Write to the fresh tmp name (this should never see "is a directory" because
-    // the name contains pid + nanoseconds and we just removed it).
-    fs::write(&tmp_path, content)
-        .await
-        .map_err(|e| anyhow!("Failed to write tmp file: {}", e))?;
-
-    // Clean the destination one more time right before rename.
-    let _ = std::fs::remove_file(&resolved_path);
-    let _ = std::fs::remove_dir_all(&resolved_path);
-    let _ = tokio::fs::remove_file(&resolved_path).await;
-    let _ = tokio::fs::remove_dir_all(&resolved_path).await;
-
-    // Atomic rename into place.
-    fs::rename(&tmp_path, &resolved_path)
-        .await
-        .map_err(|e| {
-            // Best effort cleanup of the tmp if rename failed
-            let _ = std::fs::remove_file(&tmp_path);
-            anyhow!("Failed to finalize write (rename tmp → target): {}", e)
-        })?;
+    // Atomically rename tmp → target (same directory, same filesystem).
+    fs::rename(&tmp_path, &resolved_path).await.map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        anyhow!("Failed to finalize write (rename tmp → target): {}", e)
+    })?;
 
     info!(
         "Wrote {} bytes to {}",
@@ -658,43 +621,27 @@ pub async fn replace(
         ));
     }
 
-    // === Use same atomic tmp + rename strategy as write_file for CI robustness ===
-    let tmp_path = {
-        let nanos = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map(|d| d.as_nanos())
-            .unwrap_or(0);
-        resolved_path.with_extension(format!("tmp_{}_{}", std::process::id(), nanos))
-    };
+    // Atomic write: UUID-named tmp in the same directory as the target → rename.
+    // Using parent.join(uuid) instead of resolved_path.with_extension(...) prevents
+    // the tmp from landing one level up when the path has no extension (ENOTDIR on rename).
+    let parent = resolved_path.parent().ok_or_else(|| {
+        anyhow!(
+            "Cannot determine parent directory of {}",
+            resolved_path.display()
+        )
+    })?;
+    let tmp_name = format!(".grok_tmp_{}", uuid::Uuid::new_v4().simple());
+    let tmp_path = parent.join(&tmp_name);
 
-    // Aggressive pre-clean of both target and tmp
-    for _ in 0..5 {
-        let _ = std::fs::remove_file(&resolved_path);
-        let _ = std::fs::remove_dir_all(&resolved_path);
+    fs::write(&tmp_path, new_content).await.map_err(|e| {
         let _ = std::fs::remove_file(&tmp_path);
-        let _ = std::fs::remove_dir_all(&tmp_path);
-        let _ = tokio::fs::remove_file(&resolved_path).await;
-        let _ = tokio::fs::remove_dir_all(&resolved_path).await;
-        let _ = tokio::fs::remove_file(&tmp_path).await;
-        let _ = tokio::fs::remove_dir_all(&tmp_path).await;
-    }
+        anyhow!("Failed to write tmp for replace: {}", e)
+    })?;
 
-    fs::write(&tmp_path, new_content)
-        .await
-        .map_err(|e| anyhow!("Failed to write tmp for replace: {}", e))?;
-
-    // Clean destination again right before rename
-    let _ = std::fs::remove_file(&resolved_path);
-    let _ = std::fs::remove_dir_all(&resolved_path);
-    let _ = tokio::fs::remove_file(&resolved_path).await;
-    let _ = tokio::fs::remove_dir_all(&resolved_path).await;
-
-    fs::rename(&tmp_path, &resolved_path)
-        .await
-        .map_err(|e| {
-            let _ = std::fs::remove_file(&tmp_path);
-            anyhow!("Failed to finalize replace (rename): {}", e)
-        })?;
+    fs::rename(&tmp_path, &resolved_path).await.map_err(|e| {
+        let _ = std::fs::remove_file(&tmp_path);
+        anyhow!("Failed to finalize replace (rename): {}", e)
+    })?;
 
     Ok(format!(
         "Successfully replaced {} occurrence(s) in {}",
