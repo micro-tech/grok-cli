@@ -157,14 +157,19 @@ pub fn notebook_edit(
     };
 
     // Ensure the parent directory exists.
-    let parent = resolved.parent().ok_or_else(|| {
-        anyhow!(
-            "Cannot determine parent directory of {}",
-            resolved.display()
-        )
-    })?;
+    // Use .to_path_buf() so `parent` is an owned PathBuf and does not borrow
+    // from `resolved`, avoiding any self-referential lifetime issues.
+    let parent: std::path::PathBuf = resolved
+        .parent()
+        .ok_or_else(|| {
+            anyhow!(
+                "Cannot determine parent directory of {}",
+                resolved.display()
+            )
+        })?
+        .to_path_buf();
 
-    fs::create_dir_all(parent).map_err(|e| {
+    fs::create_dir_all(&parent).map_err(|e| {
         tracing::warn!(
             error = %e,
             "notebook_tools::notebook_edit: failed to create parent directory"
@@ -197,8 +202,7 @@ pub fn notebook_edit(
         anyhow!("Failed to serialise notebook: {}", e)
     })?;
 
-    let tmp_name = format!(".grok_tmp_{}", Uuid::new_v4().simple());
-    let tmp_path = parent.join(&tmp_name);
+    let tmp_path = parent.join(format!(".grok_tmp_{}", Uuid::new_v4().simple()));
 
     fs::write(&tmp_path, &json_str).map_err(|e| {
         tracing::warn!(

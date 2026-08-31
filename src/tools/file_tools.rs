@@ -412,14 +412,20 @@ pub async fn write_file(
     };
 
     // Create the parent directory now that the write is approved.
-    let parent = resolved_path.parent().ok_or_else(|| {
-        anyhow!(
-            "Cannot determine parent directory of {}",
-            resolved_path.display()
-        )
-    })?;
+    // Use .to_path_buf() to get an owned PathBuf so `parent` does not borrow
+    // from `resolved_path` across async await points (avoids a self-referential
+    // state-machine compile error in async fns).
+    let parent: std::path::PathBuf = resolved_path
+        .parent()
+        .ok_or_else(|| {
+            anyhow!(
+                "Cannot determine parent directory of {}",
+                resolved_path.display()
+            )
+        })?
+        .to_path_buf();
 
-    fs::create_dir_all(parent)
+    fs::create_dir_all(&parent)
         .await
         .map_err(|e| anyhow!("Failed to create directory {}: {}", parent.display(), e))?;
 
@@ -440,8 +446,7 @@ pub async fn write_file(
     // critical: with_extension puts the tmp file one level *up* when resolved_path
     // has no extension (e.g. when it resolves to a bare directory name), making
     // rename fail with ENOTDIR because it crosses into the parent.
-    let tmp_name = format!(".grok_tmp_{}", uuid::Uuid::new_v4().simple());
-    let tmp_path = parent.join(&tmp_name);
+    let tmp_path = parent.join(format!(".grok_tmp_{}", uuid::Uuid::new_v4().simple()));
 
     fs::write(&tmp_path, content).await.map_err(|e| {
         let _ = std::fs::remove_file(&tmp_path);
@@ -624,14 +629,16 @@ pub async fn replace(
     // Atomic write: UUID-named tmp in the same directory as the target → rename.
     // Using parent.join(uuid) instead of resolved_path.with_extension(...) prevents
     // the tmp from landing one level up when the path has no extension (ENOTDIR on rename).
-    let parent = resolved_path.parent().ok_or_else(|| {
-        anyhow!(
-            "Cannot determine parent directory of {}",
-            resolved_path.display()
-        )
-    })?;
-    let tmp_name = format!(".grok_tmp_{}", uuid::Uuid::new_v4().simple());
-    let tmp_path = parent.join(&tmp_name);
+    let parent: std::path::PathBuf = resolved_path
+        .parent()
+        .ok_or_else(|| {
+            anyhow!(
+                "Cannot determine parent directory of {}",
+                resolved_path.display()
+            )
+        })?
+        .to_path_buf();
+    let tmp_path = parent.join(format!(".grok_tmp_{}", uuid::Uuid::new_v4().simple()));
 
     fs::write(&tmp_path, new_content).await.map_err(|e| {
         let _ = std::fs::remove_file(&tmp_path);
