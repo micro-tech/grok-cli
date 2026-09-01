@@ -30,7 +30,10 @@ pub struct WriteContext<'a> {
 pub fn on_before_write_file(ctx: &WriteContext) -> SafetyDecision {
     // 1. Check for obviously dangerous patterns
     if let Some(content) = ctx.proposed_content {
-        if content.len() > 200_000 && ctx.operation == "write" {
+        // Apply the 200k hard limit to both full writes and large replaces.
+        // This makes the safety behavior consistent and keeps the integration
+        // test happy (it expects either "200k" or "Safety" in the error).
+        if content.len() > 200_000 && (ctx.operation == "write" || ctx.operation == "replace") {
             return SafetyDecision::Block(
                 "Refusing to write >200k characters in a single operation".to_string(),
             );

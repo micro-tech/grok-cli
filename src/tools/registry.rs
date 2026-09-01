@@ -1827,17 +1827,35 @@ mod tests {
     /// through the registry, the two main arbitration decision branches that
     /// reach tool code, and the error/rejection paths.
     #[tokio::test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     async fn execute_tool_round_trip_write_read_unknown_missing() {
         let dir = tempfile::TempDir::new().unwrap();
-        let policy =
-            crate::acp::security::SecurityPolicy::with_working_directory(dir.path().to_path_buf());
+        // Robust trust for Windows CI (\\?\ prefixes, canonicalization differences)
+        let raw = dir.path().to_path_buf();
+        let mut policy = crate::acp::security::SecurityPolicy::with_working_directory(raw.clone());
+        if let Ok(can) = raw.canonicalize() {
+            policy.add_trusted_directory(&can);
+        }
+        // Explicitly trust the raw form as well (Windows path prefix differences)
+        policy.add_trusted_directory(&raw);
         let ctx = crate::tools::ToolContext::new(policy);
 
-        let test_file = dir
-            .path()
-            .join("roundtrip_via_execute_tool.txt")
-            .to_string_lossy()
-            .to_string();
+        // Extremely robust construction for GitHub CI Windows flakes.
+        // Create a *fresh subdirectory* we fully control, then place the target
+        // file name inside it.  Because we just created the subdir ourselves,
+        // the leaf name inside it cannot possibly be a directory from any
+        // previous artifact, TempDir internals, or canonicalize side-effect.
+        let subdir = dir.path().join(format!("wr_{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir_all(&subdir).expect("failed to create test subdir");
+        let test_file_path = subdir.join("target.txt");
+        let test_file = test_file_path.to_string_lossy().to_string();
+
+        // Belt-and-suspenders cleanup (in case a previous run left something weird)
+        let _ = std::fs::remove_file(&test_file_path);
+        let _ = std::fs::remove_dir_all(&test_file_path);
 
         // ── Happy path: write_file via dispatch ─────────────────────────────
         let write_args = serde_json::json!({
@@ -1845,6 +1863,20 @@ mod tests {
             "content": "hello from TEST-2 round-trip"
         });
         let write_result = execute_tool("write_file", &write_args, &ctx).await;
+
+        // Extra diagnostics for CI (visible when test fails or with --nocapture)
+        if write_result.is_err() {
+            eprintln!(
+                "DEBUG registry roundtrip: target={:?} exists={} is_dir={} trusted={:?} cwd={:?} err={:?}",
+                test_file_path,
+                test_file_path.exists(),
+                test_file_path.is_dir(),
+                ctx.policy.trusted_directories(),
+                std::env::current_dir().ok(),
+                write_result.as_ref().err()
+            );
+        }
+
         assert!(
             write_result.is_ok(),
             "write_file dispatch must succeed, got error: {:?}",

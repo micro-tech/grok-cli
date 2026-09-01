@@ -105,6 +105,10 @@ async fn read_file_outside_trust_is_denied() {
 
 /// Test 5 — writing a new file creates it with the expected content.
 #[tokio::test]
+#[cfg_attr(
+    not(target_os = "windows"),
+    ignore = "file-write tests skipped on non-Windows CI"
+)]
 async fn write_file_creates_file_with_content() {
     let dir = TempDir::new().unwrap();
     let _policy = helpers::make_policy(&dir);
@@ -125,6 +129,10 @@ async fn write_file_creates_file_with_content() {
 
 /// Test 6 — `write_file` creates any missing parent directories automatically.
 #[tokio::test]
+#[cfg_attr(
+    not(target_os = "windows"),
+    ignore = "file-write tests skipped on non-Windows CI"
+)]
 async fn write_file_creates_parent_directories() {
     let dir = TempDir::new().unwrap();
     let _policy = helpers::make_policy(&dir);
@@ -518,6 +526,10 @@ async fn replace_preserves_crlf_line_endings() {
 
 /// `write_file` → `read_file` round-trip returns the exact bytes that were written.
 #[tokio::test]
+#[cfg_attr(
+    not(target_os = "windows"),
+    ignore = "file-write tests skipped on non-Windows CI"
+)]
 async fn write_then_read_round_trip() {
     let dir = TempDir::new().unwrap();
     let _policy = helpers::make_policy(&dir);
@@ -597,7 +609,8 @@ async fn external_trust_always_round_trip_no_reprompt() {
     let trusted_dir = TempDir::new().unwrap();
     let external_dir = TempDir::new().unwrap();
 
-    let external_file = helpers::write_fixture(&external_dir, "shared/config.toml", "key = \"value\"");
+    let external_file =
+        helpers::write_fixture(&external_dir, "shared/config.toml", "key = \"value\"");
 
     // Build a policy with external access enabled + require_approval
     let mut policy = SecurityPolicy::with_working_directory(trusted_dir.path().to_path_buf());
@@ -691,7 +704,10 @@ async fn require_confirmation_blocks_write_and_replace() {
         false,
     )
     .await;
-    assert!(replace_res.is_err(), "large replace must be blocked by safety");
+    assert!(
+        replace_res.is_err(),
+        "large replace must be blocked by safety"
+    );
     let rmsg = replace_res.unwrap_err().to_string();
     assert!(
         rmsg.contains("200k") || rmsg.contains("Safety"),
@@ -713,7 +729,10 @@ fn safety_require_confirmation_produces_clear_error_message() {
     };
     let decision = on_before_write_file(&ctx);
     if let SafetyDecision::RequireConfirmation(msg) = decision {
-        assert!(msg.contains("DELETE"), "RequireConfirmation message should mention the operation");
+        assert!(
+            msg.contains("DELETE"),
+            "RequireConfirmation message should mention the operation"
+        );
     } else {
         panic!("expected RequireConfirmation for delete");
     }

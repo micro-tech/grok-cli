@@ -455,7 +455,10 @@ pub async fn process_tool_calls(
                             }
                         }
                         Ok(Err(_)) => return Err(anyhow!("Permission bridge closed")),
-                        Err(_) => return Err(anyhow!("Permission timeout")),
+                        Err(_) => {
+                            let secs = agent.config.acp.permission_timeout_secs;
+                            return Err(anyhow!("Timed out waiting for permission ({}s)", secs));
+                        }
                     }
                 }
             }
