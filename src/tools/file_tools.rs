@@ -411,58 +411,30 @@ pub async fn write_file(
         }
     };
 
-    // Create the parent directory now that the write is approved.
-    // Use .to_path_buf() to get an owned PathBuf so `parent` does not borrow
-    // from `resolved_path` across async await points (avoids a self-referential
-    // state-machine compile error in async fns).
-    let parent: std::path::PathBuf = resolved_path
-        .parent()
-        .ok_or_else(|| {
-            anyhow!(
-                "Cannot determine parent directory of {}",
-                resolved_path.display()
-            )
-        })?
-        .to_path_buf();
+    // Create parent directories now that the write is approved.
+    if let Some(parent) = resolved_path.parent() {
+        fs::create_dir_all(parent)
+            .await
+            .map_err(|e| anyhow!("Failed to create directory {}: {}", parent.display(), e))?;
+    }
 
-    fs::create_dir_all(&parent)
-        .await
-        .map_err(|e| anyhow!("Failed to create directory {}: {}", parent.display(), e))?;
-
-    // If the target exists as a directory (can happen on Windows CI via path-normalization
-    // races, or on Linux when resolve_path returns a dir), remove it so the subsequent
-    // rename succeeds.  rename(file, dir) returns ENOTDIR on Linux / ERROR_ACCESS_DENIED
-    // on Windows, which is the root cause of the historic CI failures.
+    // If the target path currently exists as a *directory* — which happens on Windows
+    // CI runners due to path-normalisation races where create_dir_all is called on a
+    // path that should be a file — remove the stale directory first.  Without this,
+    // `fs::write` returns EISDIR (Linux) or ERROR_ACCESS_DENIED (Windows).
     if resolved_path.is_dir() {
         fs::remove_dir_all(&resolved_path)
             .await
-            .map_err(|e| anyhow!("Failed to remove directory at target path: {}", e))?;
+            .map_err(|e| anyhow!("Failed to remove stale directory at target path: {}", e))?;
     }
 
-    // Atomic write: write to a UUID-named temp file placed explicitly in the same
-    // directory as the target, then rename into place.
-    //
-    // Using `parent.join(uuid)` instead of `resolved_path.with_extension(...)` is
-    // critical: with_extension puts the tmp file one level *up* when resolved_path
-    // has no extension (e.g. when it resolves to a bare directory name), making
-    // rename fail with ENOTDIR because it crosses into the parent.
-    let tmp_path = parent.join(format!(".grok_tmp_{}", uuid::Uuid::new_v4().simple()));
-
-    fs::write(&tmp_path, content).await.map_err(|e| {
-        let _ = std::fs::remove_file(&tmp_path);
-        anyhow!("Failed to write to {}: {}", tmp_path.display(), e)
-    })?;
-
-    // Remove any stale target file right before the rename.
-    if resolved_path.exists() && !resolved_path.is_dir() {
-        let _ = fs::remove_file(&resolved_path).await;
-    }
-
-    // Atomically rename tmp → target (same directory, same filesystem).
-    fs::rename(&tmp_path, &resolved_path).await.map_err(|e| {
-        let _ = std::fs::remove_file(&tmp_path);
-        anyhow!("Failed to finalize write (rename tmp → target): {}", e)
-    })?;
+    // Write directly to the target.  This is the simplest correct approach;
+    // the attempted atomic rename (tmp → target) caused persistent ENOTDIR
+    // failures on Linux CI because rename(file, existing_dir) is rejected by
+    // the kernel when the resolved path unexpectedly maps to a directory.
+    fs::write(&resolved_path, content)
+        .await
+        .map_err(|e| anyhow!("Failed to write file {}: {}", resolved_path.display(), e))?;
 
     info!(
         "Wrote {} bytes to {}",
@@ -626,29 +598,11 @@ pub async fn replace(
         ));
     }
 
-    // Atomic write: UUID-named tmp in the same directory as the target → rename.
-    // Using parent.join(uuid) instead of resolved_path.with_extension(...) prevents
-    // the tmp from landing one level up when the path has no extension (ENOTDIR on rename).
-    let parent: std::path::PathBuf = resolved_path
-        .parent()
-        .ok_or_else(|| {
-            anyhow!(
-                "Cannot determine parent directory of {}",
-                resolved_path.display()
-            )
-        })?
-        .to_path_buf();
-    let tmp_path = parent.join(format!(".grok_tmp_{}", uuid::Uuid::new_v4().simple()));
-
-    fs::write(&tmp_path, new_content).await.map_err(|e| {
-        let _ = std::fs::remove_file(&tmp_path);
-        anyhow!("Failed to write tmp for replace: {}", e)
-    })?;
-
-    fs::rename(&tmp_path, &resolved_path).await.map_err(|e| {
-        let _ = std::fs::remove_file(&tmp_path);
-        anyhow!("Failed to finalize replace (rename): {}", e)
-    })?;
+    // Write the modified content directly to the target.
+    // (No rename: see write_file for why rename was removed.)
+    fs::write(&resolved_path, new_content)
+        .await
+        .map_err(|e| anyhow!("Failed to write file {}: {}", resolved_path.display(), e))?;
 
     Ok(format!(
         "Successfully replaced {} occurrence(s) in {}",

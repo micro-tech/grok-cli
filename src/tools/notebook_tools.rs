@@ -8,7 +8,6 @@ use crate::acp::security::SecurityPolicy;
 use anyhow::{Result, anyhow};
 use serde_json::{Value, json};
 use std::fs;
-use uuid::Uuid;
 
 /// Edit or append a cell in a Jupyter notebook.
 ///
@@ -157,43 +156,28 @@ pub fn notebook_edit(
     };
 
     // Ensure the parent directory exists.
-    // Use .to_path_buf() so `parent` is an owned PathBuf and does not borrow
-    // from `resolved`, avoiding any self-referential lifetime issues.
-    let parent: std::path::PathBuf = resolved
-        .parent()
-        .ok_or_else(|| {
-            anyhow!(
-                "Cannot determine parent directory of {}",
-                resolved.display()
-            )
-        })?
-        .to_path_buf();
+    if let Some(parent) = resolved.parent() {
+        fs::create_dir_all(parent).map_err(|e| {
+            tracing::warn!(
+                error = %e,
+                "notebook_tools::notebook_edit: failed to create parent directory"
+            );
+            anyhow!("Failed to create parent directory: {}", e)
+        })?;
+    }
 
-    fs::create_dir_all(&parent).map_err(|e| {
-        tracing::warn!(
-            error = %e,
-            "notebook_tools::notebook_edit: failed to create parent directory"
-        );
-        anyhow!("Failed to create parent directory: {}", e)
-    })?;
-
-    // If the target exists as a directory (path-normalization race on CI), remove it.
-    // rename(file, dir) returns ENOTDIR on Linux / access-denied on Windows.
+    // If the target exists as a directory (path-normalisation race on CI), remove it
+    // so the subsequent write succeeds instead of returning EISDIR.
     if resolved.is_dir() {
         std::fs::remove_dir_all(&resolved).map_err(|e| {
             tracing::warn!(
                 error = %e,
-                "notebook_tools::notebook_edit: failed to remove directory at target path"
+                "notebook_tools::notebook_edit: failed to remove stale directory at target"
             );
-            anyhow!("Failed to remove directory at target path: {}", e)
+            anyhow!("Failed to remove stale directory at target path: {}", e)
         })?;
     }
 
-    // Atomic write: serialise → UUID-named tmp in the same directory → rename.
-    //
-    // Using parent.join(uuid) instead of resolved.with_extension("ipynb.tmp") avoids
-    // the ENOTDIR failure: with_extension puts the tmp one level up when resolved has
-    // no extension (bare directory name), making rename(file, dir) fail.
     let json_str = serde_json::to_string_pretty(&notebook).map_err(|e| {
         tracing::warn!(
             error = %e,
@@ -202,32 +186,16 @@ pub fn notebook_edit(
         anyhow!("Failed to serialise notebook: {}", e)
     })?;
 
-    let tmp_path = parent.join(format!(".grok_tmp_{}", Uuid::new_v4().simple()));
-
-    fs::write(&tmp_path, &json_str).map_err(|e| {
+    // Write directly to the target path.
+    // (The atomic rename approach was removed because rename(file, existing_dir)
+    // returns ENOTDIR on Linux CI, and the simpler direct write avoids that entirely.)
+    fs::write(&resolved, &json_str).map_err(|e| {
         tracing::warn!(
             error = %e,
-            tmp = %tmp_path.display(),
-            "notebook_tools::notebook_edit: failed to write tmp file"
-        );
-        let _ = std::fs::remove_file(&tmp_path);
-        anyhow::anyhow!("notebook_edit: failed to write tmp: {}", e)
-    })?;
-
-    // Remove any stale target file before renaming.
-    if resolved.exists() && !resolved.is_dir() {
-        let _ = std::fs::remove_file(&resolved);
-    }
-
-    fs::rename(&tmp_path, &resolved).map_err(|e| {
-        tracing::warn!(
-            error = %e,
-            tmp = %tmp_path.display(),
             dest = %resolved.display(),
-            "notebook_tools::notebook_edit: failed to rename tmp to notebook"
+            "notebook_tools::notebook_edit: failed to write notebook"
         );
-        let _ = std::fs::remove_file(&tmp_path);
-        anyhow::anyhow!("notebook_edit: failed to rename tmp → notebook: {}", e)
+        anyhow::anyhow!("notebook_edit: failed to write notebook: {}", e)
     })?;
 
     Ok(action)
