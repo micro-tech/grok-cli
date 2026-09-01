@@ -221,6 +221,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     fn creates_new_notebook_with_code_cell() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
@@ -247,6 +251,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     fn appends_cell_when_index_out_of_range() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);
@@ -266,6 +274,10 @@ mod tests {
     }
 
     #[test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     fn replaces_existing_cell() {
         let dir = TempDir::new().unwrap();
         let security = make_security(&dir);

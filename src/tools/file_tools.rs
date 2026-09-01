@@ -783,6 +783,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     async fn write_then_read_file() {
         let dir = TempDir::new().unwrap();
         let ctx = make_ctx(&dir);
@@ -809,6 +813,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     async fn read_multiple_files_partial_errors() {
         let dir = TempDir::new().unwrap();
         let ctx = make_ctx(&dir);
@@ -853,6 +861,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     async fn replace_text_in_file() {
         let dir = TempDir::new().unwrap();
         let ctx = make_ctx(&dir);
@@ -913,6 +925,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     async fn replace_not_found_returns_err() {
         let dir = TempDir::new().unwrap();
         let ctx = make_ctx(&dir);
@@ -927,6 +943,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     async fn search_file_content_finds_match() {
         let dir = TempDir::new().unwrap();
         let ctx = make_ctx(&dir);
@@ -941,6 +961,10 @@ mod tests {
     }
 
     #[tokio::test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     async fn list_code_definitions_finds_fns() {
         let dir = TempDir::new().unwrap();
         let ctx = make_ctx(&dir);

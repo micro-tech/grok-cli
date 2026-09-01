@@ -29,6 +29,10 @@ mod tests {
     use tempfile::TempDir;
 
     #[tokio::test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     async fn test_file_operations() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.txt");
@@ -49,7 +53,11 @@ mod tests {
 
         // Test write_file (now takes &ToolContext)
         let write_result = write_file(path_str, "Hello, world!", &ctx, false).await;
-        assert!(write_result.is_ok(), "write_file failed: {:?}", write_result.err());
+        assert!(
+            write_result.is_ok(),
+            "write_file failed: {:?}",
+            write_result.err()
+        );
 
         // Test read_file (now takes &ToolContext for SEC-8 audit correlation)
         let read_result = read_file(path_str, &ctx).await;

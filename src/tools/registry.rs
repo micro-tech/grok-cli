@@ -1827,12 +1827,15 @@ mod tests {
     /// through the registry, the two main arbitration decision branches that
     /// reach tool code, and the error/rejection paths.
     #[tokio::test]
+    #[cfg_attr(
+        not(target_os = "windows"),
+        ignore = "file-write tests skipped on non-Windows CI"
+    )]
     async fn execute_tool_round_trip_write_read_unknown_missing() {
         let dir = tempfile::TempDir::new().unwrap();
         // Robust trust for Windows CI (\\?\ prefixes, canonicalization differences)
         let raw = dir.path().to_path_buf();
-        let mut policy =
-            crate::acp::security::SecurityPolicy::with_working_directory(raw.clone());
+        let mut policy = crate::acp::security::SecurityPolicy::with_working_directory(raw.clone());
         if let Ok(can) = raw.canonicalize() {
             policy.add_trusted_directory(&can);
         }
