@@ -20,22 +20,15 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: grok-cli-linux-x86_64
-            binary_name: grok
-
-          - os: macos-13 # Intel runner
-            target: x86_64-apple-darwin
-            artifact_name: grok-cli-macos-x86_64
-            binary_name: grok
-
-          - os: macos-14 # ARM runner
-            target: aarch64-apple-darwin
-            artifact_name: grok-cli-macos-aarch64
-            binary_name: grok
+            binary_name: grok-cli
 
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: grok-cli-windows-x86_64
-            binary_name: grok.exe
+            binary_name: grok-cli.exe
+
+          - os: macos-14 # ARM
+            target: aarch64-apple-darwin
 
     steps:
       - name: Checkout

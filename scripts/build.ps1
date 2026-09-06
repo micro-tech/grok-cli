@@ -150,9 +150,9 @@ try
     # Track success
     $Success = $true
     $BuildDir = if ($Release)
-    { "release" 
+    { "release"
     } else
-    { "debug" 
+    { "debug"
     }
 
     #region Pre-flight Checks
@@ -477,10 +477,10 @@ try
             Write-Info "GitHub Actions will now build the release for tag: $TagName"
             Write-Info ""
             Write-Info "Monitor the release build at:"
-            Write-Info "  https://github.com/microtech/grok-cli/actions"
+            Write-Info "  https://github.com/micro-tech/grok-cli/actions"
             Write-Info ""
             Write-Info "Once complete, the release will be available at:"
-            Write-Info "  https://github.com/microtech/grok-cli/releases/tag/$TagName"
+            Write-Info "  https://github.com/micro-tech/grok-cli/releases/tag/$TagName"
         } else
         {
             Write-Success "Tag created locally: $TagName"
