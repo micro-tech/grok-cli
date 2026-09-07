@@ -194,6 +194,10 @@ fn install_windows(root_dir: PathBuf) {
     println!("{}", "Setting up full data directory structure...".cyan());
     setup_memory_directories();
 
+    // 15. Install core skills (self-updater etc.)
+    println!("{}", "Installing core skills...".cyan());
+    setup_core_skills(&root_dir);
+
     println!("\n{}", "Installation Complete!".green().bold());
     let version = get_version(&root_dir);
     println!("Version: {}", version);
@@ -692,6 +696,101 @@ fn setup_agent_presets(root_dir: &Path) {
     println!("  Presets: planner, coder, researcher, verifier");
     println!("  Customise any preset by editing its .toml file.");
     println!("  Add your own by creating a new .toml in that directory.");
+}
+
+#[cfg(windows)]
+/// Copy core skill directories from `config/skills/` (project source) into
+/// `~/.grok-cli/skills/` (user-global skills directory).
+///
+/// Rules:
+/// - Creates `~/.grok-cli/skills/` if it does not exist.
+/// - Copies every subdirectory found in `<root>/config/skills/`.
+/// - **Does NOT overwrite** if the user already has a customised copy —
+///   their edits are preserved.
+/// - Prints a summary line for each skill.
+/// - Currently ships: self-updater (and any future core skills).
+fn setup_core_skills(root_dir: &Path) {
+    let Some(home_dir) = dirs::home_dir() else {
+        eprintln!("setup_core_skills: could not locate home directory");
+        return;
+    };
+
+    let skills_dst = home_dir.join(".grok-cli").join("skills");
+    if let Err(e) = fs::create_dir_all(&skills_dst) {
+        eprintln!(
+            "setup_core_skills: failed to create skills directory: {}",
+            e
+        );
+        return;
+    }
+
+    // Core skills live in config/skills/ (committed to git).
+    let skills_src = root_dir.join("config").join("skills");
+    if !skills_src.exists() {
+        println!("No config/skills/ directory found in project root — skipping core skills.");
+        return;
+    }
+
+    let entries = match fs::read_dir(&skills_src) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!(
+                "setup_core_skills: failed to read skills directory: {}",
+                e
+            );
+            return;
+        }
+    };
+
+    let mut installed = 0u32;
+    let mut skipped = 0u32;
+
+    for entry in entries.flatten() {
+        let src_path = entry.path();
+        if !src_path.is_dir() {
+            continue;
+        }
+
+        let Some(filename) = src_path.file_name() else {
+            continue;
+        };
+        let dst_path = skills_dst.join(filename);
+
+        if dst_path.exists() {
+            // Preserve user customisations.
+            println!(
+                "  ✓ Kept existing core skill: ~/.grok-cli/skills/{}",
+                filename.to_string_lossy()
+            );
+            skipped += 1;
+        } else {
+            match copy_dir_recursive(&src_path, &dst_path) {
+                Ok(_) => {
+                    println!(
+                        "  → Installed core skill: ~/.grok-cli/skills/{}",
+                        filename.to_string_lossy()
+                    );
+                    installed += 1;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "  ⚠ Failed to install {}: {}",
+                        filename.to_string_lossy(),
+                        e
+                    );
+                }
+            }
+        }
+    }
+
+    println!(
+        "Core skills: {} installed, {} preserved (user-customised).",
+        installed, skipped
+    );
+    println!("  Location: {}", skills_dst.display());
+    println!("  Core skills: self-updater (auto-activates on update keywords)");
+    println!("  The self-updater skill powers `grok update` and self-maintenance.");
+    println!("  Customise or add more skills in that directory (see SKILL.md format).");
 }
 
 #[cfg(windows)]
