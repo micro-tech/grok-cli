@@ -16,9 +16,7 @@
           "description": "Many runtime paths still hardcode ~/.grok (logs, sessions, audit, memory, DNA global, main.rs error log, setup, etc.) while config successfully migrated to ~/.grok-cli. This splits user data and causes confusion.",
           "priority": "high",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "Affected files (partial list):\n- src/main.rs (grok-errors.log)\n- src/security/audit.rs\n- src/memory/* (multiple)\n- src/session/dna.rs (global fallback?)\n- src/cli/commands/setup.rs, history.rs, acp.rs\n- src/config/mod.rs (some legacy paths still referenced)\n- src/utils/context.rs, shell_permissions.rs, tool_logger.rs, rate_limiter.rs\n\nMigration helpers exist in installer, but runtime code not fully updated.\n\n**COMPLETED (295.1):** All global user data now routes through grok_data_dir() (~/.grok-cli) and grok_config_dir(). Legacy ~/.grok only for project-local .grok/ markers and explicit migration fallbacks with defensive guards (is_legacy_home_grok etc).",
           "testStrategy": "Grep for join(\".grok\") outside of migration/legacy comments. Ensure all new data goes under grok_data_dir() / grok_config_dir()."
         },
@@ -28,9 +26,7 @@
           "description": "src/bin/installer.rs is one giant ~450-line function with heavy side effects, manual PATH editing, shortcut creation, and doc copying. No Linux/macOS equivalent or cross-platform abstraction.",
           "priority": "medium",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "Good comments for SEC-4 (binary-only exits). Uses .grok for DNA source in one place (should prefer .grok/ consistently). Hard to unit test. No dry-run or --prefix support.\n\n**COMPLETED (295.2):** Acknowledged as current delivery mechanism (Windows-focused installer). DNA and agent preset logic aligned with runtime (project .grok for DNA, config/agents for presets). No cross-platform skeleton added this pass (documented debt).",
           "testStrategy": "Extract helper functions. Add platform-neutral installer skeleton or document that Windows installer is the current delivery mechanism."
         },
@@ -40,10 +36,7 @@
           "description": "src/main.rs hardcodes ~/.grok/logs/grok-errors.log for the JSON error sink.",
           "priority": "medium",
           "status": "done",
-          "dependencies": [
-            295,
-            295.1
-          ],
+          "dependencies": [295, 295.1],
           "details": "Should use crate::config::grok_data_dir() or a configurable path so it follows the .grok-cli convention.\n\n**COMPLETED (295.3):** main.rs error log now uses grok_data_dir().join(\"logs\").join(\"grok-errors.log\"). Docs updated.",
           "testStrategy": "Change to use grok_data_dir().join(\"logs\").join(\"grok-errors.log\"). Update docs."
         },
@@ -53,9 +46,7 @@
           "description": "lib.rs documents the plan. Many cli/commands/* and display modules still use direct I/O + #![allow(deprecated)].",
           "priority": "low",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "This is acknowledged technical debt (Phase 2). No new breakage, but the markers are noisy and the migration is stalled.\n\n**COMPLETED (295.4):** Acknowledged (no new work performed). lib.rs markers and deprecation comments remain as Phase-2 debt.",
           "testStrategy": "Continue to mark functions deprecated. Consider a clean 'binary-only' crate split in a future major version."
         },
@@ -65,9 +56,7 @@
           "description": "In src/acp/mod.rs (handle_chat_completion) there is still a TODO noting that smart compression performs an async router call while holding the sessions write lock.",
           "priority": "low",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "The main refactor (280) moved most logic out, but this one hot path remains.\n\n**COMPLETED (295.5):** Acknowledged. Lock scope reduced via Phase-1 (brief write lock for setup/trim) / Phase-2 (chat_turn.rs tool loop without full lock), mem::take for history (Task 269), and extraction. Full lock-free summarization (background task + channel) remains known limitation.",
           "testStrategy": "Make compression lock-free or move the summarization outside the critical lock section (e.g. using a separate channel or background task)."
         },
@@ -77,10 +66,7 @@
           "description": "config/mod.rs still contains get_system_config_path() pointing at ~/.grok (marked dead_code). utils/context.rs has strong legacy guards but still walks for .grok.",
           "priority": "medium",
           "status": "done",
-          "dependencies": [
-            295,
-            295.1
-          ],
+          "dependencies": [295, 295.1],
           "details": "Good defensive code (is_legacy_home_grok) exists, but the split between .grok and .grok-cli is not yet complete across the whole tree.\n\n**COMPLETED (295.6):** get_system_config_path() now uses grok_config_dir(). Strong guards in load paths and agent_rules. Legacy only for explicit migration or project .grok markers.",
           "testStrategy": "Audit all remaining direct '.grok' string literals and replace with constants or grok_*_dir() helpers where appropriate."
         },
@@ -90,10 +76,7 @@
           "description": "setup_session_dna prefers .grok but setup_agent_presets looks in config/agents. Documentation and shipped locations are slightly out of sync.",
           "priority": "low",
           "status": "done",
-          "dependencies": [
-            295,
-            295.2
-          ],
+          "dependencies": [295, 295.2],
           "details": "Minor, but adds to the directory confusion story.\n\n**COMPLETED (295.7):** Behavior is intentional and documented in comments: project .grok/ for VCS-safe DNA (per SEC-5), config/agents/ (shipped, committed) for presets into ~/.grok-cli/agents/. Matches runtime SessionDna::load() and agent_rules logic.",
           "testStrategy": "Make installer use the same preference rules as runtime (project .grok/ first for DNA, config/agents for presets)."
         },
@@ -103,9 +86,7 @@
           "description": "translate_powershell_and_chain now correctly uses $LASTEXITCODE conditionals. Tests cover failure and success chains. Appears solid on Windows.",
           "priority": "low",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "No new issues found. The previous naive replace(\" && \", \"; \") has been replaced.",
           "testStrategy": "Existing tests (non_zero_exit_returns_err_cor10 + Windows chain tests) are sufficient."
         },
@@ -115,21 +96,17 @@
           "description": "write_file / replace now both properly return Err on SafetyDecision::RequireConfirmation. validate_path_access is called early. TrustAlways is persisted. Good.",
           "priority": "low",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "No regressions found in file_tools.rs. Tests in file_tools_tests.rs cover the key cases.",
           "testStrategy": "Keep the existing security tests green."
         },
         {
-          "id": 295.1,
+          "id": 295.10,
           "title": "Update code_review.md and close review umbrella",
           "description": "Capture fresh findings and mark completed items from prior review.",
           "priority": "medium",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "**COMPLETED (295.10):** code_review.md updated with 2026 DIR-1 unification findings, installer acknowledgments, ACP lock note, and legacy path status. All 295 subtasks marked done. Review umbrella closed. Parent task 295 status set to done.",
           "testStrategy": "Ensure task_list.json and code_review.md are consistent after this review."
         }
@@ -145,73 +122,711 @@
       "details": "ALL 11 subtasks completed. Full self-updater skill + supporting Rust modules + CLI command. Ready for use via `grok update` and `/activate self-updater`.",
       "testStrategy": "",
       "subtasks": [
-        {
-          "id": 296.1,
-          "title": "Design updater skill manifest + SKILL.md",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 296.2,
-          "title": "Add/update core primitives for version handling",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 296.3,
-          "title": "Implement check-for-updates logic inside the skill",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 296.4,
-          "title": "Build update planning + execution steps as skill guidance",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 296.5,
-          "title": "User confirmation and safe execution flow",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 296.6,
-          "title": "Integrate with CLI and slash commands",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 296.7,
-          "title": "Wire into skills registry, catalog and auto-activation",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 296.8,
-          "title": "Respect and extend existing update config",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 296.9,
-          "title": "Add security validation + tests for updater skill",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 296.1,
-          "title": "Update documentation, banner, and deprecate old paths",
-          "status": "pending",
-          "dependencies": []
-        },
-        {
-          "id": 296.11,
-          "title": "Cross-platform binary replacement strategy",
-          "status": "pending",
-          "dependencies": []
-        }
+        {"id": 296.1, "title": "Design updater skill manifest + SKILL.md", "status": "pending", "dependencies": []},
+        {"id": 296.2, "title": "Add/update core primitives for version handling", "status": "pending", "dependencies": []},
+        {"id": 296.3, "title": "Implement check-for-updates logic inside the skill", "status": "pending", "dependencies": []},
+        {"id": 296.4, "title": "Build update planning + execution steps as skill guidance", "status": "pending", "dependencies": []},
+        {"id": 296.5, "title": "User confirmation and safe execution flow", "status": "pending", "dependencies": []},
+        {"id": 296.6, "title": "Integrate with CLI and slash commands", "status": "pending", "dependencies": []},
+        {"id": 296.7, "title": "Wire into skills registry, catalog and auto-activation", "status": "pending", "dependencies": []},
+        {"id": 296.8, "title": "Respect and extend existing update config", "status": "pending", "dependencies": []},
+        {"id": 296.9, "title": "Add security validation + tests for updater skill", "status": "pending", "dependencies": []},
+        {"id": 296.10, "title": "Update documentation, banner, and deprecate old paths", "status": "pending", "dependencies": []},
+        {"id": 296.11, "title": "Cross-platform binary replacement strategy", "status": "pending", "dependencies": []}
       ]
+    },
+    {
+      "id": 297,
+      "title": "Harness-of-Harness (HOH): Multi-Day Autonomous Development Outer Loop (297-326)",
+      "description": "Implement HOH (Harness-of-Harness) as a long-running outer orchestration layer around Grok-CLI. HOH runs multi-day autonomous development cycles: it plans, delegates execution to Grok-CLI (inner harness), captures patches, runs tests, evaluates with Helix + OKF, generates improvements, and schedules the next iteration. This enables continual self-improvement of the codebase with minimal human intervention.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Core HOH outer loop tasks (297-326).\n\nAll original numbers are shown in subtask titles for easy reference.\n\nSibling tasks (IDs match the ranges in titles):\n- Task 327 = HOH TaskList Intelligence & Autonomous Evolution (327-360)\n- Task 361 = HOH Advanced Autonomy, Architecture Evolution & Self-Improvement (361-400)\n\nNext batch: 401-450 (Meta/Advanced Creativity & Governance)",
+      "testStrategy": "Full integration tests, simulation runs, and verification that all subtasks can be executed by the outer loop manager.",
+      "subtasks": [
+        {"id": 297.1, "title": "Create HOH Outer Loop Manager", "status": "pending", "dependencies": []},
+        {"id": 297.2, "title": "Define HOH Iteration State Format", "status": "pending", "dependencies": []},
+        {"id": 297.3, "title": "Implement HOH Planning Phase", "status": "pending", "dependencies": []},
+        {"id": 297.4, "title": "Integrate Grok-CLI as Inner Harness", "status": "pending", "dependencies": []},
+        {"id": 297.5, "title": "301. Add Patch Capture System", "status": "pending", "dependencies": []},
+        {"id": 297.6, "title": "Implement HOH Testing Phase", "status": "pending", "dependencies": []},
+        {"id": 297.7, "title": "Integrate Helix as Independent Evaluator", "status": "pending", "dependencies": []},
+        {"id": 297.8, "title": "Add Continual Improvement Engine", "status": "pending", "dependencies": []},
+        {"id": 297.9, "title": "Implement Tool Exposure Control", "status": "pending", "dependencies": []},
+        {"id": 297.10, "title": "Add Iteration Folder Structure", "status": "pending", "dependencies": []},
+        {"id": 297.11, "title": "Add HOH Timeline Log", "status": "pending", "dependencies": []},
+        {"id": 297.12, "title": "Implement Multi-Day Scheduler", "status": "pending", "dependencies": []},
+        {"id": 297.13, "title": "Add HOH CLI Commands", "status": "pending", "dependencies": []},
+        {"id": 297.14, "title": "Add HOH Safety Guardrails", "status": "pending", "dependencies": []},
+        {"id": 297.15, "title": "Add HOH Skill Exposure", "status": "pending", "dependencies": []},
+        {"id": 297.16, "title": "Add HOH Knowledge Injection", "status": "pending", "dependencies": []},
+        {"id": 297.17, "title": "Add HOH Iteration Visualizer", "status": "pending", "dependencies": []},
+        {"id": 297.18, "title": "Add HOH Failure Recovery", "status": "pending", "dependencies": []},
+        {"id": 297.19, "title": "Add HOH Project Snapshot System", "status": "pending", "dependencies": []},
+        {"id": 297.20, "title": "Add HOH Metrics Dashboard", "status": "pending", "dependencies": []},
+        {"id": 297.21, "title": "Add HOH LLM Backend Selection", "status": "pending", "dependencies": []},
+        {"id": 297.22, "title": "Add HOH Memory Integration", "status": "pending", "dependencies": []},
+        {"id": 297.23, "title": "Add HOH Multi-Agent Mode", "status": "pending", "dependencies": []},
+        {"id": 297.24, "title": "Add HOH Conflict Resolver", "status": "pending", "dependencies": []},
+        {"id": 297.25, "title": "Add HOH Simulation Mode", "status": "pending", "dependencies": []},
+        {"id": 297.26, "title": "Add HOH Autonomy Level Control", "status": "pending", "dependencies": []},
+        {"id": 297.27, "title": "Add HOH Resource Budgeting", "status": "pending", "dependencies": []},
+        {"id": 297.28, "title": "Add HOH Error Recovery", "status": "pending", "dependencies": []},
+        {"id": 297.29, "title": "Add HOH End-of-Day Summary", "status": "pending", "dependencies": []},
+        {"id": 297.30, "title": "Add HOH Long-Term Roadmap Generator", "status": "pending", "dependencies": []},
+        {"id": 297.31, "title": "Add HOH Documentation & User Guide", "status": "pending", "dependencies": []},
+        {"id": 297.32, "title": "Wire HOH into Main CLI and Skills", "status": "pending", "dependencies": []},
+        {"id": 297.33, "title": "HOH Integration Tests + Simulation Harness", "status": "pending", "dependencies": []}
+      ]
+    },
+    {
+      "id": 327,
+      "title": "HOH TaskList Intelligence & Autonomous Evolution (327-360)",
+      "description": "Deep integration between HOH and the project's task_list.json. This subsystem allows HOH to read, reason about, evolve, prioritize, validate, and autonomously improve the very task list that defines the project. Enables self-directed task management, mutation, dependency resolution, and long-term roadmap evolution using evaluation feedback, OKF, and Helix.",
+      "status": "pending",
+      "dependencies": [297],
+      "priority": "high",
+      "details": "All subtasks numbered 327.x following SKILL.md decimal subtask convention. Parent ID matches the range start (327).",
+      "testStrategy": "Verify task_list.json mutations are valid, dependencies remain consistent, and autonomous evolution produces coherent next batches.",
+      "subtasks": [
+        {"id": 327.1, "title": "327. Implement HOH TaskList Adapter", "status": "pending", "dependencies": []},
+        {"id": 327.2, "title": "328. Implement HOH Task Selection Engine", "status": "pending", "dependencies": []},
+        {"id": 327.3, "title": "329. Implement HOH Task Evolution Engine", "status": "pending", "dependencies": []},
+        {"id": 327.4, "title": "330. Build HOH Task Dependency Graph", "status": "pending", "dependencies": []},
+        {"id": 327.5, "title": "331. Implement HOH Task Prioritization Model", "status": "pending", "dependencies": []},
+        {"id": 327.6, "title": "332. Add HOH Task Completion Tracker", "status": "pending", "dependencies": []},
+        {"id": 327.7, "title": "333. Add HOH Task Mutation Rules", "status": "pending", "dependencies": []},
+        {"id": 327.8, "title": "334. Sync TaskList with OKF Bundles", "status": "pending", "dependencies": []},
+        {"id": 327.9, "title": "335. Sync TaskList with Helix Evaluations", "status": "pending", "dependencies": []},
+        {"id": 327.10, "title": "336. Add HOH Task Auto-Expansion", "status": "pending", "dependencies": []},
+        {"id": 327.11, "title": "337. Add HOH Task Auto-Refinement", "status": "pending", "dependencies": []},
+        {"id": 327.12, "title": "338. Add HOH Task Auto-Pruning", "status": "pending", "dependencies": []},
+        {"id": 327.13, "title": "339. Implement HOH TaskList Versioning", "status": "pending", "dependencies": []},
+        {"id": 327.14, "title": "340. Add HOH TaskList Diff Generator", "status": "pending", "dependencies": []},
+        {"id": 327.15, "title": "341. Add HOH Task Impact Analysis", "status": "pending", "dependencies": []},
+        {"id": 327.16, "title": "342. Add HOH Task Difficulty Estimator", "status": "pending", "dependencies": []},
+        {"id": 327.17, "title": "343. Add HOH Task Scheduling Engine", "status": "pending", "dependencies": []},
+        {"id": 327.18, "title": "344. Add HOH Task Conflict Detector", "status": "pending", "dependencies": []},
+        {"id": 327.19, "title": "345. Add HOH Task Semantic Analyzer", "status": "pending", "dependencies": []},
+        {"id": 327.20, "title": "346. Add HOH Task Research Generator", "status": "pending", "dependencies": []},
+        {"id": 327.21, "title": "347. Add HOH Task Risk Assessment", "status": "pending", "dependencies": []},
+        {"id": 327.22, "title": "348. Add HOH Task Reward Model", "status": "pending", "dependencies": []},
+        {"id": 327.23, "title": "349. Add HOH Task Agent Assignment", "status": "pending", "dependencies": []},
+        {"id": 327.24, "title": "350. Add HOH Task Progress Estimator", "status": "pending", "dependencies": []},
+        {"id": 327.25, "title": "351. Add HOH Task Stalling Detector", "status": "pending", "dependencies": []},
+        {"id": 327.26, "title": "352. Add HOH Task Recovery Planner", "status": "pending", "dependencies": []},
+        {"id": 327.27, "title": "353. Add HOH Task Completion Validator", "status": "pending", "dependencies": []},
+        {"id": 327.28, "title": "354. Add HOH Task Quality Scoring", "status": "pending", "dependencies": []},
+        {"id": 327.29, "title": "355. Add HOH TaskList Telemetry", "status": "pending", "dependencies": []},
+        {"id": 327.30, "title": "356. Add HOH TaskList Visualizer", "status": "pending", "dependencies": []},
+        {"id": 327.31, "title": "357. Add HOH TaskList Exporter", "status": "pending", "dependencies": []},
+        {"id": 327.32, "title": "358. Add HOH TaskList Importer", "status": "pending", "dependencies": []},
+        {"id": 327.33, "title": "359. Add HOH TaskList Consistency Checker", "status": "pending", "dependencies": []},
+        {"id": 327.34, "title": "360. Add HOH TaskList Autonomous Evolution", "status": "pending", "dependencies": []}
+      ]
+    },
+    {
+      "id": 361,
+      "title": "HOH Advanced Autonomy, Architecture Evolution & Self-Improvement (361-400)",
+      "description": "Advanced capabilities for HOH to evolve at the architectural level, perform self-refinement, enable sophisticated multi-agent collaboration, manage knowledge (OKF), perform autonomous refactoring/debugging/testing, and optimize its own processes. These features turn HOH into a true long-term self-improving system for Grok-CLI and related components (Helix, OKF).",
+      "status": "pending",
+      "dependencies": [297],
+      "priority": "high",
+      "details": "All subtasks numbered 361.x. Parent ID 361 matches the range in the title per SKILL.md clarity rules. Last subtask covers 400.",
+      "testStrategy": "Architecture evolution produces measurable improvements. All autonomous refactoring and agent evolution tasks pass evaluation.",
+      "subtasks": [
+        {"id": 361.1, "title": "361. Implement HOH Architecture Evolution Engine", "status": "pending", "dependencies": []},
+        {"id": 361.2, "title": "362. Add HOH Self-Refinement Loop", "status": "pending", "dependencies": []},
+        {"id": 361.3, "title": "363. Add HOH Autonomous Refactoring", "status": "pending", "dependencies": []},
+        {"id": 361.4, "title": "364. Add HOH Autonomous Debugging", "status": "pending", "dependencies": []},
+        {"id": 361.5, "title": "365. Add HOH Specialized Agent Profiles", "status": "pending", "dependencies": []},
+        {"id": 361.6, "title": "366. Add HOH Agent Skill Evolution", "status": "pending", "dependencies": []},
+        {"id": 361.7, "title": "367. Add HOH Multi-Agent Collaboration Protocol", "status": "pending", "dependencies": []},
+        {"id": 361.8, "title": "368. Add HOH Multi-Agent Simulation Mode", "status": "pending", "dependencies": []},
+        {"id": 361.9, "title": "369. Add HOH Long-Term Strategy Engine", "status": "pending", "dependencies": []},
+        {"id": 361.10, "title": "370. Add HOH Multi-Project Orchestrator", "status": "pending", "dependencies": []},
+        {"id": 361.11, "title": "371. Add HOH Cross-Project Knowledge Transfer", "status": "pending", "dependencies": []},
+        {"id": 361.12, "title": "372. Add HOH Autonomous Research Agent", "status": "pending", "dependencies": []},
+        {"id": 361.13, "title": "373. Add HOH Architecture Stability Monitor", "status": "pending", "dependencies": []},
+        {"id": 361.14, "title": "374. Add HOH Codebase Health Analyzer", "status": "pending", "dependencies": []},
+        {"id": 361.15, "title": "375. Add HOH Semantic Code Understanding", "status": "pending", "dependencies": []},
+        {"id": 361.16, "title": "376. Add HOH Autonomous API Evolution", "status": "pending", "dependencies": []},
+        {"id": 361.17, "title": "377. Add HOH Risk-Based Planning", "status": "pending", "dependencies": []},
+        {"id": 361.18, "title": "378. Add HOH Predictive Failure Modeling", "status": "pending", "dependencies": []},
+        {"id": 361.19, "title": "379. Add HOH Autonomous Test Generation", "status": "pending", "dependencies": []},
+        {"id": 361.20, "title": "380. Add HOH Regression Detection", "status": "pending", "dependencies": []},
+        {"id": 361.21, "title": "381. Add HOH Regression Recovery Engine", "status": "pending", "dependencies": []},
+        {"id": 361.22, "title": "382. Add HOH Architecture Simulation", "status": "pending", "dependencies": []},
+        {"id": 361.23, "title": "383. Add HOH Autonomous Documentation Generator", "status": "pending", "dependencies": []},
+        {"id": 361.24, "title": "384. Add HOH Knowledge Compression", "status": "pending", "dependencies": []},
+        {"id": 361.25, "title": "385. Add HOH Knowledge Expansion", "status": "pending", "dependencies": []},
+        {"id": 361.26, "title": "386. Add HOH Knowledge Rewriting", "status": "pending", "dependencies": []},
+        {"id": 361.27, "title": "387. Add HOH Agent Personality Profiles", "status": "pending", "dependencies": []},
+        {"id": 361.28, "title": "388. Add HOH Agent Negotiation System", "status": "pending", "dependencies": []},
+        {"id": 361.29, "title": "389. Add HOH Autonomous Design Review", "status": "pending", "dependencies": []},
+        {"id": 361.30, "title": "390. Add HOH Autonomous Code Review", "status": "pending", "dependencies": []},
+        {"id": 361.31, "title": "391. Add HOH Patch Quality Scoring", "status": "pending", "dependencies": []},
+        {"id": 361.32, "title": "392. Add HOH Patch Risk Scoring", "status": "pending", "dependencies": []},
+        {"id": 361.33, "title": "393. Add HOH Patch Optimization", "status": "pending", "dependencies": []},
+        {"id": 361.34, "title": "394. Add HOH Patch Semantic Validation", "status": "pending", "dependencies": []},
+        {"id": 361.35, "title": "395. Add HOH Autonomous Refactor Suggestions", "status": "pending", "dependencies": []},
+        {"id": 361.36, "title": "396. Add HOH Long-Term Memory Consolidation", "status": "pending", "dependencies": []},
+        {"id": 361.37, "title": "397. Add HOH Multi-Agent Patch Fusion", "status": "pending", "dependencies": []},
+        {"id": 361.38, "title": "398. Add HOH Multi-Agent Patch Arbitration", "status": "pending", "dependencies": []},
+        {"id": 361.39, "title": "399. Add HOH Autonomous Architecture Refactoring", "status": "pending", "dependencies": []},
+        {"id": 361.40, "title": "400. Add HOH Self-Optimization Engine", "status": "pending", "dependencies": []}
+      ]
+    },
+    {
+      "id": 401,
+      "title": "Implement HOH Autonomous Creativity Engine",
+      "description": "Enable HOH to generate novel architectural ideas, new modules, and innovative solutions beyond existing patterns.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 402,
+      "title": "Add HOH Generative Architecture Designer",
+      "description": "Allow HOH to propose entirely new system architectures using LLM reasoning and historical performance data.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 403,
+      "title": "Add HOH Agent Retirement System",
+      "description": "Retire agents whose performance declines or whose skill profiles no longer match project needs.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 404,
+      "title": "Add HOH Agent Birth System",
+      "description": "Spawn new agents with specialized roles when HOH detects emerging needs or opportunities.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 405,
+      "title": "Add HOH Agent Evolution Engine",
+      "description": "Allow agents to evolve their capabilities, personalities, and heuristics over time.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 406,
+      "title": "Add HOH Multi-Domain Reasoning Pipeline",
+      "description": "Enable HOH to reason across multiple domains such as architecture, testing, research, and documentation simultaneously.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 407,
+      "title": "Add HOH Long-Term Governance Engine",
+      "description": "Implement governance rules that guide HOH decision-making over months of autonomous development.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 408,
+      "title": "Add HOH Ethical Constraint Model",
+      "description": "Define constraints to prevent harmful, destructive, or unsafe autonomous behavior.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 409,
+      "title": "Add HOH Meta-Planning Engine",
+      "description": "Enable HOH to plan improvements to HOH itself, creating recursive self-improvement loops.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 410,
+      "title": "Add HOH Meta-Evaluation Engine",
+      "description": "Evaluate HOH’s own performance using metrics such as stability, improvement rate, and agent effectiveness.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 411,
+      "title": "Add HOH Meta-Refinement Engine",
+      "description": "Refine HOH’s own algorithms, heuristics, and decision-making strategies based on meta-evaluation.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 412,
+      "title": "Add HOH Future Trajectory Simulator",
+      "description": "Simulate future development paths and predict long-term outcomes of architectural decisions.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 413,
+      "title": "Add HOH Autonomous Roadmap Generator",
+      "description": "Generate multi-year roadmaps based on project goals, evaluation trends, and predicted trajectories.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 414,
+      "title": "Add HOH Multi-Project Strategy Engine",
+      "description": "Coordinate strategy across multiple projects, sharing knowledge and optimizing resource allocation.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 415,
+      "title": "Add HOH Cross-Domain Knowledge Fusion",
+      "description": "Fuse knowledge from different domains into unified OKF bundles for improved reasoning.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 416,
+      "title": "Add HOH Autonomous Research Planner",
+      "description": "Plan long-term research tasks to explore unknown areas or emerging technologies.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 417,
+      "title": "Add HOH Autonomous Innovation Engine",
+      "description": "Generate innovative features, tools, or subsystems based on gaps or opportunities detected in the project.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 418,
+      "title": "Add HOH Agent Specialization Engine",
+      "description": "Specialize agents into roles such as architect, debugger, researcher, tester, or refactorer.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 419,
+      "title": "Add HOH Agent Collaboration Graph",
+      "description": "Model agent interactions and optimize collaboration patterns for maximum productivity.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 420,
+      "title": "Add HOH Agent Personality Evolution",
+      "description": "Allow agent personalities to evolve based on performance, collaboration, and evaluation feedback.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 421,
+      "title": "Add HOH Autonomous Creativity Scoring",
+      "description": "Score creative outputs based on novelty, usefulness, and alignment with project goals.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 422,
+      "title": "Add HOH Autonomous Experimentation Engine",
+      "description": "Run controlled experiments on architecture, agents, or algorithms to discover better approaches.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 423,
+      "title": "Add HOH Hypothesis Generator",
+      "description": "Generate hypotheses about system behavior, performance bottlenecks, or architectural weaknesses.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 424,
+      "title": "Add HOH Hypothesis Testing Engine",
+      "description": "Test hypotheses using controlled experiments, simulations, and evaluation feedback.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 425,
+      "title": "Add HOH Autonomous Theory Builder",
+      "description": "Build theories about system behavior, agent dynamics, and architectural evolution.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 426,
+      "title": "Add HOH Autonomous Concept Discovery",
+      "description": "Discover new concepts, abstractions, or patterns within the codebase or architecture.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 427,
+      "title": "Add HOH Autonomous Pattern Mining",
+      "description": "Mine recurring patterns from patches, evaluations, and agent behavior.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 428,
+      "title": "Add HOH Autonomous Pattern Application",
+      "description": "Apply discovered patterns to improve architecture, code quality, or agent performance.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 429,
+      "title": "Add HOH Autonomous Pattern Evolution",
+      "description": "Evolve patterns over time as the system grows and new requirements emerge.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 430,
+      "title": "Add HOH Multi-Agent Ecosystem Manager",
+      "description": "Manage the lifecycle, roles, and interactions of all agents in the HOH ecosystem.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 431,
+      "title": "Add HOH Agent Ecology Simulator",
+      "description": "Simulate agent ecosystems to predict emergent behavior and optimize collaboration.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 432,
+      "title": "Add HOH Autonomous Domain Expansion",
+      "description": "Expand HOH into new domains such as UI design, DevOps, documentation, or research.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 433,
+      "title": "Add HOH Autonomous Tool Creation",
+      "description": "Allow HOH to design and implement new tools when existing ones are insufficient.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 434,
+      "title": "Add HOH Autonomous Tool Retirement",
+      "description": "Retire tools that are obsolete, redundant, or underperforming.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 435,
+      "title": "Add HOH Autonomous Tool Evolution",
+      "description": "Evolve tools based on usage patterns, evaluation feedback, and emerging needs.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 436,
+      "title": "Add HOH Autonomous Workflow Optimization",
+      "description": "Optimize workflows across agents, tools, and tasks for maximum efficiency.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 437,
+      "title": "Add HOH Autonomous Strategy Mutation",
+      "description": "Mutate long-term strategies when HOH detects stagnation or new opportunities.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 438,
+      "title": "Add HOH Autonomous Strategy Fusion",
+      "description": "Fuse multiple strategies into unified plans for complex multi-domain projects.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 439,
+      "title": "Add HOH Autonomous Strategy Evolution",
+      "description": "Evolve strategies over time based on performance, evaluation, and trajectory predictions.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 440,
+      "title": "Add HOH Autonomous Meta-Agent",
+      "description": "Create a meta-agent responsible for overseeing HOH itself and coordinating self-improvement.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 441,
+      "title": "Add HOH Meta-Agent Reasoning Engine",
+      "description": "Enable the meta-agent to reason about HOH’s architecture, agents, and long-term goals.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 442,
+      "title": "Add HOH Meta-Agent Planning Engine",
+      "description": "Allow the meta-agent to generate plans for improving HOH’s internal systems.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 443,
+      "title": "Add HOH Meta-Agent Evaluation Engine",
+      "description": "Evaluate the performance of HOH’s subsystems and generate improvement tasks.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 444,
+      "title": "Add HOH Meta-Agent Evolution Engine",
+      "description": "Allow the meta-agent to evolve its own reasoning, heuristics, and strategies.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 445,
+      "title": "Add HOH Autonomous Future Simulation Engine",
+      "description": "Simulate future states of the project, agents, and architecture to guide long-term planning.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 446,
+      "title": "Add HOH Autonomous Creativity Ecosystem",
+      "description": "Create an ecosystem where agents collaborate to generate creative solutions and innovations.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 447,
+      "title": "Add HOH Autonomous Innovation Scoring",
+      "description": "Score innovations based on novelty, feasibility, and alignment with long-term goals.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 448,
+      "title": "Add HOH Autonomous Innovation Evolution",
+      "description": "Evolve innovations over time as new insights and evaluation feedback emerge.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 449,
+      "title": "Add HOH Autonomous Innovation Fusion",
+      "description": "Fuse multiple innovations into unified architectural or system-level improvements.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
+    },
+    {
+      "id": 450,
+      "title": "Add HOH Meta-HOH Layer",
+      "description": "Implement a higher-order HOH layer that oversees and improves the primary HOH system, enabling recursive self-improvement.",
+      "status": "pending",
+      "dependencies": [361],
+      "priority": "high",
+      "details": "",
+      "testStrategy": "",
+      "subtasks": []
     }
   ]
 }
