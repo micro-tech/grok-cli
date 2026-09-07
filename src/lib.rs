@@ -60,6 +60,7 @@ pub mod tools;
 pub mod utils;
 pub mod visualizer;
 pub mod workflow;
+pub mod hoh;
 
 #[cfg(feature = "tgs-rag")]
 pub mod rag;
