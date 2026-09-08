@@ -426,6 +426,19 @@ Grok CLI maintains a **live, self-updating catalog** that is injected into the s
 grok skills generate-catalog
 ```
 
+**HOH (Harness-of-Harnesses) Autonomous Outer Loop**
+
+```bash
+grok-cli hoh start          # Run one full autonomous iteration
+grok-cli hoh status         # Show current + persisted state
+grok-cli hoh last           # Details of the most recent iteration
+grok-cli hoh history        # List recent iterations
+grok-cli hoh simulate       # Run in simulation mode
+grok-cli hoh apply --dry-run
+```
+
+See [Doc/HOH.md](HOH.md) for full details (Tasks 297 + 361.x).
+
 **Why it matters:**
 Creating a skill now makes it immediately visible and usable by the model without restarts or manual explanation.
 

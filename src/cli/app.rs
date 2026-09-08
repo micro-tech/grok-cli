@@ -238,13 +238,13 @@ pub enum Commands {
 
     /// Harness-of-Harnesses (HOH) autonomous outer loop commands.
     ///
-    /// Examples:
-    ///   grok hoh start
-    ///   grok hoh status
-    ///   grok hoh last
-    ///   grok hoh history
-    ///   grok hoh apply --dry-run
-    ///   grok hoh simulate
+    /// Use the full binary name when invoking:
+    ///   grok-cli hoh start
+    ///   grok-cli hoh status
+    ///   grok-cli hoh last
+    ///   grok-cli hoh history
+    ///   grok-cli hoh apply --dry-run
+    ///   grok-cli hoh simulate
     Hoh {
         /// HOH subcommand and arguments (passed through to HOH CLI)
         #[arg(trailing_var_arg = true, allow_hyphen_values = true)]

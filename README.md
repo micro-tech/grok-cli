@@ -7,6 +7,12 @@
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
 > **Latest improvements**:
+> - **Harness-of-Harnesses (HOH) Autonomous Outer Loop** (Tasks 297 + 361 batch):
+>   - Full autonomous multi-day development system.
+>   - Architecture Evolution Engine (361.1), Self-Refinement Loop (361.2), Autonomous Refactoring (361.3), Specialized Agent Profiles (361.4), and Continual Improvement meta-loop (361.5).
+>   - Reads `.zed/task_list.json`, performs dependency-aware planning, materializes tasks, generates safe patches, and feeds outcomes back into the next cycle.
+>   - Commands: `grok-cli hoh start`, `grok-cli hoh status`, `grok-cli hoh last`, `grok-cli hoh simulate`, etc.
+>   - See [Doc/HOH.md](Doc/HOH.md) for details.
 > - **Self-Updater System** (Task 296): New built-in update mechanism.
 >   - Run `grok update` (or `grok update --check`) to check GitHub releases.
 >   - Full guided update flow is provided by the dedicated **`self-updater`** skill.
@@ -144,6 +150,7 @@ Full options: [Doc/CONFIGURATION.md](Doc/CONFIGURATION.md)
 | `/bayes show`        | Inspect Bayesian priors                  |
 | `grok update [--check] [--force]` | Check for or perform a self-update of grok-cli |
 | `grok skills generate-catalog` | Regenerate the live skills/hooks/optimization catalog for the model |
+| `grok-cli hoh start` / `status` / `last` / `simulate` | Harness-of-Harnesses autonomous outer loop (see Doc/HOH.md) |
 
 See [Doc/QUICK_REFERENCE.md](Doc/QUICK_REFERENCE.md) for the complete list.
 

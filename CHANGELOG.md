@@ -9,6 +9,26 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ---
 
+## [Unreleased]
+
+### Harness-of-Harnesses (HOH) — Advanced Autonomy (Tasks 297 + 361 batch)
+
+Major new autonomous outer-loop system for long-running, self-directed development.
+
+- **Architecture Evolution Engine (361.1)**: Proposes structural changes to the codebase and to HOH itself (layer extraction, meta-planning hooks, governance separation, etc.).
+- **Self-Refinement Loop (361.2)**: HOH can now propose improvements to its own internals (planner scoring, heuristics, meta-evaluation).
+- **Autonomous Refactoring Engine (361.3)**: Converts architecture + self-refinement proposals into concrete `RefactoringAction`s. Materializes new tasks (A), generates tiny safe patch stubs (C), and records metadata.
+- **Specialized Agent Profiles + Routing (361.4)**: High-confidence refactoring actions are routed to role-specific sub-agents (e.g. `MetaHookInstaller`, `HeuristicTuner`, `ModuleExtractor`).
+- **Continual Improvement Meta-Loop (361.5)**: Closed feedback system that turns execution outcomes (materialized tasks, patch quality, test results, specialized agent routes) into prioritized suggestions for the *next* planning cycle.
+- Real implementations live in `src/hoh/` (planner, architecture_evolution, autonomous_refactoring, specialized_agents, continual_improvement, outer_loop, etc.).
+- New CLI commands: `grok-cli hoh start`, `grok-cli hoh status`, `grok-cli hoh last`, `grok-cli hoh history`, `grok-cli hoh apply --dry-run`, `grok-cli hoh simulate`.
+- Task list is now treated as a living artifact (evolution, mutation, dependency graph, completion tracking).
+- Full documentation: [Doc/HOH.md](Doc/HOH.md)
+
+This is the foundation for true multi-day autonomous improvement.
+
+---
+
 ## [0.2.9] — 2026-08-31
 
 ### Fix: atomic write ENOTDIR on Linux CI (11 tests)

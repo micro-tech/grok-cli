@@ -13,5 +13,5 @@ pub fn hoh_skill_manifest() -> serde_json::Value {
 }
 
 pub async fn activate_hoh_skill() {
-    println!("[HOH Skill] Activated. Use grok hoh start or /hoh to begin outer loop.");
+    println!("[HOH Skill] Activated. Use grok-cli hoh start or /hoh to begin outer loop.");
 }
