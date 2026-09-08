@@ -9,6 +9,8 @@ pub mod state;
 pub mod planner;
 pub mod simulation;
 pub mod patch_capture;
+pub mod patch_applier;
+pub mod persistence;
 pub mod testing;
 pub mod helix;
 pub mod continual_improvement;
@@ -24,9 +26,16 @@ pub mod task_dependency_graph;
 pub mod task_mutation;
 pub mod evolution_engine;
 pub mod task_completion_tracker;
+pub mod architecture_evolution;
+pub mod autonomous_refactoring;
+pub mod specialized_agents;
 
 pub use outer_loop::HOHManager;
 pub use state::{IterationState, PatchSet};
+pub use evolution_engine::TaskEvolutionEngine;
+pub use tasklist_adapter::TaskListAdapter;
+pub use architecture_evolution::{ArchitectureEvolutionEngine, ArchitectureProposal, ArchitectureChangeType};
+pub use autonomous_refactoring::{AutonomousRefactoringEngine, RefactoringAction, RefactoringActionType};
 
 /// Top-level HOH configuration and entry points.
 #[derive(Debug, Clone, Default)]

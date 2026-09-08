@@ -24,10 +24,28 @@ impl TaskEvolutionEngine {
     }
 
     /// Analyze the current task list and propose a set of safe mutations.
+    /// Enhanced with OKF awareness (327.8), Helix feedback hooks (327.9), and better heuristics.
     pub async fn propose_evolutions(&self) -> Result<Vec<TaskMutation>, HOHError> {
         let list = self.adapter.load().await?;
         let _graph = self.adapter.build_dependency_graph().await?;
         let mut proposals = Vec::new();
+
+        // 327.8: OKF Sync - pull relevant knowledge to inspire task refinements
+        if let Ok(okf_knowledge) = crate::tools::okf_tools::okf_lookup("HOH OR tasklist OR evolution OR autonomy OR consistency", Some(5)) {
+            if okf_knowledge.len() > 80 {
+                tracing::debug!("HOH Evolution: OKF context loaded for task evolution ({} chars)", okf_knowledge.len());
+                // OKF knowledge can guide future proposals (e.g. "add tasks for new OKF concepts")
+            }
+        }
+
+        // 327.9: Helix feedback influence (stub for now — real scores come from evaluations)
+        // In a full impl we would pass recent Helix scores to demote/promote tasks
+        let recent_helix_score: Option<f32> = None; // TODO: wire from IterationState / evaluations
+        if let Some(score) = recent_helix_score {
+            if score < 0.4 {
+                tracing::info!("HOH Evolution: Low Helix score detected — will be more conservative with mutations");
+            }
+        }
 
         // 1. Promote high-value pending tasks that have good test strategies
         for task in &list.tasks {
@@ -41,20 +59,28 @@ impl TaskEvolutionEngine {
             }
         }
 
-        // 2. Split overly large tasks (heuristic)
+        // 2. Split overly large tasks (heuristic) - 327.10 Auto-Expansion
         for task in &list.tasks {
-            if task.details.len() > 2000 && task.subtasks.is_empty() {
-                // Propose splitting (we generate simple child tasks)
+            if task.details.len() > 1800 && task.subtasks.is_empty() && task.status == "pending" {
                 let sub1 = Task {
                     id: task.id * 1000 + 1,
                     title: format!("Part 1: {}", task.title),
-                    details: "Auto-generated subtask (evolution)".to_string(),
+                    details: format!("[Auto-split] Implementation phase for: {}", task.title),
+                    priority: task.priority.clone(),
+                    status: "pending".to_string(),
                     ..Default::default()
                 };
                 let sub2 = Task {
                     id: task.id * 1000 + 2,
                     title: format!("Part 2: {}", task.title),
-                    details: "Auto-generated subtask (evolution)".to_string(),
+                    details: format!("[Auto-split] Testing + validation for: {}", task.title),
+                    priority: task.priority.clone(),
+                    status: "pending".to_string(),
+                    test_strategy: if task.test_strategy.is_empty() {
+                        "Verify all acceptance criteria from parent task.".to_string()
+                    } else {
+                        task.test_strategy.clone()
+                    },
                     ..Default::default()
                 };
 
@@ -65,7 +91,7 @@ impl TaskEvolutionEngine {
             }
         }
 
-        // 3. Add missing dependencies for tasks that mention other task IDs in details
+        // 3. Add missing dependencies for tasks that mention other task IDs in details (327.4)
         for task in &list.tasks {
             if task.dependencies.is_empty() {
                 if let Some(dep_id) = self.extract_mentioned_task_id(&task.details, &list) {
@@ -79,14 +105,62 @@ impl TaskEvolutionEngine {
             }
         }
 
-        // 4. Defer or cancel very old low-priority tasks (placeholder logic)
+        // 4. Defer or cancel very old low-priority tasks
         for task in &list.tasks {
             if task.priority == "low" && task.status == "pending" {
-                // Could add more sophisticated staleness detection later
-                if task.title.to_lowercase().contains("deprecated") {
+                let title_lower = task.title.to_lowercase();
+                if title_lower.contains("deprecated") || title_lower.contains("obsolete") || title_lower.contains("legacy") {
                     proposals.push(TaskMutation::SetStatus {
                         task_id: task.id,
-                        new_status: "cancelled".to_string(),
+                        new_status: "deferred".to_string(),
+                    });
+                }
+            }
+        }
+
+        // 5. 327.11 Auto-Refinement: Improve vague high-priority tasks
+        for task in &list.tasks {
+            if task.priority == "high" && task.status == "pending" {
+                if task.details.len() < 120 || task.test_strategy.trim().is_empty() {
+                    // Propose adding a basic test strategy if missing
+                    if task.test_strategy.trim().is_empty() {
+                        proposals.push(TaskMutation::SetTestStrategy {
+                            task_id: task.id,
+                            strategy: "Run relevant unit tests + cargo clippy. Verify behavior against description.".to_string(),
+                        });
+                    }
+                    // Could also propose SetDescription in future
+                }
+            }
+        }
+
+        // 6. 327.8 OKF Sync hint (lightweight): if task mentions knowledge-related terms, suggest OKF-related detail
+        // (We don't mutate OKF directly here; we just improve the task description when relevant)
+        for task in &list.tasks {
+            let combined = format!("{} {}", task.title, task.details).to_lowercase();
+            if (combined.contains("okf") || combined.contains("knowledge") || combined.contains("bundle")) 
+                && task.details.len() < 300 
+                && task.status == "pending" 
+            {
+                // Propose a small refinement to call out OKF usage
+                proposals.push(TaskMutation::SetDescription {
+                    task_id: task.id,
+                    new_description: format!(
+                        "{}\n\n[HOH Evolution] Consider using okf_lookup / okf_get tools for structured knowledge.",
+                        task.description
+                    ),
+                });
+            }
+        }
+
+        // 7. 327.12 Auto-Pruning hint: propose deferral for tasks that have been "pending" with very low detail for long time
+        // (Simple heuristic for now - real staleness would use timestamps)
+        for task in &list.tasks {
+            if task.status == "pending" && task.priority == "low" && task.details.len() < 50 && task.subtasks.is_empty() {
+                if task.title.to_lowercase().contains("todo") || task.title.to_lowercase().contains("investigate") {
+                    proposals.push(TaskMutation::SetStatus {
+                        task_id: task.id,
+                        new_status: "deferred".to_string(),
                     });
                 }
             }

@@ -30,6 +30,27 @@ pub struct HOHPlan {
     pub goals: Vec<String>,
     pub selected_tasks: Vec<u64>,
     pub experiments: Vec<String>,
+    /// Architectural evolution proposals generated this cycle (361.1)
+    #[serde(default)]
+    pub architecture_proposals: Vec<String>,
+    /// Self-refinement proposals for HOH internals (361.2)
+    #[serde(default)]
+    pub self_refinement_proposals: Vec<String>,
+    /// Concrete refactoring actions from 361.3
+    #[serde(default)]
+    pub refactoring_actions: Vec<String>,
+    /// A: Materialized new task IDs from refactoring actions this cycle
+    #[serde(default)]
+    pub materialized_task_ids: Vec<u64>,
+    /// C: Patch stubs generated from high-confidence refactoring actions (361.3)
+    #[serde(default)]
+    pub generated_patch_stubs: Vec<String>,
+    /// D/E: Specialized sub-agent routings performed (361.4)
+    #[serde(default)]
+    pub specialized_agent_routes: Vec<String>,
+    /// 361.5: Continual / meta improvement suggestions generated at the end of previous cycle
+    #[serde(default)]
+    pub improvement_suggestions: Vec<String>,
     pub created_at: u64,
 }
 
@@ -40,6 +61,19 @@ pub struct PatchSet {
     pub diff_summary: String,
     pub source: String, // "inner_harness", "hoh", etc.
     pub timestamp: u64,
+    /// Optional: when we want the patch to carry the *intended full content* for files.
+    /// Used by patch_applier when present. Falls back to diff_summary if empty.
+    #[serde(default)]
+    pub intended_content: Option<String>,
+}
+
+impl PatchSet {
+    /// Helper to get the content that should be written for this patch.
+    pub fn content_to_apply(&self) -> String {
+        self.intended_content
+            .clone()
+            .unwrap_or_else(|| self.diff_summary.clone())
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -48,6 +82,21 @@ pub struct EvaluationReport {
     pub helix_score: Option<f32>,
     pub internal_metrics: std::collections::HashMap<String, f32>,
     pub notes: String,
+    /// 361: Architectural proposals considered this iteration
+    #[serde(default)]
+    pub architecture_proposals_evaluated: Vec<String>,
+    /// 361.2: Meta-level improvement score (how much HOH improved its own capabilities)
+    #[serde(default)]
+    pub meta_improvement_score: Option<f32>,
+    /// 361.5 / patch quality: lightweight metrics on patches produced this iteration
+    #[serde(default)]
+    pub patch_count: usize,
+    #[serde(default)]
+    pub files_changed_count: usize,
+    #[serde(default)]
+    pub avg_diff_length: f32,
+    #[serde(default)]
+    pub test_passed: Option<bool>,
 }
 
 impl IterationState {

@@ -13,7 +13,7 @@
 use crate::hoh::state::HOHError;
 use crate::hoh::task_dependency_graph::TaskDependencyGraph;
 use serde::{Deserialize, Serialize};
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 /// Serializable representation of a task (mirrors the JSON schema used by task_tools).
@@ -63,6 +63,21 @@ impl TaskListAdapter {
             task_file,
             simulation_mode,
         }
+    }
+
+    /// Returns a fresh adapter with the same configuration (for evolution engine, etc.).
+    pub fn clone_for_evolution(&self) -> TaskListAdapter {
+        Self {
+            task_file: self.task_file.clone(),
+            simulation_mode: self.simulation_mode,
+        }
+    }
+
+    /// Convenience: load + run consistency check in one go.
+    pub async fn load_and_check(&self) -> Result<(TaskList, Vec<String>), HOHError> {
+        let list = self.load().await?;
+        let problems = self.check_consistency(&list);
+        Ok((list, problems))
     }
 
     /// Load the current task list.
@@ -139,28 +154,85 @@ impl TaskListAdapter {
         Ok(())
     }
 
-    /// Detailed consistency checker. Empty vec = healthy.
+    /// Detailed consistency checker (Task 327.33).
+    /// Returns a list of human-readable problems. Empty = healthy.
     pub fn check_consistency(&self, list: &TaskList) -> Vec<String> {
         let mut problems = Vec::new();
-        let mut seen = std::collections::HashSet::new();
+        let mut seen_ids = HashSet::new();
+        let mut all_tasks: Vec<&Task> = Vec::new();
 
-        // 1. Duplicate IDs (including subtasks)
-        for task in &list.tasks {
-            self.check_duplicates(task, &mut seen, &mut problems);
-        }
-
-        // 2. Circular dependencies
-        for task in &list.tasks {
-            if self.has_cycle(task.id, &list.tasks, &mut vec![]) {
-                problems.push(format!("Circular dependency detected involving task {}", task.id));
+        // Collect all tasks (including subtasks)
+        fn collect_all<'a>(task: &'a Task, all: &mut Vec<&'a Task>) {
+            all.push(task);
+            for sub in &task.subtasks {
+                collect_all(sub, all);
             }
         }
 
-        // 3. Done tasks depending on non-done work
         for task in &list.tasks {
+            collect_all(task, &mut all_tasks);
+        }
+
+        // === 1. Duplicate IDs (global) ===
+        for task in &all_tasks {
+            if !seen_ids.insert(task.id) {
+                problems.push(format!("Duplicate task ID found: {}", task.id));
+            }
+        }
+
+        // Build ID map for fast lookup
+        let id_map: HashMap<u64, &Task> = all_tasks.iter().map(|t| (t.id, *t)).collect();
+
+        // === 2. Invalid status values ===
+        const VALID_STATUSES: &[&str] = &["pending", "in_progress", "done", "cancelled", "deferred", "blocked"];
+        for task in &all_tasks {
+            if !VALID_STATUSES.contains(&task.status.as_str()) {
+                problems.push(format!("Task {} has invalid status: '{}'", task.id, task.status));
+            }
+        }
+
+        // === 3. Invalid priority values ===
+        const VALID_PRIORITIES: &[&str] = &["high", "medium", "low"];
+        for task in &all_tasks {
+            if !VALID_PRIORITIES.contains(&task.priority.as_str()) {
+                problems.push(format!("Task {} has invalid priority: '{}'", task.id, task.priority));
+            }
+        }
+
+        // === 4. Empty required fields ===
+        for task in &all_tasks {
+            if task.title.trim().is_empty() {
+                problems.push(format!("Task {} has empty title", task.id));
+            }
+            if task.status.trim().is_empty() {
+                problems.push(format!("Task {} has empty status", task.id));
+            }
+        }
+
+        // === 5. Non-existent dependency references ===
+        for task in &all_tasks {
+            for &dep_id in &task.dependencies {
+                if !id_map.contains_key(&dep_id) {
+                    problems.push(format!(
+                        "Task {} depends on non-existent task {}",
+                        task.id, dep_id
+                    ));
+                }
+            }
+        }
+
+        // === 6. Self-dependency ===
+        for task in &all_tasks {
+            if task.dependencies.contains(&task.id) {
+                problems.push(format!("Task {} depends on itself", task.id));
+            }
+        }
+
+        // === 7. Done tasks depending on non-done work ===
+        for task in &all_tasks {
             if task.status == "done" {
                 for &dep in &task.dependencies {
-                    if let Some(d) = self.find_task(dep, &list.tasks) {
+                    if let Some(d) = id_map.get(&dep) {
                         if d.status != "done" {
                             problems.push(format!(
                                 "Task {} is 'done' but depends on unfinished task {}",
@@ -172,19 +244,30 @@ impl TaskListAdapter {
             }
         }
 
-        // 4. Basic quality
-        for task in &list.tasks {
-            if task.title.trim().is_empty() {
-                problems.push(format!("Task {} has empty title", task.id));
-            }
-            if task.status.is_empty() {
-                problems.push(format!("Task {} has empty status", task.id));
+        // === 8. Circular dependencies (using simple DFS) ===
+        for task in &all_tasks {
+            if self.has_cycle(task.id, &list.tasks, &mut vec![]) {
+                problems.push(format!("Circular dependency detected involving task {}", task.id));
             }
         }
+
+        // === 9. High-priority tasks without test strategy ===
+        for task in &all_tasks {
+            if task.priority == "high" && task.test_strategy.trim().is_empty() {
+                problems.push(format!(
+                    "High-priority task {} has no testStrategy",
+                    task.id
+                ));
+            }
+        }
+
+        // === 10. Orphaned subtasks (should not happen with recursive collection, but defensive) ===
+        // (Currently no-op because we flatten everything)
 
         problems
     }
 
+    #[allow(dead_code)]
     fn check_duplicates(&self, task: &Task, seen: &mut std::collections::HashSet<u64>, problems: &mut Vec<String>) {
         if !seen.insert(task.id) {
             problems.push(format!("Duplicate task ID found: {}", task.id));
@@ -347,5 +430,22 @@ impl TaskListAdapter {
         graph
             .topological_sort()
             .map_err(|e| HOHError::Other(format!("Topological sort failed: {}", e)))
+    }
+
+    /// Returns true if the current task list is fully consistent (327.33).
+    pub async fn is_consistent(&self) -> Result<bool, HOHError> {
+        let list = self.load().await?;
+        Ok(self.check_consistency(&list).is_empty())
+    }
+
+    /// Returns the list of consistency problems (if any).
+    pub async fn get_consistency_problems(&self) -> Result<Vec<String>, HOHError> {
+        let list = self.load().await?;
+        Ok(self.check_consistency(&list))
+    }
+
+    /// Expose simulation mode (used by ArchitectureEvolutionEngine).
+    pub fn is_simulation(&self) -> bool {
+        self.simulation_mode
     }
 }

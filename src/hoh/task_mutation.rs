@@ -60,6 +60,10 @@ pub enum TaskMutation {
         task_id: u64,
         strategy: String,
     },
+    /// Add a brand new top-level task (361.3 materialization)
+    AddTask {
+        new_task: Task,
+    },
 }
 
 /// Result of applying a mutation.
@@ -142,6 +146,20 @@ impl TaskMutationRules {
                     if sub.title.trim().is_empty() {
                         return Err("Subtask title cannot be empty".to_string());
                     }
+                }
+                Ok(())
+            }
+
+            TaskMutation::AddTask { new_task } => {
+                if new_task.title.trim().is_empty() {
+                    return Err("New task title cannot be empty".to_string());
+                }
+                if new_task.id == 0 {
+                    return Err("New task must have a non-zero ID".to_string());
+                }
+                // Ensure no duplicate ID
+                if all_tasks.iter().any(|t| t.id == new_task.id) {
+                    return Err(format!("Task ID {} already exists", new_task.id));
                 }
                 Ok(())
             }
@@ -263,6 +281,16 @@ impl TaskMutationRules {
                 } else {
                     Err(format!("Task {} not found", task_id))
                 }
+            }
+
+            TaskMutation::AddTask { new_task } => {
+                // Append the new top-level task
+                tasks.push(new_task.clone());
+                Ok(MutationResult {
+                    success: true,
+                    message: format!("Added new task {}: {}", new_task.id, new_task.title),
+                    task_id: new_task.id,
+                })
             }
 
             _ => Err("Mutation type not yet implemented for apply".to_string()),

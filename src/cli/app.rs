@@ -235,6 +235,21 @@ pub enum Commands {
         #[arg(long)]
         force: bool,
     },
+
+    /// Harness-of-Harnesses (HOH) autonomous outer loop commands.
+    ///
+    /// Examples:
+    ///   grok hoh start
+    ///   grok hoh status
+    ///   grok hoh last
+    ///   grok hoh history
+    ///   grok hoh apply --dry-run
+    ///   grok hoh simulate
+    Hoh {
+        /// HOH subcommand and arguments (passed through to HOH CLI)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
 }
 
 /// Main application entry point
@@ -487,6 +502,16 @@ pub async fn run() -> Result<()> {
                 show_banner_fn();
             }
             crate::cli::commands::update::handle_update_command(*check, *force, &config).await?;
+        }
+        Some(Commands::Hoh { args }) => {
+            // HOH outer loop commands (no API key required for local autonomous loop)
+            let sub = if args.is_empty() {
+                "status".to_string()
+            } else {
+                args.join(" ")
+            };
+            // simulation flag can be inferred or passed via env later; default to false for real runs
+            crate::hoh::cli::handle_hoh_command(&sub, false).await;
         }
         None => {
             // Default to interactive mode
