@@ -11,7 +11,7 @@
 //! This is the "outer outer" layer on top of the single-project HOH + MultiAgentOrchestrator.
 
 use crate::hoh::state::HOHError;
-use crate::hoh::cross_project_knowledge::{CrossProjectKnowledgeTransfer, TransferablePattern, CrossProjectTransfer};
+use crate::hoh::cross_project_knowledge::{CrossProjectKnowledgeTransfer, CrossProjectTransfer};
 use crate::hoh::long_term_strategy::LongTermStrategyEngine;
 use std::collections::HashMap;
 

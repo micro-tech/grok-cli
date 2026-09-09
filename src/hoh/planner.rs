@@ -123,6 +123,11 @@ impl HOHPlanner {
             .map(|a| choose_profile_for_action(a).name().to_lowercase())
             .collect();
 
+        // Local accumulator for all improvement_suggestions.
+        // We build this throughout the function and assign it when we construct HOHPlan at the end.
+        // This fixes the "plan not in scope" errors (plan var is defined only at the bottom).
+        let mut improvement_suggestions: Vec<String> = vec![];
+
         // 327.2 + 327.4: First get only tasks whose dependencies are satisfied
         let empty_completed: HashSet<u64> = HashSet::new();
         let ready_tasks = self.adapter.get_ready_tasks(&empty_completed).await
@@ -330,7 +335,7 @@ impl HOHPlanner {
             // Small close-the-loop: turn top creative ideas into improvement suggestions
             // (feeds into continual improvement + future task evolution)
             for idea in creative_ideas.iter().filter(|i| i.overall_score > 0.72).take(2) {
-                plan.improvement_suggestions.push(format!(
+                improvement_suggestions.push(format!(
                     "CREATIVE-401: {} — {} (novelty {:.2})",
                     idea.title, idea.description, idea.novelty_score
                 ));
@@ -340,7 +345,7 @@ impl HOHPlanner {
             // These can be picked up by task evolution / continual improvement to create real tasks.
             for idea in creative_ideas.iter().take(2) {
                 if idea.overall_score > 0.60 {
-                    plan.improvement_suggestions.push(format!(
+                    improvement_suggestions.push(format!(
                         "SEED-TASK-401: [{} score={:.2}] {}",
                         idea.source, idea.overall_score, idea.title
                     ));
@@ -351,7 +356,7 @@ impl HOHPlanner {
             // The ideas live in the plan and get logged by outer_loop + iteration folders.
             // This gives the continual improvement loop something concrete to act on next cycle.
             if creative_ideas.len() >= 3 {
-                plan.improvement_suggestions.push(
+                improvement_suggestions.push(
                     "453.5: Creative ideas from this iteration are available for task seeding and OKF injection".to_string()
                 );
             }
@@ -360,7 +365,7 @@ impl HOHPlanner {
             // so task evolution / continual improvement has something real to turn into a TaskMutation.
             if let Some(best) = creative_ideas.iter().max_by(|a, b| a.overall_score.partial_cmp(&b.overall_score).unwrap_or(std::cmp::Ordering::Equal)) {
                 if best.overall_score > 0.68 {
-                    plan.improvement_suggestions.push(format!(
+                    improvement_suggestions.push(format!(
                         "NEW-TASK-SEED-453: title=\"{}\" desc=\"{}\" score={:.2}",
                         best.title.replace('"', "'"), best.description.replace('"', "'"), best.overall_score
                     ));
@@ -370,14 +375,14 @@ impl HOHPlanner {
             // Use the new helper to generate clean task seeds (finishes 453.4 wiring)
             let task_seeds = creativity_engine.ideas_to_task_seeds(&creative_ideas, 2);
             for seed in task_seeds {
-                plan.improvement_suggestions.push(format!("TASK-SEED-453: {}", seed));
+                improvement_suggestions.push(format!("TASK-SEED-453: {}", seed));
             }
 
             // 453.5: Mark that creative ideas are now part of this iteration's output.
             // They flow into: plan.creative_ideas, improvement_suggestions, and outer_loop logging.
             // Next cycles can consume them via continual_improvement + task evolution.
             if !creative_ideas.is_empty() {
-                plan.improvement_suggestions.push(
+                improvement_suggestions.push(
                     "453 COMPLETE: Creative ideas persisted in plan for task seeding & evolution".to_string()
                 );
             }
@@ -392,7 +397,7 @@ impl HOHPlanner {
                 .collect();
 
             if !creative_task_proposals.is_empty() {
-                plan.improvement_suggestions.push(format!(
+                improvement_suggestions.push(format!(
                     "453.5-READY: {} creative task proposals ready for materialization",
                     creative_task_proposals.len()
                 ));
@@ -407,8 +412,8 @@ impl HOHPlanner {
             // Final tiny polish: ensure at least the top creative idea is always promoted
             // even if scores are moderate. This guarantees 401 actually produces usable output.
             if let Some(top) = creative_ideas.first() {
-                if !plan.improvement_suggestions.iter().any(|s| s.contains(&top.title)) {
-                    plan.improvement_suggestions.push(format!(
+                if !improvement_suggestions.iter().any(|s| s.contains(&top.title)) {
+                    improvement_suggestions.push(format!(
                         "453-FEED: Promote creative idea → \"{}\"",
                         top.title
                     ));
@@ -425,7 +430,7 @@ impl HOHPlanner {
                 .collect();
 
             for p in proposed_new_tasks {
-                plan.improvement_suggestions.push(format!("453-PROPOSE-TASK: {}", p));
+                improvement_suggestions.push(format!("453-PROPOSE-TASK: {}", p));
             }
 
             // 453 COMPLETE (all small bits)
@@ -435,7 +440,7 @@ impl HOHPlanner {
             // 453.4: Wired into HOHPlanner.create_plan        ✓ (ideas → creative_ideas + seeds)
             // 453.5: Persist per iteration + task seeds       ✓ (PROPOSE-TASK + markers for evolution)
             if !creative_ideas.is_empty() {
-                plan.improvement_suggestions.push("453 COMPLETE: creativity engine fully wired (ideas → task seeds)".into());
+                improvement_suggestions.push("453 COMPLETE: creativity engine fully wired (ideas → task seeds)".into());
             }
 
             // Tiny close-the-loop bonus: if we have strong creative ideas, add them as
@@ -446,7 +451,7 @@ impl HOHPlanner {
                 .collect::<Vec<_>>();
 
             for idea in strong_ideas {
-                plan.improvement_suggestions.push(format!(
+                improvement_suggestions.push(format!(
                     "CANDIDATE-TASK-453: {} (use this to create new task in next evolution)",
                     idea.title
                 ));
@@ -458,7 +463,7 @@ impl HOHPlanner {
             // - Wired into planner ✓
             // - Seeds + persistence + "453 COMPLETE" markers ✓
             // - Ideas now flow to improvement_suggestions / task evolution
-            plan.improvement_suggestions.push("453 CLOSED: Creativity engine complete and feeding the loop".into());
+            improvement_suggestions.push("453 CLOSED: Creativity engine complete and feeding the loop".into());
         }
 
         // 402: Generative Architecture Designer (builds directly on 401 CreativityEngine)
@@ -649,12 +654,15 @@ impl HOHPlanner {
         let arch_titles: Vec<String> = arch_proposals.iter().map(|p| p.title.clone()).collect();
         let self_ref_titles: Vec<String> = self_refinements.iter().map(|p| p.title.clone()).collect();
 
+        // Convert to strings for the extractor (it expects &[String] for these)
+        let refactor_titles: Vec<String> = refactoring_actions.iter().map(|a| a.title.clone()).collect();
+
         let extracted_patterns = xproj.extract_transferable_patterns(
             &goals,
             &arch_titles,
             &self_ref_titles,
             &creative_ideas,
-            &refactoring_actions,
+            &refactor_titles,
         );
 
         // In a real multi-project setup, `incoming_patterns` would be loaded from OKF bundles,
@@ -684,7 +692,7 @@ impl HOHPlanner {
 
         // Feed a couple of strong patterns into improvement suggestions (close the loop)
         for p in extracted_patterns.iter().filter(|p| p.portability_score > 0.75).take(2) {
-            plan.improvement_suggestions.push(format!(
+            improvement_suggestions.push(format!(
                 "361.11-EXPORT: {} (portability {:.2}) — {}",
                 p.title, p.portability_score, p.suggested_application
             ));
@@ -738,7 +746,7 @@ impl HOHPlanner {
                     "HOH (361.0101): Multi-Project Orchestrator produced plan across {} projects",
                     mp.involved_projects.len()
                 );
-                plan.improvement_suggestions.push(format!(
+                improvement_suggestions.push(format!(
                     "361.0101: Multi-project orchestration across {} projects — {}",
                     mp.involved_projects.len(), mp.overall_plan_summary
                 ));
@@ -862,13 +870,12 @@ impl HOHPlanner {
             let participants: Vec<String> = multi_sim.agents.keys().take(3).cloned().collect();
             let collab_topic = if !goals.is_empty() { goals[0].clone() } else { "multi-agent collaboration scenario".to_string() };
 
-            if let Ok(out) = multi_sim.run_monte_carlo_collaboration(
+            let out = multi_sim.run_monte_carlo_collaboration(
                 &collab_topic,
                 participants,
                 None, // we could pass a real evolution system later
-            ).await {
-                simulation_outcomes.push(out);
-            }
+            ).await;
+            simulation_outcomes.push(out);
         }
 
         // Quick ecosystem pressure check (useful signal for 404 birth decisions next cycle)
@@ -890,14 +897,14 @@ impl HOHPlanner {
 
         // Feed top simulation outcomes into improvement suggestions (361.8 close-the-loop)
         for out in simulation_outcomes.iter().filter(|o| o.predicted_success_rate > 0.75).take(2) {
-            plan.improvement_suggestions.push(format!(
+            improvement_suggestions.push(format!(
                 "361.8-SIM: {} (predicted success {:.2}, quality {:.2})",
                 out.scenario, out.predicted_success_rate, out.predicted_quality
             ));
         }
 
         if !simulation_outcomes.is_empty() {
-            plan.improvement_suggestions.push(
+            improvement_suggestions.push(
                 "361.8: Multi-agent what-if simulations completed — results available for next-cycle planning / birth decisions".to_string()
             );
         }
@@ -938,7 +945,7 @@ impl HOHPlanner {
             materialized_task_ids,
             generated_patch_stubs,
             specialized_agent_routes: specialized_routes,
-            improvement_suggestions: vec![],
+            improvement_suggestions,
             creative_ideas,
             architecture_designs,
             agent_lifecycle_events: lifecycle_events,

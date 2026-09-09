@@ -425,6 +425,12 @@ impl HOHManager {
                 meta_plans: vec![],
                 meta_evaluation: None,
                 simulation_outcomes: vec![],  // 361.8
+                orchestration_results: vec![], // 361.7/361.8
+                long_term_strategies: vec![],  // 361.9
+                cross_project_patterns: vec![],   // 361.11
+                cross_project_transfers: vec![],  // 361.11
+                multi_project_result: None,       // 361.0101
+                registered_projects: vec![],      // 361.0101
                 created_at: chrono::Utc::now().timestamp() as u64,
             })
         }

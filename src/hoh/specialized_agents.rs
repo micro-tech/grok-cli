@@ -17,7 +17,7 @@ use std::collections::HashSet;
 
 /// Core specialized agent profiles (361.5).
 /// These are the distinct personas HOH can route work to.
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 pub enum AgentProfile {
     /// High-level design, module boundaries, long-term architecture.
     Architect,

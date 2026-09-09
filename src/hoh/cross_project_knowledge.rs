@@ -11,11 +11,11 @@
 //!   HOH runs, or explicit imports) are applicable here.
 //! - Record successful transfers so they influence planning and can be audited.
 
-use crate::hoh::state::HOHError;
 use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum PatternType {
+    #[default]
     ArchitecturalPattern,
     AgentBehavior,
     RefactoringHeuristic,
@@ -46,6 +46,7 @@ pub struct TransferablePattern {
     pub id: String,
     pub title: String,
     pub description: String,
+    #[serde(default)]
     pub pattern_type: PatternType,
     /// Where this pattern was originally observed (project name or "current")
     pub source_project: String,

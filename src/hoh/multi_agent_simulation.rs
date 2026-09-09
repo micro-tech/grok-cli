@@ -99,7 +99,7 @@ impl MultiAgentSimulator {
         profile: AgentProfile,
         skill_summary: &str,
     ) {
-        let portfolio = AgentSkillPortfolio::new(id);
+        let portfolio = crate::hoh::agent_skill_evolution::AgentSkillPortfolio::new(id);
         // In a richer version we would clone from a real AgentSkillEvolutionSystem.
         // For now we just create a minimal one.
         let mut sim_agent = SimulatedAgent {
@@ -185,7 +185,7 @@ impl MultiAgentSimulator {
         &mut self,
         topic: &str,
         participant_ids: Vec<String>,
-        evolution_system: Option<&mut AgentSkillEvolutionSystem>,
+        mut evolution_system: Option<&mut AgentSkillEvolutionSystem>,
     ) -> SimulationOutcome {
         if participant_ids.is_empty() {
             return SimulationOutcome {

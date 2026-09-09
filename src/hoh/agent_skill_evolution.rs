@@ -265,18 +265,10 @@ impl AgentSkillEvolutionSystem {
         quality: f32,
         creativity_ideas: &[CreativityIdea],
     ) -> Result<Vec<String>, HOHError> {
-        let portfolio = self.portfolios.entry(agent_id.to_string()).or_insert_with(|| AgentSkillPortfolio::new(agent_id));
-
         let mut changes = vec![];
 
-        // 1. Find or create matching skill for this task
-        let matching = portfolio.best_matching_skill(task_description).cloned();
-        if let Some(mut skill) = matching {
-            skill.record_use(success, quality);
-            changes.push(format!("Reinforced skill '{}' (utility now {:.2})", skill.name, skill.utility_score()));
-            portfolio.skills.insert(skill.name.clone(), skill);
-        } else if success && quality > 0.75 {
-            // Opportunity to synthesize / adopt a new skill
+        // Synthesize first (if needed) to avoid double mutable borrow on self
+        let maybe_new_skill = if success && quality > 0.75 {
             let fallback_idea = creativity_ideas.first().cloned().unwrap_or_else(|| CreativityIdea {
                 id: "fallback".into(),
                 title: "general improvement".into(),
@@ -289,19 +281,29 @@ impl AgentSkillEvolutionSystem {
                 tags: vec!["fallback".into()],
                 provenance: "skill-evolution-fallback".into(),
             });
-            // Borrow the idea first, then mutate portfolio (avoid double mutable borrow)
-            let maybe_new = self.synthesize_skill_from_idea(&fallback_idea);
-            if let Some(new_skill) = maybe_new {
-                portfolio.add_skill(new_skill.clone());
-                changes.push(format!("Acquired new synthesized skill: {}", new_skill.name));
-            } else {
-                // Fall back to a global catalog skill
-                if let Some(seed) = self.global_skill_catalog.first() {
-                    let mut s = seed.clone();
-                    s.task_keywords.push(task_description.split_whitespace().take(3).collect::<Vec<_>>().join(" "));
-                    portfolio.add_skill(s.clone());
-                    changes.push(format!("Acquired skill from catalog: {}", s.name));
-                }
+            self.synthesize_skill_from_idea(&fallback_idea)
+        } else {
+            None
+        };
+
+        let portfolio = self.portfolios.entry(agent_id.to_string()).or_insert_with(|| AgentSkillPortfolio::new(agent_id));
+
+        // 1. Find or create matching skill for this task
+        let matching = portfolio.best_matching_skill(task_description).cloned();
+        if let Some(mut skill) = matching {
+            skill.record_use(success, quality);
+            changes.push(format!("Reinforced skill '{}' (utility now {:.2})", skill.name, skill.utility_score()));
+            portfolio.skills.insert(skill.name.clone(), skill);
+        } else if let Some(new_skill) = maybe_new_skill {
+            portfolio.add_skill(new_skill.clone());
+            changes.push(format!("Acquired new synthesized skill: {}", new_skill.name));
+        } else if success && quality > 0.75 {
+            // Fall back to a global catalog skill
+            if let Some(seed) = self.global_skill_catalog.first() {
+                let mut s = seed.clone();
+                s.task_keywords.push(task_description.split_whitespace().take(3).collect::<Vec<_>>().join(" "));
+                portfolio.add_skill(s.clone());
+                changes.push(format!("Acquired skill from catalog: {}", s.name));
             }
         }
 

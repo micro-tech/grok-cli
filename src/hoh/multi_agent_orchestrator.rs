@@ -33,7 +33,7 @@ pub struct MultiAgentRequest {
 }
 
 /// Result of orchestration (whether simulated or real).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, Default)]
 pub struct OrchestrationResult {
     pub chosen_agents: Vec<String>,
     pub simulation_prediction: Option<SimulationOutcome>,
@@ -43,6 +43,7 @@ pub struct OrchestrationResult {
 }
 
 /// The central Multi-Agent Orchestrator for HOH.
+#[derive(Debug)]
 pub struct MultiAgentOrchestrator {
     pub simulation_mode: bool,
     pub skill_evolution: AgentSkillEvolutionSystem,
