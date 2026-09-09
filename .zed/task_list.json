@@ -23,7 +23,7 @@
         {
           "id": 327.2,
           "title": "328. Implement HOH Task Selection Engine",
-          "status": "pending",
+          "status": "done",
           "dependencies": [],
           "priority": "high",
           "description": "Select the best pending tasks for the current iteration based on priority, dependencies, and HOH goals.",
@@ -53,7 +53,7 @@
         {
           "id": 327.5,
           "title": "331. Implement HOH Task Prioritization Model",
-          "status": "pending",
+          "status": "done",
           "dependencies": [],
           "priority": "high",
           "description": "Score and rank tasks using multiple signals (priority, age, impact, HOH goals).",

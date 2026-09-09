@@ -431,6 +431,7 @@ impl HOHManager {
                 cross_project_transfers: vec![],  // 361.11
                 multi_project_result: None,       // 361.0101
                 registered_projects: vec![],      // 361.0101
+                creative_task_mutations: vec![],
                 created_at: chrono::Utc::now().timestamp() as u64,
             })
         }

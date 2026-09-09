@@ -310,6 +310,7 @@ impl HOHPlanner {
         }
 
         // 401: Autonomous Creativity Engine
+        let mut creative_add_mutations: Vec<crate::hoh::task_mutation::TaskMutation> = Vec::new();
         let mut creativity_engine = CreativityEngine::new(self.adapter.is_simulation());
         let creative_ideas = creativity_engine
             .generate_ideas(&goals, &selected.iter().map(|t| t.title.clone()).collect::<Vec<_>>(), 5)
@@ -380,7 +381,7 @@ impl HOHPlanner {
 
             // === REAL 453 CLOSE-THE-LOOP: Convert high-quality creative ideas into TaskMutation::AddTask ===
             // This is the key step that makes 401 ideas become real pending tasks in task_list.json.
-            let creative_add_mutations = creativity_engine.ideas_to_add_task_mutations(
+            creative_add_mutations = creativity_engine.ideas_to_add_task_mutations(
                 &creative_ideas,
                 2,      // conservative per cycle
                 41000,  // high ID range for HOH-generated creative tasks
@@ -1346,6 +1347,7 @@ pub async fn create_plan(goals: Vec<String>) -> HOHPlan {
         cross_project_transfers: vec![],  // 361.11
         multi_project_result: None,       // 361.0101 / 370
         registered_projects: vec![],      // 361.0101
+        creative_task_mutations: vec![],
         created_at: 0,
     })
 }

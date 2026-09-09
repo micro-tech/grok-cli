@@ -12,7 +12,7 @@ use crate::hoh::state::HOHError;
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Default)]
 pub struct CreativityIdea {
     pub id: String,
     pub title: String,
@@ -26,13 +26,14 @@ pub struct CreativityIdea {
     pub provenance: String,      // What inspired this idea
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Default)]
 pub enum IdeaSource {
+    #[default]
+    Heuristic,
     Llm,
     PatternMining,
     Mutation,
     Combination,
-    Heuristic,
 }
 
 impl std::fmt::Display for IdeaSource {
