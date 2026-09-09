@@ -47,7 +47,7 @@ pub struct BirthEvent {
 }
 
 /// Signals that can trigger agent birth.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct BirthSignals {
     pub skill_gaps: Vec<String>,
     pub opportunity_from_creativity: Vec<String>,

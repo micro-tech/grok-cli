@@ -330,6 +330,17 @@ impl CreativityEngine {
             }
         }
     }
+
+    /// Small helper to turn top creative ideas into task-seed descriptions.
+    /// Used by planner / task evolution to materialize 401 ideas into real work (453.4 + 453.5).
+    pub fn ideas_to_task_seeds(&self, ideas: &[CreativityIdea], max: usize) -> Vec<String> {
+        ideas
+            .iter()
+            .filter(|i| i.overall_score > 0.55)
+            .take(max)
+            .map(|i| format!("{}: {} (score {:.2}, source={})", i.title, i.description, i.overall_score, i.source))
+            .collect()
+    }
 }
 
 #[cfg(test)]

@@ -212,5 +212,35 @@ fn print_iteration_summary(state: &IterationState) {
                 eval.overall_health, eval.improvement_rate, eval.stagnation_risk
             );
         }
+
+        // === Harness-of-Harness (HOH) inner orchestration (361.7 + 361.8) ===
+        println!("  Orchestration results (HOH inner harness): {}", plan.orchestration_results.len());
+        for res in plan.orchestration_results.iter().take(2) {
+            let sim_pred = res.simulation_prediction
+                .as_ref()
+                .map(|s| format!("{:.2}", s.predicted_success_rate))
+                .unwrap_or_else(|| "n/a".to_string());
+            println!(
+                "    • agents={:?} success≈{:.2} (sim={})",
+                res.chosen_agents,
+                res.success_estimate,
+                sim_pred
+            );
+        }
+
+        // 361.9 Long-Term Strategy (cross-iteration strategic direction)
+        println!("  Long-term strategies (361.9): {}", plan.long_term_strategies.len());
+        for strat in plan.long_term_strategies.iter().take(3) {
+            println!(
+                "    • {} (prio {:.2} | horizon {} iter | status {:?})",
+                strat.description.chars().take(65).collect::<String>(),
+                strat.priority,
+                strat.horizon_iterations,
+                strat.status
+            );
+            if !strat.tradeoffs.is_empty() {
+                println!("      tradeoffs: {}", strat.tradeoffs.join(" | "));
+            }
+        }
     }
 }

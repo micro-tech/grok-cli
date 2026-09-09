@@ -13,6 +13,13 @@ pub struct HOHManager {
     pub current_iteration: Option<IterationState>,
     pub data_dir: PathBuf,
     planner: Option<HOHPlanner>,
+    /// The central Harness-of-Harness multi-agent orchestrator (361.7/361.8).
+    /// This is the "inner harness" that coordinates specialized agents, runs sim-first
+    /// predictions, performs delegations via the collaboration protocol, and evolves skills.
+    pub multi_agent_orchestrator: Option<crate::hoh::multi_agent_orchestrator::MultiAgentOrchestrator>,
+    /// Long-Term Strategy Engine (361.9) — maintains strategic objectives that span many iterations.
+    /// These goals influence short-term planning coherently across the outer HOH loop.
+    pub long_term_strategy_engine: Option<crate::hoh::long_term_strategy::LongTermStrategyEngine>,
 }
 
 impl HOHManager {
@@ -21,6 +28,8 @@ impl HOHManager {
         let mut mgr = Self {
             data_dir: data_dir.clone(),
             planner: Some(HOHPlanner::new(data_dir.clone(), simulation)),
+            multi_agent_orchestrator: Some(crate::hoh::multi_agent_orchestrator::MultiAgentOrchestrator::new(simulation)),
+            long_term_strategy_engine: Some(crate::hoh::long_term_strategy::LongTermStrategyEngine::new(simulation)),
             ..Default::default()
         };
 
@@ -41,6 +50,12 @@ impl HOHManager {
         if let Some(p) = &mut self.planner {
             // Recreate planner with correct simulation flag
             *p = HOHPlanner::new(self.data_dir.clone(), self.config.simulation_mode);
+        }
+        if let Some(o) = &mut self.multi_agent_orchestrator {
+            *o = crate::hoh::multi_agent_orchestrator::MultiAgentOrchestrator::new(self.config.simulation_mode);
+        }
+        if let Some(s) = &mut self.long_term_strategy_engine {
+            *s = crate::hoh::long_term_strategy::LongTermStrategyEngine::new(self.config.simulation_mode);
         }
         self
     }
@@ -103,6 +118,21 @@ impl HOHManager {
                 "HOH (410): meta-evaluation health={:.2} improvement_rate={:.2}",
                 eval.overall_health, eval.improvement_rate
             );
+        }
+
+        // 361.8: Multi-agent simulation predictions (what-if analysis)
+        if !plan.simulation_outcomes.is_empty() {
+            tracing::info!(
+                count = plan.simulation_outcomes.len(),
+                "HOH (361.8): {} multi-agent simulation outcomes / predictions available",
+                plan.simulation_outcomes.len()
+            );
+            for (i, out) in plan.simulation_outcomes.iter().take(3).enumerate() {
+                tracing::info!(
+                    "  361.8[{}]: {} → success={:.2} quality={:.2} ({} participants)",
+                    i, out.scenario, out.predicted_success_rate, out.predicted_quality, out.participants.len()
+                );
+            }
         }
 
         // Phase 2: Refactor & Materialize (new explicit 361.3/361.4 phase)
@@ -250,7 +280,14 @@ impl HOHManager {
         state.mark_completed(summary);
 
         // Record real outcomes into the completion tracker (327.6 + 361.E)
-        self.record_work_progress(&plan, &state.patches, test_passed).await;
+        // Now pass rich test data so failures become first-class signals.
+        self.record_work_progress(
+            &plan,
+            &state.patches,
+            test_passed,
+            &test_summary,
+            test_output.as_deref(),
+        ).await;
 
         // === Phase 6: Apply (real patch application - 297.5 + 361.5) ===
         // Only apply when tests passed and we have decent signals.
@@ -387,6 +424,7 @@ impl HOHManager {
                 ethics_checks: vec![],
                 meta_plans: vec![],
                 meta_evaluation: None,
+                simulation_outcomes: vec![],  // 361.8
                 created_at: chrono::Utc::now().timestamp() as u64,
             })
         }
@@ -630,15 +668,51 @@ impl HOHManager {
     }
 
     /// 361.E + 327.6: Record progress / completions for work that was planned + materialized this iteration.
-    /// Now consumes real patch outcomes and test results for better signals.
-    async fn record_work_progress(&mut self, plan: &HOHPlan, patches: &[PatchSet], test_passed: Option<bool>) {
+    /// Now consumes real patch outcomes + **rich test feedback** (the key 361.5 win).
+    ///
+    /// When tests fail we deliberately lower quality and record the actual failure hints
+    /// so the planner and future scoring can prioritize "fix the broken area".
+    async fn record_work_progress(
+        &mut self,
+        plan: &HOHPlan,
+        patches: &[PatchSet],
+        test_passed: Option<bool>,
+        test_summary: &str,
+        test_output: Option<&str>,
+    ) {
         if let Some(planner) = &mut self.planner {
-            let base_quality = if test_passed == Some(true) { 0.82 } else { 0.65 };
+            let tests_passed = test_passed.unwrap_or(true);
+            let base_quality = if tests_passed { 0.82 } else { 0.58 };
             let patch_count = patches.len() as f32;
+
+            // Extract a couple of concrete failure signals when we have rich output
+            let failure_note = if !tests_passed {
+                if let Some(out) = test_output {
+                    let hints: Vec<&str> = out
+                        .lines()
+                        .filter(|l| {
+                            let lower = l.to_lowercase();
+                            lower.contains("error") || lower.contains("failed") || lower.contains("assertion")
+                        })
+                        .take(2)
+                        .map(|l| l.trim())
+                        .collect();
+
+                    if !hints.is_empty() {
+                        format!(" | test failures: {}", hints.join(" | ").chars().take(160).collect::<String>())
+                    } else {
+                        format!(" | tests failed: {}", test_summary.chars().take(120).collect::<String>())
+                    }
+                } else {
+                    " | tests failed (no raw output captured)".to_string()
+                }
+            } else {
+                String::new()
+            };
 
             for &task_id in &plan.selected_tasks {
                 let quality = if plan.materialized_task_ids.contains(&task_id) {
-                    Some(base_quality + 0.05)
+                    Some(base_quality + if tests_passed { 0.05 } else { -0.08 })
                 } else {
                     Some(base_quality)
                 };
@@ -652,13 +726,14 @@ impl HOHManager {
                 };
 
                 let notes = format!(
-                    "HOH: {} patches, test_passed={:?}, source=execute_phase",
-                    patch_count, test_passed
+                    "HOH: {} patches, test_passed={:?}{}",
+                    patch_count, test_passed, failure_note
                 );
-                planner.record_task_completion(&dummy_task, quality, Some(0.85), &notes);
+                planner.record_task_completion(&dummy_task, quality, Some(if tests_passed { 0.85 } else { 0.55 }), &notes);
             }
 
             for &task_id in &plan.materialized_task_ids {
+                let quality = if tests_passed { Some(0.88) } else { Some(0.62) };
                 let dummy = crate::hoh::tasklist_adapter::Task {
                     id: task_id,
                     title: format!("[materialized-361] {}", task_id),
@@ -666,12 +741,13 @@ impl HOHManager {
                     priority: "high".to_string(),
                     ..Default::default()
                 };
-                planner.record_task_completion(&dummy, Some(0.88), Some(0.90), "Materialized via 361.3 autonomous refactoring + applied");
+                let note = format!("Materialized via 361.3 autonomous refactoring + applied{}", failure_note);
+                planner.record_task_completion(&dummy, quality, Some(if tests_passed { 0.90 } else { 0.60 }), &note);
             }
 
             if !plan.selected_tasks.is_empty() || !plan.materialized_task_ids.is_empty() {
                 tracing::debug!(
-                    "HOH: recorded real outcomes for {} selected + {} materialized tasks (patches={}, tests={:?})",
+                    "HOH: recorded real outcomes (rich test feedback) for {} selected + {} materialized tasks (patches={}, tests={:?})",
                     plan.selected_tasks.len(),
                     plan.materialized_task_ids.len(),
                     patch_count,
@@ -681,70 +757,4 @@ impl HOHManager {
         }
     }
 
-    /// Next natural step: real cargo test integration (297.6 + validation of 361 changes).
-    /// Runs `cargo test --quiet` and returns (passed, summary).
-    /// Richer feedback now flows into EvaluationReport and 361.5 meta suggestions.
-    /// Runs `cargo test --quiet` (or equivalent) and returns a rich triple:
-    /// (passed, concise_summary, full_raw_output)
-    ///
-    /// The full_raw_output is what we now surface into EvaluationReport so that
-    /// continual_improvement, meta loops, and planners can see the actual compiler
-    /// errors / test failures instead of "blank" or one-line hints.
-    async fn run_basic_tests(&self) -> Result<(bool, String, String), HOHError> {
-        use std::process::Command;
-
-        tracing::info!("HOH: running basic cargo test for validation...");
-
-        let output = Command::new("cargo")
-            .args(["test", "--quiet"])
-            .current_dir(&self.data_dir)
-            .output();
-
-        match output {
-            Ok(out) => {
-                let success = out.status.success();
-                let stdout = String::from_utf8_lossy(&out.stdout);
-                let stderr = String::from_utf8_lossy(&out.stderr);
-
-                let stdout_clean = stdout.trim();
-                let stderr_clean = stderr.trim();
-
-                // Rich summary for humans / quick logs
-                let summary = if success {
-                    if stdout_clean.contains("test result: ok") || stderr_clean.contains("test result: ok") {
-                        "cargo test: PASSED".to_string()
-                    } else {
-                        format!("cargo test: PASSED ({} bytes output)", stdout_clean.len() + stderr_clean.len())
-                    }
-                } else {
-                    let combined = format!("{}\n{}", stderr_clean, stdout_clean);
-                    let tail = if combined.len() > 800 {
-                        &combined[combined.len()-800..]
-                    } else { &combined };
-                    format!("cargo test: FAILED — last output: {}", tail.chars().take(400).collect::<String>())
-                };
-
-                // Full rich output (this is the important new thing for the meta loop)
-                let full_output = format!(
-                    "=== run_basic_tests (HOH) ===\nExit: {}\nSTDOUT:\n{}\nSTDERR:\n{}\n=== end ===",
-                    if success { "0" } else { "non-zero" },
-                    if stdout_clean.is_empty() { "(empty)" } else { stdout_clean },
-                    if stderr_clean.is_empty() { "(empty)" } else { stderr_clean }
-                );
-
-                if success {
-                    tracing::info!("HOH: cargo test PASSED — {}", summary);
-                } else {
-                    tracing::warn!("HOH: cargo test FAILED — {}", summary);
-                }
-
-                Ok((success, summary, full_output))
-            }
-            Err(e) => {
-                tracing::warn!("HOH: failed to invoke cargo test: {}", e);
-                let err = format!("cargo test unavailable (simulation): {}", e);
-                Ok((true, err.clone(), err))
-            }
-        }
-    }
 }

@@ -33,11 +33,18 @@ pub mod creativity;
 pub mod generative_designer;
 pub mod agent_lifecycle;
 pub mod agent_evolution;
+pub mod agent_skill_evolution;
+pub mod multi_agent_collaboration;
+pub mod multi_agent_simulation;
+pub mod multi_agent_orchestrator;
 pub mod multi_domain;
 pub mod governance;
 pub mod ethics;
 pub mod meta_planning;
 pub mod meta_evaluation;
+pub mod long_term_strategy;
+pub mod cross_project_knowledge;
+pub mod multi_project_orchestrator;
 
 pub use outer_loop::HOHManager;
 pub use state::{IterationState, PatchSet};
@@ -45,6 +52,7 @@ pub use evolution_engine::TaskEvolutionEngine;
 pub use tasklist_adapter::TaskListAdapter;
 pub use architecture_evolution::{ArchitectureEvolutionEngine, ArchitectureProposal, ArchitectureChangeType};
 pub use autonomous_refactoring::{AutonomousRefactoringEngine, RefactoringAction, RefactoringActionType};
+pub use specialized_agents::{AgentProfile as SpecializedAgentProfile, choose_profile_for_action, execute_with_specialized_agent};
 pub use creativity::{CreativityEngine, CreativityIdea, IdeaSource};
 pub use generative_designer::{GenerativeArchitectureDesigner, ArchitectureDesign, DesignSource};
 pub use agent_lifecycle::{
@@ -54,11 +62,31 @@ pub use agent_lifecycle::{
 pub mod agent_birth;
 pub use agent_birth::{AgentBirthSystem, AgentProfile, BirthEvent};
 pub use agent_evolution::{AgentEvolutionSystem, EvolutionEvent};
+pub use agent_skill_evolution::{AgentSkillEvolutionSystem, AgentSkill, AgentSkillPortfolio};
+pub use multi_agent_collaboration::{
+    MultiAgentCollaborationProtocol, CollaborationMessage, CollaborationIntent,
+    SharedBlackboard, CollaborationSession, CollaborationStatus,
+};
+pub use multi_agent_simulation::{
+    MultiAgentSimulator, SimulatedAgent, SimulationOutcome, SimulationConfig,
+};
+pub use multi_agent_orchestrator::{
+    MultiAgentOrchestrator, MultiAgentRequest, OrchestrationResult,
+};
+pub use multi_agent::{AgentRole, run_multi_agent_iteration};
 pub use multi_domain::{MultiDomainReasoner, DomainOutput};
 pub use governance::GovernanceEngine;
 pub use ethics::EthicsEngine;
 pub use meta_planning::{MetaPlanningEngine, MetaPlan};
 pub use meta_evaluation::{MetaEvaluationEngine, MetaEvaluation};
+pub use long_term_strategy::{LongTermStrategyEngine, StrategicGoal, Milestone, StrategyStatus};
+pub use cross_project_knowledge::{
+    CrossProjectKnowledgeTransfer, TransferablePattern, CrossProjectTransfer, PatternType,
+};
+pub use multi_project_orchestrator::{
+    MultiProjectOrchestrator, MultiProjectRequest, MultiProjectOrchestrationResult,
+    ProjectRef, CrossProjectDependency, ResourceAllocation,
+};
 
 /// Top-level HOH configuration and entry points.
 #[derive(Debug, Clone, Default)]

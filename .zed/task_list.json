@@ -16,11 +16,9 @@
           "description": "Many runtime paths still hardcode ~/.grok (logs, sessions, audit, memory, DNA global, main.rs error log, setup, etc.) while config successfully migrated to ~/.grok-cli. This splits user data and causes confusion.",
           "priority": "high",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "Affected files (partial list):\n- src/main.rs (grok-errors.log)\n- src/security/audit.rs\n- src/memory/* (multiple)\n- src/session/dna.rs (global fallback?)\n- src/cli/commands/setup.rs, history.rs, acp.rs\n- src/config/mod.rs (some legacy paths still referenced)\n- src/utils/context.rs, shell_permissions.rs, tool_logger.rs, rate_limiter.rs\n\nMigration helpers exist in installer, but runtime code not fully updated.\n\n**COMPLETED (295.1):** All global user data now routes through grok_data_dir() (~/.grok-cli) and grok_config_dir(). Legacy ~/.grok only for project-local .grok/ markers and explicit migration fallbacks with defensive guards (is_legacy_home_grok etc).",
-          "testStrategy": "Grep for join(\".grok\") outside of migration/legacy comments. Ensure all new data goes under grok_data_dir() / grok_config_dir()."
+          "testStrategy": "Grep for join(\".grok\") outside of migration/legacy comments. Ensure all new data goes under grok_data_dir() / grok_config_dir().",
         },
         {
           "id": 295.2,
@@ -28,11 +26,9 @@
           "description": "src/bin/installer.rs is one giant ~450-line function with heavy side effects, manual PATH editing, shortcut creation, and doc copying. No Linux/macOS equivalent or cross-platform abstraction.",
           "priority": "medium",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "Good comments for SEC-4 (binary-only exits). Uses .grok for DNA source in one place (should prefer .grok/ consistently). Hard to unit test. No dry-run or --prefix support.\n\n**COMPLETED (295.2):** Acknowledged as current delivery mechanism (Windows-focused installer). DNA and agent preset logic aligned with runtime (project .grok for DNA, config/agents for presets). No cross-platform skeleton added this pass (documented debt).",
-          "testStrategy": "Extract helper functions. Add platform-neutral installer skeleton or document that Windows installer is the current delivery mechanism."
+          "testStrategy": "Extract helper functions. Add platform-neutral installer skeleton or document that Windows installer is the current delivery mechanism.",
         },
         {
           "id": 295.3,
@@ -40,12 +36,9 @@
           "description": "src/main.rs hardcodes ~/.grok/logs/grok-errors.log for the JSON error sink.",
           "priority": "medium",
           "status": "done",
-          "dependencies": [
-            295,
-            295.1
-          ],
+          "dependencies": [295, 295.1],
           "details": "Should use crate::config::grok_data_dir() or a configurable path so it follows the .grok-cli convention.\n\n**COMPLETED (295.3):** main.rs error log now uses grok_data_dir().join(\"logs\").join(\"grok-errors.log\"). Docs updated.",
-          "testStrategy": "Change to use grok_data_dir().join(\"logs\").join(\"grok-errors.log\"). Update docs."
+          "testStrategy": "Change to use grok_data_dir().join(\"logs\").join(\"grok-errors.log\"). Update docs.",
         },
         {
           "id": 295.4,
@@ -53,11 +46,9 @@
           "description": "lib.rs documents the plan. Many cli/commands/* and display modules still use direct I/O + #![allow(deprecated)].",
           "priority": "low",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "This is acknowledged technical debt (Phase 2). No new breakage, but the markers are noisy and the migration is stalled.\n\n**COMPLETED (295.4):** Acknowledged (no new work performed). lib.rs markers and deprecation comments remain as Phase-2 debt.",
-          "testStrategy": "Continue to mark functions deprecated. Consider a clean 'binary-only' crate split in a future major version."
+          "testStrategy": "Continue to mark functions deprecated. Consider a clean 'binary-only' crate split in a future major version.",
         },
         {
           "id": 295.5,
@@ -65,11 +56,9 @@
           "description": "In src/acp/mod.rs (handle_chat_completion) there is still a TODO noting that smart compression performs an async router call while holding the sessions write lock.",
           "priority": "low",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "The main refactor (280) moved most logic out, but this one hot path remains.\n\n**COMPLETED (295.5):** Acknowledged. Lock scope reduced via Phase-1 (brief write lock for setup/trim) / Phase-2 (chat_turn.rs tool loop without full lock), mem::take for history (Task 269), and extraction. Full lock-free summarization (background task + channel) remains known limitation.",
-          "testStrategy": "Make compression lock-free or move the summarization outside the critical lock section (e.g. using a separate channel or background task)."
+          "testStrategy": "Make compression lock-free or move the summarization outside the critical lock section (e.g. using a separate channel or background task).",
         },
         {
           "id": 295.6,
@@ -77,12 +66,9 @@
           "description": "config/mod.rs still contains get_system_config_path() pointing at ~/.grok (marked dead_code). utils/context.rs has strong legacy guards but still walks for .grok.",
           "priority": "medium",
           "status": "done",
-          "dependencies": [
-            295,
-            295.1
-          ],
+          "dependencies": [295, 295.1],
           "details": "Good defensive code (is_legacy_home_grok) exists, but the split between .grok and .grok-cli is not yet complete across the whole tree.\n\n**COMPLETED (295.6):** get_system_config_path() now uses grok_config_dir(). Strong guards in load paths and agent_rules. Legacy only for explicit migration or project .grok markers.",
-          "testStrategy": "Audit all remaining direct '.grok' string literals and replace with constants or grok_*_dir() helpers where appropriate."
+          "testStrategy": "Audit all remaining direct '.grok' string literals and replace with constants or grok_*_dir() helpers where appropriate.",
         },
         {
           "id": 295.7,
@@ -90,12 +76,9 @@
           "description": "setup_session_dna prefers .grok but setup_agent_presets looks in config/agents. Documentation and shipped locations are slightly out of sync.",
           "priority": "low",
           "status": "done",
-          "dependencies": [
-            295,
-            295.2
-          ],
+          "dependencies": [295, 295.2],
           "details": "Minor, but adds to the directory confusion story.\n\n**COMPLETED (295.7):** Behavior is intentional and documented in comments: project .grok/ for VCS-safe DNA (per SEC-5), config/agents/ (shipped, committed) for presets into ~/.grok-cli/agents/. Matches runtime SessionDna::load() and agent_rules logic.",
-          "testStrategy": "Make installer use the same preference rules as runtime (project .grok/ first for DNA, config/agents for presets)."
+          "testStrategy": "Make installer use the same preference rules as runtime (project .grok/ first for DNA, config/agents for presets).",
         },
         {
           "id": 295.8,
@@ -103,11 +86,9 @@
           "description": "translate_powershell_and_chain now correctly uses $LASTEXITCODE conditionals. Tests cover failure and success chains. Appears solid on Windows.",
           "priority": "low",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "No new issues found. The previous naive replace(\" && \", \"; \") has been replaced.",
-          "testStrategy": "Existing tests (non_zero_exit_returns_err_cor10 + Windows chain tests) are sufficient."
+          "testStrategy": "Existing tests (non_zero_exit_returns_err_cor10 + Windows chain tests) are sufficient.",
         },
         {
           "id": 295.9,
@@ -115,11 +96,9 @@
           "description": "write_file / replace now both properly return Err on SafetyDecision::RequireConfirmation. validate_path_access is called early. TrustAlways is persisted. Good.",
           "priority": "low",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "No regressions found in file_tools.rs. Tests in file_tools_tests.rs cover the key cases.",
-          "testStrategy": "Keep the existing security tests green."
+          "testStrategy": "Keep the existing security tests green.",
         },
         {
           "id": 295.1,
@@ -127,13 +106,11 @@
           "description": "Capture fresh findings and mark completed items from prior review.",
           "priority": "medium",
           "status": "done",
-          "dependencies": [
-            295
-          ],
+          "dependencies": [295],
           "details": "**COMPLETED (295.10):** code_review.md updated with 2026 DIR-1 unification findings, installer acknowledgments, ACP lock note, and legacy path status. All 295 subtasks marked done. Review umbrella closed. Parent task 295 status set to done.",
-          "testStrategy": "Ensure task_list.json and code_review.md are consistent after this review."
-        }
-      ]
+          "testStrategy": "Ensure task_list.json and code_review.md are consistent after this review.",
+        },
+      ],
     },
     {
       "id": 296,
@@ -153,129 +130,109 @@
           "dependencies": [],
           "priority": "high",
           "details": "Create skills/self-updater/SKILL.md and skill.json following the standard skill format. Define triggers, required tools (web, file, exec), and safety level.",
-          "testStrategy": "Skill appears in catalog and can be activated. Manifest validates against skill loader."
+          "testStrategy": "Skill appears in catalog and can be activated. Manifest validates against skill loader.",
         },
         {
           "id": 296.2,
           "title": "Add/update core primitives for version handling",
           "description": "Add version comparison, GitHub release parsing, and current version detection.",
           "status": "pending",
-          "dependencies": [
-            296.1
-          ],
+          "dependencies": [296.1],
           "priority": "high",
           "details": "Add helpers in src/skills/self_updater.rs or utils/version.rs. Support semver and GitHub release asset detection.",
-          "testStrategy": "Unit tests for version comparison (newer/older/equal) and release asset selection."
+          "testStrategy": "Unit tests for version comparison (newer/older/equal) and release asset selection.",
         },
         {
           "id": 296.3,
           "title": "Implement check-for-updates logic inside the skill",
           "description": "Core logic to query GitHub releases and decide if an update is available.",
           "status": "pending",
-          "dependencies": [
-            296.2
-          ],
+          "dependencies": [296.2],
           "priority": "high",
           "details": "Use web tool to fetch https://api.github.com/repos/.../releases. Compare against current version from Cargo.toml or build metadata.",
-          "testStrategy": "Mocked and live check returns correct 'update available' decision."
+          "testStrategy": "Mocked and live check returns correct 'update available' decision.",
         },
         {
           "id": 296.4,
           "title": "Build update planning + execution steps as skill guidance",
           "description": "Create the step-by-step plan the agent follows when performing an update.",
           "status": "pending",
-          "dependencies": [
-            296.3
-          ],
+          "dependencies": [296.3],
           "priority": "high",
           "details": "Define the skill's internal plan: check → confirm → download → verify signature/checksum → replace binary → restart.",
-          "testStrategy": "Dry-run mode produces correct ordered steps without side effects."
+          "testStrategy": "Dry-run mode produces correct ordered steps without side effects.",
         },
         {
           "id": 296.5,
           "title": "User confirmation and safe execution flow",
           "description": "Implement user confirmation gates and safe execution.",
           "status": "pending",
-          "dependencies": [
-            296.4
-          ],
+          "dependencies": [296.4],
           "priority": "high",
           "details": "Use existing confirmation patterns. Require explicit approval before binary replacement. Support --yes flag.",
-          "testStrategy": "Confirmation prompt appears. --yes bypasses correctly. Cancel path is clean."
+          "testStrategy": "Confirmation prompt appears. --yes bypasses correctly. Cancel path is clean.",
         },
         {
           "id": 296.6,
           "title": "Integrate with CLI and slash commands",
           "description": "Wire `grok update` command and /update slash command.",
           "status": "pending",
-          "dependencies": [
-            296.5
-          ],
+          "dependencies": [296.5],
           "priority": "medium",
           "details": "Add to src/cli/commands/ and the slash command router. Pass through to the self-updater skill.",
-          "testStrategy": "grok update --help works. /update triggers the skill."
+          "testStrategy": "grok update --help works. /update triggers the skill.",
         },
         {
           "id": 296.7,
           "title": "Wire into skills registry, catalog and auto-activation",
           "description": "Register the skill so it can be discovered and auto-activated when needed.",
           "status": "pending",
-          "dependencies": [
-            296.6
-          ],
+          "dependencies": [296.6],
           "priority": "medium",
           "details": "Update skills registry and any auto-activation logic for maintenance tasks.",
-          "testStrategy": "Skill shows in list and can be auto-activated by the agent when update is relevant."
+          "testStrategy": "Skill shows in list and can be auto-activated by the agent when update is relevant.",
         },
         {
           "id": 296.8,
           "title": "Respect and extend existing update config",
           "description": "Honor disable_auto_update and update_check_hours from config.",
           "status": "pending",
-          "dependencies": [
-            296.3
-          ],
+          "dependencies": [296.3],
           "priority": "medium",
           "details": "Read from config. Skip checks when disabled. Respect the check interval.",
-          "testStrategy": "Config values correctly gate the update check behavior."
+          "testStrategy": "Config values correctly gate the update check behavior.",
         },
         {
           "id": 296.9,
           "title": "Add security validation + tests for updater skill",
           "description": "Checksum/signature verification and safety tests.",
           "status": "pending",
-          "dependencies": [
-            296.5
-          ],
+          "dependencies": [296.5],
           "priority": "high",
           "details": "Download verification + sandboxed execution. Add tests for tampered release rejection.",
-          "testStrategy": "Security tests pass. Malicious releases are rejected before replacement."
+          "testStrategy": "Security tests pass. Malicious releases are rejected before replacement.",
         },
         {
           "id": 296.1,
           "title": "Update documentation, banner, and deprecate old paths",
           "description": "Document the new skill and clean up any legacy update code.",
           "status": "pending",
-          "dependencies": [
-            296.6
-          ],
+          "dependencies": [296.6],
           "priority": "low",
           "details": "Update README, help text, and any old self-update logic. Add deprecation notices if needed.",
-          "testStrategy": "Docs are consistent. Old paths are either removed or clearly marked deprecated."
+          "testStrategy": "Docs are consistent. Old paths are either removed or clearly marked deprecated.",
         },
         {
           "id": 296.11,
           "title": "Cross-platform binary replacement strategy",
           "description": "Safe binary replacement on Windows, Linux, and macOS.",
           "status": "pending",
-          "dependencies": [
-            296.5
-          ],
+          "dependencies": [296.5],
           "priority": "high",
           "details": "Handle in-use binary replacement (rename + restart pattern on Windows, etc.). Use temp staging directory.",
-          "testStrategy": "Successful replacement on Windows + at least one Unix platform (or well-tested simulation)."
-        }
-      ]
+          "testStrategy": "Successful replacement on Windows + at least one Unix platform (or well-tested simulation).",
+        },
+      ],
     },
     {
       "id": 297,
@@ -295,7 +252,7 @@
           "priority": "high",
           "description": "Implement the central manager that orchestrates multi-day HOH cycles.",
           "details": "Create src/hoh/outer_loop.rs (or equivalent). Define HOHManager struct with run_iteration(), plan_phase(), delegate_to_inner(), evaluate(), etc. Wire to existing agent and task_graph systems.",
-          "testStrategy": "Manager can run a full simulated iteration without crashing. Basic state transitions work."
+          "testStrategy": "Manager can run a full simulated iteration without crashing. Basic state transitions work.",
         },
         {
           "id": 297.2,
@@ -305,31 +262,27 @@
           "priority": "high",
           "description": "Design the persistent state for each HOH iteration.",
           "details": "Define structs for IterationState, IterationResult, PatchSet, EvaluationReport. Store in .grok/hoh/ or similar.",
-          "testStrategy": "State serializes/deserializes cleanly. Can be loaded across runs."
+          "testStrategy": "State serializes/deserializes cleanly. Can be loaded across runs.",
         },
         {
           "id": 297.3,
           "title": "Implement HOH Planning Phase",
           "status": "pending",
-          "dependencies": [
-            297.1
-          ],
+          "dependencies": [297.1],
           "priority": "high",
           "description": "The phase where HOH decides what work to perform in the current iteration.",
           "details": "Use task_list.json, recent evaluations, and OKF to generate a plan of tasks or experiments.",
-          "testStrategy": "Planning produces a non-empty actionable plan that references valid task IDs."
+          "testStrategy": "Planning produces a non-empty actionable plan that references valid task IDs.",
         },
         {
           "id": 297.4,
           "title": "Integrate Grok-CLI as Inner Harness",
           "status": "pending",
-          "dependencies": [
-            297.1
-          ],
+          "dependencies": [297.1],
           "priority": "high",
           "description": "Make the existing Grok-CLI the execution engine for HOH-delegated work.",
           "details": "Use existing agent execution paths, skills, and tools. Support both real execution and simulation modes.",
-          "testStrategy": "HOH can successfully delegate a simple task to the inner harness and receive results."
+          "testStrategy": "HOH can successfully delegate a simple task to the inner harness and receive results.",
         },
         {
           "id": 297.5,
@@ -339,19 +292,17 @@
           "priority": "high",
           "description": "Capture all code changes made during an iteration as structured patches.",
           "details": "Hook into git or file operations. Store diffs, file lists, and metadata for later review and application.",
-          "testStrategy": "After a simulated change, a valid patch is captured and can be inspected or replayed."
+          "testStrategy": "After a simulated change, a valid patch is captured and can be inspected or replayed.",
         },
         {
           "id": 297.6,
           "title": "Implement HOH Testing Phase",
           "status": "pending",
-          "dependencies": [
-            297.4
-          ],
+          "dependencies": [297.4],
           "priority": "high",
           "description": "Run tests, lints, and verification after inner harness work.",
           "details": "Execute cargo test, clippy, and custom HOH validation. Record results in iteration state.",
-          "testStrategy": "Test phase correctly reports pass/fail and surfaces failures to the outer loop."
+          "testStrategy": "Test phase correctly reports pass/fail and surfaces failures to the outer loop.",
         },
         {
           "id": 297.7,
@@ -361,20 +312,17 @@
           "priority": "medium",
           "description": "Use Helix for objective evaluation of changes produced by HOH.",
           "details": "Call Helix evaluation endpoints or local equivalent. Store scores for novelty, correctness, and improvement.",
-          "testStrategy": "Evaluation scores are captured and influence the next planning phase."
+          "testStrategy": "Evaluation scores are captured and influence the next planning phase.",
         },
         {
           "id": 297.8,
           "title": "Add Continual Improvement Engine",
           "status": "pending",
-          "dependencies": [
-            297.6,
-            297.7
-          ],
+          "dependencies": [297.6, 297.7],
           "priority": "high",
           "description": "Turn evaluation results into concrete improvement proposals.",
           "details": "Analyze failures and successes to propose new tasks or architectural changes.",
-          "testStrategy": "Engine produces at least one improvement proposal per failed iteration."
+          "testStrategy": "Engine produces at least one improvement proposal per failed iteration.",
         },
         {
           "id": 297.9,
@@ -384,7 +332,7 @@
           "priority": "medium",
           "description": "Control which tools the inner harness is allowed to use during HOH runs.",
           "details": "Add allow/deny lists and risk levels. Integrate with existing safety system.",
-          "testStrategy": "Dangerous tools can be disabled for HOH runs while safe tools remain available."
+          "testStrategy": "Dangerous tools can be disabled for HOH runs while safe tools remain available.",
         },
         {
           "id": 297.1,
@@ -394,7 +342,7 @@
           "priority": "medium",
           "description": "Create organized on-disk layout for each HOH iteration (logs, patches, evaluations).",
           "details": ".grok/hoh/iterations/<id>/ with subdirs for patches, logs, evals, etc.",
-          "testStrategy": "Folders are created automatically and contain expected artifacts after a run."
+          "testStrategy": "Folders are created automatically and contain expected artifacts after a run.",
         },
         {
           "id": 297.11,
@@ -404,19 +352,17 @@
           "priority": "medium",
           "description": "Maintain a chronological log of all HOH activity across days.",
           "details": "Append-only log with timestamps, decisions, and outcomes. Support querying.",
-          "testStrategy": "Log entries are written and can be read back in order."
+          "testStrategy": "Log entries are written and can be read back in order.",
         },
         {
           "id": 297.12,
           "title": "Implement Multi-Day Scheduler",
           "status": "pending",
-          "dependencies": [
-            297.1
-          ],
+          "dependencies": [297.1],
           "priority": "high",
           "description": "Schedule and resume HOH iterations across multiple days/sessions.",
           "details": "Support cron-like scheduling or manual resume. Persist state between runs.",
-          "testStrategy": "Can pause and resume an iteration across separate process invocations."
+          "testStrategy": "Can pause and resume an iteration across separate process invocations.",
         },
         {
           "id": 297.13,
@@ -426,7 +372,7 @@
           "priority": "medium",
           "description": "Expose HOH via CLI (grok hoh start, grok hoh status, etc.).",
           "details": "Add commands under src/cli/commands/hoh.rs or similar.",
-          "testStrategy": "CLI commands are discoverable and execute basic HOH operations."
+          "testStrategy": "CLI commands are discoverable and execute basic HOH operations.",
         },
         {
           "id": 297.14,
@@ -436,7 +382,7 @@
           "priority": "high",
           "description": "Hard limits on what HOH is allowed to do autonomously.",
           "details": "Max changes per iteration, forbidden paths, human approval gates for certain actions, rate limits.",
-          "testStrategy": "Guardrails prevent unsafe actions even if the inner agent attempts them."
+          "testStrategy": "Guardrails prevent unsafe actions even if the inner agent attempts them.",
         },
         {
           "id": 297.15,
@@ -446,7 +392,7 @@
           "priority": "medium",
           "description": "Make HOH itself available as an activatable skill.",
           "details": "Register as a skill so the agent or user can explicitly invoke outer-loop behavior.",
-          "testStrategy": "HOH skill appears in catalog and can be activated."
+          "testStrategy": "HOH skill appears in catalog and can be activated.",
         },
         {
           "id": 297.16,
@@ -456,7 +402,7 @@
           "priority": "medium",
           "description": "Inject relevant OKF bundles and past iteration learnings into each cycle.",
           "details": "Load from knowledge/ and previous iteration summaries before planning.",
-          "testStrategy": "Planning phase has access to historical context and OKF data."
+          "testStrategy": "Planning phase has access to historical context and OKF data.",
         },
         {
           "id": 297.17,
@@ -466,7 +412,7 @@
           "priority": "low",
           "description": "Visual representation of current and past HOH iterations.",
           "details": "Use existing visualizer or new terminal UI showing progress, patches, and scores.",
-          "testStrategy": "Visualizer renders a coherent view of at least one completed iteration."
+          "testStrategy": "Visualizer renders a coherent view of at least one completed iteration.",
         },
         {
           "id": 297.18,
@@ -476,7 +422,7 @@
           "priority": "high",
           "description": "Graceful handling when an iteration fails partway through.",
           "details": "Save partial state, classify failure type, and decide whether to retry, skip, or escalate.",
-          "testStrategy": "Injected failure during execution results in clean recovery and state preservation."
+          "testStrategy": "Injected failure during execution results in clean recovery and state preservation.",
         },
         {
           "id": 297.19,
@@ -486,7 +432,7 @@
           "priority": "medium",
           "description": "Take snapshots of the project state before and after iterations for rollback/comparison.",
           "details": "Git worktree or tarball snapshots. Support restore.",
-          "testStrategy": "Snapshot can be created and restored to a previous known-good state."
+          "testStrategy": "Snapshot can be created and restored to a previous known-good state.",
         },
         {
           "id": 297.2,
@@ -496,7 +442,7 @@
           "priority": "low",
           "description": "Track key HOH metrics over time (tasks completed, improvement rate, etc.).",
           "details": "Collect metrics and expose via CLI or file for analysis.",
-          "testStrategy": "Metrics are recorded and a basic report can be generated."
+          "testStrategy": "Metrics are recorded and a basic report can be generated.",
         },
         {
           "id": 297.21,
@@ -506,7 +452,7 @@
           "priority": "medium",
           "description": "Allow HOH to choose different LLM backends for different phases.",
           "details": "Support different models for planning vs execution vs evaluation.",
-          "testStrategy": "Can configure and switch backends per phase in a run."
+          "testStrategy": "Can configure and switch backends per phase in a run.",
         },
         {
           "id": 297.22,
@@ -516,7 +462,7 @@
           "priority": "medium",
           "description": "Give HOH access to long-term memory for context across iterations.",
           "details": "Integrate with existing memory system for cross-iteration recall.",
-          "testStrategy": "HOH can recall facts from previous iterations."
+          "testStrategy": "HOH can recall facts from previous iterations.",
         },
         {
           "id": 297.23,
@@ -526,19 +472,17 @@
           "priority": "high",
           "description": "Support multiple specialized agents working inside one HOH iteration.",
           "details": "Spawn parallel or sequential agents for different parts of the plan.",
-          "testStrategy": "Multi-agent iteration completes with contributions from >1 agent."
+          "testStrategy": "Multi-agent iteration completes with contributions from >1 agent.",
         },
         {
           "id": 297.24,
           "title": "Add HOH Conflict Resolver",
           "status": "pending",
-          "dependencies": [
-            297.23
-          ],
+          "dependencies": [297.23],
           "priority": "medium",
           "description": "Resolve conflicting changes from multiple agents or iterations.",
           "details": "Detection + merge strategy or escalation to human.",
-          "testStrategy": "Conflicting patches are detected and a resolution strategy is applied."
+          "testStrategy": "Conflicting patches are detected and a resolution strategy is applied.",
         },
         {
           "id": 297.25,
@@ -548,7 +492,7 @@
           "priority": "high",
           "description": "Run HOH iterations in a fully simulated environment for safe experimentation.",
           "details": "No real file changes. Use in-memory or temporary workspaces. Record what would have happened.",
-          "testStrategy": "Simulation mode runs end-to-end with zero side effects on the real tree."
+          "testStrategy": "Simulation mode runs end-to-end with zero side effects on the real tree.",
         },
         {
           "id": 297.26,
@@ -558,7 +502,7 @@
           "priority": "high",
           "description": "Configurable autonomy levels (observe, propose, execute with approval, full auto).",
           "details": "Levels gate what actions HOH can take without human intervention.",
-          "testStrategy": "Different autonomy levels correctly restrict or allow actions."
+          "testStrategy": "Different autonomy levels correctly restrict or allow actions.",
         },
         {
           "id": 297.27,
@@ -568,7 +512,7 @@
           "priority": "medium",
           "description": "Limit tokens, time, and number of inner calls per iteration.",
           "details": "Enforce budgets and gracefully degrade when exceeded.",
-          "testStrategy": "Budget is respected; iteration stops cleanly when budget is exhausted."
+          "testStrategy": "Budget is respected; iteration stops cleanly when budget is exhausted.",
         },
         {
           "id": 297.28,
@@ -578,7 +522,7 @@
           "priority": "high",
           "description": "Robust error handling and recovery strategies inside the outer loop.",
           "details": "Classify errors, apply backoff, partial rollback, or skip-and-continue.",
-          "testStrategy": "Injected errors during iteration are handled without crashing the outer loop."
+          "testStrategy": "Injected errors during iteration are handled without crashing the outer loop.",
         },
         {
           "id": 297.29,
@@ -588,7 +532,7 @@
           "priority": "medium",
           "description": "Generate a human-readable summary at the end of each iteration or day.",
           "details": "Include what was attempted, results, metrics, and next planned work.",
-          "testStrategy": "Summary is generated and contains useful, accurate information."
+          "testStrategy": "Summary is generated and contains useful, accurate information.",
         },
         {
           "id": 297.3,
@@ -598,7 +542,7 @@
           "priority": "medium",
           "description": "Generate and maintain a multi-week or multi-month development roadmap.",
           "details": "Use evaluation trends and completed work to propose future directions.",
-          "testStrategy": "Roadmap is produced and evolves as work completes."
+          "testStrategy": "Roadmap is produced and evolves as work completes.",
         },
         {
           "id": 297.31,
@@ -608,42 +552,36 @@
           "priority": "low",
           "description": "Document how to use, configure, and interpret HOH.",
           "details": "Update README, add .grok/hoh/README.md, and inline docs.",
-          "testStrategy": "Documentation is clear enough for a new user to start a HOH run."
+          "testStrategy": "Documentation is clear enough for a new user to start a HOH run.",
         },
         {
           "id": 297.32,
           "title": "Wire HOH into Main CLI and Skills",
           "status": "pending",
-          "dependencies": [
-            297.13
-          ],
+          "dependencies": [297.13],
           "priority": "high",
           "description": "Make HOH a first-class part of the grok-cli experience.",
           "details": "Integrate with main entry points, config, and the skills system.",
-          "testStrategy": "HOH commands and skill activation work from the main binary."
+          "testStrategy": "HOH commands and skill activation work from the main binary.",
         },
         {
           "id": 297.33,
           "title": "HOH Integration Tests + Simulation Harness",
           "status": "pending",
-          "dependencies": [
-            297.25
-          ],
+          "dependencies": [297.25],
           "priority": "high",
           "description": "Comprehensive test suite for the entire HOH system.",
           "details": "End-to-end tests using simulation mode. Test planning → execution → evaluation → improvement loop.",
-          "testStrategy": "All major HOH flows have passing integration tests. Simulation harness is reusable."
-        }
-      ]
+          "testStrategy": "All major HOH flows have passing integration tests. Simulation harness is reusable.",
+        },
+      ],
     },
     {
       "id": 327,
       "title": "HOH TaskList Intelligence & Autonomous Evolution (327-360)",
       "description": "Deep integration between HOH and the project's task_list.json. This subsystem allows HOH to read, reason about, evolve, prioritize, validate, and autonomously improve the very task list that defines the project. Enables self-directed task management, mutation, dependency resolution, and long-term roadmap evolution using evaluation feedback, OKF, and Helix.",
       "status": "pending",
-      "dependencies": [
-        297
-      ],
+      "dependencies": [297],
       "priority": "high",
       "details": "All subtasks numbered 327.x following SKILL.md decimal subtask convention. Parent ID matches the range start (327).",
       "testStrategy": "Verify task_list.json mutations are valid, dependencies remain consistent, and autonomous evolution produces coherent next batches.",
@@ -656,7 +594,7 @@
           "priority": "high",
           "description": "Create an adapter that lets HOH safely read and write task_list.json.",
           "details": "Provide load/save, validation, and diff capabilities. Use the existing task structures.",
-          "testStrategy": "Adapter can load the current list, make a change, and save a valid file."
+          "testStrategy": "Adapter can load the current list, make a change, and save a valid file.",
         },
         {
           "id": 327.2,
@@ -666,7 +604,7 @@
           "priority": "high",
           "description": "Select the best pending tasks for the current iteration based on priority, dependencies, and HOH goals.",
           "details": "Implement scoring and selection logic. Consider dependencies, priority, and estimated effort.",
-          "testStrategy": "Selection engine returns a coherent, dependency-respecting set of tasks."
+          "testStrategy": "Selection engine returns a coherent, dependency-respecting set of tasks.",
         },
         {
           "id": 327.3,
@@ -676,7 +614,7 @@
           "priority": "high",
           "description": "Mutate, split, merge, or refine existing tasks based on learnings.",
           "details": "Support common mutations: add subtasks, change priority, update details, split large tasks.",
-          "testStrategy": "Engine produces valid evolved tasks that still pass task validation."
+          "testStrategy": "Engine produces valid evolved tasks that still pass task validation.",
         },
         {
           "id": 327.4,
@@ -686,7 +624,7 @@
           "priority": "high",
           "description": "Build and maintain a graph of task dependencies for analysis and scheduling.",
           "details": "Use petgraph or simple adjacency lists. Support cycle detection and topological sort.",
-          "testStrategy": "Graph correctly models current dependencies and detects cycles."
+          "testStrategy": "Graph correctly models current dependencies and detects cycles.",
         },
         {
           "id": 327.5,
@@ -696,7 +634,7 @@
           "priority": "high",
           "description": "Score and rank tasks using multiple signals (priority, age, impact, HOH goals).",
           "details": "Combine static priority with dynamic signals from evaluations and OKF.",
-          "testStrategy": "Prioritization produces a stable, explainable ordering."
+          "testStrategy": "Prioritization produces a stable, explainable ordering.",
         },
         {
           "id": 327.6,
@@ -706,7 +644,7 @@
           "priority": "medium",
           "description": "Track completion rates, time-to-complete, and quality signals per task.",
           "details": "Record metrics when tasks move to done. Feed into future planning.",
-          "testStrategy": "Completion data is recorded and queryable."
+          "testStrategy": "Completion data is recorded and queryable.",
         },
         {
           "id": 327.7,
@@ -716,7 +654,7 @@
           "priority": "high",
           "description": "Define safe, versioned rules for how tasks can be autonomously changed.",
           "details": "Ruleset for splitting, merging, re-prioritizing, and adding details. Enforce invariants.",
-          "testStrategy": "Only valid mutations are applied; invalid ones are rejected."
+          "testStrategy": "Only valid mutations are applied; invalid ones are rejected.",
         },
         {
           "id": 327.8,
@@ -726,7 +664,7 @@
           "priority": "medium",
           "description": "Keep task list in sync with structured knowledge (OKF).",
           "details": "When OKF concepts change, suggest or apply corresponding task updates.",
-          "testStrategy": "Changes in relevant OKF bundles are reflected in or proposed for the task list."
+          "testStrategy": "Changes in relevant OKF bundles are reflected in or proposed for the task list.",
         },
         {
           "id": 327.9,
@@ -736,7 +674,7 @@
           "priority": "medium",
           "description": "Use Helix scores to update task priorities and status.",
           "details": "Map evaluation results back to affected tasks.",
-          "testStrategy": "Evaluation feedback visibly influences task list state."
+          "testStrategy": "Evaluation feedback visibly influences task list state.",
         },
         {
           "id": 327.1,
@@ -746,7 +684,7 @@
           "priority": "high",
           "description": "Automatically break large tasks into well-structured subtasks.",
           "details": "When a task is too big, generate a sensible subtask breakdown.",
-          "testStrategy": "Auto-expansion produces valid, actionable subtasks that match SKILL.md guidelines."
+          "testStrategy": "Auto-expansion produces valid, actionable subtasks that match SKILL.md guidelines.",
         },
         {
           "id": 327.11,
@@ -756,7 +694,7 @@
           "priority": "high",
           "description": "Improve vague task descriptions and details using context.",
           "details": "Use surrounding code, past work, and OKF to make tasks more specific and actionable.",
-          "testStrategy": "Refined tasks have higher-quality details and testStrategy than before."
+          "testStrategy": "Refined tasks have higher-quality details and testStrategy than before.",
         },
         {
           "id": 327.12,
@@ -766,7 +704,7 @@
           "priority": "medium",
           "description": "Identify and propose removal or deferral of obsolete or low-value tasks.",
           "details": "Detect stale, duplicate, or superseded tasks.",
-          "testStrategy": "Pruning suggestions are accurate and safe (never auto-delete without review unless configured)."
+          "testStrategy": "Pruning suggestions are accurate and safe (never auto-delete without review unless configured).",
         },
         {
           "id": 327.13,
@@ -776,7 +714,7 @@
           "priority": "medium",
           "description": "Version the task list so changes can be reviewed and rolled back.",
           "details": "Store historical versions or use git for the .zed/task_list.json file.",
-          "testStrategy": "Previous versions of the task list can be retrieved."
+          "testStrategy": "Previous versions of the task list can be retrieved.",
         },
         {
           "id": 327.14,
@@ -786,7 +724,7 @@
           "priority": "medium",
           "description": "Produce human- and machine-readable diffs of task list changes.",
           "details": "Show added/removed/modified tasks and subtasks clearly.",
-          "testStrategy": "Diffs are accurate and useful for review."
+          "testStrategy": "Diffs are accurate and useful for review.",
         },
         {
           "id": 327.15,
@@ -796,7 +734,7 @@
           "priority": "medium",
           "description": "Estimate the downstream impact of completing (or not completing) a task.",
           "details": "Analyze dependency graph and historical data.",
-          "testStrategy": "Impact scores correlate with actual observed effects."
+          "testStrategy": "Impact scores correlate with actual observed effects.",
         },
         {
           "id": 327.16,
@@ -806,7 +744,7 @@
           "priority": "medium",
           "description": "Estimate how hard a task will be for the current agent capabilities.",
           "details": "Use past completion data, code complexity signals, and required skills.",
-          "testStrategy": "Estimates are directionally correct (easy/medium/hard)."
+          "testStrategy": "Estimates are directionally correct (easy/medium/hard).",
         },
         {
           "id": 327.17,
@@ -816,7 +754,7 @@
           "priority": "high",
           "description": "Decide optimal order and timing for tasks within and across iterations.",
           "details": "Combine dependency order, priority, difficulty, and resource budgets.",
-          "testStrategy": "Produced schedule is feasible and respects all hard dependencies."
+          "testStrategy": "Produced schedule is feasible and respects all hard dependencies.",
         },
         {
           "id": 327.18,
@@ -826,7 +764,7 @@
           "priority": "medium",
           "description": "Detect contradictory or overlapping tasks.",
           "details": "Flag tasks that cannot be done together or that duplicate work.",
-          "testStrategy": "Real conflicts in the list are detected."
+          "testStrategy": "Real conflicts in the list are detected.",
         },
         {
           "id": 327.19,
@@ -836,7 +774,7 @@
           "priority": "medium",
           "description": "Understand the meaning of tasks to enable better reasoning.",
           "details": "Use embeddings or LLM analysis of title + description + details.",
-          "testStrategy": "Semantically similar tasks are recognized as related."
+          "testStrategy": "Semantically similar tasks are recognized as related.",
         },
         {
           "id": 327.2,
@@ -846,7 +784,7 @@
           "priority": "low",
           "description": "Generate research tasks when gaps in knowledge are detected.",
           "details": "When the system lacks information needed to plan, create research subtasks.",
-          "testStrategy": "Research tasks are created when relevant information is missing."
+          "testStrategy": "Research tasks are created when relevant information is missing.",
         },
         {
           "id": 327.21,
@@ -856,7 +794,7 @@
           "priority": "medium",
           "description": "Assess risk (breaking changes, security, complexity) of each task.",
           "details": "Produce risk scores and mitigation suggestions.",
-          "testStrategy": "High-risk tasks are correctly flagged with reasonable mitigations."
+          "testStrategy": "High-risk tasks are correctly flagged with reasonable mitigations.",
         },
         {
           "id": 327.22,
@@ -866,7 +804,7 @@
           "priority": "medium",
           "description": "Define what 'good' task completion looks like for HOH.",
           "details": "Model reward based on quality, speed, learning produced, and alignment.",
-          "testStrategy": "Reward model can rank completed tasks sensibly."
+          "testStrategy": "Reward model can rank completed tasks sensibly.",
         },
         {
           "id": 327.23,
@@ -876,7 +814,7 @@
           "priority": "medium",
           "description": "Assign tasks to the most suitable agent profiles or skills.",
           "details": "Match task requirements to agent capabilities.",
-          "testStrategy": "Tasks are assigned to agents that have relevant skills."
+          "testStrategy": "Tasks are assigned to agents that have relevant skills.",
         },
         {
           "id": 327.24,
@@ -886,7 +824,7 @@
           "priority": "medium",
           "description": "Estimate % complete and remaining effort for in-progress tasks.",
           "details": "Use subtask completion, code changes, and test results.",
-          "testStrategy": "Progress estimates are reasonably accurate."
+          "testStrategy": "Progress estimates are reasonably accurate.",
         },
         {
           "id": 327.25,
@@ -896,7 +834,7 @@
           "priority": "high",
           "description": "Detect tasks that have been in_progress or pending for too long.",
           "details": "Alert or auto-escalate stalled work.",
-          "testStrategy": "Stalled tasks are reliably detected."
+          "testStrategy": "Stalled tasks are reliably detected.",
         },
         {
           "id": 327.26,
@@ -906,7 +844,7 @@
           "priority": "high",
           "description": "Create recovery plans for blocked or failed tasks.",
           "details": "Suggest new subtasks, dependency changes, or alternative approaches.",
-          "testStrategy": "Recovery plans are generated for known blocked tasks."
+          "testStrategy": "Recovery plans are generated for known blocked tasks.",
         },
         {
           "id": 327.27,
@@ -916,7 +854,7 @@
           "priority": "high",
           "description": "Validate that a task marked done actually satisfies its testStrategy.",
           "details": "Run or simulate the defined test strategy. Require evidence.",
-          "testStrategy": "Tasks that do not meet their testStrategy are rejected or flagged."
+          "testStrategy": "Tasks that do not meet their testStrategy are rejected or flagged.",
         },
         {
           "id": 327.28,
@@ -926,7 +864,7 @@
           "priority": "medium",
           "description": "Score the quality of task definitions themselves.",
           "details": "Rate clarity, actionability, testability, and completeness.",
-          "testStrategy": "Low-quality task definitions receive low scores and improvement suggestions."
+          "testStrategy": "Low-quality task definitions receive low scores and improvement suggestions.",
         },
         {
           "id": 327.29,
@@ -936,7 +874,7 @@
           "priority": "low",
           "description": "Emit metrics about task list health and evolution.",
           "details": "Track number of tasks, completion velocity, mutation rate, etc.",
-          "testStrategy": "Telemetry is emitted and can be consumed by dashboards."
+          "testStrategy": "Telemetry is emitted and can be consumed by dashboards.",
         },
         {
           "id": 327.3,
@@ -946,7 +884,7 @@
           "priority": "low",
           "description": "Visual overview of the current task list state and evolution.",
           "details": "Show dependency graph, progress, and recent mutations.",
-          "testStrategy": "Visualizer renders a useful view of the task list."
+          "testStrategy": "Visualizer renders a useful view of the task list.",
         },
         {
           "id": 327.31,
@@ -956,7 +894,7 @@
           "priority": "low",
           "description": "Export the task list to other formats (Markdown, CSV, etc.).",
           "details": "Support multiple export targets for reporting and external tools.",
-          "testStrategy": "Exports are valid and contain expected data."
+          "testStrategy": "Exports are valid and contain expected data.",
         },
         {
           "id": 327.32,
@@ -966,7 +904,7 @@
           "priority": "low",
           "description": "Import tasks from external sources.",
           "details": "Support importing from Markdown checklists, other trackers, etc.",
-          "testStrategy": "Imported tasks become valid entries in the task list."
+          "testStrategy": "Imported tasks become valid entries in the task list.",
         },
         {
           "id": 327.33,
@@ -976,32 +914,26 @@
           "priority": "high",
           "description": "Continuously validate the task list for structural problems.",
           "details": "Check for missing fields, circular dependencies, duplicate IDs, broken references.",
-          "testStrategy": "All current consistency problems are detected and reported."
+          "testStrategy": "All current consistency problems are detected and reported.",
         },
         {
           "id": 327.34,
           "title": "360. Add HOH TaskList Autonomous Evolution",
           "status": "pending",
-          "dependencies": [
-            327.1,
-            327.3,
-            327.33
-          ],
+          "dependencies": [327.1, 327.3, 327.33],
           "priority": "high",
           "description": "Close the loop: allow HOH to autonomously evolve the task list over many iterations.",
           "details": "Combine selection, mutation, validation, and improvement into a continuous self-directed process.",
-          "testStrategy": "After several simulated iterations the task list measurably improves in quality and completeness."
-        }
-      ]
+          "testStrategy": "After several simulated iterations the task list measurably improves in quality and completeness.",
+        },
+      ],
     },
     {
       "id": 361,
       "title": "HOH Advanced Autonomy, Architecture Evolution & Self-Improvement (361-400)",
       "description": "Advanced capabilities for HOH to evolve at the architectural level, perform self-refinement, enable sophisticated multi-agent collaboration, manage knowledge (OKF), perform autonomous refactoring/debugging/testing, and optimize its own processes. These features turn HOH into a true long-term self-improving system for Grok-CLI and related components (Helix, OKF).",
       "status": "pending",
-      "dependencies": [
-        297
-      ],
+      "dependencies": [297],
       "priority": "high",
       "details": "All subtasks numbered 361.x. Parent ID 361 matches the range in the title per SKILL.md clarity rules. Last subtask covers 400.",
       "testStrategy": "Architecture evolution produces measurable improvements. All autonomous refactoring and agent evolution tasks pass evaluation.",
@@ -1014,7 +946,7 @@
           "priority": "high",
           "description": "Core engine that proposes and applies architectural changes.",
           "details": "Analyze current architecture, propose refactors, generate patches for new layers or module reorganizations.",
-          "testStrategy": "Engine produces at least one non-trivial architectural proposal that passes basic validation."
+          "testStrategy": "Engine produces at least one non-trivial architectural proposal that passes basic validation.",
         },
         {
           "id": 361.2,
@@ -1024,7 +956,7 @@
           "priority": "high",
           "description": "Allow HOH to improve its own code and algorithms.",
           "details": "Meta-level changes to the HOH implementation itself.",
-          "testStrategy": "Self-refinement produces measurable improvement in a subsequent iteration."
+          "testStrategy": "Self-refinement produces measurable improvement in a subsequent iteration.",
         },
         {
           "id": 361.3,
@@ -1034,7 +966,7 @@
           "priority": "high",
           "description": "Perform large-scale refactoring without human intervention.",
           "details": "Move code, rename, extract modules, improve abstractions based on detected smells.",
-          "testStrategy": "Refactoring improves measured code health metrics while keeping tests green."
+          "testStrategy": "Refactoring improves measured code health metrics while keeping tests green.",
         },
         {
           "id": 361.4,
@@ -1044,7 +976,7 @@
           "priority": "high",
           "description": "Automatically find, diagnose, and fix bugs.",
           "details": "Use failing tests + static analysis + LLM reasoning to produce fixes.",
-          "testStrategy": "Injected bugs are detected and correctly patched in simulation."
+          "testStrategy": "Injected bugs are detected and correctly patched in simulation.",
         },
         {
           "id": 361.5,
@@ -1054,7 +986,7 @@
           "priority": "high",
           "description": "Define distinct agent personas (architect, debugger, researcher, tester, etc.).",
           "details": "Each profile has different tools, prompts, success criteria, and risk tolerance.",
-          "testStrategy": "Different profiles produce measurably different behavior on the same task."
+          "testStrategy": "Different profiles produce measurably different behavior on the same task.",
         },
         {
           "id": 361.6,
@@ -1064,7 +996,7 @@
           "priority": "high",
           "description": "Allow agents to acquire new skills over time.",
           "details": "Dynamic skill loading, skill synthesis, and skill retirement.",
-          "testStrategy": "An agent can be given a new capability mid-run and use it successfully."
+          "testStrategy": "An agent can be given a new capability mid-run and use it successfully.",
         },
         {
           "id": 361.7,
@@ -1074,7 +1006,7 @@
           "priority": "high",
           "description": "Define how agents communicate, delegate, and synchronize.",
           "details": "Message bus, shared state, negotiation, and handoff mechanisms.",
-          "testStrategy": "Multiple agents successfully collaborate on a task that requires more than one."
+          "testStrategy": "Multiple agents successfully collaborate on a task that requires more than one.",
         },
         {
           "id": 361.8,
@@ -1084,7 +1016,7 @@
           "priority": "high",
           "description": "Simulate multi-agent interactions safely.",
           "details": "Run many agents in a sandboxed environment to predict outcomes.",
-          "testStrategy": "Simulation produces useful predictions that match later real runs."
+          "testStrategy": "Simulation produces useful predictions that match later real runs.",
         },
         {
           "id": 361.9,
@@ -1094,17 +1026,17 @@
           "priority": "high",
           "description": "Maintain and evolve long-term strategic goals across many iterations.",
           "details": "Strategic objectives, milestones, and trade-off decisions.",
-          "testStrategy": "Long-term strategy influences short-term planning coherently."
+          "testStrategy": "Long-term strategy influences short-term planning coherently.",
         },
         {
-          "id": 361.1,
+          "id": 361.0101,
           "title": "370. Add HOH Multi-Project Orchestrator",
-          "status": "pending",
+          "status": "done",
           "dependencies": [],
           "priority": "medium",
           "description": "Coordinate work across multiple related projects.",
           "details": "Shared knowledge, cross-project task dependencies, and resource allocation.",
-          "testStrategy": "Orchestrator can plan work that touches more than one project."
+          "testStrategy": "Orchestrator can plan work that touches more than one project.",
         },
         {
           "id": 361.11,
@@ -1114,7 +1046,7 @@
           "priority": "medium",
           "description": "Transfer learnings and patterns between projects.",
           "details": "OKF + HOH memory mechanisms for cross-project reuse.",
-          "testStrategy": "A pattern discovered in one project is successfully applied in another."
+          "testStrategy": "A pattern discovered in one project is successfully applied in another.",
         },
         {
           "id": 361.12,
@@ -1124,7 +1056,7 @@
           "priority": "high",
           "description": "Agent specialized in exploring unknown areas and producing research outputs.",
           "details": "Literature-style investigation, experiment design, and knowledge synthesis.",
-          "testStrategy": "Research agent produces usable new knowledge that is injected into OKF."
+          "testStrategy": "Research agent produces usable new knowledge that is injected into OKF.",
         },
         {
           "id": 361.13,
@@ -1134,7 +1066,7 @@
           "priority": "medium",
           "description": "Detect when architecture is drifting or becoming unstable.",
           "details": "Metrics on coupling, complexity, and change rate.",
-          "testStrategy": "Drift is detected before it becomes a major problem."
+          "testStrategy": "Drift is detected before it becomes a major problem.",
         },
         {
           "id": 361.14,
@@ -1144,7 +1076,7 @@
           "priority": "medium",
           "description": "Continuous analysis of code quality, test coverage, technical debt.",
           "details": "Integrate clippy, test coverage, complexity tools, and custom rules.",
-          "testStrategy": "Health report accurately reflects known issues in the codebase."
+          "testStrategy": "Health report accurately reflects known issues in the codebase.",
         },
         {
           "id": 361.15,
@@ -1154,7 +1086,7 @@
           "priority": "high",
           "description": "Deep semantic understanding of the codebase for better decisions.",
           "details": "Use embeddings, call graphs, and LLM analysis of modules.",
-          "testStrategy": "System can answer non-trivial questions about code relationships correctly."
+          "testStrategy": "System can answer non-trivial questions about code relationships correctly.",
         },
         {
           "id": 361.16,
@@ -1164,7 +1096,7 @@
           "priority": "medium",
           "description": "Evolve public APIs and internal interfaces over time.",
           "details": "Detect usage patterns and propose better API designs.",
-          "testStrategy": "API changes are proposed with migration paths and backward-compat analysis."
+          "testStrategy": "API changes are proposed with migration paths and backward-compat analysis.",
         },
         {
           "id": 361.17,
@@ -1174,7 +1106,7 @@
           "priority": "high",
           "description": "Plan work while explicitly accounting for risk.",
           "details": "Risk-adjusted prioritization and mitigation steps in every plan.",
-          "testStrategy": "High-risk work is accompanied by explicit mitigation tasks."
+          "testStrategy": "High-risk work is accompanied by explicit mitigation tasks.",
         },
         {
           "id": 361.18,
@@ -1184,7 +1116,7 @@
           "priority": "high",
           "description": "Predict which changes are likely to cause failures.",
           "details": "Use historical data + static analysis + learned models.",
-          "testStrategy": "Predictions are better than random at forecasting failing changes."
+          "testStrategy": "Predictions are better than random at forecasting failing changes.",
         },
         {
           "id": 361.19,
@@ -1194,7 +1126,7 @@
           "priority": "high",
           "description": "Generate new tests for uncovered or risky code.",
           "details": "Property-based, example-based, and integration test synthesis.",
-          "testStrategy": "Generated tests increase coverage or catch real bugs."
+          "testStrategy": "Generated tests increase coverage or catch real bugs.",
         },
         {
           "id": 361.2,
@@ -1204,19 +1136,17 @@
           "priority": "high",
           "description": "Automatically detect regressions introduced by changes.",
           "details": "Compare behavior, performance, and test results across iterations.",
-          "testStrategy": "Known regressions are detected reliably."
+          "testStrategy": "Known regressions are detected reliably.",
         },
         {
           "id": 361.21,
           "title": "381. Add HOH Regression Recovery Engine",
           "status": "pending",
-          "dependencies": [
-            361.2
-          ],
+          "dependencies": [361.2],
           "priority": "high",
           "description": "Automatically create recovery plans when regressions are found.",
           "details": "Bisect, revert, or generate compensating patches.",
-          "testStrategy": "Recovery engine produces a plan that would have fixed a known regression."
+          "testStrategy": "Recovery engine produces a plan that would have fixed a known regression.",
         },
         {
           "id": 361.22,
@@ -1226,7 +1156,7 @@
           "priority": "high",
           "description": "Simulate the effects of proposed architectural changes before applying them.",
           "details": "Model coupling, performance, and maintainability impacts.",
-          "testStrategy": "Simulation predictions are directionally correct for past changes."
+          "testStrategy": "Simulation predictions are directionally correct for past changes.",
         },
         {
           "id": 361.23,
@@ -1236,7 +1166,7 @@
           "priority": "medium",
           "description": "Keep documentation up to date with code changes.",
           "details": "Generate and update README sections, module docs, and API docs.",
-          "testStrategy": "Documentation stays in sync with major code changes."
+          "testStrategy": "Documentation stays in sync with major code changes.",
         },
         {
           "id": 361.24,
@@ -1246,7 +1176,7 @@
           "priority": "medium",
           "description": "Compress and summarize large amounts of accumulated knowledge.",
           "details": "Distill OKF bundles and iteration history into compact, queryable forms.",
-          "testStrategy": "Compressed knowledge retains critical facts while reducing size."
+          "testStrategy": "Compressed knowledge retains critical facts while reducing size.",
         },
         {
           "id": 361.25,
@@ -1256,7 +1186,7 @@
           "priority": "medium",
           "description": "Expand sparse knowledge areas by targeted exploration.",
           "details": "Identify gaps and generate research or experimentation tasks.",
-          "testStrategy": "Gaps are filled over time with new, useful knowledge."
+          "testStrategy": "Gaps are filled over time with new, useful knowledge.",
         },
         {
           "id": 361.26,
@@ -1266,7 +1196,7 @@
           "priority": "medium",
           "description": "Rewrite outdated or low-quality knowledge entries.",
           "details": "Modernize language, correct errors, improve structure.",
-          "testStrategy": "Rewritten knowledge is higher quality and still accurate."
+          "testStrategy": "Rewritten knowledge is higher quality and still accurate.",
         },
         {
           "id": 361.27,
@@ -1276,7 +1206,7 @@
           "priority": "high",
           "description": "Give agents distinct, evolving personalities that affect behavior.",
           "details": "Traits such as caution, creativity, thoroughness, speed.",
-          "testStrategy": "Personality differences produce consistent and useful behavioral variation."
+          "testStrategy": "Personality differences produce consistent and useful behavioral variation.",
         },
         {
           "id": 361.28,
@@ -1286,7 +1216,7 @@
           "priority": "high",
           "description": "Agents can negotiate task ownership, priorities, and trade-offs.",
           "details": "Structured negotiation protocol with proposals and acceptance.",
-          "testStrategy": "Agents reach reasonable agreements on shared work."
+          "testStrategy": "Agents reach reasonable agreements on shared work.",
         },
         {
           "id": 361.29,
@@ -1296,7 +1226,7 @@
           "priority": "high",
           "description": "Automatically review proposed designs and architectures.",
           "details": "Check against principles, past decisions, and known pitfalls.",
-          "testStrategy": "Design reviews catch real issues that would have caused problems."
+          "testStrategy": "Design reviews catch real issues that would have caused problems.",
         },
         {
           "id": 361.3,
@@ -1306,7 +1236,7 @@
           "priority": "high",
           "description": "Perform high-quality code reviews on patches before they land.",
           "details": "Style, correctness, security, performance, and maintainability review.",
-          "testStrategy": "Reviews find meaningful issues while allowing good changes to proceed."
+          "testStrategy": "Reviews find meaningful issues while allowing good changes to proceed.",
         },
         {
           "id": 361.31,
@@ -1316,7 +1246,7 @@
           "priority": "high",
           "description": "Score every patch on multiple quality dimensions.",
           "details": "Correctness, cleanliness, test coverage, risk, alignment with goals.",
-          "testStrategy": "Quality scores correlate with actual post-merge outcomes."
+          "testStrategy": "Quality scores correlate with actual post-merge outcomes.",
         },
         {
           "id": 361.32,
@@ -1326,7 +1256,7 @@
           "priority": "high",
           "description": "Explicit risk assessment for every proposed patch.",
           "details": "Breaking change risk, security risk, performance risk, etc.",
-          "testStrategy": "High-risk patches are correctly identified."
+          "testStrategy": "High-risk patches are correctly identified.",
         },
         {
           "id": 361.33,
@@ -1336,7 +1266,7 @@
           "priority": "medium",
           "description": "Automatically improve patches before they are applied.",
           "details": "Suggest smaller diffs, better names, more tests, etc.",
-          "testStrategy": "Optimized patches are measurably better than the originals on quality metrics."
+          "testStrategy": "Optimized patches are measurably better than the originals on quality metrics.",
         },
         {
           "id": 361.34,
@@ -1346,7 +1276,7 @@
           "priority": "high",
           "description": "Ensure patches are semantically coherent with the rest of the system.",
           "details": "Check for type safety, API contract adherence, and behavioral consistency.",
-          "testStrategy": "Invalid semantic changes are rejected or flagged."
+          "testStrategy": "Invalid semantic changes are rejected or flagged.",
         },
         {
           "id": 361.35,
@@ -1356,7 +1286,7 @@
           "priority": "high",
           "description": "Propose refactorings that improve long-term health.",
           "details": "Detect smells and generate concrete refactoring proposals.",
-          "testStrategy": "Suggestions are actionable and would improve the codebase if applied."
+          "testStrategy": "Suggestions are actionable and would improve the codebase if applied.",
         },
         {
           "id": 361.36,
@@ -1366,7 +1296,7 @@
           "priority": "medium",
           "description": "Periodically consolidate short-term memories into durable long-term knowledge.",
           "details": "Summarize, abstract, and index experiences for future retrieval.",
-          "testStrategy": "Consolidated memory improves future decision quality."
+          "testStrategy": "Consolidated memory improves future decision quality.",
         },
         {
           "id": 361.37,
@@ -1376,7 +1306,7 @@
           "priority": "high",
           "description": "Combine patches from multiple agents into a coherent whole.",
           "details": "Conflict detection + intelligent merging + conflict resolution.",
-          "testStrategy": "Fused patches from multiple agents are valid and better than any individual patch."
+          "testStrategy": "Fused patches from multiple agents are valid and better than any individual patch.",
         },
         {
           "id": 361.38,
@@ -1386,757 +1316,601 @@
           "priority": "high",
           "description": "Resolve disputes when agents produce conflicting patches.",
           "details": "Voting, evidence-based arbitration, or escalation.",
-          "testStrategy": "Arbitration produces a clear winner or merged result."
+          "testStrategy": "Arbitration produces a clear winner or merged result.",
         },
         {
           "id": 361.39,
           "title": "399. Add HOH Autonomous Architecture Refactoring",
           "status": "pending",
-          "dependencies": [
-            361.1
-          ],
+          "dependencies": [361.1],
           "priority": "high",
           "description": "Execute large-scale architectural refactors autonomously.",
           "details": "Plan, validate, apply, and verify major structural changes.",
-          "testStrategy": "A non-trivial architectural refactor is successfully executed and improves metrics."
+          "testStrategy": "A non-trivial architectural refactor is successfully executed and improves metrics.",
         },
         {
           "id": 361.4,
           "title": "400. Add HOH Self-Optimization Engine",
           "status": "pending",
-          "dependencies": [
-            361.2
-          ],
+          "dependencies": [361.2],
           "priority": "high",
           "description": "Allow HOH to improve its own planning, evaluation, and execution loops.",
           "details": "Meta-optimization of HOH parameters, heuristics, and algorithms.",
-          "testStrategy": "Self-optimization produces a measurable improvement in HOH performance on a benchmark iteration."
-        }
-      ]
+          "testStrategy": "Self-optimization produces a measurable improvement in HOH performance on a benchmark iteration.",
+        },
+      ],
     },
     {
       "id": 401,
       "title": "Implement HOH Autonomous Creativity Engine",
       "description": "Enable HOH to generate novel architectural ideas, new modules, and innovative solutions beyond existing patterns.",
       "status": "in_progress",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Design and implement the core Autonomous Creativity Engine for HOH.\n- Define CreativityIdea struct with fields: id, title, description, novelty_score, feasibility_score, alignment_score, source (llm|pattern|mutation|combination).\n- Integrate with existing LLM client (via grok_client_ext or router).\n- Use OKF bundles, task history, patch history, and evaluation results as inspiration corpus.\n- Implement generate_ideas(context, count=5) that produces ideas that are meaningfully different from current architecture.\n- Add multi-factor scoring (novelty via embedding distance or simple diff analysis, feasibility via compilation signals, alignment via goal matching).\n- Expose via HOH skill, agent mode, and the outer loop planning phase.\n- Store generated ideas with provenance for later review and evolution.",
       "testStrategy": "1. Unit tests for idea generation + scoring (with LLM mocks).\n2. End-to-end: trigger creativity engine and receive >=3 distinct, non-trivial ideas.\n3. Verify novelty scoring penalizes ideas too similar to existing code (use simple string/AST similarity for MVP).\n4. Integration test: generated ideas can be turned into new task proposals or patches that are accepted by the task list and patch system.\n5. Ideas demonstrate 'beyond existing patterns' (not just minor variations).",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 402,
       "title": "Add HOH Generative Architecture Designer",
       "description": "Allow HOH to propose entirely new system architectures using LLM reasoning and historical performance data.",
       "status": "pending",
-      "dependencies": [
-        361,
-        401
-      ],
+      "dependencies": [361, 401],
       "priority": "high",
       "details": "Build Generative Architecture Designer on top of the Creativity Engine.\n- Accept high-level goals (e.g. 'improve multi-agent collaboration' or 'add persistent long-term memory layer').\n- Generate full module proposals: new files, trait definitions, integration points, data models, and migration steps.\n- Output in a structured format (JSON schema) that can be fed to codegen, patch capture, or task creation.\n- Maintain a library of past successful architectures (from OKF and previous iterations) for few-shot prompting.\n- Support 'style transfer' from successful past designs.",
       "testStrategy": "1. Generate at least one complete new module proposal for a well-defined goal.\n2. Validate that the proposal references real existing modules (src/agent, src/tools, src/hoh, etc.).\n3. Proposal includes clear integration points and a minimal viable implementation sketch.\n4. Automated structure + reference check passes.\n5. Manual review confirms the proposal is coherent and novel.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 403,
       "title": "Add HOH Agent Retirement System",
       "description": "Retire agents whose performance declines or whose skill profiles no longer match project needs.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Implement lifecycle management for agents.\n- Track performance metrics per agent (success rate, quality scores, iteration contribution).\n- Define retirement criteria (sustained low performance, obsolete skills, resource cost).\n- Graceful retirement: hand off state, archive knowledge, notify collaborators.\n- Support 'hibernation' as a softer alternative to full retirement.\n- Integrate with Agent Birth System (404) so retired slots can be reused.",
       "testStrategy": "1. Agent with declining metrics is correctly flagged for retirement.\n2. Retirement process runs cleanly and frees resources.\n3. Hand-off of in-flight work succeeds.\n4. Retired agent no longer receives new tasks unless explicitly revived.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 404,
       "title": "Add HOH Agent Birth System",
       "description": "Spawn new agents with specialized roles when HOH detects emerging needs or opportunities.",
       "status": "pending",
-      "dependencies": [
-        361,
-        403
-      ],
+      "dependencies": [361, 403],
       "priority": "high",
       "details": "Create new agent instances dynamically.\n- Analyze current workload, skill gaps (from task list and failed iterations), and opportunity signals.\n- Generate agent profile, initial prompt, tool permissions, and personality.\n- Bootstrap the new agent with relevant knowledge from OKF and recent iterations.\n- Support both permanent and temporary (ephemeral) agents.\n- Wire into the multi-agent collaboration protocol.",
       "testStrategy": "1. Need detection correctly triggers agent creation.\n2. Newly born agent has appropriate specialization and can be assigned work immediately.\n3. New agent contributes usefully within one iteration.\n4. Birth process respects resource budgets and safety guardrails.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 405,
       "title": "Add HOH Agent Evolution Engine",
       "description": "Allow agents to evolve their capabilities, personalities, and heuristics over time.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Continuous agent improvement.\n- Track per-agent performance and behavioral patterns.\n- Apply mutations to prompts, tool usage heuristics, decision thresholds, and personality traits.\n- Use evaluation feedback (Helix + internal) as the fitness function.\n- Support both gradual evolution and occasional larger leaps.\n- Maintain lineage and version history for agents.",
       "testStrategy": "1. Agent performance improves measurably across iterations due to evolution.\n2. Evolution produces diverse agent variants.\n3. Poor mutations are eventually discarded (negative selection).\n4. Evolution logs are auditable.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 406,
       "title": "Add HOH Multi-Domain Reasoning Pipeline",
       "description": "Enable HOH to reason across multiple domains such as architecture, testing, research, and documentation simultaneously.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Cross-domain reasoning system.\n- Maintain separate but communicating reasoning contexts for architecture, implementation, testing, docs, and research.\n- Allow a single planning step to produce coordinated outputs across domains.\n- Use shared memory and OKF to maintain consistency.\n- Support 'what-if' reasoning that spans domains.",
       "testStrategy": "1. A planning step produces coordinated outputs in at least 3 domains.\n2. Changes proposed in one domain correctly account for constraints in others.\n3. Cross-domain conflicts are detected and surfaced.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 407,
       "title": "Add HOH Long-Term Governance Engine",
       "description": "Implement governance rules that guide HOH decision-making over months of autonomous development.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Long-term governance layer.\n- Define constitutional principles, non-goals, and hard constraints.\n- Implement rule evaluation at planning and execution time.\n- Support rule evolution (with very high approval threshold).\n- Log all governance decisions for audit.\n- Allow temporary 'state of emergency' overrides with strict logging.",
       "testStrategy": "1. Governance rules correctly block or modify clearly violating proposals.\n2. Long-running simulation respects governance over many iterations.\n3. Governance changes themselves are heavily gated.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 408,
       "title": "Add HOH Ethical Constraint Model",
       "description": "Define constraints to prevent harmful, destructive, or unsafe autonomous behavior.",
       "status": "pending",
-      "dependencies": [
-        361,
-        407
-      ],
+      "dependencies": [361, 407],
       "priority": "high",
       "details": "Explicit ethical and safety constraints.\n- Categories: user data, system integrity, external effects, deception, resource abuse.\n- Pre-action checks + post-action auditing.\n- 'Do no harm' defaults that are very hard to override.\n- Integration with existing safety module and HOH guardrails (297.14).",
       "testStrategy": "1. Clearly harmful actions are blocked even when the inner agent is prompted to perform them.\n2. Constraint violations are logged with high visibility.\n3. Model is versioned and reviewable.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 409,
       "title": "Add HOH Meta-Planning Engine",
       "description": "Enable HOH to plan improvements to HOH itself, creating recursive self-improvement loops.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Meta-planning for HOH.\n- Treat HOH's own components (planner, evaluator, memory, agents) as first-class targets for improvement.\n- Generate meta-plans that modify HOH algorithms, prompts, or architecture.\n- Use simulation heavily before applying meta-changes.\n- Track 'meta-improvement rate' as a key metric.",
       "testStrategy": "1. Meta-planning produces concrete proposals for improving HOH internals.\n2. At least one meta-improvement is successfully applied and measured.\n3. Recursive improvement does not cause instability (detected by stability monitor).",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 410,
       "title": "Add HOH Meta-Evaluation Engine",
       "description": "Evaluate HOH’s own performance using metrics such as stability, improvement rate, and agent effectiveness.",
       "status": "pending",
-      "dependencies": [
-        361,
-        409
-      ],
+      "dependencies": [361, 409],
       "priority": "high",
       "details": "Self-evaluation of the outer loop.\n- Define composite health and progress metrics for HOH.\n- Compare current iteration quality against historical baseline.\n- Detect stagnation, oscillation, or negative drift.\n- Feed results directly into meta-planning and governance.",
       "testStrategy": "1. Meta-evaluation produces actionable scores.\n2. Degradation is reliably detected.\n3. Improvement trends are visible over simulated multi-iteration runs.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 411,
       "title": "Add HOH Meta-Refinement Engine",
       "description": "Refine HOH’s own algorithms, heuristics, and decision-making strategies based on meta-evaluation.",
       "status": "pending",
-      "dependencies": [
-        361,
-        410
-      ],
+      "dependencies": [361, 410],
       "priority": "high",
       "details": "Close the meta-refinement loop.\n- Take meta-evaluation output and produce targeted refinements (prompt changes, parameter tuning, new heuristics, structural changes).\n- Prefer small, testable refinements with rollback capability.\n- Validate refinements in simulation before promoting to production HOH.",
       "testStrategy": "1. Refinements measurably improve the metrics identified by meta-evaluation.\n2. Refinement process itself is logged and reviewable.\n3. Bad refinements are detected and rolled back.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 412,
       "title": "Add HOH Future Trajectory Simulator",
       "description": "Simulate future development paths and predict long-term outcomes of architectural decisions.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Long-horizon simulation.\n- Run many possible futures from current state using different policy choices.\n- Model second- and third-order effects.\n- Produce probability distributions over key outcomes (velocity, stability, technical debt, etc.).\n- Use results to inform governance and long-term strategy.",
       "testStrategy": "1. Simulator can run 10-50 step trajectories.\n2. Predictions are directionally useful when compared to actual historical runs.\n3. Simulator is fast enough to be used inside planning loops.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 413,
       "title": "Add HOH Autonomous Roadmap Generator",
       "description": "Generate multi-year roadmaps based on project goals, evaluation trends, and predicted trajectories.",
       "status": "pending",
-      "dependencies": [
-        361,
-        412
-      ],
+      "dependencies": [361, 412],
       "priority": "high",
       "details": "Long-term autonomous roadmap creation.\n- Synthesize goals, current state, evaluation history, and trajectory simulations into phased roadmaps.\n- Include milestones, risk points, and decision branches.\n- Update roadmaps automatically as reality diverges from predictions.\n- Expose roadmaps in human-readable and machine-consumable forms.",
       "testStrategy": "1. A coherent multi-phase roadmap is generated.\n2. Roadmap is updated after significant events.\n3. Roadmap influences near-term planning in a visible way.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 414,
       "title": "Add HOH Multi-Project Strategy Engine",
       "description": "Coordinate strategy across multiple projects, sharing knowledge and optimizing resource allocation.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "medium",
       "details": "Cross-project orchestration.\n- Maintain shared strategic context across projects.\n- Allocate HOH attention and agent resources optimally.\n- Propagate high-value patterns and avoid duplicated effort.\n- Support project-specific governance while maintaining global principles.",
       "testStrategy": "1. Engine can plan work that spans two or more projects.\n2. Knowledge and improvements are shared appropriately.\n3. Resource conflicts are detected and resolved.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 415,
       "title": "Add HOH Cross-Domain Knowledge Fusion",
       "description": "Fuse knowledge from different domains into unified OKF bundles for improved reasoning.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Knowledge fusion layer.\n- Detect when knowledge in one domain (e.g. architecture) is relevant to another (e.g. testing strategy).\n- Create or update unified OKF concepts that combine signals from multiple sources.\n- Maintain provenance so fused knowledge can be audited or split if needed.",
       "testStrategy": "1. Fusion produces new OKF entries that are more useful than the sum of their parts.\n2. Downstream reasoning improves when using fused knowledge.\n3. Fusion does not create incorrect or overly confident claims.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 416,
       "title": "Add HOH Autonomous Research Planner",
       "description": "Plan long-term research tasks to explore unknown areas or emerging technologies.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Strategic research planning.\n- Identify high-leverage unknown areas from trajectory simulations and knowledge gaps.\n- Generate multi-iteration research programs with clear hypotheses and success criteria.\n- Balance exploration vs exploitation in the overall HOH portfolio.\n- Integrate results back into OKF and the main development roadmap.",
       "testStrategy": "1. Research plans are generated for identified knowledge gaps.\n2. Research tasks have clear hypotheses and measurable outcomes.\n3. Completed research measurably reduces uncertainty in subsequent planning.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 417,
       "title": "Add HOH Autonomous Innovation Engine",
       "description": "Generate innovative features, tools, or subsystems based on gaps or opportunities detected in the project.",
       "status": "pending",
-      "dependencies": [
-        361,
-        401
-      ],
+      "dependencies": [361, 401],
       "priority": "high",
       "details": "Systematic innovation generation.\n- Combine creativity engine output with opportunity detection (from metrics, user signals, technology trends).\n- Produce concrete innovation proposals with rough effort estimates and expected value.\n- Support staged validation (idea → prototype → experiment → integration).\n- Track innovation success rate over time.",
       "testStrategy": "1. Engine produces innovations that are not obvious extensions of current work.\n2. At least one innovation progresses through multiple validation stages.\n3. Innovation pipeline metrics are tracked and improve over time.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 418,
       "title": "Add HOH Agent Specialization Engine",
       "description": "Specialize agents into roles such as architect, debugger, researcher, tester, or refactorer.",
       "status": "pending",
-      "dependencies": [
-        361,
-        405
-      ],
+      "dependencies": [361, 405],
       "priority": "high",
       "details": "Role-based specialization system.\n- Define core roles with characteristic tool sets, prompts, evaluation criteria, and risk profiles.\n- Allow dynamic specialization and re-specialization based on workload and performance.\n- Support composite roles and ad-hoc teams.\n- Measure specialization effectiveness (specialists outperform generalists on role-appropriate tasks).",
       "testStrategy": "1. Specialists outperform generalists on tasks matching their role.\n2. Specialization can be changed or deepened over time.\n3. Role definitions are versioned and reviewable.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 419,
       "title": "Add HOH Agent Collaboration Graph",
       "description": "Model agent interactions and optimize collaboration patterns for maximum productivity.",
       "status": "pending",
-      "dependencies": [
-        361,
-        418
-      ],
+      "dependencies": [361, 418],
       "priority": "high",
       "details": "Collaboration modeling and optimization.\n- Build a graph of agent-to-agent interactions, handoffs, and conflicts.\n- Analyze the graph for bottlenecks, underused connections, and high-performing patterns.\n- Use analysis to suggest or automatically adjust collaboration topology.\n- Feed results into multi-agent protocol improvements.",
       "testStrategy": "1. Collaboration graph is built and updated during runs.\n2. Analysis identifies real collaboration issues.\n3. Suggested changes improve measured collaboration efficiency.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 420,
       "title": "Add HOH Agent Personality Evolution",
       "description": "Allow agent personalities to evolve based on performance, collaboration, and evaluation feedback.",
       "status": "pending",
-      "dependencies": [
-        361,
-        405,
-        427
-      ],
+      "dependencies": [361, 405, 427],
       "priority": "high",
       "details": "Personality as an evolvable trait.\n- Represent personality as a vector or set of traits with history.\n- Evolve traits using the same mechanisms as other agent capabilities (405).\n- Correlate personality changes with performance and collaboration outcomes.\n- Support 'personality archetypes' that can be cloned or hybridized.",
       "testStrategy": "1. Personality traits evolve in response to feedback.\n2. Certain personality configurations correlate with better outcomes in specific roles.\n3. Evolution preserves useful personality diversity.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 421,
       "title": "Add HOH Autonomous Creativity Scoring",
       "description": "Score creative outputs based on novelty, usefulness, and alignment with project goals.",
       "status": "pending",
-      "dependencies": [
-        361,
-        401
-      ],
+      "dependencies": [361, 401],
       "priority": "high",
       "details": "Multi-dimensional creativity evaluation.\n- Novelty: distance from existing patterns (embeddings + structural diff).\n- Usefulness: predicted or measured value (Helix scores, downstream adoption).\n- Alignment: fit with current goals, governance, and roadmap.\n- Combine into a composite creativity score used for ranking and selection.",
       "testStrategy": "1. Scoring produces consistent, explainable results.\n2. High-scoring outputs are more likely to be selected for further development.\n3. Scoring improves over time as more data is collected.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 422,
       "title": "Add HOH Autonomous Experimentation Engine",
       "description": "Run controlled experiments on architecture, agents, or algorithms to discover better approaches.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Scientific experimentation framework inside HOH.\n- Design experiments with clear hypotheses, controls, and success metrics.\n- Run experiments in simulation or isolated branches.\n- Analyze results with statistical rigor appropriate to the domain.\n- Promote winning variants into the main system and record them in OKF.",
       "testStrategy": "1. Experiment design is valid (clear hypothesis + metrics).\n2. Results are statistically sound and reproducible.\n3. Winning variants are promoted and produce measurable improvement.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 423,
       "title": "Add HOH Hypothesis Generator",
       "description": "Generate hypotheses about system behavior, performance bottlenecks, or architectural weaknesses.",
       "status": "pending",
-      "dependencies": [
-        361,
-        422
-      ],
+      "dependencies": [361, 422],
       "priority": "high",
       "details": "Automated hypothesis generation.\n- Analyze telemetry, evaluation results, code structure, and iteration history.\n- Produce testable hypotheses in a structured format.\n- Prioritize hypotheses by expected information gain and impact.\n- Feed directly into the Experimentation Engine (422).",
       "testStrategy": "1. Generator produces hypotheses that are specific and testable.\n2. Generated hypotheses cover a useful range of the system.\n3. At least some hypotheses, when tested, yield actionable insights.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 424,
       "title": "Add HOH Hypothesis Testing Engine",
       "description": "Test hypotheses using controlled experiments, simulations, and evaluation feedback.",
       "status": "pending",
-      "dependencies": [
-        361,
-        422,
-        423
-      ],
+      "dependencies": [361, 422, 423],
       "priority": "high",
       "details": "Hypothesis testing execution layer.\n- Translate hypotheses into experiments or observational studies.\n- Run tests (simulation, A/B, historical replay).\n- Apply statistical tests and record confidence.\n- Update beliefs in OKF and influence planning.",
       "testStrategy": "1. Hypotheses are tested with appropriate rigor.\n2. Results include clear accept/reject/uncertain outcomes with evidence.\n3. Belief updates are visible in subsequent planning.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 425,
       "title": "Add HOH Autonomous Theory Builder",
       "description": "Build theories about system behavior, agent dynamics, and architectural evolution.",
       "status": "pending",
-      "dependencies": [
-        361,
-        424
-      ],
+      "dependencies": [361, 424],
       "priority": "high",
       "details": "Theory construction from evidence.\n- Aggregate results from many experiments and observations.\n- Synthesize higher-level explanatory models.\n- Represent theories in a machine-readable + human-readable form (in OKF).\n- Use theories to guide future hypothesis generation and planning (strong priors).",
       "testStrategy": "1. Coherent theories are constructed from raw data.\n2. Theories make non-trivial, testable predictions that hold up.\n3. Use of theories improves planning quality over time.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 426,
       "title": "Add HOH Autonomous Concept Discovery",
       "description": "Discover new concepts, abstractions, or patterns within the codebase or architecture.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Concept discovery system.\n- Analyze code, patches, evaluations, and agent behavior for recurring or emerging abstractions.\n- Propose new named concepts with definitions and examples.\n- Add discovered concepts to OKF with provenance.\n- Use new concepts in future reasoning and code generation.",
       "testStrategy": "1. Meaningful new concepts are discovered and named.\n2. Concepts are useful in downstream tasks (planning, explanation, generation).\n3. Concept quality improves with more data.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 427,
       "title": "Add HOH Autonomous Pattern Mining",
       "description": "Mine recurring patterns from patches, evaluations, and agent behavior.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Pattern mining pipeline.\n- Extract structural, behavioral, and process patterns from the full history of HOH activity.\n- Cluster similar patterns and identify high-value ones.\n- Represent patterns in a form usable by the Pattern Application and Evolution engines.\n- Track pattern usage and success rate.",
       "testStrategy": "1. Recurring high-value patterns are automatically identified.\n2. Patterns have clear applicability conditions.\n3. Mining improves over time as more history accumulates.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 428,
       "title": "Add HOH Autonomous Pattern Application",
       "description": "Apply discovered patterns to improve architecture, code quality, or agent performance.",
       "status": "pending",
-      "dependencies": [
-        361,
-        427
-      ],
+      "dependencies": [361, 427],
       "priority": "high",
       "details": "Pattern application engine.\n- Match current situation against known good patterns.\n- Generate concrete applications (refactors, prompt changes, process adjustments).\n- Validate applications before wide use.\n- Measure lift from pattern application.",
       "testStrategy": "1. Patterns are successfully applied to new situations.\n2. Applied patterns produce measurable improvement.\n3. Inappropriate pattern applications are rejected.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 429,
       "title": "Add HOH Autonomous Pattern Evolution",
       "description": "Evolve patterns over time as the system grows and new requirements emerge.",
       "status": "pending",
-      "dependencies": [
-        361,
-        427,
-        428
-      ],
+      "dependencies": [361, 427, 428],
       "priority": "high",
       "details": "Pattern evolution.\n- Treat patterns as evolvable artifacts (similar to agents and strategies).\n- Combine, specialize, generalize, and retire patterns based on usage data and outcomes.\n- Maintain a living pattern library with version history and success metrics.",
       "testStrategy": "1. High-value patterns evolve and improve.\n2. Low-value or outdated patterns are deprecated.\n3. The pattern library grows in both quantity and quality.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 430,
       "title": "Add HOH Multi-Agent Ecosystem Manager",
       "description": "Manage the lifecycle, roles, and interactions of all agents in the HOH ecosystem.",
       "status": "pending",
-      "dependencies": [
-        361,
-        403,
-        404,
-        418
-      ],
+      "dependencies": [361, 403, 404, 418],
       "priority": "high",
       "details": "Full agent ecosystem management.\n- Track all agents (birth, specialization, performance, retirement).\n- Manage capacity, diversity, and role coverage.\n- Handle agent communication topology and shared resources.\n- Provide ecosystem-level views and interventions for governance.",
       "testStrategy": "1. Ecosystem state is always consistent and queryable.\n2. Birth/retirement/specialization events are properly orchestrated.\n3. Ecosystem health metrics are maintained and acted upon.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 431,
       "title": "Add HOH Agent Ecology Simulator",
       "description": "Simulate agent ecosystems to predict emergent behavior and optimize collaboration.",
       "status": "pending",
-      "dependencies": [
-        361,
-        430
-      ],
+      "dependencies": [361, 430],
       "priority": "high",
       "details": "Agent population simulation.\n- Model populations of agents with different profiles interacting over time.\n- Predict emergent phenomena (specialization, dominance, collaboration breakdowns).\n- Use simulation results to tune ecosystem parameters before applying them to reality.\n- Support 'what-if' experiments on ecosystem composition.",
       "testStrategy": "1. Simulation produces plausible emergent behaviors.\n2. Simulation predictions correlate with real multi-agent run outcomes.\n3. Simulation is used to improve real ecosystem configuration.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 432,
       "title": "Add HOH Autonomous Domain Expansion",
       "description": "Expand HOH into new domains such as UI design, DevOps, documentation, or research.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "medium",
       "details": "Domain expansion framework.\n- Detect when a new domain would be high-value.\n- Bootstrap minimal capability in the new domain (tools, knowledge, agent profiles).\n- Gradually increase autonomy in the new domain while maintaining safety.\n- Integrate new domain knowledge into the broader HOH system.",
       "testStrategy": "1. At least one new domain is successfully bootstrapped.\n2. Work in the new domain produces useful output.\n3. Expansion does not destabilize existing domains.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 433,
       "title": "Add HOH Autonomous Tool Creation",
       "description": "Allow HOH to design and implement new tools when existing ones are insufficient.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Autonomous tool synthesis.\n- Identify tool gaps from failed tasks or repeated workarounds.\n- Design new tool interfaces and implementations.\n- Generate, test, and integrate the new tool into the tool registry.\n- Deprecate or evolve tools via the companion retirement/evolution tasks.",
       "testStrategy": "1. A genuinely useful new tool is created and integrated.\n2. The new tool is used successfully by agents in subsequent work.\n3. Tool creation follows safety and review processes.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 434,
       "title": "Add HOH Autonomous Tool Retirement",
       "description": "Retire tools that are obsolete, redundant, or underperforming.",
       "status": "pending",
-      "dependencies": [
-        361,
-        433
-      ],
+      "dependencies": [361, 433],
       "priority": "medium",
       "details": "Tool lifecycle management (retirement side).\n- Detect low-usage, superseded, or harmful tools.\n- Safely remove or deprecate tools while updating dependent prompts and agents.\n- Archive tool history and rationale.",
       "testStrategy": "1. Obsolete tools are correctly identified.\n2. Retirement does not break legitimate ongoing work.\n3. Dependent agents and plans are updated.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 435,
       "title": "Add HOH Autonomous Tool Evolution",
       "description": "Evolve tools based on usage patterns, evaluation feedback, and emerging needs.",
       "status": "pending",
-      "dependencies": [
-        361,
-        433
-      ],
+      "dependencies": [361, 433],
       "priority": "high",
       "details": "Continuous tool improvement.\n- Collect usage telemetry and outcome data per tool.\n- Propose and apply improvements (new parameters, better error handling, performance, new capabilities).\n- Version tools and support gradual rollout.",
       "testStrategy": "1. Tool evolution produces measurable improvements in success rate or efficiency.\n2. Evolution is driven by real usage data.\n3. Tool versions are properly tracked.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 436,
       "title": "Add HOH Autonomous Workflow Optimization",
       "description": "Optimize workflows across agents, tools, and tasks for maximum efficiency.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "End-to-end workflow optimization.\n- Model current workflows (sequences of agent + tool usage).\n- Identify bottlenecks, redundant steps, and low-value work.\n- Propose and validate improved workflows.\n- Automatically adopt high-confidence improvements.",
       "testStrategy": "1. Workflow bottlenecks are correctly identified.\n2. Optimized workflows show clear efficiency or quality gains.\n3. Optimization is applied safely with rollback.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 437,
       "title": "Add HOH Autonomous Strategy Mutation",
       "description": "Mutate long-term strategies when HOH detects stagnation or new opportunities.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Strategy mutation system.\n- Monitor strategy effectiveness over time.\n- When stagnation or new opportunities are detected, generate strategic mutations.\n- Test mutations in simulation before promoting.\n- Maintain a portfolio of active and experimental strategies.",
       "testStrategy": "1. Strategy mutations are generated in response to real signals.\n2. Successful mutations improve long-term metrics.\n3. Failed mutations are retired cleanly.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 438,
       "title": "Add HOH Autonomous Strategy Fusion",
       "description": "Fuse multiple strategies into unified plans for complex multi-domain projects.",
       "status": "pending",
-      "dependencies": [
-        361,
-        437
-      ],
+      "dependencies": [361, 437],
       "priority": "high",
       "details": "Strategy combination.\n- Detect when multiple strategies are relevant to the same goal.\n- Intelligently combine them (sequencing, parallel execution, conditional branching).\n- Resolve conflicts between strategies.\n- Produce coherent unified execution plans.",
       "testStrategy": "1. Fusion produces plans that are better than using any single strategy alone.\n2. Conflicts between strategies are resolved explicitly.\n3. Fused plans execute successfully.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 439,
       "title": "Add HOH Autonomous Strategy Evolution",
       "description": "Evolve strategies over time based on performance, evaluation, and trajectory predictions.",
       "status": "pending",
-      "dependencies": [
-        361,
-        437,
-        412
-      ],
+      "dependencies": [361, 437, 412],
       "priority": "high",
       "details": "Long-term strategy evolution.\n- Treat strategies as evolvable artifacts with fitness based on real outcomes.\n- Combine successful elements from multiple strategies.\n- Retire or de-emphasize underperforming strategies.\n- Use trajectory simulation to evaluate potential strategy changes before committing.",
       "testStrategy": "1. Strategy portfolio evolves toward higher-performing strategies.\n2. Evolution is driven by evidence.\n3. The system maintains strategic diversity when appropriate.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 440,
       "title": "Add HOH Autonomous Meta-Agent",
       "description": "Create a meta-agent responsible for overseeing HOH itself and coordinating self-improvement.",
       "status": "pending",
-      "dependencies": [
-        361,
-        409,
-        410
-      ],
+      "dependencies": [361, 409, 410],
       "priority": "high",
       "details": "Meta-agent implementation.\n- A special high-privilege agent whose sole job is to improve HOH.\n- Has privileged access to HOH internals, logs, and configuration.\n- Operates under very strong governance and safety constraints.\n- Can spawn temporary sub-agents for specific meta-tasks.",
       "testStrategy": "1. Meta-agent is created and can observe HOH internals.\n2. Meta-agent successfully proposes and drives at least one self-improvement.\n3. Meta-agent actions are heavily logged and auditable.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 441,
       "title": "Add HOH Meta-Agent Reasoning Engine",
       "description": "Enable the meta-agent to reason about HOH’s architecture, agents, and long-term goals.",
       "status": "pending",
-      "dependencies": [
-        361,
-        440
-      ],
+      "dependencies": [361, 440],
       "priority": "high",
       "details": "Specialized reasoning for the meta-agent.\n- Deep models of HOH's own components and dynamics.\n- Ability to simulate 'HOH improving HOH' at multiple levels of recursion.\n- Strong focus on second-order effects and stability.",
       "testStrategy": "1. Meta-agent produces high-quality reasoning about HOH internals.\n2. Reasoning leads to proposals that are accepted by governance.\n3. Recursive reasoning does not cause instability.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 442,
       "title": "Add HOH Meta-Agent Planning Engine",
       "description": "Allow the meta-agent to generate plans for improving HOH’s internal systems.",
       "status": "pending",
-      "dependencies": [
-        361,
-        440,
-        409
-      ],
+      "dependencies": [361, 440, 409],
       "priority": "high",
       "details": "Meta-level planning.\n- Plans that target HOH components (planner, memory, evaluation, agents, etc.).\n- Heavy use of simulation and risk assessment.\n- Explicit consideration of meta-risk (risk of the improvement process itself).",
       "testStrategy": "1. Meta-plans are generated for real HOH improvement opportunities.\n2. Plans include strong validation and rollback steps.\n3. At least one meta-plan is successfully executed.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 443,
       "title": "Add HOH Meta-Agent Evaluation Engine",
       "description": "Evaluate the performance of HOH’s subsystems and generate improvement tasks.",
       "status": "pending",
-      "dependencies": [
-        361,
-        440,
-        410
-      ],
+      "dependencies": [361, 440, 410],
       "priority": "high",
       "details": "Meta-evaluation specialized for HOH internals.\n- Detailed instrumentation and analysis of every HOH component.\n- Generate specific, actionable improvement tasks (not just high-level observations).\n- Track the 'improvement of the improvement process' over time.",
       "testStrategy": "1. Meta-evaluation identifies specific, fixable weaknesses in HOH.\n2. Generated tasks are accepted into the task list and completed.\n3. HOH performance improves as a result.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 444,
       "title": "Add HOH Meta-Agent Evolution Engine",
       "description": "Allow the meta-agent to evolve its own reasoning, heuristics, and strategies.",
       "status": "pending",
-      "dependencies": [
-        361,
-        440,
-        411
-      ],
+      "dependencies": [361, 440, 411],
       "priority": "high",
       "details": "Meta-agent self-evolution.\n- The meta-agent can apply the same evolution mechanisms it uses on other agents to itself (with extra caution).\n- Focus on improving meta-reasoning quality, planning horizon, and safety judgment.\n- Extremely conservative promotion of changes to the meta-agent.",
       "testStrategy": "1. Meta-agent evolves in ways that improve its own effectiveness.\n2. Self-evolution is slower and more heavily validated than regular agent evolution.\n3. Evolution history of the meta-agent is especially well documented.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 445,
       "title": "Add HOH Autonomous Future Simulation Engine",
       "description": "Simulate future states of the project, agents, and architecture to guide long-term planning.",
       "status": "pending",
-      "dependencies": [
-        361,
-        412
-      ],
+      "dependencies": [361, 412],
       "priority": "high",
       "details": "Comprehensive future simulation.\n- Simulate project state, agent populations, knowledge base, and architecture under different policy choices.\n- Support multi-year horizons with appropriate abstraction.\n- Produce scenario trees and key decision points.\n- Directly feed the Roadmap Generator and Strategy engines.",
       "testStrategy": "1. Multi-step future simulations run successfully.\n2. Simulated futures are useful for distinguishing good vs bad long-term decisions.\n3. Simulation is regularly used in real planning.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 446,
       "title": "Add HOH Autonomous Creativity Ecosystem",
       "description": "Create an ecosystem where agents collaborate to generate creative solutions and innovations.",
       "status": "pending",
-      "dependencies": [
-        361,
-        401,
-        417,
-        419
-      ],
+      "dependencies": [361, 401, 417, 419],
       "priority": "high",
       "details": "Creativity as an ecosystem property.\n- Multiple agents with different creativity profiles work together on idea generation.\n- Structured collaboration patterns (brainstorming, critique, combination, selection).\n- Ideas are evolved, combined, and stress-tested inside the ecosystem before being promoted.\n- Measure and optimize the 'creative output' of the entire ecosystem.",
       "testStrategy": "1. The ecosystem produces higher-quality and more diverse ideas than individual agents alone.\n2. Collaboration patterns for creativity are effective.\n3. Ecosystem creativity metrics trend upward over time.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 447,
       "title": "Add HOH Autonomous Innovation Scoring",
       "description": "Score innovations based on novelty, feasibility, and alignment with long-term goals.",
       "status": "pending",
-      "dependencies": [
-        361,
-        417,
-        421
-      ],
+      "dependencies": [361, 417, 421],
       "priority": "high",
       "details": "Innovation-specific scoring.\n- Extend creativity scoring with long-term value, platform potential, and strategic fit.\n- Include expected cost, time-to-value, and risk.\n- Use scores to prioritize which innovations receive resources for prototyping and integration.",
       "testStrategy": "1. Scoring correctly ranks innovations by overall value.\n2. High-scoring innovations are more likely to be pursued and succeed.\n3. Scoring model improves with more innovation outcomes data.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 448,
       "title": "Add HOH Autonomous Innovation Evolution",
       "description": "Evolve innovations over time as new insights and evaluation feedback emerge.",
       "status": "pending",
-      "dependencies": [
-        361,
-        417,
-        447
-      ],
+      "dependencies": [361, 417, 447],
       "priority": "high",
       "details": "Innovation maturation.\n- Treat promising innovations as living artifacts that can be refined, combined, or pivoted.\n- Use evaluation feedback from prototypes and experiments to evolve the innovation concept itself.\n- Maintain an innovation portfolio with stages (idea, validated, prototype, integrated, mature).",
       "testStrategy": "1. Innovations evolve from raw ideas into higher-maturity forms.\n2. Evolution is driven by real evidence.\n3. The portfolio shows a healthy pipeline of innovations at different stages.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 449,
       "title": "Add HOH Autonomous Innovation Fusion",
       "description": "Fuse multiple innovations into unified architectural or system-level improvements.",
       "status": "pending",
-      "dependencies": [
-        361,
-        417,
-        438
-      ],
+      "dependencies": [361, 417, 438],
       "priority": "high",
       "details": "Innovation combination at scale.\n- Identify complementary or synergistic innovations.\n- Design fused solutions that are greater than the sum of parts.\n- Handle the increased complexity and risk of fused innovations.\n- Produce integrated implementation plans.",
       "testStrategy": "1. Fusion produces innovations that are clearly superior to applying the parts separately.\n2. Fused innovations are successfully implemented.\n3. Fusion process manages complexity appropriately.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 450,
       "title": "Add HOH Meta-HOH Layer",
       "description": "Implement a higher-order HOH layer that oversees and improves the primary HOH system, enabling recursive self-improvement.",
       "status": "pending",
-      "dependencies": [
-        361,
-        440
-      ],
+      "dependencies": [361, 440],
       "priority": "high",
       "details": "The Meta-HOH (HOH-of-HOH) layer.\n- A higher-order outer loop that treats the primary HOH as its 'inner harness'.\n- Responsible for long-term evolution of HOH's own architecture, governance, evaluation, and improvement processes.\n- Operates on even longer timescales and with even stronger safety constraints.\n- This is the ultimate recursive self-improvement mechanism described in the HOH vision.",
       "testStrategy": "1. Meta-HOH layer is implemented as a distinct (but related) system to primary HOH.\n2. Meta-HOH can observe, evaluate, and propose changes to primary HOH.\n3. At least one improvement originating from Meta-HOH is successfully applied to primary HOH.\n4. The recursive structure remains stable and auditable.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 451,
       "title": "361.1 Implement HOH Architecture Evolution Engine",
       "description": "Core engine that proposes and applies architectural changes. Analyze current architecture, propose refactors, generate patches for new layers or module reorganizations. Foundation for 361 batch.",
       "status": "pending",
-      "dependencies": [
-        327.0
-      ],
+      "dependencies": [327.0],
       "priority": "high",
       "details": "Create src/hoh/architecture_evolution.rs\n- Define ArchitectureProposal, ArchitectureChange structs\n- Implement propose_architecture_evolution() using current module structure + OKF + past patches\n- Support common architectural moves: new layer extraction, module split, trait introduction, dependency inversion\n- Integrate with existing PatchSet and TaskEvolutionEngine\n- Basic validation + simulation support\n- Expose via HOHPlanner / outer loop\nTest: Engine produces at least one non-trivial proposal in simulation.",
       "testStrategy": "Engine produces at least one non-trivial architectural proposal that passes basic validation. Integration with planner works.",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 452,
       "title": "361.2 Add HOH Self-Refinement Loop",
       "description": "Allow HOH to improve its own code and algorithms (meta-level changes to the HOH implementation itself).",
       "status": "pending",
-      "dependencies": [
-        361.1
-      ],
+      "dependencies": [361.1],
       "priority": "high",
       "details": "Build on Architecture Evolution + Task Evolution.\n- Detect when HOH internals can be improved (planner heuristics, scoring, mutation rules, etc.)\n- Generate self-modification proposals\n- Strong safety: require simulation + high confidence before applying\n- Track meta-improvement rate\nIntegrate with continual_improvement.rs and evolution_engine.",
       "testStrategy": "Self-refinement produces measurable improvement in a subsequent iteration (simulated).",
-      "subtasks": []
+      "subtasks": [],
     },
     {
       "id": 453,
@@ -2152,33 +1926,33 @@
           "id": 453.1,
           "title": "Define CreativityIdea struct and storage",
           "status": "pending",
-          "dependencies": []
+          "dependencies": [],
         },
         {
           "id": 453.2,
           "title": "Implement generate_ideas core",
           "status": "pending",
-          "dependencies": []
+          "dependencies": [],
         },
         {
           "id": 453.3,
           "title": "Add multi-factor scoring",
           "status": "pending",
-          "dependencies": []
+          "dependencies": [],
         },
         {
           "id": 453.4,
           "title": "Wire Creativity into HOHPlanner",
           "status": "pending",
-          "dependencies": []
+          "dependencies": [],
         },
         {
           "id": 453.5,
           "title": "Persist ideas per iteration",
           "status": "pending",
-          "dependencies": []
-        }
-      ]
-    }
-  ]
+          "dependencies": [],
+        },
+      ],
+    },
+  ],
 }

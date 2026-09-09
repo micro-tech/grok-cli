@@ -81,6 +81,35 @@ pub struct HOHPlan {
     /// 410: Meta-evaluation of HOH performance
     #[serde(default)]
     pub meta_evaluation: Option<crate::hoh::meta_evaluation::MetaEvaluation>,
+
+    /// 361.8: Multi-agent simulation outcomes / what-if predictions for this cycle
+    #[serde(default)]
+    pub simulation_outcomes: Vec<crate::hoh::multi_agent_simulation::SimulationOutcome>,
+
+    /// 361.7 + 361.8: Results from the unified Multi-Agent Orchestrator (delegation, simulation, skill evolution)
+    #[serde(default)]
+    pub orchestration_results: Vec<crate::hoh::multi_agent_orchestrator::OrchestrationResult>,
+
+    /// 361.9: Long-term strategic goals that span many iterations (Harness-of-Harness long-horizon direction)
+    #[serde(default)]
+    pub long_term_strategies: Vec<crate::hoh::long_term_strategy::StrategicGoal>,
+
+    /// 361.11: Transferable patterns extracted from this project for use in other projects
+    #[serde(default)]
+    pub cross_project_patterns: Vec<crate::hoh::cross_project_knowledge::TransferablePattern>,
+
+    /// 361.11: Patterns from other projects that look applicable here (via OKF / memory)
+    #[serde(default)]
+    pub cross_project_transfers: Vec<crate::hoh::cross_project_knowledge::CrossProjectTransfer>,
+
+    /// 361.0101 / 370: Multi-Project Orchestrator results (work that spans multiple projects)
+    #[serde(default)]
+    pub multi_project_result: Option<crate::hoh::multi_project_orchestrator::MultiProjectOrchestrationResult>,
+
+    /// 361.0101: Projects currently known to the multi-project orchestrator in this plan
+    #[serde(default)]
+    pub registered_projects: Vec<crate::hoh::multi_project_orchestrator::ProjectRef>,
+
     pub created_at: u64,
 }
 
