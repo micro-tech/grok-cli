@@ -110,6 +110,10 @@ pub struct HOHPlan {
     #[serde(default)]
     pub registered_projects: Vec<crate::hoh::multi_project_orchestrator::ProjectRef>,
 
+    /// 453 / 401: Creative ideas turned into real TaskMutation::AddTask (so they become actual tasks)
+    #[serde(default)]
+    pub creative_task_mutations: Vec<crate::hoh::task_mutation::TaskMutation>,
+
     pub created_at: u64,
 }
 
