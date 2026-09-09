@@ -51,6 +51,36 @@ pub struct HOHPlan {
     /// 361.5: Continual / meta improvement suggestions generated at the end of previous cycle
     #[serde(default)]
     pub improvement_suggestions: Vec<String>,
+    /// 401: Novel creative ideas generated this cycle
+    #[serde(default)]
+    pub creative_ideas: Vec<crate::hoh::creativity::CreativityIdea>,
+    /// 402: Generative architecture designs proposed this cycle (built on top of 401)
+    #[serde(default)]
+    pub architecture_designs: Vec<crate::hoh::generative_designer::ArchitectureDesign>,
+    /// 403: Agent retirement / hibernation decisions and events this cycle
+    #[serde(default)]
+    pub agent_lifecycle_events: Vec<crate::hoh::agent_lifecycle::LifecycleEvent>,
+    /// 404: Agent births — newly spawned specialized agents this cycle
+    #[serde(default)]
+    pub agent_birth_events: Vec<crate::hoh::agent_birth::BirthEvent>,
+    /// 405: Agent evolution events this cycle
+    #[serde(default)]
+    pub agent_evolution_events: Vec<crate::hoh::agent_evolution::EvolutionEvent>,
+    /// 406: Multi-domain reasoning outputs
+    #[serde(default)]
+    pub multi_domain_outputs: Vec<crate::hoh::multi_domain::DomainOutput>,
+    /// 407: Governance decisions / blocks
+    #[serde(default)]
+    pub governance_decisions: Vec<String>,
+    /// 408: Ethics check results
+    #[serde(default)]
+    pub ethics_checks: Vec<String>,
+    /// 409: Meta-plans for improving HOH itself
+    #[serde(default)]
+    pub meta_plans: Vec<crate::hoh::meta_planning::MetaPlan>,
+    /// 410: Meta-evaluation of HOH performance
+    #[serde(default)]
+    pub meta_evaluation: Option<crate::hoh::meta_evaluation::MetaEvaluation>,
     pub created_at: u64,
 }
 
@@ -97,6 +127,18 @@ pub struct EvaluationReport {
     pub avg_diff_length: f32,
     #[serde(default)]
     pub test_passed: Option<bool>,
+
+    // === Rich testing feedback (next HOH hardening step) ===
+    /// Full or substantial raw test output (from run_basic_tests or real harness test run).
+    /// This is what gets fed into continual improvement and 361.5 meta loops.
+    /// Previously we only kept a bool + tiny summary — now we keep the actual output
+    /// so the planner / meta systems can see real compiler errors, failures, etc.
+    #[serde(default)]
+    pub test_output: Option<String>,
+
+    /// A concise but informative summary extracted from the test run.
+    #[serde(default)]
+    pub test_summary: String,
 }
 
 impl IterationState {

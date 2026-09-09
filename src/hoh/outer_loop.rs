@@ -80,6 +80,31 @@ impl HOHManager {
             );
         }
 
+        // 405-410 new engines
+        if !plan.agent_evolution_events.is_empty() {
+            tracing::info!(count = plan.agent_evolution_events.len(), "HOH (405): {} agent evolution events", plan.agent_evolution_events.len());
+        }
+        if !plan.multi_domain_outputs.is_empty() {
+            tracing::info!(count = plan.multi_domain_outputs.len(), "HOH (406): multi-domain reasoning across {} domains", plan.multi_domain_outputs.len());
+        }
+        if !plan.governance_decisions.is_empty() {
+            tracing::info!(count = plan.governance_decisions.len(), "HOH (407): governance decisions/blocks");
+        }
+        if !plan.ethics_checks.is_empty() {
+            tracing::info!(count = plan.ethics_checks.len(), "HOH (408): ethics constraints triggered");
+        }
+        if !plan.meta_plans.is_empty() {
+            tracing::info!(count = plan.meta_plans.len(), "HOH (409): {} meta-plans for HOH self-improvement", plan.meta_plans.len());
+        }
+        if let Some(eval) = &plan.meta_evaluation {
+            tracing::info!(
+                health = eval.overall_health,
+                improvement = eval.improvement_rate,
+                "HOH (410): meta-evaluation health={:.2} improvement_rate={:.2}",
+                eval.overall_health, eval.improvement_rate
+            );
+        }
+
         // Phase 2: Refactor & Materialize (new explicit 361.3/361.4 phase)
         state.status = IterationStatus::Executing; // reuse for now; could add Refactoring status later
         let refactor_patches = self.refactor_materialize_phase(&plan).await?;
@@ -99,38 +124,96 @@ impl HOHManager {
             );
         }
 
-        // Persist 361.5 suggestions back into the plan for the next cycle's goal injection
-        if let Some(plan_mut) = &mut state.plan {
-            plan_mut.improvement_suggestions = improvements.clone();
+        // Phase 4: Test (297.6)
+        // Use the dedicated testing module for rich, structured results.
+        // This gives us raw_output + failure hints that flow into EvaluationReport + continual improvement.
+        state.status = IterationStatus::Testing;
+
+        let test_result = crate::hoh::testing::run_testing(&mut state, &self.data_dir).await
+            .unwrap_or_else(|e| crate::hoh::testing::TestRunResult {
+                passed: false,
+                summary: format!("testing module error: {}", e),
+                raw_output: format!("error: {}", e),
+                failing_items: vec![e.to_string()],
+                exit_code: None,
+            });
+
+        let test_passed = Some(test_result.passed);
+        let test_summary = test_result.summary.clone();
+        let test_output = Some(test_result.raw_output.clone());
+
+        {
+            let label = if test_result.passed { "PASSED" } else { "FAILED" };
+            state.summary = Some(format!(
+                "{} | Tests: {} — {}",
+                state.summary.clone().unwrap_or_default(),
+                label,
+                test_summary
+            ));
+
+            if test_result.passed {
+                tracing::info!("HOH: Tests passed — {}", test_summary);
+            } else {
+                tracing::warn!(
+                    "HOH: Tests failed — {} ({} failure hints)",
+                    test_summary,
+                    test_result.failing_items.len()
+                );
+            }
         }
 
-        // Phase 4: Test (297.6)
-        state.status = IterationStatus::Testing;
-        let (test_passed, _test_summary) = match self.run_basic_tests().await {
-            Ok((passed, summary)) => {
-                let label = if passed { "PASSED" } else { "FAILED" };
-                state.summary = Some(format!(
-                    "{} | Tests: {} — {}",
-                    state.summary.clone().unwrap_or_default(),
-                    label,
-                    summary
-                ));
-                if passed {
-                    tracing::info!("HOH: Tests passed — {}", summary);
-                } else {
-                    tracing::warn!("HOH: Tests failed — {}", summary);
+        // 361.5 feedback: turn rich test failure data into concrete next-cycle goals
+        // This is the key part — "tests failed" now produces actionable hints instead of just a bool.
+        if let Some(false) = test_passed {
+            if let Some(output) = &test_output {
+                let mut failure_hints: Vec<String> = vec![];
+                for line in output.lines() {
+                    let l = line.to_lowercase();
+                    if l.contains("error") || l.contains("failed") || l.contains("assertion") {
+                        let hint = line.trim().chars().take(110).collect::<String>();
+                        if !hint.is_empty() && failure_hints.len() < 4 {
+                            failure_hints.push(hint);
+                        }
+                    }
                 }
-                (Some(passed), summary)
+
+                if let Some(plan_mut) = &mut state.plan {
+                    if !failure_hints.is_empty() {
+                        plan_mut.improvement_suggestions.push(format!(
+                            "361.5/TEST-FAIL: Recent failures: {}. Add or strengthen test_strategy for the affected areas.",
+                            failure_hints.join(" || ")
+                        ));
+                    }
+                    if !test_summary.is_empty() {
+                        plan_mut.improvement_suggestions.push(
+                            format!("361.5/TEST-SUMMARY: {}", test_summary.chars().take(180).collect::<String>())
+                        );
+                    }
+                }
+
+                tracing::warn!(
+                    count = failure_hints.len(),
+                    "HOH: injected real test failure signals into next-cycle improvement suggestions"
+                );
             }
-            Err(e) => {
-                tracing::warn!("HOH: Could not run tests: {}", e);
-                (None, format!("test run error: {}", e))
+        }
+
+        // Persist 361.5 suggestions (including any fresh test-failure hints) for the next cycle's goal injection
+        if let Some(plan_mut) = &mut state.plan {
+            // Merge the early improvements with any new test-failure hints we just added
+            let mut all_improvements = improvements.clone();
+            for s in &plan_mut.improvement_suggestions {
+                if !all_improvements.contains(s) {
+                    all_improvements.push(s.clone());
+                }
             }
-        };
+            plan_mut.improvement_suggestions = all_improvements;
+        }
 
         // Phase 5: Evaluate (297.7 + 361 meta) — now with patch metrics + test result + Helix
+        // Rich test data is now passed through so continual improvement and planners can see real errors.
         state.status = IterationStatus::Evaluating;
-        let eval = self.evaluate_phase(&plan, &state.patches, test_passed).await?;
+        let eval = self.evaluate_phase(&plan, &state.patches, test_passed, test_summary.clone(), test_output.clone()).await?;
         state.evaluations.push(eval.clone());
 
         // Run independent Helix evaluation for objective cross-check (297.7)
@@ -294,6 +377,16 @@ impl HOHManager {
                 generated_patch_stubs: vec!["stub: planner scoring feedback (B)".to_string()],
                 specialized_agent_routes: vec!["routed to PlannerSpecialist: scoring feedback".to_string()],
                 improvement_suggestions: vec![],
+                creative_ideas: vec![],
+                architecture_designs: vec![],
+                agent_lifecycle_events: vec![],
+                agent_birth_events: vec![],
+                agent_evolution_events: vec![],
+                multi_domain_outputs: vec![],
+                governance_decisions: vec![],
+                ethics_checks: vec![],
+                meta_plans: vec![],
+                meta_evaluation: None,
                 created_at: chrono::Utc::now().timestamp() as u64,
             })
         }
@@ -427,7 +520,14 @@ impl HOHManager {
         Ok(patches)
     }
 
-    async fn evaluate_phase(&self, plan: &HOHPlan, patches: &[PatchSet], test_passed: Option<bool>) -> Result<EvaluationReport, HOHError> {
+    async fn evaluate_phase(
+        &self,
+        plan: &HOHPlan,
+        patches: &[PatchSet],
+        test_passed: Option<bool>,
+        test_summary: String,
+        test_output: Option<String>,
+    ) -> Result<EvaluationReport, HOHError> {
         // 297.7 + 361 meta evaluation
         let mut notes = vec!["327 tasklist + 361 closed loop active".to_string()];
 
@@ -478,7 +578,7 @@ impl HOHManager {
         }
 
         // Cap at 0.95 for now
-        meta = meta.min(0.95);
+        meta = meta.min(0.95f32);
 
         Ok(EvaluationReport {
             iteration_id: 1,
@@ -491,6 +591,9 @@ impl HOHManager {
             files_changed_count,
             avg_diff_length,
             test_passed,
+            // New rich testing fields
+            test_summary,
+            test_output,
         })
     }
 
@@ -581,7 +684,13 @@ impl HOHManager {
     /// Next natural step: real cargo test integration (297.6 + validation of 361 changes).
     /// Runs `cargo test --quiet` and returns (passed, summary).
     /// Richer feedback now flows into EvaluationReport and 361.5 meta suggestions.
-    async fn run_basic_tests(&self) -> Result<(bool, String), HOHError> {
+    /// Runs `cargo test --quiet` (or equivalent) and returns a rich triple:
+    /// (passed, concise_summary, full_raw_output)
+    ///
+    /// The full_raw_output is what we now surface into EvaluationReport so that
+    /// continual_improvement, meta loops, and planners can see the actual compiler
+    /// errors / test failures instead of "blank" or one-line hints.
+    async fn run_basic_tests(&self) -> Result<(bool, String, String), HOHError> {
         use std::process::Command;
 
         tracing::info!("HOH: running basic cargo test for validation...");
@@ -597,31 +706,44 @@ impl HOHManager {
                 let stdout = String::from_utf8_lossy(&out.stdout);
                 let stderr = String::from_utf8_lossy(&out.stderr);
 
-                // Try to extract a simple summary (test count or "ok"/"FAILED")
+                let stdout_clean = stdout.trim();
+                let stderr_clean = stderr.trim();
+
+                // Rich summary for humans / quick logs
                 let summary = if success {
-                    if stdout.contains("test result: ok") || stderr.contains("test result: ok") {
-                        "cargo test: all passed".to_string()
+                    if stdout_clean.contains("test result: ok") || stderr_clean.contains("test result: ok") {
+                        "cargo test: PASSED".to_string()
                     } else {
-                        format!("cargo test: PASSED ({} bytes output)", stdout.len() + stderr.len())
+                        format!("cargo test: PASSED ({} bytes output)", stdout_clean.len() + stderr_clean.len())
                     }
                 } else {
-                    let fail_hint = stderr.lines()
-                        .find(|l| l.contains("FAILED") || l.contains("error") || l.contains("test "))
-                        .unwrap_or("see logs");
-                    format!("cargo test: FAILED — {}", fail_hint.chars().take(120).collect::<String>())
+                    let combined = format!("{}\n{}", stderr_clean, stdout_clean);
+                    let tail = if combined.len() > 800 {
+                        &combined[combined.len()-800..]
+                    } else { &combined };
+                    format!("cargo test: FAILED — last output: {}", tail.chars().take(400).collect::<String>())
                 };
+
+                // Full rich output (this is the important new thing for the meta loop)
+                let full_output = format!(
+                    "=== run_basic_tests (HOH) ===\nExit: {}\nSTDOUT:\n{}\nSTDERR:\n{}\n=== end ===",
+                    if success { "0" } else { "non-zero" },
+                    if stdout_clean.is_empty() { "(empty)" } else { stdout_clean },
+                    if stderr_clean.is_empty() { "(empty)" } else { stderr_clean }
+                );
 
                 if success {
                     tracing::info!("HOH: cargo test PASSED — {}", summary);
                 } else {
                     tracing::warn!("HOH: cargo test FAILED — {}", summary);
                 }
-                Ok((success, summary))
+
+                Ok((success, summary, full_output))
             }
             Err(e) => {
                 tracing::warn!("HOH: failed to invoke cargo test: {}", e);
-                // In simulation or when cargo not available, treat as non-fatal (optimistic)
-                Ok((true, format!("cargo test unavailable (simulation): {}", e)))
+                let err = format!("cargo test unavailable (simulation): {}", e);
+                Ok((true, err.clone(), err))
             }
         }
     }

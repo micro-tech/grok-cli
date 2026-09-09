@@ -65,5 +65,8 @@ pub async fn evaluate_with_helix(patches: &[PatchSet]) -> EvaluationReport {
         files_changed_count: files_changed,
         avg_diff_length: avg_diff,
         test_passed: None,
+        // New rich testing fields
+        test_summary: String::new(),
+        test_output: None,
     }
 }

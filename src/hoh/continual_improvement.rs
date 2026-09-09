@@ -103,15 +103,67 @@ pub async fn generate_improvements(state: &IterationState) -> Vec<String> {
         if let Some(passed) = last_eval.test_passed {
             if !passed {
                 improvements.push("361.5: Tests failed last cycle — raise priority on test_strategy tasks and add more validation before materialization.".to_string());
+
+                // NEW: Use the rich test_output if available (the key "no more blank" win)
+                if let Some(output) = &last_eval.test_output {
+                    let lower = output.to_lowercase();
+                    // Extract crude module / test hints so the planner can act on real failures
+                    let mut hints = vec![];
+                    for line in output.lines().take(30) {
+                        let l = line.to_lowercase();
+                        if l.contains("error") || l.contains("failed") || l.contains("assertion") {
+                            if let Some(hint) = line.split_whitespace().take(6).collect::<Vec<_>>().get(0..3) {
+                                hints.push(hint.join(" "));
+                            }
+                        }
+                        if hints.len() >= 3 { break; }
+                    }
+                    if !hints.is_empty() {
+                        improvements.push(format!(
+                            "361.5: Recent test failures included hints like: {}. Prioritize adding regression coverage for these areas.",
+                            hints.join(" | ")
+                        ));
+                    }
+
+                    // If the output mentions specific crates or modules, suggest targeted test_strategy work
+                    if lower.contains("src/hoh") || lower.contains("planner") || lower.contains("refactor") {
+                        improvements.push("361.5: Failures touched HOH core (planner/refactoring). Strongly boost tasks that add test_strategy to high-priority HOH modules.".to_string());
+                    }
+                }
             } else {
                 improvements.push("361.5: Tests passed — safe to increase confidence threshold for refactoring actions slightly.".to_string());
             }
+        }
+
+        // Also surface the test_summary when we have rich data
+        if !last_eval.test_summary.is_empty() && last_eval.test_summary.len() > 20 {
+            improvements.push(format!("361.5: Test summary from last run: {}", last_eval.test_summary.chars().take(180).collect::<String>()));
         }
     }
 
     // === Cross-cutting meta suggestions ===
     if state.patches.len() > 5 {
         improvements.push("Add a lightweight patch quality / diff-size metric to EvaluationReport".to_string());
+    }
+
+    // === 401: Creative ideas feedback ===
+    if let Some(plan) = &state.plan {
+        if !plan.creative_ideas.is_empty() {
+            let high_novelty = plan.creative_ideas.iter().filter(|i| i.novelty_score > 0.7).count();
+            improvements.push(format!(
+                "401: {} creative ideas generated this cycle ({} high-novelty). Consider promoting top ideas into tasks or experiments.",
+                plan.creative_ideas.len(), high_novelty
+            ));
+            // Surface the best one as a direct meta-suggestion
+            if let Some(best) = plan.creative_ideas.iter().max_by(|a, b| a.overall_score.partial_cmp(&b.overall_score).unwrap()) {
+                if best.overall_score > 0.68 {
+                    improvements.push(format!(
+                        "401: Top creative idea candidate — \"{}\". Score {:.2}. Consider turning into a 40x task.",
+                        best.title, best.overall_score
+                    ));
+                }
+            }
+        }
     }
 
     // Deduplicate while preserving order

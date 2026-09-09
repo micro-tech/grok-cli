@@ -12,6 +12,16 @@ use crate::hoh::evolution_engine::TaskEvolutionEngine;
 use crate::hoh::architecture_evolution::ArchitectureEvolutionEngine;
 use crate::hoh::autonomous_refactoring::AutonomousRefactoringEngine;
 use crate::hoh::specialized_agents::execute_with_specialized_agent;
+use crate::hoh::creativity::CreativityEngine;
+use crate::hoh::generative_designer::GenerativeArchitectureDesigner;
+use crate::hoh::agent_lifecycle::{AgentLifecycleManager, RetirementAction};
+use crate::hoh::agent_birth::AgentBirthSystem;
+use crate::hoh::agent_evolution::AgentEvolutionSystem;
+use crate::hoh::multi_domain::MultiDomainReasoner;
+use crate::hoh::governance::GovernanceEngine;
+use crate::hoh::ethics::EthicsEngine;
+use crate::hoh::meta_planning::MetaPlanningEngine;
+use crate::hoh::meta_evaluation::MetaEvaluationEngine;
 use std::collections::HashSet;
 use std::path::PathBuf;
 
@@ -179,6 +189,242 @@ impl HOHPlanner {
             }
         }
 
+        // 403: Agent Lifecycle Management — performance tracking + retirement/hibernation
+        let mut lifecycle_mgr = AgentLifecycleManager::new(self.adapter.is_simulation());
+
+        // Seed agents from this cycle's high-confidence refactoring + specialized routing
+        for action in &refactoring_actions {
+            if action.confidence >= 0.65 {
+                let short_role = action.title.chars().take(24).collect::<String>();
+                let agent_id = format!("refactor-{}", action.id.replace(|c: char| !c.is_alphanumeric(), ""));
+                lifecycle_mgr.register_agent(&agent_id, format!("{} (361.3)", short_role));
+            }
+        }
+        for (idx, route) in specialized_routes.iter().enumerate() {
+            let agent_id = format!("specialized-{}", idx);
+            lifecycle_mgr.register_agent(&agent_id, "SpecializedSubAgent3614".to_string());
+
+            // Seed a synthetic outcome signal from the routing message
+            let success = route.contains("0.7") || route.contains("0.8") || route.contains("high");
+            lifecycle_mgr.record_outcome(&agent_id, success, Some(0.72), 45.0);
+        }
+
+        // Record any historical signals we have from the completion tracker (lightweight)
+        let stats = self.completion_tracker.get_stats();
+        if stats.total_completed > 0 && !lifecycle_mgr.agents.is_empty() {
+            for (i, (_id, agent)) in lifecycle_mgr.agents.iter_mut().enumerate() {
+                if i % 2 == 0 {
+                    let q = if stats.high_quality_count > 0 { 0.78 } else { 0.55 };
+                    agent.metrics.record_outcome(true, Some(q), 30.0);
+                }
+            }
+        }
+
+        let retirement_decisions = lifecycle_mgr.evaluate_retirement();
+        let mut lifecycle_events: Vec<crate::hoh::agent_lifecycle::LifecycleEvent> = vec![];
+
+        for decision in &retirement_decisions {
+            match decision.suggested_action {
+                RetirementAction::Retire => {
+                    if let Some(ev) = lifecycle_mgr.retire_agent(&decision.agent_id, &decision.reason) {
+                        lifecycle_events.push(ev.clone());
+                        tracing::info!(
+                            "HOH (403): Retired agent {} — {} (conf {:.2})",
+                            decision.agent_id, decision.reason, decision.confidence
+                        );
+                    }
+                }
+                RetirementAction::Hibernate => {
+                    if let Some(ev) = lifecycle_mgr.hibernate_agent(&decision.agent_id) {
+                        lifecycle_events.push(ev);
+                    }
+                }
+                RetirementAction::Monitor => {}
+            }
+        }
+
+        if !lifecycle_events.is_empty() {
+            tracing::info!(
+                count = lifecycle_events.len(),
+                "HOH (403): Agent lifecycle generated {} retirement/hibernation events",
+                lifecycle_events.len()
+            );
+            for ev in &lifecycle_events {
+                tracing::info!("  → 403 event: {} — {}", ev.action, ev.reason);
+            }
+        }
+
+        // 401: Autonomous Creativity Engine
+        let mut creativity_engine = CreativityEngine::new(self.adapter.is_simulation());
+        let creative_ideas = creativity_engine
+            .generate_ideas(&goals, &selected.iter().map(|t| t.title.clone()).collect::<Vec<_>>(), 5)
+            .await
+            .unwrap_or_default();
+
+        if !creative_ideas.is_empty() {
+            tracing::info!(
+                count = creative_ideas.len(),
+                "HOH (401): generated {} creative ideas",
+                creative_ideas.len()
+            );
+            for idea in &creative_ideas {
+                if idea.overall_score > 0.65 {
+                    tracing::info!(
+                        "  → Creative idea: {} (score {:.2}, novelty {:.2})",
+                        idea.title, idea.overall_score, idea.novelty_score
+                    );
+                }
+            }
+            creativity_engine.incorporate_ideas(&creative_ideas);
+        }
+
+        // 402: Generative Architecture Designer (builds directly on 401 CreativityEngine)
+        let mut generative_designer = GenerativeArchitectureDesigner::new(self.adapter.is_simulation());
+        let architecture_designs = generative_designer
+            .generate_designs(
+                &goals,
+                &selected.iter().map(|t| t.title.clone()).collect::<Vec<_>>(),
+                &creative_ideas,
+                3,
+            )
+            .await
+            .unwrap_or_default();
+
+        if !architecture_designs.is_empty() {
+            tracing::info!(
+                count = architecture_designs.len(),
+                "HOH (402): generated {} generative architecture designs",
+                architecture_designs.len()
+            );
+            for d in &architecture_designs {
+                if d.overall_score > 0.60 {
+                    tracing::info!(
+                        "  → Architecture design: {} (score {:.2}, {} new modules)",
+                        d.title,
+                        d.overall_score,
+                        d.new_modules.len()
+                    );
+                }
+            }
+            generative_designer.incorporate_designs(&architecture_designs);
+        }
+
+        // 404: Agent Birth System — spawn new specialized agents when needs or opportunities are detected
+        // Reuses the lifecycle_mgr from 403 so we can revive retired slots
+        let birth_system = AgentBirthSystem::new(self.adapter.is_simulation());
+
+        // Simple heuristic for recent pressure (can be made richer later)
+        let recent_failures = if self.completion_tracker.get_stats().high_quality_count == 0 { 2 } else { 0 };
+
+        let birth_events = birth_system
+            .detect_and_birth(
+                &goals,
+                &selected.iter().map(|t| t.id).collect::<Vec<_>>(),
+                &creative_ideas,
+                &architecture_designs,
+                &mut lifecycle_mgr,
+                recent_failures,
+            )
+            .await
+            .unwrap_or_default();
+
+        if !birth_events.is_empty() {
+            tracing::info!(
+                count = birth_events.len(),
+                "HOH (404): birthed {} new specialized agents",
+                birth_events.len()
+            );
+            for ev in &birth_events {
+                tracing::info!(
+                    "  → 404 birth: {} ({}) — {} (reused slot: {})",
+                    ev.role,
+                    ev.agent_id,
+                    ev.reason,
+                    ev.used_retired_slot
+                );
+            }
+        }
+
+        // 405: Agent Evolution
+        let mut evolution_system = AgentEvolutionSystem::new(self.adapter.is_simulation());
+        let lifecycle_signals: Vec<(String, f32, f32)> = lifecycle_mgr
+            .agents
+            .iter()
+            .map(|(id, a)| (id.clone(), a.metrics.success_rate, a.metrics.avg_quality))
+            .collect();
+        let evolution_events = evolution_system
+            .evolve_agents(&lifecycle_signals)
+            .await
+            .unwrap_or_default();
+
+        if !evolution_events.is_empty() {
+            tracing::info!(
+                count = evolution_events.len(),
+                "HOH (405): applied {} agent evolution events",
+                evolution_events.len()
+            );
+        }
+
+        // 406: Multi-Domain Reasoning
+        let multi_domain = MultiDomainReasoner::new(self.adapter.is_simulation());
+        let multi_domain_outputs = multi_domain
+            .reason_across_domains(
+                &goals,
+                &selected.iter().map(|t| t.title.clone()).collect::<Vec<_>>(),
+            )
+            .await
+            .unwrap_or_default();
+
+        // 407: Governance
+        let mut governance = GovernanceEngine::new(self.adapter.is_simulation());
+        let gov_blocked = governance
+            .evaluate_proposals(
+                &refactoring_actions.iter().map(|a| a.title.clone()).collect::<Vec<_>>(),
+            )
+            .await
+            .unwrap_or_default();
+        let governance_decisions: Vec<String> = gov_blocked
+            .into_iter()
+            .chain(governance.decisions.clone())
+            .collect();
+
+        // 408: Ethics
+        let ethics = EthicsEngine::new(self.adapter.is_simulation());
+        let mut ethics_checks: Vec<String> = vec![];
+        for action in &refactoring_actions {
+            if let Ok(checks) = ethics.check_proposal(&action.title).await {
+                for c in checks {
+                    if !c.passed {
+                        ethics_checks.push(format!("{}: {}", c.category, c.reason));
+                    }
+                }
+            }
+        }
+
+        // 409: Meta-Planning
+        let meta_planner = MetaPlanningEngine::new(self.adapter.is_simulation());
+        let meta_plans = meta_planner
+            .generate_meta_plans(None, birth_events.len())
+            .await
+            .unwrap_or_default();
+
+        if !meta_plans.is_empty() {
+            tracing::info!("HOH (409): generated {} meta-plans", meta_plans.len());
+        }
+
+        // 410: Meta-Evaluation
+        let meta_eval_engine = MetaEvaluationEngine::new(self.adapter.is_simulation());
+        let meta_evaluation = meta_eval_engine
+            .evaluate_hoh_performance(
+                None,
+                generated_patches.len(),
+                birth_events.len(),
+                lifecycle_events.len(),
+                None,
+            )
+            .await
+            .ok();
+
         // Collect materialized task IDs (A)
         let materialized_task_ids: Vec<u64> = materialized_mutations
             .iter()
@@ -208,6 +454,16 @@ impl HOHPlanner {
             generated_patch_stubs,
             specialized_agent_routes: specialized_routes,
             improvement_suggestions: vec![],
+            creative_ideas,
+            architecture_designs,
+            agent_lifecycle_events: lifecycle_events,
+            agent_birth_events: birth_events,
+            agent_evolution_events: evolution_events,
+            multi_domain_outputs,
+            governance_decisions,
+            ethics_checks,
+            meta_plans,
+            meta_evaluation,
             created_at: chrono::Utc::now().timestamp() as u64,
         };
 
@@ -463,6 +719,16 @@ pub async fn create_plan(goals: Vec<String>) -> HOHPlan {
         generated_patch_stubs: vec!["fallback: no real 361.3 actions".to_string()],
         specialized_agent_routes: vec![],
         improvement_suggestions: vec![],
+        creative_ideas: vec![],
+        architecture_designs: vec![],
+        agent_lifecycle_events: vec![],
+        agent_birth_events: vec![],
+        agent_evolution_events: vec![],
+        multi_domain_outputs: vec![],
+        governance_decisions: vec![],
+        ethics_checks: vec![],
+        meta_plans: vec![],
+        meta_evaluation: None,
         created_at: 0,
     })
 }

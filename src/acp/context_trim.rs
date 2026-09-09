@@ -118,7 +118,13 @@ pub fn trim_to_token_budget(messages: &mut Vec<Value>, budget: usize) {
 }
 
 /// Truncate the content of tool-result messages that are too long.
-/// This is a cheap first-line defense against giant file reads.
+/// This is a cheap first-line defense against giant file reads / long command output.
+///
+/// IMPORTANT for harness / cargo / build tools:
+/// We now keep the **tail** (end) of the output rather than the head.
+/// Compiler errors, test failures, and the final status lines almost always appear
+/// at the end of stderr/stdout. Keeping the head would hide the actual problem
+/// from the LLM, leading to "tool call returned blank / no output" complaints.
 pub fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
     for msg in messages.iter_mut() {
         if msg.get("role").and_then(|r| r.as_str()) != Some("tool") {
@@ -128,34 +134,42 @@ pub fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
         if let Some(content) = msg.get_mut("content") {
             if let Some(s) = content.as_str() {
                 if s.len() > max_chars {
-                    // Reserve room for the truncation suffix ("… [truncated NNNNN chars]" is ~25 bytes)
-                    // so the final string length stays reasonable relative to max_chars.
-                    let suffix_overhead = 30;
+                    let suffix_overhead = 45; // a bit more room for the tail marker
                     let target = max_chars.saturating_sub(suffix_overhead);
 
-                    let mut end = target.min(s.len());
-                    while end > 0 && !s.is_char_boundary(end) {
-                        end -= 1;
+                    // Keep the LAST `target` characters (tail) so errors at the end are visible.
+                    let start = s.len().saturating_sub(target);
+                    let mut start = start;
+                    while start < s.len() && !s.is_char_boundary(start) {
+                        start += 1;
                     }
-                    let truncated = &s[..end];
-                    *content = json!(format!("{}… [truncated {} chars]", truncated, s.len() - end));
+
+                    let truncated = &s[start..];
+                    *content = json!(format!(
+                        "… [earlier output truncated, showing last {} of {} chars]\n{}",
+                        truncated.len(),
+                        s.len(),
+                        truncated
+                    ));
                 }
             } else if let Some(arr) = content.as_array_mut() {
                 for item in arr.iter_mut() {
                     if let Some(text) = item.get_mut("text").and_then(|t| t.as_str())
                         && text.len() > max_chars {
-                            let suffix_overhead = 30;
+                            let suffix_overhead = 45;
                             let target = max_chars.saturating_sub(suffix_overhead);
 
-                            let mut end = target.min(text.len());
-                            while end > 0 && !text.is_char_boundary(end) {
-                                end -= 1;
+                            let start = text.len().saturating_sub(target);
+                            let mut start = start;
+                            while start < text.len() && !text.is_char_boundary(start) {
+                                start += 1;
                             }
-                            let truncated = &text[..end];
+                            let truncated = &text[start..];
                             *item.get_mut("text").unwrap() = json!(format!(
-                                "{}… [truncated {} chars]",
-                                truncated,
-                                text.len() - end
+                                "… [earlier output truncated, showing last {} of {} chars]\n{}",
+                                truncated.len(),
+                                text.len(),
+                                truncated
                             ));
                         }
                 }
@@ -264,11 +278,10 @@ mod tests {
 
         let content = messages[0]["content"].as_str().unwrap();
         assert!(content.contains("truncated"), "should indicate truncation");
-        // Current implementation reserves ~30 chars for the suffix, so we keep fewer leading chars.
-        // The important thing is that we did not cut in the middle of the multi-byte char
-        // and the result is still valid (starts with a prefix of the original).
-        assert!(content.starts_with(&"A".repeat(29900)), "should keep a substantial ASCII prefix");
-        assert!(content.len() <= 30020);
+        // We now keep the TAIL, not the head. The last ~30k chars should be present.
+        assert!(content.contains("B"), "tail (the B's) must be preserved");
+        assert!(content.len() <= 30050);
+        assert!(!content.starts_with("AAAAA"), "should NOT start with the original head anymore");
     }
 
     #[test]
@@ -283,10 +296,7 @@ mod tests {
 
         let text = messages[0]["content"][0]["text"].as_str().unwrap();
         assert!(text.contains("truncated"), "should indicate truncation");
-        // The implementation subtracts overhead for the marker, so we only
-        // keep a prefix (roughly max_chars - 30). Verify we didn't cut the
-        // multi-byte char in the middle and that truncation happened.
-        assert!(text.starts_with(&"A".repeat(29900)), "should keep a substantial ASCII prefix");
-        assert!(text.len() <= 30020);
+        assert!(text.contains("B"), "tail must be preserved");
+        assert!(text.len() <= 30050);
     }
 }

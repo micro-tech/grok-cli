@@ -143,5 +143,74 @@ fn print_iteration_summary(state: &IterationState) {
     if let Some(plan) = &state.plan {
         println!("  Materialized tasks: {}", plan.materialized_task_ids.len());
         println!("  Patch stubs (361.3 C): {}", plan.generated_patch_stubs.len());
+        println!("  Creative ideas (401): {}", plan.creative_ideas.len());
+        for idea in plan.creative_ideas.iter().take(3) {
+            println!(
+                "    • {} (score {:.2} | novelty {:.2} | {})",
+                idea.title, idea.overall_score, idea.novelty_score, idea.source
+            );
+        }
+
+        println!("  Architecture designs (402): {}", plan.architecture_designs.len());
+        for d in plan.architecture_designs.iter().take(3) {
+            println!(
+                "    • {} (score {:.2} | {} modules | {} steps)",
+                d.title,
+                d.overall_score,
+                d.new_modules.len(),
+                d.migration_steps.len()
+            );
+        }
+
+        println!("  Agent lifecycle events (403): {}", plan.agent_lifecycle_events.len());
+        for ev in plan.agent_lifecycle_events.iter().take(4) {
+            println!(
+                "    • {} {} — {} ({} ago)",
+                ev.action,
+                ev.agent_id,
+                ev.reason.chars().take(50).collect::<String>(),
+                // simple relative time hint
+                if ev.at > 0 { "recent" } else { "this cycle" }
+            );
+        }
+
+        println!("  Agent births (404): {}", plan.agent_birth_events.len());
+        for b in plan.agent_birth_events.iter().take(4) {
+            println!(
+                "    • {} {} — {} (reused slot: {})",
+                b.role,
+                b.agent_id,
+                b.reason.chars().take(55).collect::<String>(),
+                b.used_retired_slot
+            );
+        }
+
+        // 405-410 new engines
+        println!("  Agent evolution (405): {}", plan.agent_evolution_events.len());
+        for ev in plan.agent_evolution_events.iter().take(3) {
+            println!(
+                "    • {} {} → {} (fitness {:.2}→{:.2})",
+                ev.mutation_type,
+                ev.agent_id,
+                ev.description.chars().take(45).collect::<String>(),
+                ev.fitness_before,
+                ev.fitness_after
+            );
+        }
+
+        println!("  Multi-domain outputs (406): {}", plan.multi_domain_outputs.len());
+        for d in plan.multi_domain_outputs.iter().take(2) {
+            println!("    • {}: {} proposals", d.domain, d.proposals.len());
+        }
+
+        println!("  Governance (407): {} decisions/blocks", plan.governance_decisions.len());
+        println!("  Ethics checks (408): {} issues flagged", plan.ethics_checks.len());
+        println!("  Meta-plans (409): {}", plan.meta_plans.len());
+        if let Some(eval) = &plan.meta_evaluation {
+            println!(
+                "  Meta-evaluation (410): health={:.2} improvement_rate={:.2} stagnation_risk={:.2}",
+                eval.overall_health, eval.improvement_rate, eval.stagnation_risk
+            );
+        }
     }
 }
