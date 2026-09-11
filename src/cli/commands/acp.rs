@@ -1226,6 +1226,24 @@ async fn handle_extension_dispatch(
                     .await;
             }
 
+            // ACP 2.1.0: Stable session/fork (high-level v2 session builder)
+            if method == "session/fork" || method.ends_with("/fork") {
+                return respond_with_handler_result(
+                    responder,
+                    handle_session_fork(&params, &agent).await,
+                )
+                .await;
+            }
+
+            // ACP 2.1.0: resume_session (often same wire as load for now)
+            if method == "session/resume" || method.ends_with("/resume") {
+                return respond_with_handler_result(
+                    responder,
+                    handle_session_resume(&params, &agent).await,
+                )
+                .await;
+            }
+
             // Unknown method — fall back to legacy set_model for old clients,
             // otherwise return proper "method not found".
             let _ = handle_session_set_model(&raw, &agent).await;
@@ -1963,6 +1981,59 @@ async fn handle_session_load(params: &Value, agent: &GrokAcpAgent) -> Result<()>
     }
 
     Ok(())
+}
+
+/// ACP 2.1.0: Stable session/fork support (high-level v2 session builder).
+/// Creates an independent clone of an existing session.
+async fn handle_session_fork(params: &Value, agent: &GrokAcpAgent) -> Result<Value> {
+    use crate::acp::protocol::{SessionForkRequest, SessionForkResponse, SessionId};
+
+    let req: SessionForkRequest = serde_json::from_value(params.clone())
+        .map_err(|e| anyhow!("Invalid session/fork parameters: {}", e))?;
+
+    let new_sid = req
+        .new_session_id
+        .unwrap_or_else(|| SessionId::new(uuid::Uuid::new_v4().to_string()));
+
+    info!(
+        "session/fork: forking '{}' → '{}'",
+        req.session_id.0, new_sid.0
+    );
+
+    agent
+        .fork_session(&req.session_id, new_sid.clone())
+        .await?;
+
+    // Also start chat logging for the new forked session
+    if let Err(e) = chat_logger::start_session(&new_sid.0) {
+        warn!("session/fork: failed to start chat log for new session: {}", e);
+    }
+
+    let resp = SessionForkResponse::new(new_sid);
+    Ok(serde_json::to_value(resp)?)
+}
+
+/// ACP 2.1.0: resume_session — semantically similar to load but returns
+/// the new RestoredSession shape for clients that expect the stable 2.1 builder output.
+async fn handle_session_resume(params: &Value, agent: &GrokAcpAgent) -> Result<Value> {
+    // Re-use the load logic (MCP, workspace, restore-from-disk or fresh)
+    handle_session_load(params, agent).await?;
+
+    let sid_str = params
+        .get("sessionId")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+
+    let sid = SessionId::new(sid_str);
+
+    // Return a response compatible with ACP 2.1.0 RestoredSession contract
+    let restored = crate::acp::protocol::RestoredSession::new(
+        sid.clone(),
+        params.get("cwd").and_then(|v| v.as_str()).map(|s| s.to_string()),
+        crate::acp::protocol::make_load_session_response(&sid),
+    );
+
+    Ok(serde_json::to_value(restored)?)
 }
 
 /// Task 29: Apply safe initialization defaults when a client skips the

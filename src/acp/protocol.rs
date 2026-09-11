@@ -2,44 +2,31 @@ use serde::{Deserialize, Serialize, Serializer};
 use serde_json::Value;
 
 // ---------------------------------------------------------------------------
-// Official crate re-exports (Task 111.2 — Phase B-1 migration)
+// Official crate re-exports (ACP 2.1.0 support — schema 1.7)
 // Types marked REPLACE in Doc/acp-migration-map.md that are wire-format
 // identical to their agent_client_protocol::schema counterparts.
+//
+// ACP 2.1.0 (September 2026) brings:
+// - Stable session restore builders (load_session*, resume_session* → RestoredSession)
+// - Schema 1.7 (forward-compatible enums, improved upsert/patch-by-ID semantics for updates)
+// - v2 proxy routing + native v2 MCP attachment
+// - High-level v2 session builders (create/resume/fork, cloneable handles, session-wide cancel)
+// - Unstable v2 features (planning, provider selection, etc.)
+//
+// We continue to use `agent_client_protocol::schema::v1` (the stable surface in 2.1.0)
+// while extending with our own types where the crate is still conservative.
 // ---------------------------------------------------------------------------
 // NOTE: We do NOT yet replace types that are EXTEND or have serde differences.
 // Those require careful per-type validation in later migration steps.
 // ---------------------------------------------------------------------------
-// Replaced in subtask 111.2-step1:
-//   Group 1 — Leaf types: Implementation, SessionListCapabilities,
-//             ToolCallStatus, ToolKind
-//   Group 2 — Slash-command types: AvailableCommand, AvailableCommandInput,
-//             AvailableCommandsUpdate, UnstructuredCommandInput
+// Replaced in subtask 111.2-step1 + 2.1.0 refresh:
+//   Group 1 — Leaf types
+//   Group 2 — Slash-command types
+//   Group 3 — Session list types (ListSessions* / SessionInfo)
+//   Group 4 — TextContent
 //
-// Replaced in subtask 111.2-step2 (this session):
-//   Group 3 — Session list types: ListSessionsRequest, ListSessionsResponse,
-//             SessionInfo.  Backward-compat aliases added for old names
-//             (SessionListRequest, SessionListResponse).
-//             SessionLoadRequest NOT replaced — crate requires cwd: PathBuf
-//             (non-optional) and mcp_servers: Vec<McpServer>, both differ from
-//             our wire contract; callsite also uses .session_id.0 as String.
-//   Group 4 — TextContent: crate adds optional annotations/meta fields
-//             (skipped in serialisation via skip_serializing_none);
-//             wire format is identical; ::new(text) method present.
-//
-// NOT replaced:
-//   StopReason — crate variants differ (missing StopSequence, ToolUse;
-//     adds MaxTurnRequests, Refusal, Cancelled). Wire format mismatch.
-//   ToolCallLocation — crate uses path:PathBuf + line:Option<u32> instead of
-//     uri:String + range:Option<ToolCallRange>; completely different wire format.
-//   ToolCallRange / Position — no crate equivalents.
-//   ContentBlock — crate is #[non_exhaustive] with different inner types
-//     (EmbeddedResource vs ResourceContent). HIGH RISK. SKIP.
-//   ContentChunk — #[non_exhaustive], construction patterns differ. SKIP.
-//   ToolCall / ToolCallUpdate — use ToolCallId newtype (not String). SKIP.
-//   SessionNotification / SessionUpdate — EXTEND, needs connection-layer rewrite.
-//   SessionId — Arc<str> vs String internally, 100+ callsites. SKIP.
-//   PromptRequest — depends on SessionId and ContentBlock. SKIP.
-//   PromptResponse — depends on StopReason. SKIP.
+// NOT replaced (same reasons as before + 2.1.0 schema differences):
+//   StopReason, ToolCall*, ContentBlock*, SessionNotification*, SessionId, etc.
 // ---------------------------------------------------------------------------
 pub use agent_client_protocol::schema::v1::{
     // Group 2 — Slash-command advertisement types
@@ -86,6 +73,13 @@ pub struct AgentCapabilities {
     /// supported by this agent." when this is absent or false.
     #[serde(default, rename = "loadSession")]
     pub load_session: bool,
+    /// ACP 2.1.0: Advertise support for stable session restore builders
+    /// (load_session / resume_session producing RestoredSession).
+    #[serde(default, rename = "supportsSessionRestore", skip_serializing_if = "Option::is_none")]
+    pub supports_session_restore: Option<bool>,
+    /// ACP 2.1.0: Advertise support for session fork.
+    #[serde(default, rename = "supportsSessionFork", skip_serializing_if = "Option::is_none")]
+    pub supports_session_fork: Option<bool>,
 }
 
 impl Default for AgentCapabilities {
@@ -99,6 +93,9 @@ impl AgentCapabilities {
         Self {
             session_capabilities: SessionCapabilities::new(),
             load_session: true,
+            // ACP 2.1.0 stable session restore / fork support
+            supports_session_restore: Some(true),
+            supports_session_fork: Some(true),
         }
     }
 }
@@ -370,6 +367,13 @@ impl InitializeResponse {
             auth_methods: Vec::new(),
         }
     }
+
+    /// ACP 2.1.0: Declare that we speak schema 1.7 / v2 surface.
+    pub fn with_protocol_2_1(mut self) -> Self {
+        self.protocol_version = "2".to_string();
+        self
+    }
+}
 
     pub fn agent_capabilities(mut self, caps: AgentCapabilities) -> Self {
         self.agent_capabilities = caps;
@@ -1087,8 +1091,12 @@ impl PermissionOutcome {
 pub struct ProtocolVersion;
 
 impl ProtocolVersion {
-    pub const LATEST: &'static str = "1";
+    /// ACP 2.1.0 stable surface (schema 1.7)
+    pub const LATEST: &'static str = "2";
+    pub const V2: &'static str = "2";
+    pub const V2_1: &'static str = "2.1";
     pub const V1: &'static str = "1";
+    pub const SCHEMA_1_7: &'static str = "1.7";
     pub const DATE_FORMAT: &'static str = "2024-04-15";
 }
 
@@ -1210,7 +1218,7 @@ pub struct ModelConfigOptionsResponse {
 // instead of req.cwd.as_deref().unwrap_or("").
 
 // ---------------------------------------------------------------------------
-// session/load types
+// session/load + session/fork types  (ACP 2.1.0 stable session restore & fork)
 // ---------------------------------------------------------------------------
 
 /// Request body for `session/load`.
@@ -1225,6 +1233,84 @@ pub struct SessionLoadRequest {
     /// MCP servers the client wants connected (may be empty).
     #[serde(default, rename = "mcpServers")]
     pub mcp_servers: Vec<Value>,
+}
+
+/// ACP 2.1.0: Stable RestoredSession container.
+///
+/// Produced by load_session / resume_session builders.
+/// Contains the active session handle plus the exact operation response
+/// so that routing is active before restore requests are published and
+/// failed restores cleanly drop provisional routing.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RestoredSession {
+    /// The restored/active session.
+    pub session: ActiveSession,
+    /// The raw operation response (for clients that need the exact shape).
+    pub response: Value,
+}
+
+/// Lightweight active session descriptor returned after restore/resume.
+/// (Matches the spirit of ACP 2.1.0 ActiveSession.)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActiveSession {
+    #[serde(rename = "sessionId")]
+    pub session_id: SessionId,
+    pub cwd: Option<String>,
+    #[serde(default)]
+    pub status: Option<String>,
+}
+
+impl RestoredSession {
+    pub fn new(session_id: SessionId, cwd: Option<String>, response: Value) -> Self {
+        Self {
+            session: ActiveSession {
+                session_id,
+                cwd,
+                status: Some("restored".to_string()),
+            },
+            response,
+        }
+    }
+}
+
+/// ACP 2.1.0 helper: build a standard LoadSessionResponse that also
+/// satisfies the new stable restore contract.
+pub fn make_load_session_response(session_id: &SessionId) -> Value {
+    json!({
+        "sessionId": session_id.0,
+        "restored": true
+    })
+}
+
+// ---------------------------------------------------------------------------
+// session/fork (ACP 2.1.0 high-level v2 session builder)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionForkRequest {
+    #[serde(rename = "sessionId")]
+    pub session_id: SessionId,
+    /// Optional new session ID the client would like. If omitted we generate one.
+    #[serde(rename = "newSessionId", skip_serializing_if = "Option::is_none")]
+    pub new_session_id: Option<SessionId>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SessionForkResponse {
+    #[serde(rename = "newSessionId")]
+    pub new_session_id: SessionId,
+    /// Whether the fork succeeded and the new session is ready.
+    #[serde(default)]
+    pub success: bool,
+}
+
+impl SessionForkResponse {
+    pub fn new(new_session_id: SessionId) -> Self {
+        Self {
+            new_session_id,
+            success: true,
+        }
+    }
 }
 
 /// Client-provided capabilities received during the `initialize` handshake.

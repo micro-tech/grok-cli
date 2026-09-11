@@ -127,6 +127,16 @@ impl AppRouter {
     ///   [`crate::acp::tools::get_available_tool_definitions`].
     ///
     /// Mirrors [`crate::GrokClient::chat_completion_with_history`].
+    /// Multi-turn chat with full conversation history and optional tools.
+    ///
+    /// ## IMPORTANT: CoT / Thinking Trace Policy (MONEY SAVER)
+    /// The response may contain `thinking_content` (when reasoning_effort is used).
+    /// **NEVER** put the raw message back into future conversation history or prompts
+    /// without stripping the CoT first.
+    ///
+    /// Callers must use `crate::cot_guard::clean_assistant_message(...)` (or equivalent)
+    /// before pushing any assistant response into history that will be sent to the LLM again.
+    /// This is critical to avoid wasting tokens on internal reasoning traces.
     pub async fn chat_completion_with_history(
         &self,
         messages: &[Value],
@@ -136,6 +146,12 @@ impl AppRouter {
         tools: Option<Vec<Value>>,
         reasoning_effort: Option<&str>,
     ) -> Result<MessageWithFinishReason> {
+        // === STRONG CoT LEAK GUARD (debug builds only) ===
+        // This is the money-saving radioactive isotope rule.
+        // In debug builds this will **panic** if any message still contains
+        // reasoning_content or thinking_content. This catches mistakes early.
+        crate::cot_guard::debug_assert_no_cot_in_messages(messages);
+
         // Pass messages as raw JSON so that fields like `tool_call_id` are
         // preserved through the full pipeline.  Typed deserialization was
         // silently stripping that field, breaking multi-turn tool calls.

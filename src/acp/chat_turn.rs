@@ -164,8 +164,11 @@ impl ChatTurn {
             // Chain-of-thought / reasoning_content / thinking_content is NEVER stored,
             // NEVER sent back in future prompts, NEVER included in any history/context/memory.
             // Only for immediate one-shot UI emission, then dropped.
-            use crate::cot_guard::clean_assistant_message;
-            let clean_msg_for_history = clean_assistant_message(serde_json::to_value(&response_msg)?);
+            use crate::cot_guard::{clean_and_assert_no_cot, debug_assert_no_cot_in_messages};
+
+            let clean_msg_for_history = clean_and_assert_no_cot(
+                serde_json::to_value(&response_msg)?
+            );
 
             // Emit thinking if present (Task 280.4) — display only, not in history
             if let Some(ref tc) = thinking_content
@@ -177,7 +180,11 @@ impl ChatTurn {
                 }
 
             // Push ONLY the clean message (no CoT) into the history that will be sent to the model
-            self.messages.push(serde_json::to_value(&clean_msg_for_history)?);
+            // The debug_assert inside clean_and_assert_no_cot will panic in dev builds if CoT leaked.
+            self.messages.push(clean_msg_for_history);
+
+            // Extra belt-and-suspenders guard right before the next API call in the loop
+            debug_assert_no_cot_in_messages(&self.messages);
 
             let has_tool_calls = response_msg
                 .tool_calls

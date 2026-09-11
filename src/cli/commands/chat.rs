@@ -354,13 +354,21 @@ async fn handle_interactive_chat(
                     .await?;
 
                 // === STRICT CoT / THINKING TRACE POLICY (radioactive isotope rule) ===
-                // Chain-of-thought / reasoning_content is NEVER stored, NEVER fed back to the LLM,
-                // NEVER included in conversation_history, context, memory, or any future prompt.
-                // It may ONLY be used for immediate one-time display or local debug logs, then dropped.
-                let mut response_msg = response_with_finish.message;
-                let _thinking_content = response_with_finish.thinking_content; // deliberately discarded
-                // Strip any reasoning_content from the message object before it touches history
-                response_msg.reasoning_content = None;
+                // Chain-of-thought / reasoning_content / thinking_content is NEVER stored,
+                // NEVER fed back to the LLM, NEVER included in conversation_history.
+                // Only for one-shot display, then dropped.
+                let _thinking_content = response_with_finish.thinking_content; // deliberately discarded for money savings
+
+                use crate::cot_guard::{clean_and_assert_no_cot, debug_assert_no_cot_in_messages};
+
+                // Clean the raw response message (removes any CoT)
+                let clean_response_msg = clean_and_assert_no_cot(
+                    serde_json::to_value(&response_with_finish.message)?
+                );
+
+                // Re-parse a clean version for tool-call handling (no CoT possible after clean)
+                let response_msg: grok_api::Message = serde_json::from_value(clean_response_msg.clone())
+                    .unwrap_or(response_with_finish.message.clone());
 
                 spinner.finish_and_clear();
 
