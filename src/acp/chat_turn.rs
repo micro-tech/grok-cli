@@ -160,7 +160,14 @@ impl ChatTurn {
             let finish_reason = response_with_finish.finish_reason.as_deref();
             let thinking_content = response_with_finish.thinking_content;
 
-            // Emit thinking if present (Task 280.4)
+            // === CoT RADIOACTIVE ISOTOPE RULE (strict policy) ===
+            // Chain-of-thought / reasoning_content / thinking_content is NEVER stored,
+            // NEVER sent back in future prompts, NEVER included in any history/context/memory.
+            // Only for immediate one-shot UI emission, then dropped.
+            use crate::cot_guard::clean_assistant_message;
+            let clean_msg_for_history = clean_assistant_message(serde_json::to_value(&response_msg)?);
+
+            // Emit thinking if present (Task 280.4) — display only, not in history
             if let Some(ref tc) = thinking_content
                 && agent.config.acp.stream_thinking
                     && let Some(sender) = event_sender
@@ -169,7 +176,8 @@ impl ChatTurn {
                     let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk));
                 }
 
-            self.messages.push(serde_json::to_value(&response_msg)?);
+            // Push ONLY the clean message (no CoT) into the history that will be sent to the model
+            self.messages.push(serde_json::to_value(&clean_msg_for_history)?);
 
             let has_tool_calls = response_msg
                 .tool_calls
@@ -185,6 +193,8 @@ impl ChatTurn {
                     current_loop
                 );
 
+                // Final response construction: thinking_content is used ONLY for display.
+                // It is deliberately NOT appended to any persistent messages or context.
                 let final_response = if let Some(tc) = thinking_content {
                     if agent.config.acp.stream_thinking
                         && let Some(sender) = event_sender

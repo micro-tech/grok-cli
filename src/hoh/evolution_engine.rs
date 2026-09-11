@@ -408,7 +408,7 @@ fn generate_better_details(task: &Task, title_lower: &str) -> String {
 }
 
 /// 327.12: Auto-Pruning — propose safe deferral of low-value, obsolete, stale or duplicate tasks.
-/// 
+///
 /// Conservative policy (per spec):
 /// - Only ever proposes `SetStatus { "deferred" }`
 /// - Never deletes tasks
@@ -564,7 +564,7 @@ fn create_skilled_auto_expansion(parent: &Task) -> Vec<Task> {
         id: base * 100 + 3,
         title: format!("3. Testing & Validation: {}", title),
         description: "Add/enhance tests and validate the complete solution.".to_string(),
-        details: "Implement or strengthen the test strategy. Verify behavior against the parent's acceptance criteria and edge cases.",
+        details: "Implement or strengthen the test strategy. Verify behavior against the parent's acceptance criteria and edge cases.".to_string(),
         priority: prio.clone(),
         status: "pending".to_string(),
         test_strategy: "All tests defined in the parent task's testStrategy (and new tests) pass. No regressions.".to_string(),
@@ -578,7 +578,7 @@ fn create_skilled_auto_expansion(parent: &Task) -> Vec<Task> {
             id: base * 100 + 4,
             title: format!("4. Documentation & Polish: {}", title),
             description: "Update docs, examples, and clean up related artifacts.".to_string(),
-            details: "Add or improve documentation, usage notes, SKILL.md references, or module docs so the change is maintainable.",
+            details: "Add or improve documentation, usage notes, SKILL.md references, or module docs so the change is maintainable.".to_string(),
             priority: "medium".to_string(),
             status: "pending".to_string(),
             test_strategy: "Documentation is accurate, up-to-date, and sufficient to understand the change without reading the code.".to_string(),

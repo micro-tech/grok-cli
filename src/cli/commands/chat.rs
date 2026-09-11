@@ -353,7 +353,14 @@ async fn handle_interactive_chat(
                     )
                     .await?;
 
-                let response_msg = response_with_finish.message;
+                // === STRICT CoT / THINKING TRACE POLICY (radioactive isotope rule) ===
+                // Chain-of-thought / reasoning_content is NEVER stored, NEVER fed back to the LLM,
+                // NEVER included in conversation_history, context, memory, or any future prompt.
+                // It may ONLY be used for immediate one-time display or local debug logs, then dropped.
+                let mut response_msg = response_with_finish.message;
+                let _thinking_content = response_with_finish.thinking_content; // deliberately discarded
+                // Strip any reasoning_content from the message object before it touches history
+                response_msg.reasoning_content = None;
 
                 spinner.finish_and_clear();
 

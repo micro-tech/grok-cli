@@ -1367,7 +1367,14 @@ async fn send_to_grok(
         .await
     {
         Ok(response_with_finish) => {
-            let response_msg = response_with_finish.message;
+            // === STRICT CoT POLICY ===
+            // thinking_content / reasoning_content from the model is radioactive.
+            // Use it ONLY for immediate display (none here) then drop it completely.
+            // Never store, never put into session history, never feed back.
+            let _thinking_content = response_with_finish.thinking_content; // deliberately discarded
+            let mut response_msg = response_with_finish.message;
+            response_msg.reasoning_content = None; // belt + suspenders
+
             clear_current_line();
 
             // Task 266: report per-turn timing (only if GROK_PERF=1)

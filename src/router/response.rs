@@ -12,6 +12,23 @@ pub struct UsageStats {
 }
 
 /// Normalised response from any backend.
+///
+/// ## CoT / Thinking Trace Policy (RADIOACTIVE ISOTOPE RULE)
+///
+/// `thinking_content` (the model's chain-of-thought when `reasoning_effort`
+/// is enabled) **MUST NEVER** be:
+/// - Stored in conversation history
+/// - Fed back into future prompts
+/// - Included in memory, context layers, session state, or tool results
+/// - Serialized into anything that will be sent to the LLM again
+///
+/// It is **only** allowed for:
+/// - Immediate one-shot user-visible display (e.g. collapsible thinking block)
+/// - Local debug logging (then discarded)
+///
+/// Callers **must** treat this field as "use once for display, then drop".
+/// The `into_message_with_finish_reason` helper already forces
+/// `reasoning_content: None` on the inner message for safety.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouterResponse {
     /// Plain-text content of the response, if the model produced one.
@@ -26,6 +43,9 @@ pub struct RouterResponse {
     pub usage: Option<UsageStats>,
     /// Chain-of-thought reasoning content from the model, if `reasoning_effort`
     /// was set and the model produced a reasoning trace.
+    ///
+    /// **Policy**: This must be dropped after any immediate display use.
+    /// Never persist or re-inject.
     pub thinking_content: Option<String>,
 }
 
