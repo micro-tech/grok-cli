@@ -429,12 +429,15 @@ grok skills generate-catalog
 **HOH (Harness-of-Harnesses) Autonomous Outer Loop**
 
 ```bash
-grok-cli hoh start          # Run one full autonomous iteration
-grok-cli hoh status         # Show current + persisted state
-grok-cli hoh last           # Details of the most recent iteration
-grok-cli hoh history        # List recent iterations
-grok-cli hoh simulate       # Run in simulation mode
+grok-cli hoh start                 # Run one full autonomous iteration
+grok-cli hoh status                # Show current + persisted state
+grok-cli hoh last                  # Details of the most recent iteration
+grok-cli hoh history               # List recent iterations
+grok-cli hoh simulate              # Run in simulation mode
 grok-cli hoh apply --dry-run
+grok-cli hoh versions              # List task list snapshots (327.13)
+grok-cli hoh rollback <id>         # Restore a previous snapshot
+grok-cli hoh save-version "label"  # Create a manual snapshot
 ```
 
 See [Doc/HOH.md](HOH.md) for full details (Tasks 297 + 361.x).

@@ -60,6 +60,11 @@ pub enum TaskMutation {
         task_id: u64,
         strategy: String,
     },
+    /// Add or replace the full details field (used heavily by 327.11 Auto-Refinement)
+    SetDetails {
+        task_id: u64,
+        new_details: String,
+    },
     /// Add a brand new top-level task (361.3 materialization)
     AddTask {
         new_task: Task,
@@ -174,6 +179,16 @@ impl TaskMutationRules {
                 Ok(())
             }
 
+            TaskMutation::SetDetails { new_details, .. } => {
+                if new_details.trim().is_empty() {
+                    return Err("Details cannot be empty".to_string());
+                }
+                if new_details.len() > 8000 {
+                    return Err("Details too long (max 8000 chars)".to_string());
+                }
+                Ok(())
+            }
+
             _ => Ok(()), // Other mutations are currently lenient
         }
     }
@@ -283,6 +298,45 @@ impl TaskMutationRules {
                 }
             }
 
+            TaskMutation::SetDescription { task_id, new_description } => {
+                if let Some(task) = find_task_mut(*task_id, tasks) {
+                    task.description = new_description.clone();
+                    Ok(MutationResult {
+                        success: true,
+                        message: "Description refined".to_string(),
+                        task_id: *task_id,
+                    })
+                } else {
+                    Err(format!("Task {} not found", task_id))
+                }
+            }
+
+            TaskMutation::SetDetails { task_id, new_details } => {
+                if let Some(task) = find_task_mut(*task_id, tasks) {
+                    task.details = new_details.clone();
+                    Ok(MutationResult {
+                        success: true,
+                        message: "Details refined (327.11)".to_string(),
+                        task_id: *task_id,
+                    })
+                } else {
+                    Err(format!("Task {} not found", task_id))
+                }
+            }
+
+            TaskMutation::SetTestStrategy { task_id, strategy } => {
+                if let Some(task) = find_task_mut(*task_id, tasks) {
+                    task.test_strategy = strategy.clone();
+                    Ok(MutationResult {
+                        success: true,
+                        message: "Test strategy refined".to_string(),
+                        task_id: *task_id,
+                    })
+                } else {
+                    Err(format!("Task {} not found", task_id))
+                }
+            }
+
             TaskMutation::AddTask { new_task } => {
                 // Append the new top-level task
                 tasks.push(new_task.clone());
@@ -353,7 +407,7 @@ mod tests {
     #[test]
     fn test_cycle_prevention() {
         let rules = TaskMutationRules::new();
-        let mut tasks = vec![
+        let tasks = vec![
             Task { id: 1, dependencies: vec![2], ..Default::default() },
             Task { id: 2, dependencies: vec![], ..Default::default() },
         ];

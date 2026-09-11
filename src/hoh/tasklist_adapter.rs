@@ -15,6 +15,7 @@ use crate::hoh::task_dependency_graph::TaskDependencyGraph;
 use serde::{Deserialize, Serialize};
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 /// Serializable representation of a task (mirrors the JSON schema used by task_tools).
 #[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq)]
@@ -48,6 +49,28 @@ fn default_priority() -> String {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct TaskList {
     pub tasks: Vec<Task>,
+}
+
+/// Metadata for a historical version of the task list (327.13).
+/// Versions are immutable snapshots created on significant mutations (e.g. evolution cycles).
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TaskListVersionMeta {
+    pub id: String,
+    /// ISO-like timestamp string (e.g. "2025-10-05T12:34:56Z")
+    pub timestamp: String,
+    /// Human label, e.g. "pre-evolution", "post-refinement-327.11", "manual"
+    pub label: String,
+    pub task_count: usize,
+    /// Who/what created the version
+    #[serde(default)]
+    pub created_by: String,
+}
+
+/// Wrapper used when persisting a versioned snapshot.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct VersionedSnapshot {
+    meta: TaskListVersionMeta,
+    list: TaskList,
 }
 
 #[derive(Debug, Clone)]
@@ -447,5 +470,249 @@ impl TaskListAdapter {
     /// Expose simulation mode (used by ArchitectureEvolutionEngine).
     pub fn is_simulation(&self) -> bool {
         self.simulation_mode
+    }
+
+    // ============================================================
+    // 327.13 TaskList Versioning (tests are in the same file below)
+    // ============================================================
+
+    // ============================================================
+    // 327.13 TaskList Versioning
+    // ============================================================
+
+    fn versions_dir(&self) -> PathBuf {
+        self.task_file
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("versions")
+    }
+
+    fn versions_index_path(&self) -> PathBuf {
+        self.versions_dir().join("versions.json")
+    }
+
+    async fn ensure_versions_dir(&self) -> Result<(), HOHError> {
+        let dir = self.versions_dir();
+        if !dir.exists() {
+            tokio::fs::create_dir_all(&dir)
+                .await
+                .map_err(|e| HOHError::Other(format!("Failed to create versions dir: {}", e)))?;
+        }
+        Ok(())
+    }
+
+    /// Save a versioned snapshot of the task list.
+    /// Returns the generated version ID.
+    /// This is the main entry point for 327.13.
+    pub async fn save_versioned(
+        &self,
+        list: &TaskList,
+        label: &str,
+        created_by: &str,
+    ) -> Result<String, HOHError> {
+        if self.simulation_mode {
+            tracing::info!("HOH versioning: simulation mode — skipping version save");
+            return Ok("sim-noop".to_string());
+        }
+
+        self.validate(list)?;
+        self.ensure_versions_dir().await?;
+
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|e| HOHError::Other(format!("Time error: {}", e)))?
+            .as_secs();
+
+        // Simple but unique ID: v<unix-seconds>
+        let id = format!("v{}", now);
+
+        let meta = TaskListVersionMeta {
+            id: id.clone(),
+            timestamp: format!("{}", now),
+            label: label.to_string(),
+            task_count: list.tasks.len(),
+            created_by: created_by.to_string(),
+        };
+
+        let snapshot = VersionedSnapshot {
+            meta: meta.clone(),
+            list: list.clone(),
+        };
+
+        let path = self.versions_dir().join(format!("{}.json", id));
+        let json = serde_json::to_string_pretty(&snapshot)
+            .map_err(|e| HOHError::Other(format!("Failed to serialize version: {}", e)))?;
+
+        tokio::fs::write(&path, json)
+            .await
+            .map_err(|e| HOHError::Other(format!("Failed to write version file: {}", e)))?;
+
+        // Update lightweight index
+        self.append_version_to_index(&meta).await?;
+
+        tracing::info!(version_id = %id, "HOH created task list version");
+        Ok(id)
+    }
+
+    async fn append_version_to_index(&self, meta: &TaskListVersionMeta) -> Result<(), HOHError> {
+        let index_path = self.versions_index_path();
+        let mut versions: Vec<TaskListVersionMeta> = if index_path.exists() {
+            let content = tokio::fs::read_to_string(&index_path).await.unwrap_or_default();
+            serde_json::from_str(&content).unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        // Avoid exact duplicate IDs (shouldn't happen)
+        versions.retain(|v| v.id != meta.id);
+        versions.push(meta.clone());
+
+        // Keep only the last N to prevent unbounded growth (simple policy)
+        if versions.len() > 50 {
+            versions.drain(0..(versions.len() - 50));
+        }
+
+        let json = serde_json::to_string_pretty(&versions)
+            .map_err(|e| HOHError::Other(format!("Failed to serialize versions index: {}", e)))?;
+
+        tokio::fs::write(&index_path, json)
+            .await
+            .map_err(|e| HOHError::Other(format!("Failed to write versions index: {}", e)))?;
+
+        Ok(())
+    }
+
+    /// List all known historical versions (from index).
+    pub async fn list_versions(&self) -> Result<Vec<TaskListVersionMeta>, HOHError> {
+        let index_path = self.versions_index_path();
+        if !index_path.exists() {
+            return Ok(vec![]);
+        }
+
+        let content = tokio::fs::read_to_string(&index_path)
+            .await
+            .map_err(|e| HOHError::Other(format!("Failed to read versions index: {}", e)))?;
+
+        let versions: Vec<TaskListVersionMeta> =
+            serde_json::from_str(&content).map_err(|e| {
+                HOHError::Other(format!("Failed to parse versions index: {}", e))
+            })?;
+
+        Ok(versions)
+    }
+
+    /// Load a specific historical version by ID.
+    pub async fn load_version(&self, version_id: &str) -> Result<TaskList, HOHError> {
+        let path = self.versions_dir().join(format!("{}.json", version_id));
+        if !path.exists() {
+            return Err(HOHError::Other(format!(
+                "Version {} not found",
+                version_id
+            )));
+        }
+
+        let content = tokio::fs::read_to_string(&path)
+            .await
+            .map_err(|e| HOHError::Other(format!("Failed to read version file: {}", e)))?;
+
+        let snapshot: VersionedSnapshot = serde_json::from_str(&content)
+            .map_err(|e| HOHError::Other(format!("Failed to parse version snapshot: {}", e)))?;
+
+        Ok(snapshot.list)
+    }
+
+    /// Roll back the current task list to a previous version.
+    /// This overwrites the live task_list.json with the chosen snapshot.
+    /// A pre-rollback backup is created via the normal save path.
+    pub async fn rollback_to(&self, version_id: &str) -> Result<(), HOHError> {
+        let list = self.load_version(version_id).await?;
+        // Use normal save path (this creates the usual .bak as well)
+        self.save(&list).await?;
+        tracing::info!(version_id = %version_id, "HOH rolled back task list");
+        Ok(())
+    }
+
+    /// Convenience: create a versioned snapshot and then save the live file.
+    /// Useful before running large evolution cycles.
+    pub async fn save_with_version(
+        &self,
+        list: &TaskList,
+        label: &str,
+        created_by: &str,
+    ) -> Result<String, HOHError> {
+        let version_id = self.save_versioned(list, label, created_by).await?;
+        self.save(list).await?;
+        Ok(version_id)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    #[tokio::test]
+    async fn test_32713_versioning_basic_flow() {
+        let dir = tempdir().unwrap();
+        let adapter = TaskListAdapter::new(dir.path().to_path_buf(), false);
+
+        let mut list = TaskList::default();
+        list.tasks.push(Task {
+            id: 1,
+            title: "Initial task".to_string(),
+            status: "pending".to_string(),
+            priority: "medium".to_string(),
+            ..Default::default()
+        });
+
+        // Save with version
+        let v1 = adapter
+            .save_with_version(&list, "initial", "test")
+            .await
+            .unwrap();
+        assert!(v1.starts_with("v"));
+
+        // Mutate
+        list.tasks[0].title = "Updated title".to_string();
+        adapter.save(&list).await.unwrap();
+
+        // Create another version
+        let v2 = adapter
+            .save_versioned(&list, "after-update", "test")
+            .await
+            .unwrap();
+
+        // List versions
+        let versions = adapter.list_versions().await.unwrap();
+        assert!(versions.len() >= 2);
+
+        // Load old version
+        let old = adapter.load_version(&v1).await.unwrap();
+        assert_eq!(old.tasks[0].title, "Initial task");
+
+        // Current should have the update
+        let current = adapter.load().await.unwrap();
+        assert_eq!(current.tasks[0].title, "Updated title");
+
+        // Rollback
+        adapter.rollback_to(&v1).await.unwrap();
+        let after_rollback = adapter.load().await.unwrap();
+        assert_eq!(after_rollback.tasks[0].title, "Initial task");
+    }
+
+    #[tokio::test]
+    async fn test_32713_simulation_mode_skips_versioning() {
+        let dir = tempdir().unwrap();
+        let adapter = TaskListAdapter::new(dir.path().to_path_buf(), true); // simulation
+
+        let list = TaskList::default();
+        let vid = adapter
+            .save_versioned(&list, "sim", "test")
+            .await
+            .unwrap();
+        assert_eq!(vid, "sim-noop");
+
+        let versions = adapter.list_versions().await.unwrap();
+        assert!(versions.is_empty());
     }
 }

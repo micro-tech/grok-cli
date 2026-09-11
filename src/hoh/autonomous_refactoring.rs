@@ -512,7 +512,7 @@ impl AutonomousRefactoringEngine {
 
         // Reuse the evolution engine's safe apply path
         let engine = crate::hoh::evolution_engine::TaskEvolutionEngine::new(self.adapter.clone_for_evolution());
-        engine.apply_mutations(&mutations).await
+        engine.apply_mutations(&mutations, false).await
     }
 }
 

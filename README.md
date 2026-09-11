@@ -11,7 +11,7 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 >   - Full autonomous multi-day development system.
 >   - Architecture Evolution Engine (361.1), Self-Refinement Loop (361.2), Autonomous Refactoring (361.3), Specialized Agent Profiles (361.4), and Continual Improvement meta-loop (361.5).
 >   - Reads `.zed/task_list.json`, performs dependency-aware planning, materializes tasks, generates safe patches, and feeds outcomes back into the next cycle.
->   - Commands: `grok-cli hoh start`, `grok-cli hoh status`, `grok-cli hoh last`, `grok-cli hoh simulate`, etc.
+>   - Commands: `grok-cli hoh start`, `grok-cli hoh status`, `grok-cli hoh last`, `grok-cli hoh simulate`, `grok-cli hoh versions`, `grok-cli hoh rollback`, etc.
 >   - See [Doc/HOH.md](Doc/HOH.md) for details.
 > - **Self-Updater System** (Task 296): New built-in update mechanism.
 >   - Run `grok update` (or `grok update --check`) to check GitHub releases.

@@ -36,6 +36,10 @@ pub struct HOHPlanner {
     adapter: TaskListAdapter,
     pub completion_tracker: TaskCompletionTracker,
     // evolution_engine is created on-demand in run_task_evolution to avoid ownership issues
+
+    /// 327.9: Most recent Helix evaluation score (if any) from prior iteration.
+    /// Used to influence task prioritization and evolution (Sync TaskList with Helix Evaluations).
+    pub recent_helix_score: Option<f32>,
 }
 
 impl HOHPlanner {
@@ -44,6 +48,7 @@ impl HOHPlanner {
         Self {
             adapter,
             completion_tracker: TaskCompletionTracker::new(),
+            recent_helix_score: None,
         }
     }
 
@@ -52,7 +57,9 @@ impl HOHPlanner {
     /// Runs TaskList evolution (327.34) + Architecture Evolution (361.1) before selection.
     pub async fn create_plan(&mut self, goals: Vec<String>) -> Result<HOHPlan, HOHError> {
         // 327.34: Task list evolution
-        if let Ok((proposals, results)) = self.run_task_evolution(false).await {
+        // 327.9: pass recent helix score (if known from prior evaluation) so Helix influences priorities/status
+        let recent_helix = self.recent_helix_score;
+        if let Ok((proposals, results)) = self.run_task_evolution(false, recent_helix).await {
             if !proposals.is_empty() {
                 tracing::info!(
                     proposals = proposals.len(),
@@ -1184,10 +1191,11 @@ impl HOHPlanner {
     pub async fn run_task_evolution(
         &self,
         auto_apply: bool,
+        recent_helix_score: Option<f32>,
     ) -> Result<(Vec<crate::hoh::task_mutation::TaskMutation>, Vec<crate::hoh::task_mutation::MutationResult>), HOHError> {
         // Create a fresh engine for this run (avoids ownership complexity)
         let engine = TaskEvolutionEngine::new(self.adapter.clone_for_evolution());
-        engine.run_evolution_cycle(auto_apply).await
+        engine.run_evolution_cycle(auto_apply, recent_helix_score).await
     }
 
     /// Run architecture evolution proposals (361.1).
@@ -1292,19 +1300,18 @@ impl HOHPlanner {
             let adapter = self.adapter.clone_for_evolution();
             if let Ok(mut list) = adapter.load().await {
                 let rules = crate::hoh::task_mutation::TaskMutationRules::new();
-                let mut list_mut = list;
                 let mut applied = 0;
 
                 for m in &mutations {
-                    if rules.validate_mutation(m, &list_mut.tasks).is_ok() {
-                        if rules.apply_mutation(m, &mut list_mut.tasks).is_ok() {
+                    if rules.validate_mutation(m, &list.tasks).is_ok() {
+                        if rules.apply_mutation(m, &mut list.tasks).is_ok() {
                             applied += 1;
                         }
                     }
                 }
 
                 if applied > 0 {
-                    let _ = adapter.save(&list_mut).await;
+                    let _ = adapter.save(&list).await;
                     tracing::info!("HOHPlanner: materialized {} creative tasks into task_list.json", applied);
                 }
             }

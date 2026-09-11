@@ -403,7 +403,7 @@ mod tests {
 
     #[test]
     fn generates_ideas_in_simulation() {
-        let mut engine = CreativityEngine::new(true);
+        let engine = CreativityEngine::new(true);
         let goals = vec!["Improve autonomous development".to_string()];
         let tasks = vec!["Add creativity engine".to_string()];
 
@@ -414,7 +414,7 @@ mod tests {
 
     #[test]
     fn scoring_produces_reasonable_range() {
-        let mut engine = CreativityEngine::new(true);
+        let engine = CreativityEngine::new(true);
         let mut idea = CreativityIdea {
             id: "t1".into(),
             title: "Introduce a completely new Meta-HOH Layer".into(),

@@ -374,7 +374,25 @@ impl HOHManager {
             }
         }
 
+        // 327.9: Feed the most recent Helix evaluation score from the previous iteration
+        // into the planner so TaskEvolutionEngine can adjust priorities (low helix → remediation boost,
+        // high helix → promote well-defined tasks).
+        let recent_helix_score = self.current_iteration
+            .as_ref()
+            .and_then(|s| s.evaluations.last())
+            .and_then(|e| e.helix_score);
+
+        if let Some(score) = recent_helix_score {
+            tracing::info!(
+                "HOH (327.9): feeding previous helix_score {:.2} into next planning cycle",
+                score
+            );
+        }
+
         if let Some(planner) = &mut self.planner {
+            // Inject the score so create_plan → run_task_evolution uses it for 327.9 mutations
+            planner.recent_helix_score = recent_helix_score;
+
             // Consistency check (327.33)
             if let Ok(problems) = planner.get_task_list_problems().await {
                 if !problems.is_empty() {
@@ -386,7 +404,7 @@ impl HOHManager {
             }
 
             // create_plan now internally runs:
-            // - Task evolution (327.34)
+            // - Task evolution (327.34)  ← now receives recent_helix_score for 327.9
             // - Architecture evolution (361.1)
             // - Self-refinement (361.2)
             // - Autonomous refactoring + A/B/C/D materialization (361.3 + 361.4)

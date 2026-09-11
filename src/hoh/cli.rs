@@ -1,11 +1,19 @@
 //! HOH CLI Commands (Task 297.13 + upgrades)
 //
 //! Enhanced CLI for HOH outer loop.
-//! Supports: start, status, last, history, simulate, apply [--dry-run]
+//! Supports: start, status, last, history, simulate, apply [--dry-run],
+//!           versions, rollback <id>, save-version [label]
+//!
+//! Invoke via the full binary:
+//!   grok-cli hoh start
+//!   grok-cli hoh versions
+//!   grok-cli hoh rollback v1728123456
+//!   grok-cli hoh save-version "before-evolution"
 
 use crate::hoh::HOHManager;
 use crate::hoh::persistence;
 use crate::hoh::state::IterationState;
+use crate::hoh::tasklist_adapter::TaskListAdapter;
 use std::path::PathBuf;
 
 pub async fn handle_hoh_command(sub: &str, simulation: bool) {
@@ -125,9 +133,88 @@ pub async fn handle_hoh_command(sub: &str, simulation: bool) {
             println!("[HOH] Simulation result: {:?}", state.status);
             print_iteration_summary(&state);
         }
+
+        // === 327.13 TaskList Versioning CLI (next logical step after core implementation) ===
+        "versions" | "task-versions" | "list-versions" => {
+            println!("[HOH] === TaskList Versions (327.13) ===");
+            let adapter = TaskListAdapter::new(
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+                simulation,
+            );
+            match adapter.list_versions().await {
+                Ok(vers) => {
+                    if vers.is_empty() {
+                        println!("No versions recorded yet.");
+                        println!("Versions are created automatically on evolution cycles (when auto-apply).");
+                        println!("You can also use: grok-cli hoh save-version \"my-label\"");
+                    } else {
+                        println!("{} historical version(s):", vers.len());
+                        for v in vers.iter().rev().take(20) {
+                            println!(
+                                "  {} | label=\"{}\" | tasks={} | by={} | ts={}",
+                                v.id, v.label, v.task_count, v.created_by, v.timestamp
+                            );
+                        }
+                        if vers.len() > 20 {
+                            println!("  ... ({} more)", vers.len() - 20);
+                        }
+                        println!("\nUse 'grok-cli hoh rollback <version_id>' to restore a previous snapshot.");
+                    }
+                }
+                Err(e) => eprintln!("Error listing versions: {}", e),
+            }
+        }
+        "rollback" => {
+            if let Some(id) = rest.first() {
+                println!("[HOH] Rolling back current task_list.json to version {} ...", id);
+                let adapter = TaskListAdapter::new(
+                    std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+                    simulation,
+                );
+                match adapter.rollback_to(id).await {
+                    Ok(_) => {
+                        println!("[HOH] Rollback succeeded.");
+                        println!("The live task list has been restored from the snapshot.");
+                        println!("A backup of the previous state was also created (task_list.json.hoh.bak).");
+                    }
+                    Err(e) => eprintln!("[HOH] Rollback failed: {}", e),
+                }
+            } else {
+                println!("Usage: grok-cli hoh rollback <version_id>");
+                println!("Run 'grok-cli hoh versions' first to list available version IDs.");
+            }
+        }
+        "save-version" => {
+            let label = rest.first().copied().unwrap_or("manual-cli");
+            println!("[HOH] Creating a versioned snapshot of the current task list (label=\"{}\")...", label);
+            let adapter = TaskListAdapter::new(
+                std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")),
+                simulation,
+            );
+            match adapter.load().await {
+                Ok(list) => {
+                    match adapter.save_versioned(&list, label, "cli").await {
+                        Ok(vid) => {
+                            println!("[HOH] Version created: {}", vid);
+                            println!("(The live task_list.json was left unchanged; snapshot is stored separately.)");
+                        }
+                        Err(e) => eprintln!("[HOH] Failed to create version: {}", e),
+                    }
+                }
+                Err(e) => eprintln!("[HOH] Could not load current task list: {}", e),
+            }
+        }
+
         _ => {
             println!("Unknown hoh subcommand: '{}'", cmd);
-            println!("Available: start, status, last, history, apply [--dry-run], simulate");
+            println!("Available subcommands: start, status, last, history, apply [--dry-run], simulate,");
+            println!("                       versions, rollback <version_id>, save-version [label]");
+            println!();
+            println!("Full invocation (use the actual binary name):");
+            println!("  grok-cli hoh versions");
+            println!("  grok-cli hoh rollback v1728123456");
+            println!("  grok-cli hoh save-version \"before-refactor\"");
+            println!("  grok-cli hoh start");
         }
     }
 }

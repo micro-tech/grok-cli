@@ -35,6 +35,11 @@ grok-cli hoh history
 # Dry-run / simulation modes
 grok-cli hoh apply --dry-run
 grok-cli hoh simulate
+
+# Task list versioning (327.13)
+grok-cli hoh versions                    # List historical snapshots
+grok-cli hoh save-version "before-refactor"
+grok-cli hoh rollback v1728123456        # Restore a previous snapshot
 ```
 
 All commands work **without an API key** because they are local orchestration + planning.
