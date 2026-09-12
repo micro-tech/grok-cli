@@ -359,7 +359,7 @@ async fn handle_interactive_chat(
                 // Only for one-shot display, then dropped.
                 let _thinking_content = response_with_finish.thinking_content; // deliberately discarded for money savings
 
-                use crate::cot_guard::{clean_and_assert_no_cot, debug_assert_no_cot_in_messages};
+                use crate::cot_guard::clean_and_assert_no_cot;
 
                 // Clean the raw response message (removes any CoT)
                 let clean_response_msg = clean_and_assert_no_cot(

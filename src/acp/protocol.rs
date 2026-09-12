@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize, Serializer};
-use serde_json::Value;
+use serde_json::{json, Value};
 
 // ---------------------------------------------------------------------------
 // Official crate re-exports (ACP 2.1.0 support — schema 1.7)
@@ -373,7 +373,6 @@ impl InitializeResponse {
         self.protocol_version = "2".to_string();
         self
     }
-}
 
     pub fn agent_capabilities(mut self, caps: AgentCapabilities) -> Self {
         self.agent_capabilities = caps;

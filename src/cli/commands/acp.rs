@@ -1230,7 +1230,7 @@ async fn handle_extension_dispatch(
             if method == "session/fork" || method.ends_with("/fork") {
                 return respond_with_handler_result(
                     responder,
-                    handle_session_fork(&params, &agent).await,
+                    handle_session_fork(&params, &agent),
                 )
                 .await;
             }
@@ -1239,7 +1239,7 @@ async fn handle_extension_dispatch(
             if method == "session/resume" || method.ends_with("/resume") {
                 return respond_with_handler_result(
                     responder,
-                    handle_session_resume(&params, &agent).await,
+                    handle_session_resume(&params, &agent),
                 )
                 .await;
             }
