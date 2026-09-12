@@ -598,7 +598,7 @@ mod tests {
     #[tokio::test]
     async fn test_propose_and_apply() {
         let dir = tempdir().unwrap();
-        let adapter = TaskListAdapter::new(dir.path().to_path_buf(), true);
+        let adapter = TaskListAdapter::new(dir.path().to_path_buf(), false); // must write so load() sees data
 
         // Seed a simple list
         let mut list = TaskList::default();
@@ -676,7 +676,7 @@ mod tests {
     #[tokio::test]
     async fn test_32711_refinement_in_evolution_cycle() {
         let dir = tempdir().unwrap();
-        let adapter = TaskListAdapter::new(dir.path().to_path_buf(), true);
+        let adapter = TaskListAdapter::new(dir.path().to_path_buf(), false); // real writes so load sees data
 
         let mut list = TaskList::default();
         list.tasks.push(Task {
@@ -797,7 +797,7 @@ mod tests {
     #[tokio::test]
     async fn test_32712_pruning_in_evolution_cycle() {
         let dir = tempdir().unwrap();
-        let adapter = TaskListAdapter::new(dir.path().to_path_buf(), true);
+        let adapter = TaskListAdapter::new(dir.path().to_path_buf(), false);
 
         let mut list = TaskList::default();
         list.tasks.push(Task {

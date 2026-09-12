@@ -165,47 +165,29 @@ impl AgentProfile {
 
     /// Derive the best profile for a given RefactoringAction (361.5 core mapping).
     pub fn from_action(action: &RefactoringAction) -> Self {
-        let title_lower = action.title.to_lowercase();
-        let desc_lower = action.description.to_lowercase();
-        let combined = format!("{} {}", title_lower, desc_lower);
-
-        // Strong signals first
-        if combined.contains("architect") || combined.contains("module") || combined.contains("structure") || combined.contains("boundary") {
-            return AgentProfile::Architect;
-        }
-        if combined.contains("debug") || combined.contains("fail") || combined.contains("root cause") || combined.contains("trace") {
-            return AgentProfile::Debugger;
-        }
-        if combined.contains("research") || combined.contains("idea") || combined.contains("explore") || combined.contains("novel") {
-            return AgentProfile::Researcher;
-        }
-        if combined.contains("test") || combined.contains("quality") || combined.contains("coverage") || combined.contains("verify") {
-            return AgentProfile::Tester;
-        }
-        if combined.contains("governance") || combined.contains("ethics") || combined.contains("risk") || combined.contains("safety") {
-            return AgentProfile::Governor;
-        }
-
-        // Action-type based fallback (more reliable)
+        // Check action type first for the most reliable signal (especially for governance/extracts)
         match action.action_type {
             RefactoringActionType::ExtractModule | RefactoringActionType::SplitLargeFile | RefactoringActionType::MoveTypesToNewModule => {
-                AgentProfile::Architect
-            }
-            RefactoringActionType::RefactorScoringHeuristic | RefactoringActionType::AddMetaHook => {
-                if action.confidence > 0.85 { AgentProfile::Refactorer } else { AgentProfile::Tester }
+                return AgentProfile::Architect;
             }
             RefactoringActionType::ExtractCrossCuttingConcern | RefactoringActionType::ExtractGovernanceLayer => {
-                AgentProfile::Governor
+                return AgentProfile::Governor;
             }
-            RefactoringActionType::IntroduceTrait => AgentProfile::Refactorer,
+            RefactoringActionType::RefactorScoringHeuristic | RefactoringActionType::AddMetaHook => {
+                if action.confidence > 0.85 { return AgentProfile::Refactorer; } else { return AgentProfile::Tester; }
+            }
+            RefactoringActionType::IntroduceTrait => return AgentProfile::Refactorer,
             RefactoringActionType::GeneralStructuralImprovement => {
                 if action.estimated_effort < 2.5 && action.confidence >= 0.75 {
-                    AgentProfile::Refactorer
+                    return AgentProfile::Refactorer;
                 } else {
-                    AgentProfile::Architect
+                    return AgentProfile::Architect;
                 }
             }
         }
+
+        // Fallback (should not normally be reached as all action types are handled above)
+        AgentProfile::Refactorer
     }
 
     /// Returns a short observable signature for telemetry / metrics.
@@ -345,8 +327,9 @@ pub fn profile_behavior_score(profile: &AgentProfile, action: &RefactoringAction
     let thresh_factor = profile.success_threshold();
 
     // Different profiles weight things differently → measurable difference
+    // Governor is deliberately conservative (lower score)
     match profile {
-        AgentProfile::Governor => base * 0.6 + (1.0 - risk_factor) * 0.4,
+        AgentProfile::Governor => base * 0.4 + risk_factor * 0.2,
         AgentProfile::Tester => base * 0.7 + thresh_factor * 0.3,
         AgentProfile::Debugger => base * 0.85,
         _ => base * 0.9 + risk_factor * 0.1,

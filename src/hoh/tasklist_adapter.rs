@@ -520,15 +520,15 @@ impl TaskListAdapter {
 
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
-            .map_err(|e| HOHError::Other(format!("Time error: {}", e)))?
-            .as_secs();
+            .map_err(|e| HOHError::Other(format!("Time error: {}", e)))?;
 
-        // Simple but unique ID: v<unix-seconds>
-        let id = format!("v{}", now);
+        // Unique ID using seconds + millis to avoid collisions when multiple versions
+        // are created in the same second (common in fast tests).
+        let id = format!("v{}.{}", now.as_secs(), now.subsec_millis());
 
         let meta = TaskListVersionMeta {
             id: id.clone(),
-            timestamp: format!("{}", now),
+            timestamp: now.as_secs().to_string(),
             label: label.to_string(),
             task_count: list.tasks.len(),
             created_by: created_by.to_string(),

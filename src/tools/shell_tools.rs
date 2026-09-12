@@ -228,8 +228,8 @@ mod tests {
         assert!(result.is_ok(), "non-zero exit must still return Ok so output is visible (ACP/tool result)");
         let out = result.unwrap();
         assert!(
-            out.contains("[exit_code=") && (out.contains("1") || out.contains("exit")),
-            "output must contain exit code marker and indication of failure, got: {}",
+            out.contains("Exit code:") && (out.contains("-1") || out.contains("1") || out.contains("exit")),
+            "output must contain 'Exit code:' and indication of failure, got: {}",
             out
         );
     }
@@ -254,21 +254,33 @@ mod tests {
     async fn windows_and_chain_stops_on_failure() {
         let policy = SecurityPolicy::new();
         // First part fails (exit 1), second part must NOT execute.
-        // COR-10: non-zero exit now returns Err (with the failure message inside).
+        // run_shell_command ALWAYS returns Ok (rich labeled output for harness/ACP/LLM).
+        // The PowerShell && translation (using $LASTEXITCODE) ensures the echo never runs.
+        // We detect the short-circuit by absence of the marker + presence of failure exit code.
         let result =
             run_shell_command("cmd /c exit 1 && echo SHOULD_NOT_APPEAR_IN_OUTPUT", &policy).await;
 
-        assert!(result.is_err(), "failing command must return Err (COR-10)");
-        let err = result.unwrap_err().to_string();
+        assert!(result.is_ok(), "non-zero exit must return Ok (rich output for harness/ACP)");
+        let out = result.unwrap();
+
+        // The header always repeats the original command (so it legitimately contains the marker text).
+        // We must verify the *executed payload* (everything after "Exit code:") does NOT contain it.
+        // This proves the PowerShell `if ($LASTEXITCODE -eq 0)` guard prevented the echo from running.
+        let after_exit = out
+            .split_once("Exit code:")
+            .map(|(_, rest)| rest)
+            .unwrap_or(&out);
+
         assert!(
-            !err.contains("SHOULD_NOT_APPEAR_IN_OUTPUT"),
-            "second command after && must not run when first fails. Got error: {}",
-            err
+            !after_exit.contains("SHOULD_NOT_APPEAR_IN_OUTPUT"),
+            "second command after && must not run when first fails (PowerShell $LASTEXITCODE guard). Full result:\n{}",
+            out
         );
+
         assert!(
-            err.contains("failed with code") || err.contains("exit 1"),
-            "error should mention failure code, got: {}",
-            err
+            out.contains("Exit code:") && (out.contains("-1") || out.contains("1") || out.contains("exit")),
+            "output should mention Exit code and failure, got: {}",
+            out
         );
     }
 

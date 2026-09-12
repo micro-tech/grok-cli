@@ -422,17 +422,35 @@ impl ArchitectureEvolutionEngine {
 mod tests {
     use super::*;
     use crate::hoh::tasklist_adapter::TaskListAdapter;
-    use std::path::PathBuf;
+
 
     #[tokio::test]
     async fn test_propose_evolutions_in_simulation() {
-        let adapter = TaskListAdapter::new(PathBuf::from("."), true);
+        // Use a temp dir + simulation=false so that load() works reliably
+        // and we can seed a list that triggers proposals.
+        use tempfile::tempdir;
+        let dir = tempdir().unwrap();
+        let adapter = TaskListAdapter::new(dir.path(), false);
+
+        // Seed a task list that will trigger proposals
+        let mut list = crate::hoh::tasklist_adapter::TaskList::default();
+        list.tasks.push(crate::hoh::tasklist_adapter::Task {
+            id: 1,
+            title: "Architecture Self-Refinement work".to_string(),
+            details: "Improve planner and evolution_engine for 361 batch".to_string(),
+            priority: "high".to_string(),
+            status: "pending".to_string(),
+            test_strategy: "Run cargo test and verify proposals are generated.".to_string(),
+            ..Default::default()
+        });
+        adapter.save(&list).await.unwrap();
+
         let engine = ArchitectureEvolutionEngine::new(adapter, true);
 
         let proposals = engine.propose_evolutions().await.unwrap();
         assert!(!proposals.is_empty(), "Should generate at least some architectural proposals");
 
-        // At least one should be a module split or layer extraction
+        // At least one should be a module split or layer extraction or self-refinement
         let has_structural = proposals.iter().any(|p| {
             matches!(p.change_type, ArchitectureChangeType::ModuleSplit | ArchitectureChangeType::LayerExtraction | ArchitectureChangeType::SelfRefinement)
         });
