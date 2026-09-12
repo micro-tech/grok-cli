@@ -1099,6 +1099,38 @@ async fn handle_builtin_result(
             Ok(msg) => msg,
             Err(e) => format!("❌ Forced compression failed: {}", e),
         },
+        BuiltinResult::SetShowThinking(opt_enabled) => {
+            match opt_enabled {
+                Some(enabled) => {
+                    match agent.set_show_thinking(session_id, enabled).await {
+                        Ok(()) => {
+                            if enabled {
+                                "🧠 Chain-of-Thought display **enabled** for this session.\nThinking traces will now be shown in the UI.".to_string()
+                            } else {
+                                "🔇 Chain-of-Thought display **disabled** for this session.\nNo thinking traces will be shown.".to_string()
+                            }
+                        }
+                        Err(e) => format!("❌ Could not change CoT display: {}", e),
+                    }
+                }
+                None => {
+                    // Show current effective setting
+                    let per_session = agent.get_show_thinking(session_id).await;
+                    let effective = agent.should_stream_thinking(session_id).await;
+                    let source = if per_session.is_some() {
+                        " (session override)"
+                    } else {
+                        " (global config)"
+                    };
+                    let status = if effective { "ON" } else { "OFF" };
+                    format!(
+                        "🧠 CoT / thinking display is currently **{}**{}\n\n\
+                         Use `/cot on` or `/cot off` to change it for this session only.",
+                        status, source
+                    )
+                }
+            }
+        }
     }
 }
 

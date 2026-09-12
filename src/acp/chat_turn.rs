@@ -171,8 +171,10 @@ impl ChatTurn {
             );
 
             // Emit thinking if present (Task 280.4) — display only, not in history
+            // Respect per-session /cot override (falls back to global config.acp.stream_thinking)
+            let stream_thinking = agent.should_stream_thinking(session_id).await;
             if let Some(ref tc) = thinking_content
-                && agent.config.acp.stream_thinking
+                && stream_thinking
                     && let Some(sender) = event_sender
                 {
                     let blk = crate::acp::protocol::ThinkingBlockUpdate::new(tc, false);
@@ -203,7 +205,8 @@ impl ChatTurn {
                 // Final response construction: thinking_content is used ONLY for display.
                 // It is deliberately NOT appended to any persistent messages or context.
                 let final_response = if let Some(tc) = thinking_content {
-                    if agent.config.acp.stream_thinking
+                    let stream_thinking = agent.should_stream_thinking(session_id).await;
+                    if stream_thinking
                         && let Some(sender) = event_sender
                     {
                         let blk = crate::acp::protocol::ThinkingBlockUpdate::new(&tc, true);
@@ -262,6 +265,36 @@ impl ChatTurn {
 
             info!("🛠️  Processing {} tool calls", tool_calls.len());
 
+            // Wire sub-agent role tracking for status bar icons (context graph + shoulder icons)
+            // Only add while the agent is actually running. We will remove it after the tool batch.
+            for tc in tool_calls {
+                let fname = &tc.function.name;
+                if fname == "spawn_agent" || fname == "fork_agent" || fname == "delegate_plan_step" {
+                    if let Ok(args) = serde_json::from_str::<Value>(&tc.function.arguments) {
+                        let role = infer_sub_agent_role(&args);
+                        {
+                            let mut guard = agent.sessions.write().await;
+                            if let Some(s) = guard.get_mut(&session_id.0) {
+                                if !s.active_agents.contains(&role) {
+                                    s.active_agents.push(role.clone());
+                                }
+                            }
+                        }
+                        // Immediately refresh status bar so the icon appears while the sub-agent runs
+                        if let Some(sender) = event_sender {
+                            emit_context_and_status(
+                                agent,
+                                sender,
+                                &self.messages,
+                                &self.model,
+                                &self.thinking_mode,
+                                true,
+                            );
+                        }
+                    }
+                }
+            }
+
             process_tool_calls(
                 agent,
                 session_id,
@@ -285,6 +318,15 @@ impl ChatTurn {
                 );
             }
 
+            // Clear active sub-agent icons now that this batch of tools (including any spawns) has completed.
+            // The icons will re-appear if the model decides to spawn more agents in the next iteration.
+            {
+                let mut guard = agent.sessions.write().await;
+                if let Some(s) = guard.get_mut(&session_id.0) {
+                    s.active_agents.clear();
+                }
+            }
+
             // Early stop if model said stop after tools
             if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
                 info!("✅ Model flagged stop after tools — returning");
@@ -299,6 +341,7 @@ impl ChatTurn {
                         for name in &self.newly_always_allowed {
                             s.always_allow.insert(name.clone());
                         }
+                        s.active_agents.clear();
                     }
                 }
                 return Ok(String::new());
@@ -565,6 +608,72 @@ pub async fn process_tool_calls(
     Ok(())
 }
 
+/// Infer a sub-agent role from spawn/fork args for status bar icons.
+/// Looks at explicit role, system_prompt, model name, or task text.
+/// This is pub(crate) so agent_tools can use a similar helper when spawning.
+pub(crate) fn infer_sub_agent_role(args: &Value) -> String {
+    // explicit role (if someone passes it)
+    if let Some(r) = args.get("role").and_then(|v| v.as_str()) {
+        return r.to_string();
+    }
+
+    // from system_prompt / persona
+    if let Some(sys) = args.get("system_prompt").and_then(|v| v.as_str()) {
+        let l = sys.to_lowercase();
+        if l.contains("planner") || l.contains("plan") { return "planner".into(); }
+        if l.contains("coder") || l.contains("write code") || l.contains("implement") { return "coder".into(); }
+        if l.contains("research") || l.contains("explorer") { return "researcher".into(); }
+        if l.contains("verif") || l.contains("test") { return "verifier".into(); }
+    }
+
+    // model hint
+    if let Some(m) = args.get("model").and_then(|v| v.as_str()) {
+        let l = m.to_lowercase();
+        if l.contains("coder") { return "coder".into(); }
+    }
+
+    // from task description (most common path)
+    if let Some(task) = args.get("task").and_then(|v| v.as_str()) {
+        let l = task.to_lowercase();
+        if l.contains("plan") || l.contains("architect") { return "planner".into(); }
+        if l.contains("code") || l.contains("implement") || l.contains("write") || l.contains("patch") { return "coder".into(); }
+        if l.contains("research") || l.contains("search") || l.contains("explore") || l.contains("find") { return "researcher".into(); }
+        if l.contains("verify") || l.contains("test") || l.contains("review") { return "verifier".into(); }
+    }
+
+    // fork_agent has "tasks"
+    if let Some(tasks) = args.get("tasks").and_then(|v| v.as_array()) {
+        if let Some(first) = tasks.first().and_then(|v| v.as_str()) {
+            let l = first.to_lowercase();
+            if l.contains("plan") { return "planner".into(); }
+            if l.contains("code") { return "coder".into(); }
+            if l.contains("research") { return "researcher".into(); }
+        }
+    }
+
+    "agent".to_string()
+}
+
+/// Public helper for agent_tools.rs so it can infer a role when using the SubAgentConfig path.
+pub fn infer_sub_agent_role_from_config(config: &crate::agent::config::SubAgentConfig, task: &str) -> String {
+    let mut v = serde_json::json!({
+        "task": task,
+        "model": config.model,
+    });
+    if let Some(sp) = &config.persona.system_prompt {
+        v["system_prompt"] = serde_json::Value::String(sp.clone());
+    }
+    infer_sub_agent_role(&v)
+}
+
+/// Remove a previously registered agent role from the session (call after sub-agent completes).
+async fn remove_sub_agent_role(agent: &GrokAcpAgent, session_id: &crate::acp::protocol::SessionId, role: &str) {
+    let mut guard = agent.sessions.write().await;
+    if let Some(s) = guard.get_mut(&session_id.0) {
+        s.active_agents.retain(|r| r != role);
+    }
+}
+
 /// Emit context + status bar updates (Task 280.4)
 pub fn emit_context_and_status(
     agent: &GrokAcpAgent,
@@ -589,22 +698,25 @@ pub fn emit_context_and_status(
     );
     let _ = sender.send(SessionUpdate::ContextUsageUpdate(usage));
 
+    let current = estimate_tokens(messages);
+    let max = model_context_budget(
+        model,
+        agent.config.acp.max_context_tokens,
+        agent.config.acp.grok4_max_context_tokens,
+    );
+
+    // Compression threshold marker: use 75% of context as a reasonable "compress point"
+    let compress_at = (max as f64 * 0.75) as usize;
+
     let state = StatusBarState {
         model: model.to_string(),
         thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
-        current_tokens: estimate_tokens(messages),
-        max_tokens: model_context_budget(
-            model,
-            agent.config.acp.max_context_tokens,
-            agent.config.acp.grok4_max_context_tokens,
-        ),
-        context_percent: (estimate_tokens(messages) as f32)
-            / (model_context_budget(
-                model,
-                agent.config.acp.max_context_tokens,
-                agent.config.acp.grok4_max_context_tokens,
-            ) as f32),
+        current_tokens: current,
+        max_tokens: max,
+        context_percent: if max > 0 { current as f32 / max as f32 } else { 0.0 },
         is_generating,
+        context_graph: crate::acp::status_bar::format_context_graph(current, max, compress_at),
+        agent_icons: vec![], // populated later when we track active sub-agents
     };
     agent.emit_status_bar(Some(sender), &state);
 }

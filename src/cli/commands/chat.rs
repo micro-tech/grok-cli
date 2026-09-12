@@ -643,6 +643,13 @@ fn handle_interactive_command(
                                 "   Start an ACP session or use a long conversation + the auto-compress path instead."
                             );
                         }
+                        slash_commands::BuiltinResult::SetShowThinking(opt_enabled) => {
+                            match opt_enabled {
+                                Some(true) => println!("🧠 Chain-of-Thought display **enabled** for this CLI session."),
+                                Some(false) => println!("🔇 Chain-of-Thought display **disabled** for this CLI session."),
+                                None => println!("🧠 CoT display: use `/cot on` or `/cot off` (CLI session override not fully wired; falls back to global)."),
+                            }
+                        }
                     }
                     return Ok(Some(CommandResult::Continue));
                 }

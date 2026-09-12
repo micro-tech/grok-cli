@@ -154,6 +154,16 @@ struct SessionData {
     /// Injected into every refined prompt so the model respects them throughout.
     session_rules: crate::context::session_rules::SessionRules,
 
+    /// Active sub-agents for this session (for status bar icons).
+    /// Stored as role names: "planner", "coder", "researcher", etc.
+    active_agents: Vec<String>,
+
+    /// Per-session override for displaying Chain-of-Thought / reasoning traces.
+    /// When `Some(true)` or `Some(false)`, it overrides `config.acp.stream_thinking`.
+    /// `None` means "use the global setting".
+    /// Controlled by the `/cot on|off` slash command.
+    show_thinking: Option<bool>,
+
     /// Last workflow trace recorded for this session (Task 232).
     /// Populated when using `route_with_workflow_trace` (e.g. in sub-agents)
     /// or when a full tool-using code workflow completes.
@@ -569,6 +579,8 @@ impl GrokAcpAgent {
             dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
             session_rules: Default::default(),
+            active_agents: Vec::new(),
+            show_thinking: None,
             last_workflow_trace: None,
         };
 
@@ -654,17 +666,20 @@ impl GrokAcpAgent {
             info!("Sent {} slash commands to ACP client", commands.len());
 
             // Emit initial status bar on session start (Task 164)
+            let max0 = model_context_budget(
+                &init_model,
+                self.config.acp.max_context_tokens,
+                self.config.acp.grok4_max_context_tokens,
+            );
             let initial_state = crate::acp::status_bar::StatusBarState {
                 model: init_model.clone(),
                 thinking_mode: init_thinking,
                 current_tokens: 0,
-                max_tokens: model_context_budget(
-                    &init_model,
-                    self.config.acp.max_context_tokens,
-                    self.config.acp.grok4_max_context_tokens,
-                ),
+                max_tokens: max0,
                 context_percent: 0.0,
                 is_generating: false,
+                context_graph: crate::acp::status_bar::format_context_graph(0, max0, (max0 as f64 * 0.75) as usize),
+                agent_icons: vec![],
             };
             self.emit_status_bar(Some(&sender), &initial_state);
         }
@@ -1251,19 +1266,21 @@ impl GrokAcpAgent {
             );
             let _ = sender.send(crate::acp::protocol::SessionUpdate::StatusBarUpdate(update));
 
-            // Fallback visible line (temporary until Zed supports StatusBarUpdate)
+            // New nice status line with context graph + agent icons
+            let agents_part = if state.agent_icons.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", state.agent_icons.join(" "))
+            };
+
             let status_line = format!(
-                "┌─ Grok ─ {} ─ {} ─ {}/{} tokens ({:.0}%) {}",
+                "┌─ Grok ─ {} ─ {} ─ {}{} {} {}",
                 state.model,
                 state.thinking_mode,
-                state.current_tokens,
-                state.max_tokens,
-                state.context_percent * 100.0,
-                if state.is_generating {
-                    "⏳ generating..."
-                } else {
-                    "✓ ready"
-                }
+                state.context_graph,
+                agents_part,
+                if state.is_generating { "⏳" } else { "✓" },
+                if state.is_generating { "generating..." } else { "ready" }
             );
             // Send as a normal message chunk so it appears in the transcript
             let chunk =
@@ -1284,18 +1301,19 @@ impl GrokAcpAgent {
     pub(crate) fn status_bar_message_update(
         state: &crate::acp::status_bar::StatusBarState,
     ) -> crate::acp::protocol::SessionUpdate {
+        let agents_part = if state.agent_icons.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", state.agent_icons.join(" "))
+        };
+
         let status_line = format!(
-            "-- Grok -- {} -- {} -- {}/{} tokens ({:.0}%) {}",
+            "Grok {} {} {}{} {}",
             state.model,
             state.thinking_mode,
-            state.current_tokens,
-            state.max_tokens,
-            state.context_percent * 100.0,
-            if state.is_generating {
-                "... generating..."
-            } else {
-                "ready"
-            }
+            state.context_graph,
+            agents_part,
+            if state.is_generating { "⏳ generating..." } else { "✓ ready" }
         );
         crate::acp::protocol::SessionUpdate::AgentMessageChunk(
             crate::acp::protocol::ContentChunk::new(crate::acp::protocol::ContentBlock::Text(
@@ -1744,17 +1762,25 @@ impl GrokAcpAgent {
             .get(&session_id.0)
             .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
 
-        let current_tokens = estimate_tokens(&session.messages);
-        let max_tokens = model_context_budget(
+        let current = estimate_tokens(&session.messages);
+        let max = model_context_budget(
             &session.config.model,
             self.config.acp.max_context_tokens,
             self.config.acp.grok4_max_context_tokens,
         );
-        let context_percent = if max_tokens > 0 {
-            current_tokens as f32 / max_tokens as f32
-        } else {
-            0.0
-        };
+        let context_percent = if max > 0 { current as f32 / max as f32 } else { 0.0 };
+        let compress_at = (max as f64 * 0.75) as usize;
+
+        // Drive icons strictly from currently *running* sub-agents in the AgentManager.
+        // This guarantees icons only appear while the agent is actually executing.
+        let running_roles = crate::tools::agent_tools::get_agent_manager()
+            .running_roles()
+            .await;
+
+        let icons: Vec<String> = running_roles
+            .into_iter()
+            .map(|role| crate::acp::status_bar::icon_for_agent_role(&role).to_string())
+            .collect();
 
         Ok(crate::acp::status_bar::StatusBarState {
             model: session.config.model.clone(),
@@ -1764,10 +1790,12 @@ impl GrokAcpAgent {
                 .as_api_str()
                 .unwrap_or("off")
                 .to_string(),
-            current_tokens,
-            max_tokens,
+            current_tokens: current,
+            max_tokens: max,
             context_percent,
             is_generating: false,
+            context_graph: crate::acp::status_bar::format_context_graph(current, max, compress_at),
+            agent_icons: icons,
         })
     }
 
@@ -1800,6 +1828,44 @@ impl GrokAcpAgent {
         sessions
             .get(&session_id.0)
             .map(|s| s.config.thinking_mode.clone())
+    }
+
+    // ── Per-session CoT / thinking display control ( /cot slash command ) ─────
+
+    /// Set whether to display Chain-of-Thought / reasoning traces for this session.
+    /// `true` = show thinking blocks (overrides global `stream_thinking`).
+    /// `false` = hide thinking blocks for this session.
+    pub async fn set_show_thinking(&self, session_id: &SessionId, enabled: bool) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            session.show_thinking = Some(enabled);
+            info!(
+                "CoT display set to {} for session {}",
+                if enabled { "ON" } else { "OFF" },
+                session_id.0
+            );
+            Ok(())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
+    }
+
+    /// Returns the per-session override for thinking display, if any.
+    /// `None` means fall back to global `config.acp.stream_thinking`.
+    pub async fn get_show_thinking(&self, session_id: &SessionId) -> Option<bool> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .and_then(|s| s.show_thinking)
+    }
+
+    /// Effective value used for deciding whether to emit thinking blocks.
+    pub async fn should_stream_thinking(&self, session_id: &SessionId) -> bool {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .and_then(|s| s.show_thinking)
+            .unwrap_or(self.config.acp.stream_thinking)
     }
 
     /// Clean up expired sessions
@@ -1957,6 +2023,8 @@ impl GrokAcpAgent {
                 dna: crate::session::dna::SessionDna::default(),
                 current_goal: source.current_goal.clone(),
                 session_rules: source.session_rules.clone(),
+                active_agents: source.active_agents.clone(),
+                show_thinking: source.show_thinking,
                 last_workflow_trace: None,
             }
         };
@@ -2080,6 +2148,8 @@ mod tests {
             bayes_engine: crate::bayes::BayesianEngine::new(),
             current_goal: None,
             session_rules: Default::default(),
+            active_agents: Vec::new(),
+            show_thinking: None,
             last_workflow_trace: None,
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();

@@ -32,6 +32,8 @@ pub struct SubAgent {
     pub completed_at: Option<DateTime<Utc>>,
     pub model: Option<String>,
     pub skill: Option<String>,
+    /// Semantic role for status bar icons ("planner", "coder", "researcher", etc.)
+    pub role: Option<String>,
 }
 
 /// Central manager for all sub-agents in the current process/session.
@@ -54,6 +56,7 @@ impl AgentManager {
         parent_id: Option<String>,
         model: Option<String>,
         skill: Option<String>,
+        role: Option<String>,
     ) -> String {
         let id = Uuid::new_v4().to_string();
         let agent = SubAgent {
@@ -66,11 +69,23 @@ impl AgentManager {
             completed_at: None,
             model,
             skill,
+            role,
         };
 
         let mut agents = self.agents.write().await;
         agents.insert(id.clone(), agent);
         id
+    }
+
+    /// Return roles of currently running sub-agents (for status bar icons).
+    /// Only Running agents contribute icons.
+    pub async fn running_roles(&self) -> Vec<String> {
+        let agents = self.agents.read().await;
+        agents
+            .values()
+            .filter(|a| a.status == AgentStatus::Running)
+            .filter_map(|a| a.role.clone())
+            .collect()
     }
 
     /// Mark a sub-agent as completed with a result
@@ -159,9 +174,9 @@ mod tests {
     #[tokio::test]
     async fn test_spawn_with_parent() {
         let manager = AgentManager::new();
-        let parent_id = manager.spawn("parent", None, None, None).await;
+        let parent_id = manager.spawn("parent", None, None, None, None).await;
         let child_id = manager
-            .spawn("child", Some(parent_id.clone()), None, None)
+            .spawn("child", Some(parent_id.clone()), None, None, None)
             .await;
 
         let child = manager.get(&child_id).await.unwrap();
@@ -171,7 +186,7 @@ mod tests {
     #[tokio::test]
     async fn test_complete_updates_status_and_result() {
         let manager = AgentManager::new();
-        let id = manager.spawn("task", None, None, None).await;
+        let id = manager.spawn("task", None, None, None, None).await;
 
         manager.complete(&id, "done".into()).await;
 
@@ -184,7 +199,7 @@ mod tests {
     #[tokio::test]
     async fn test_fail_updates_status_and_error() {
         let manager = AgentManager::new();
-        let id = manager.spawn("task", None, None, None).await;
+        let id = manager.spawn("task", None, None, None, None).await;
 
         manager.fail(&id, "boom".into()).await;
 
@@ -196,7 +211,7 @@ mod tests {
     #[tokio::test]
     async fn test_cancel_only_affects_running() {
         let manager = AgentManager::new();
-        let id = manager.spawn("task", None, None, None).await;
+        let id = manager.spawn("task", None, None, None, None).await;
         manager.complete(&id, "ok".into()).await;
 
         // Should not change a completed agent
@@ -208,10 +223,10 @@ mod tests {
     #[tokio::test]
     async fn test_list_filters_by_parent() {
         let manager = AgentManager::new();
-        let p1 = manager.spawn("p1", None, None, None).await;
-        let _c1 = manager.spawn("c1", Some(p1.clone()), None, None).await;
-        let p2 = manager.spawn("p2", None, None, None).await;
-        let _c2 = manager.spawn("c2", Some(p2.clone()), None, None).await;
+        let p1 = manager.spawn("p1", None, None, None, None).await;
+        let _c1 = manager.spawn("c1", Some(p1.clone()), None, None, None).await;
+        let p2 = manager.spawn("p2", None, None, None, None).await;
+        let _c2 = manager.spawn("c2", Some(p2.clone()), None, None, None).await;
 
         let children_of_p1 = manager.list(Some(&p1)).await;
         assert_eq!(children_of_p1.len(), 1);
@@ -221,8 +236,8 @@ mod tests {
     #[tokio::test]
     async fn test_running_count() {
         let manager = AgentManager::new();
-        let _a1 = manager.spawn("a1", None, None, None).await;
-        let a2 = manager.spawn("a2", None, None, None).await;
+        let _a1 = manager.spawn("a1", None, None, None, None).await;
+        let a2 = manager.spawn("a2", None, None, None, None).await;
         manager.complete(&a2, "done".into()).await;
 
         assert_eq!(manager.running_count().await, 1);
