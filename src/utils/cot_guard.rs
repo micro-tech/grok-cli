@@ -86,7 +86,7 @@ pub fn contains_reasoning_trace(msg: &Value) -> bool {
 /// router.chat_completion_with_history(&clean_history, ...).await?;
 /// ```
 #[inline]
-pub fn debug_assert_no_cot_in_messages(_messages: &[Value]) {
+pub fn debug_assert_no_cot_in_messages(messages: &[Value]) {
     #[cfg(debug_assertions)]
     {
         for (i, m) in messages.iter().enumerate() {

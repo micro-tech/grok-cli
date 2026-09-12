@@ -162,7 +162,7 @@ mod tests {
     async fn test_spawn_creates_agent() {
         let manager = AgentManager::new();
         let id = manager
-            .spawn("test task", None, Some("grok-4".into()), None)
+            .spawn("test task", None, Some("grok-4".into()), None, None)
             .await;
 
         let agent = manager.get(&id).await.unwrap();

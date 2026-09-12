@@ -677,7 +677,7 @@ mod tests {
         adapter.save(&list).await.unwrap();
 
         // Create another version
-        let v2 = adapter
+        let _v2 = adapter
             .save_versioned(&list, "after-update", "test")
             .await
             .unwrap();
