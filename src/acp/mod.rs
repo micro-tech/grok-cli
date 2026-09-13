@@ -411,12 +411,16 @@ impl GrokAcpAgent {
     /// Return a clone of the underlying [`AppRouter`], lazily creating it
     /// on first use if an API key is configured.  This keeps `new()` fast
     /// for ACP stdio startup.
+    ///
+    /// Rate limits from `self.config.rate_limits` are now attached (fresh review fix).
     fn get_router(&self) -> Result<AppRouter> {
         if self.router.get().is_none()
             && let Some(ref api_key) = self.config.api_key
-            && let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs)
         {
-            let _ = self.router.set(r);
+            let mut router = AppRouter::new(api_key, self.config.timeout_secs)?;
+            // Attach rate limiting so enforcement happens on every chat_completion_with_history
+            router = router.with_rate_limits(self.config.rate_limits.clone());
+            let _ = self.router.set(router);
         }
 
         self.router.get().cloned().ok_or_else(|| {

@@ -623,7 +623,9 @@ pub(crate) fn infer_sub_agent_role(args: &Value) -> String {
         if l.contains("planner") || l.contains("plan") { return "planner".into(); }
         if l.contains("coder") || l.contains("write code") || l.contains("implement") { return "coder".into(); }
         if l.contains("research") || l.contains("explorer") { return "researcher".into(); }
-        if l.contains("verif") || l.contains("test") { return "verifier".into(); }
+        if l.contains("reviewer") || l.contains("code review") || (l.contains("review") && !l.contains("verif")) { return "reviewer".into(); }
+        if l.contains("verifier") || l.contains("verif") || l.contains("validate") || l.contains("run test") { return "verifier".into(); }
+        if l.contains("test") { return "verifier".into(); } // default "test" to verifier
     }
 
     // model hint

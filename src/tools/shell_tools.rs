@@ -187,11 +187,12 @@ pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Resu
         tracing::warn!(
             exit_code = exit_code,
             command = %command,
-            "shell_tools: non-zero exit — rich output returned to LLM/harness anyway"
+            "shell_tools: non-zero exit — returning as error so callers can distinguish failure (COR-10)"
         );
+        // Return rich error so the model still sees full STDOUT/STDERR + context.
+        return Err(anyhow!("{}", result));
     }
 
-    // Critical: always Ok so the content reaches the model as a normal tool result.
     Ok(result)
 }
 
@@ -214,7 +215,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn non_zero_exit_still_returns_output() {
+    async fn non_zero_exit_returns_err_cor10() {
         let policy = SecurityPolicy::new();
         // Cross-platform failing command
         #[cfg(target_os = "windows")]
@@ -223,15 +224,17 @@ mod tests {
         let cmd = "false";
 
         let result = run_shell_command(cmd, &policy).await;
-        // Changed behavior (COR-10 + ACP visibility): we now return Ok with the output
-        // so the model always sees the real stdout/stderr even when the command "fails".
-        assert!(result.is_ok(), "non-zero exit must still return Ok so output is visible (ACP/tool result)");
-        let out = result.unwrap();
+        // COR-10: return Err on non-zero exit so callers (including sub-agents, verifiers) can distinguish failure.
+        // The error still contains the rich labeled output (STDOUT/STDERR + exit code) for the model.
+        assert!(result.is_err(), "non-zero exit must return Err (COR-10)");
+        let err = result.unwrap_err().to_string();
         assert!(
-            out.contains("Exit code:") && (out.contains("-1") || out.contains("1") || out.contains("exit")),
-            "output must contain 'Exit code:' and indication of failure, got: {}",
-            out
+            err.contains("Exit code:") && (err.contains("-1") || err.contains("1") || err.contains("exit")),
+            "error must contain 'Exit code:' and indication of failure, got: {}",
+            err
         );
+        // Still rich: model/harness sees full output even in the error case.
+        assert!(err.contains("TOOL RESULT: run_shell_command") || err.contains("STDOUT") || err.contains("STDERR"));
     }
 
     #[tokio::test]

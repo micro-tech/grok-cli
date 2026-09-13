@@ -48,7 +48,17 @@ pub struct ChatOptions<'a> {
 }
 
 pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
-    let client = initialize_router(options.api_key, options.timeout_secs)?;
+    let client = if options.rate_limit_config.max_requests_per_minute > 0
+        || options.rate_limit_config.max_tokens_per_minute > 0
+    {
+        crate::utils::client::initialize_router_with_limits(
+            options.api_key,
+            options.timeout_secs,
+            options.rate_limit_config.clone(),
+        )?
+    } else {
+        initialize_router(options.api_key, options.timeout_secs)?
+    };
 
     if options.interactive {
         handle_interactive_chat(

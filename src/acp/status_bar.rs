@@ -50,7 +50,8 @@ pub fn icon_for_agent_role(role: &str) -> &'static str {
         "planner" | "plan" | "architect" => "🗺️",   // map / planning
         "coder" | "code" | "dev" | "programmer" => "💻", // coding
         "researcher" | "research" | "explorer" | "search" => "🔎", // research
-        "verifier" | "tester" | "reviewer" => "✅",
+        "verifier" | "tester" => "✅",   // strict validation / test runner
+        "reviewer" => "👀",              // code review (distinct from verifier)
         "writer" | "docs" => "📝",
         "debugger" | "fixer" => "🐛",
         _ => "🧑", // generic person (shoulder + head feel)
