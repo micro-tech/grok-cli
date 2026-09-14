@@ -214,6 +214,76 @@ impl TaskDependencyGraph {
         }
         lines.join("\n")
     }
+
+    // ─────────────────────────────────────────────────────────────
+    // 327.15: Impact Analysis (number of transitive dependents)
+    // ─────────────────────────────────────────────────────────────
+
+    /// 327.15: Compute impact score for a task.
+    /// Impact = number of tasks that (transitively) depend on this one.
+    /// Higher = more work unblocked by completing this task.
+    pub fn compute_impact(&self, task_id: u64) -> usize {
+        let mut visited = HashSet::new();
+        let mut stack = vec![task_id];
+
+        while let Some(current) = stack.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            if let Some(dependents) = self.reverse_edges.get(&current) {
+                for &d in dependents {
+                    if !visited.contains(&d) {
+                        stack.push(d);
+                    }
+                }
+            }
+        }
+
+        // subtract self
+        visited.len().saturating_sub(1)
+    }
+
+    /// Batch version: impact for all nodes.
+    pub fn compute_all_impacts(&self) -> HashMap<u64, usize> {
+        self.nodes
+            .iter()
+            .map(|&id| (id, self.compute_impact(id)))
+            .collect()
+    }
+
+    // ─────────────────────────────────────────────────────────────
+    // 327.16 + 327.25: Difficulty + Stalling heuristics (lightweight)
+    // ─────────────────────────────────────────────────────────────
+
+    /// Rough difficulty estimate (0 = trivial, higher = harder).
+    /// Used by prioritization (327.16) and stalling detector (327.25).
+    pub fn estimate_difficulty(&self, task: &Task) -> f32 {
+        let mut score: f32 = 0.0;
+
+        // Size signals
+        if task.details.len() > 1200 { score += 2.0; }
+        if task.details.len() > 2500 { score += 1.5; }
+
+        // Definition quality
+        if task.test_strategy.trim().is_empty() { score += 1.5; }
+        if task.description.trim().len() < 30 { score += 1.0; }
+
+        // Dependency fan-out / fan-in
+        let deps = self.get_dependencies(task.id).len() as f32;
+        let dependents = self.get_dependents(task.id).len() as f32;
+        if deps >= 3.0 { score += 1.0; }
+        if dependents >= 4.0 { score += 0.8; } // high impact but also coordination cost
+
+        // Subtask complexity
+        if task.subtasks.len() > 5 { score += 1.5; }
+
+        score.min(8.0)
+    }
+
+    /// 327.15 helper: impact score for a specific task (wrapper around compute_impact).
+    pub fn get_impact(&self, id: u64) -> usize {
+        self.compute_impact(id)
+    }
 }
 
 #[cfg(test)]

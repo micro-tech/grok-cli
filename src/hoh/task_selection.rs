@@ -208,6 +208,45 @@ impl TaskSelectionEngine {
         selected
     }
 
+    /// Produce a *scheduled* (linearly ordered) list of ready tasks for the next
+    /// HOH iteration / execution window.
+    ///
+    /// This is the core of **327.17 HOH Task Scheduling Engine**.
+    ///
+    /// It combines:
+    /// - Dependency graph (327.4) → only ready tasks
+    /// - Prioritization model (327.5) → scores + reasoning
+    /// - Topological order as a stable tie-breaker for execution sequence
+    ///
+    /// The returned list is safe to execute in order (dependencies satisfied).
+    pub async fn schedule(&self, config: &SelectionConfig) -> Result<Vec<SelectedTask>, HOHError> {
+        let mut selected = self.select(config).await?;
+
+        // Get topological order for stable sequencing among equally-scored tasks
+        let topo_order = self.adapter.get_topological_order().await.unwrap_or_default();
+        let topo_pos: std::collections::HashMap<u64, usize> = topo_order
+            .into_iter()
+            .enumerate()
+            .map(|(i, id)| (id, i))
+            .collect();
+
+        // Stable sort: primary = score (desc), secondary = topo position (asc)
+        selected.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+                .then_with(|| {
+                    let pa = topo_pos.get(&a.task.id).copied().unwrap_or(usize::MAX);
+                    let pb = topo_pos.get(&b.task.id).copied().unwrap_or(usize::MAX);
+                    pa.cmp(&pb)
+                })
+        });
+
+        // Re-apply the max_tasks cap after scheduling sort
+        selected.truncate(config.max_tasks);
+        Ok(selected)
+    }
+
     /// Like [`select`], but feeds the [`TaskCompletionTracker`]'s statistics
     /// into the prioritization model's completion-history signal, and applies
     /// a word-overlap boost from recent high-quality completions.

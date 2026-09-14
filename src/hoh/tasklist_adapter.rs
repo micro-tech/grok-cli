@@ -36,6 +36,52 @@ pub struct Task {
     pub test_strategy: String,
     #[serde(default)]
     pub subtasks: Vec<Task>,
+
+    // === Harness-of-Harnesses signals (327.x) ===
+    /// Unix timestamp (seconds) when the task was first created / materialized.
+    /// Used for 327.19 freshness and 327.28 staleness.
+    #[serde(default)]
+    pub created_at: Option<u64>,
+
+    /// Last time this task was touched (priority change, detail update, etc.).
+    /// Falls back to created_at if absent.
+    #[serde(default)]
+    pub last_touched: Option<u64>,
+}
+
+impl Task {
+    /// 327.19 + 327.28: Return approximate age in days (0 if unknown).
+    pub fn age_days(&self) -> f32 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let created = self.created_at.unwrap_or(now);
+        ((now.saturating_sub(created)) as f32 / 86400.0).max(0.0)
+    }
+
+    /// Touch the task (update last_touched). Used by evolution / mutations.
+    pub fn touch(&mut self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        self.last_touched = Some(now);
+        if self.created_at.is_none() {
+            self.created_at = Some(now);
+        }
+    }
+
+    /// 327.20: Simple definition health score (0.0–1.0).
+    pub fn definition_health(&self) -> f32 {
+        let mut s = 0.0f32;
+        if !self.title.trim().is_empty() { s += 0.15; }
+        if self.description.len() > 30 { s += 0.15; }
+        if self.details.len() > 120 { s += 0.25; }
+        if !self.test_strategy.trim().is_empty() { s += 0.30; }
+        if self.test_strategy.len() > 25 { s += 0.15; }
+        s.min(1.0)
+    }
 }
 
 fn default_status() -> String {
@@ -465,6 +511,63 @@ impl TaskListAdapter {
     pub async fn get_consistency_problems(&self) -> Result<Vec<String>, HOHError> {
         let list = self.load().await?;
         Ok(self.check_consistency(&list))
+    }
+
+    // ============================================================
+    // 327.18 Task Conflict Detector
+    // ============================================================
+
+    /// 327.18: Detect contradictory or overlapping tasks.
+    /// Returns human-readable conflict descriptions.
+    pub fn detect_conflicts(&self, list: &TaskList) -> Vec<String> {
+        let mut conflicts = Vec::new();
+        let pending: Vec<&Task> = list.tasks.iter()
+            .filter(|t| t.status == "pending")
+            .collect();
+
+        // 1. Exact or near-duplicate titles
+        for (i, a) in pending.iter().enumerate() {
+            for b in pending.iter().skip(i + 1) {
+                if a.title.trim().eq_ignore_ascii_case(&b.title.trim()) {
+                    conflicts.push(format!(
+                        "Duplicate title conflict: #{} and #{} both titled \"{}\"",
+                        a.id, b.id, a.title
+                    ));
+                }
+            }
+        }
+
+        // 2. Overlapping scope (simple keyword + high priority overlap)
+        for (i, a) in pending.iter().enumerate() {
+            for b in pending.iter().skip(i + 1) {
+                if a.priority == "high" && b.priority == "high" {
+                    let a_text = format!("{} {}", a.title, a.details).to_lowercase();
+                    let b_text = format!("{} {}", b.title, b.details).to_lowercase();
+
+                    let overlap_keywords = ["refactor", "architecture", "core", "main", "primary", "system"];
+                    let mut hits = 0;
+                    for kw in &overlap_keywords {
+                        if a_text.contains(kw) && b_text.contains(kw) {
+                            hits += 1;
+                        }
+                    }
+                    if hits >= 2 {
+                        conflicts.push(format!(
+                            "High-priority scope overlap: #{} and #{} both target similar core area",
+                            a.id, b.id
+                        ));
+                    }
+                }
+            }
+        }
+
+        conflicts
+    }
+
+    /// Convenience async wrapper for conflict detection.
+    pub async fn get_conflicts(&self) -> Result<Vec<String>, HOHError> {
+        let list = self.load().await?;
+        Ok(self.detect_conflicts(&list))
     }
 
     /// Expose simulation mode (used by ArchitectureEvolutionEngine).

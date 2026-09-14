@@ -7,6 +7,8 @@ use crate::hoh::okf_tasklist_sync::OkfTaskListSyncer;
 use crate::hoh::state::HOHError;
 use crate::hoh::task_dependency_graph::TaskDependencyGraph;
 use crate::hoh::task_mutation::{MutationResult, TaskMutation, TaskMutationRules};
+// 327.x selection types are used by the planner, not directly here
+// use crate::hoh::task_selection::{SelectedTask, SelectionConfig, TaskSelectionEngine};
 use crate::hoh::tasklist_adapter::{Task, TaskList, TaskListAdapter};
 
 /// The main evolution engine.
@@ -202,6 +204,15 @@ impl TaskEvolutionEngine {
         // Multiple signals required for a proposal (keywords + low substance).
         let prunings = propose_auto_prunings(&list);
         for p in prunings {
+            if self.rules.validate_mutation(&p, &list.tasks).is_ok() {
+                proposals.push(p);
+            }
+        }
+
+        // 327.25 + 327.26: Stalling Detector + Recovery Planner
+        // Detect long-stalled pending tasks (vague, no recent movement signals, low substance) and propose recovery.
+        let stalling = propose_stalling_and_recovery(&list);
+        for p in stalling {
             if self.rules.validate_mutation(&p, &list.tasks).is_ok() {
                 proposals.push(p);
             }
@@ -405,6 +416,91 @@ fn generate_better_details(task: &Task, title_lower: &str) -> String {
     out.push_str("\nAcceptance criteria will be validated by the task's testStrategy.");
 
     out
+}
+
+/// 327.25 + 327.26: Stalling Detector + Recovery Planner
+///
+/// Detects tasks that have been pending for "too long" with low substance or
+/// high complexity (no movement signals). Proposes:
+/// - Split (if large)
+/// - Add recovery subtasks
+/// - Boost priority + attach a testStrategy if missing
+/// - Or defer if truly dead
+///
+/// This is intentionally conservative and reviewable.
+fn propose_stalling_and_recovery(list: &TaskList) -> Vec<TaskMutation> {
+    let mut proposals = Vec::new();
+
+    for task in &list.tasks {
+        if task.status != "pending" {
+            continue;
+        }
+
+        let is_stalled = is_likely_stalled(task);
+
+        if !is_stalled {
+            continue;
+        }
+
+        // High value stalled task → try to unstick it
+        if task.priority == "high" || task.details.len() > 800 {
+            // Propose adding a recovery subtask or strengthening definition
+            if task.subtasks.is_empty() && task.details.len() > 1200 {
+                // Suggest splitting as recovery
+                let subs = create_skilled_auto_expansion(task);
+                if !subs.is_empty() {
+                    proposals.push(TaskMutation::SplitTask {
+                        task_id: task.id,
+                        new_subtasks: subs,
+                    });
+                    continue;
+                }
+            }
+
+            // Strengthen test strategy + details as a recovery action
+            if task.test_strategy.trim().is_empty() {
+                proposals.push(TaskMutation::SetTestStrategy {
+                    task_id: task.id,
+                    strategy: "Recovery: Reproduce current state, implement minimal passing slice, add regression guard. cargo test must pass for the affected area.".to_string(),
+                });
+            }
+
+            // Gentle priority reinforcement if it drifted
+            if task.priority != "high" {
+                proposals.push(TaskMutation::SetPriority {
+                    task_id: task.id,
+                    new_priority: "high".to_string(),
+                });
+            }
+        } else if task.priority == "low" || task.details.len() < 80 {
+            // Low-value stalled → propose deferral
+            proposals.push(TaskMutation::SetStatus {
+                task_id: task.id,
+                new_status: "deferred".to_string(),
+            });
+        }
+    }
+
+    proposals
+}
+
+/// Heuristic: is this task likely stalled?
+fn is_likely_stalled(task: &Task) -> bool {
+    if task.priority == "high" && !task.test_strategy.trim().is_empty() && task.details.len() > 400 {
+        return false; // high-quality high-prio work is not "stalled"
+    }
+
+    let low_substance = task.details.trim().len() < 120
+        && task.description.trim().len() < 50
+        && task.test_strategy.trim().len() < 30;
+
+    let placeholderish = task.title.to_lowercase().contains("todo")
+        || task.title.to_lowercase().contains("investigate")
+        || task.title.to_lowercase().contains("hack")
+        || task.title.to_lowercase().contains("temp");
+
+    // Large vague task or placeholder with almost no definition
+    (task.details.len() > 1500 && low_substance) || (placeholderish && low_substance)
 }
 
 /// 327.12: Auto-Pruning — propose safe deferral of low-value, obsolete, stale or duplicate tasks.

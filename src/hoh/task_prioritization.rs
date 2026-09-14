@@ -71,6 +71,22 @@ pub struct PrioritizationWeights {
     /// Subtracted per 500 chars of `details` over a 1 000-char threshold.
     /// Penalises huge, unfocused tasks.
     pub complexity_penalty: f32,
+
+    // 327.15 + 327.16: New signals (advanced task intelligence)
+    /// 327.15: Impact of completing this task (how many other tasks it unblocks / downstream dependents).
+    pub impact: f32,
+    /// 327.16: Difficulty estimate (higher = harder → may deprioritize or trigger split proposals).
+    pub difficulty_penalty: f32,
+
+    // 327.19 + 327.28: Harness-of-Harnesses freshness & staleness
+    /// Boost for recently touched/created tasks (prevents starvation of new work).
+    pub freshness_boost: f32,
+    /// Penalty applied to very old pending tasks.
+    pub staleness_penalty: f32,
+
+    // 327.20: Definition Health (Harness of Harnesses)
+    /// Positive contribution when a task is well-defined (good description + testStrategy + details).
+    pub definition_health_bonus: f32,
 }
 
 impl Default for PrioritizationWeights {
@@ -85,6 +101,15 @@ impl Default for PrioritizationWeights {
             okf_relevance: 1.0,
             completion_history: 1.5,
             complexity_penalty: 0.5,
+            impact: 2.5,           // 327.15
+            difficulty_penalty: 1.0, // 327.16
+
+            // Harness-of-Harnesses freshness / staleness (327.19 / 327.28)
+            freshness_boost: 0.8,
+            staleness_penalty: 0.6,
+
+            // 327.20 Definition Health (Harness of Harnesses)
+            definition_health_bonus: 1.4,
         }
     }
 }
@@ -106,6 +131,20 @@ pub struct PrioritySignals {
     pub completion_history: f32,
     /// Negative — reduces score for large, complex tasks.
     pub complexity_penalty: f32,
+
+    // 327.15 + 327.16 new signals (impact & difficulty)
+    pub impact: f32,
+    pub difficulty_penalty: f32,
+
+    // 327.19 + 327.28: Freshness / Age signal (Harness of Harnesses)
+    /// Boost for recently created or touched tasks (prevents starvation of new work).
+    pub freshness_boost: f32,
+    /// Penalty for very old pending tasks (encourages progress or deferral).
+    pub staleness_penalty: f32,
+
+    // 327.20: Definition Health (Harness of Harnesses)
+    /// Positive contribution when a task is well-defined.
+    pub definition_health_bonus: f32,
 }
 
 impl PrioritySignals {
@@ -120,6 +159,11 @@ impl PrioritySignals {
             + self.okf_relevance
             + self.completion_history
             + self.complexity_penalty // already ≤ 0
+            + self.impact
+            + self.freshness_boost
+            + self.staleness_penalty // already ≤ 0
+            + self.definition_health_bonus
+            // difficulty_penalty intentionally not auto-included here (we keep it explicit in scoring)
     }
 }
 
@@ -394,6 +438,85 @@ impl TaskPrioritizationModel {
             explanation.push(format!(
                 "details {} chars → {:.2}",
                 detail_len, sig.complexity_penalty
+            ));
+        }
+
+        // ── 10. 327.15 Impact Analysis (transitive dependents) ─────────────────
+        // Use the graph's proper impact computation when available
+        let impact = pressure.get(&task.id).copied().unwrap_or(0);
+        if impact > 0 {
+            sig.impact = (impact as f32).min(10.0) * w.impact;
+            explanation.push(format!(
+                "impact: {} dependents unblocked → +{:.2} (327.15)",
+                impact, sig.impact
+            ));
+        }
+
+        // ── 11. 327.16 Difficulty Estimator (heuristic) ───────────────────────
+        // Combines size, definition quality, and dep complexity.
+        // High difficulty can lower priority or trigger evolution to split the task.
+        let dep_count = task.dependencies.len() as f32;
+        let has_weak_ts = task.test_strategy.trim().len() < 25;
+        let mut diff_score = 0.0f32;
+
+        if detail_len > 1400 { diff_score += 1.8; }
+        if detail_len > 2800 { diff_score += 1.5; }
+        if has_weak_ts { diff_score += 1.2; }
+        if dep_count >= 3.0 { diff_score += 1.0; }
+        if dep_count >= 5.0 { diff_score += 0.8; }
+
+        if diff_score > 0.5 {
+            sig.difficulty_penalty = -(diff_score.min(5.0) * w.difficulty_penalty);
+            explanation.push(format!(
+                "difficulty≈{:.1} → {:.2} (327.16)",
+                diff_score, sig.difficulty_penalty
+            ));
+        }
+
+        // ── 12. 327.19 + 327.28 Freshness / Staleness (Harness of Harnesses) ──
+        // Newer or recently touched tasks get a small boost (prevents starvation).
+        // Very old pending tasks get a gentle penalty (encourages action or deferral).
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+
+        let created = task.created_at.unwrap_or(0);
+        let touched = task.last_touched.unwrap_or(created);
+
+        if created > 0 {
+            let age_days = ((now.saturating_sub(created)) as f32 / 86400.0).max(0.0);
+            let touched_days = ((now.saturating_sub(touched)) as f32 / 86400.0).max(0.0);
+
+            // Freshness boost: very recent work gets +bonus
+            if touched_days < 2.0 {
+                sig.freshness_boost = (2.0 - touched_days).min(1.8) * 0.8;
+                explanation.push(format!(
+                    "fresh (touched {:.1}d ago) → +{:.2} (327.19)",
+                    touched_days, sig.freshness_boost
+                ));
+            }
+
+            // Staleness penalty for old pending high-value work that hasn't moved
+            if age_days > 14.0 && task.status == "pending" {
+                let staleness = ((age_days - 14.0) / 7.0).min(3.0);
+                sig.staleness_penalty = -(staleness * w.staleness_penalty.max(0.3));
+                explanation.push(format!(
+                    "stale ({:.0}d) → {:.2} (327.28)",
+                    age_days, sig.staleness_penalty
+                ));
+            }
+        }
+
+        // ── 13. 327.20 Definition Health (Harness of Harnesses) ─────────────────
+        // Tasks that are well-defined (good details + strong testStrategy) get a bonus.
+        // This is a core "Harness of Harnesses" quality signal.
+        let def_health = task.definition_health(); // 0.0–1.0
+        if def_health > 0.55 {
+            sig.definition_health_bonus = (def_health - 0.5) * 2.8 * w.definition_health_bonus;
+            explanation.push(format!(
+                "definition health {:.0}% → +{:.2} (327.20)",
+                def_health * 100.0, sig.definition_health_bonus
             ));
         }
 

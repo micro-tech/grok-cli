@@ -456,12 +456,51 @@ impl HOHManager {
     }
 
     async fn execute_phase(&self, plan: &HOHPlan) -> Result<Vec<PatchSet>, HOHError> {
-        // 297.4 + follow-up to 361 materialization:
-        // Now produces real PatchSets with intended_content so the applier can write useful artifacts.
+        // 297.4 + 327.17: Execution now runs the schedule produced by TaskSelectionEngine.
+        // We prefer the live scheduled list (with scores/reasoning) over the static plan.selected_tasks
+        // so that HOH truly executes what the 327.17 scheduler decided.
         let mut patches = Vec::new();
         let now = chrono::Utc::now().timestamp() as u64;
 
-        for &task_id in &plan.selected_tasks {
+        // 327.17 wiring: Ask the planner for the current scheduled tasks (full SelectedTask objects when possible)
+        let scheduled_ids: Vec<u64> = if let Some(planner) = &self.planner {
+            match planner.get_next_scheduled_task_ids(8, plan.goals.clone()).await {
+                Ok(ids) if !ids.is_empty() => {
+                    tracing::info!(
+                        "327.17: execute_phase using live scheduled task list ({} tasks)",
+                        ids.len()
+                    );
+                    ids
+                }
+                _ => plan.selected_tasks.clone(),
+            }
+        } else {
+            plan.selected_tasks.clone()
+        };
+
+        // Also try to get full SelectedTask objects for rich logging/reasoning
+        let scheduled_details = if let Some(planner) = &self.planner {
+            planner
+                .get_next_scheduled_tasks(8, plan.goals.clone())
+                .await
+                .unwrap_or_default()
+        } else {
+            vec![]
+        };
+
+        for &task_id in &scheduled_ids {
+            // 327.17 observability in the execution loop
+            if let Some(st) = scheduled_details.iter().find(|s| s.task.id == task_id) {
+                tracing::info!(
+                    "327.17 EXEC: #{} score={:.2} — {}",
+                    task_id,
+                    st.score,
+                    st.reasoning.join(" | ")
+                );
+            } else {
+                tracing::info!("327.17 EXEC: #{} (from plan)", task_id);
+            }
+
             let target_file = format!("src/hoh/generated/task_{}_progress.rs", task_id);
             let intended = self.build_task_progress_content(task_id, &plan.goals);
 
@@ -697,6 +736,9 @@ impl HOHManager {
     ///
     /// When tests fail we deliberately lower quality and record the actual failure hints
     /// so the planner and future scoring can prioritize "fix the broken area".
+    ///
+    /// 327.17: We now prefer the live scheduled task list from the TaskSelectionEngine
+    /// over the static plan.selected_tasks so that recording matches exactly what was executed.
     async fn record_work_progress(
         &mut self,
         plan: &HOHPlan,
@@ -709,6 +751,12 @@ impl HOHManager {
             let tests_passed = test_passed.unwrap_or(true);
             let base_quality = if tests_passed { 0.82 } else { 0.58 };
             let patch_count = patches.len() as f32;
+
+            // 327.17: Prefer live scheduler for the set of tasks we actually executed this cycle
+            let executed_ids: Vec<u64> = planner
+                .get_next_scheduled_task_ids(16, plan.goals.clone())
+                .await
+                .unwrap_or_else(|_| plan.selected_tasks.clone());
 
             // Extract a couple of concrete failure signals when we have rich output
             let failure_note = if !tests_passed {
@@ -735,7 +783,7 @@ impl HOHManager {
                 String::new()
             };
 
-            for &task_id in &plan.selected_tasks {
+            for &task_id in &executed_ids {
                 let quality = if plan.materialized_task_ids.contains(&task_id) {
                     Some(base_quality + if tests_passed { 0.05 } else { -0.08 })
                 } else {
@@ -751,7 +799,7 @@ impl HOHManager {
                 };
 
                 let notes = format!(
-                    "HOH: {} patches, test_passed={:?}{}",
+                    "HOH: {} patches, test_passed={:?}{} (327.17 scheduled)",
                     patch_count, test_passed, failure_note
                 );
                 planner.record_task_completion(&dummy_task, quality, Some(if tests_passed { 0.85 } else { 0.55 }), &notes);
@@ -770,10 +818,10 @@ impl HOHManager {
                 planner.record_task_completion(&dummy, quality, Some(if tests_passed { 0.90 } else { 0.60 }), &note);
             }
 
-            if !plan.selected_tasks.is_empty() || !plan.materialized_task_ids.is_empty() {
+            if !executed_ids.is_empty() || !plan.materialized_task_ids.is_empty() {
                 tracing::debug!(
-                    "HOH: recorded real outcomes (rich test feedback) for {} selected + {} materialized tasks (patches={}, tests={:?})",
-                    plan.selected_tasks.len(),
+                    "HOH: recorded real outcomes (327.17 schedule) for {} executed + {} materialized tasks (patches={}, tests={:?})",
+                    executed_ids.len(),
                     plan.materialized_task_ids.len(),
                     patch_count,
                     test_passed

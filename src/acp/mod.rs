@@ -1150,27 +1150,15 @@ impl GrokAcpAgent {
     /// set (i.e. the user previously chose "Always Allow" for this tool).
     ///
     /// Silently returns `false` if the session no longer exists.
+    ///
+    /// Always-allow grants are now managed inside the chat turn via the
+    /// PermissionBridge (newly_always_allowed) and synced back into SessionData.
     pub async fn is_always_allowed(&self, session_id: &SessionId, tool_name: &str) -> bool {
         let sessions = self.sessions.read().await;
         sessions
             .get(&session_id.0)
             .map(|s| s.always_allow.contains(tool_name))
             .unwrap_or(false)
-    }
-
-    /// Adds `tool_name` to the session's always-allow set so that future calls
-    /// to that tool within the same session skip the permission prompt.
-    ///
-    /// Currently used internally by the permission bridge path.
-    pub(crate) async fn set_always_allowed(&self, session_id: &SessionId, tool_name: &str) {
-        let mut sessions = self.sessions.write().await;
-        if let Some(session) = sessions.get_mut(&session_id.0) {
-            session.always_allow.insert(tool_name.to_string());
-            info!(
-                "Always-allow granted for tool '{}' in session '{}'",
-                tool_name, session_id.0
-            );
-        }
     }
 
     pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
@@ -2055,10 +2043,8 @@ mod tests {
         assert_eq!(session_id.0.as_str(), "test-session");
     }
 
-    /// Verify the always-allow round-trip:
-    /// set_always_allowed  →  is_always_allowed returns true for that tool,
-    ///                        false for a different tool,
-    ///                        and silently no-ops for an unknown session.
+    /// Verify the always-allow behavior (grants now come via the PermissionBridge
+    /// inside chat turns and are synced into the session's always_allow set).
     #[tokio::test]
     async fn test_always_allow_round_trip() {
         use std::collections::HashMap;

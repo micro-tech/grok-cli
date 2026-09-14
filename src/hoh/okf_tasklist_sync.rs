@@ -433,6 +433,8 @@ impl OkfTaskListSyncer {
             test_strategy,
             dependencies: vec![],
             subtasks: vec![],
+            created_at: None,
+            last_touched: None,
         }
     }
 

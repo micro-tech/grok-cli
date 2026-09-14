@@ -336,6 +336,8 @@ impl AutonomousRefactoringEngine {
                     test_strategy: "Implement the described refactoring. Run cargo check + relevant tests. Verify no behavior change outside the target area.".to_string(),
                     subtasks: vec![],
                     dependencies: vec![],
+                    created_at: None,
+                    last_touched: None,
                 };
 
                 TaskMutation::AddTask { new_task }

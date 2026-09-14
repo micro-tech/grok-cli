@@ -683,14 +683,6 @@ pub fn infer_sub_agent_role_from_config(config: &crate::agent::config::SubAgentC
     infer_sub_agent_role(&v)
 }
 
-/// Remove a previously registered agent role from the session (call after sub-agent completes).
-async fn remove_sub_agent_role(agent: &GrokAcpAgent, session_id: &crate::acp::protocol::SessionId, role: &str) {
-    let mut guard = agent.sessions.write().await;
-    if let Some(s) = guard.get_mut(&session_id.0) {
-        s.active_agents.retain(|r| r != role);
-    }
-}
-
 /// Emit context + status bar updates (Task 280.4)
 /// Pulls shoulder icons (👀 reviewer, 💻 coder, etc.) from the global
 /// AgentManager for any currently Running sub-agents. This is the reliable
