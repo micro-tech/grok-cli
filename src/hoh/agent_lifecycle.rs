@@ -490,7 +490,7 @@ mod tests {
     #[test]
     fn test_graceful_retirement_and_handoff() {
         let mut mgr = AgentLifecycleManager::new(true);
-        mgr.register_agent("agent-x", "HeuristicTuner3614");
+        mgr.register_agent("agent-x", "Refactorer");
 
         mgr.record_outcome("agent-x", false, Some(0.3), 100.0);
         mgr.record_outcome("agent-x", false, Some(0.2), 80.0);

@@ -318,12 +318,19 @@ impl ChatTurn {
                 );
             }
 
-            // Clear active sub-agent icons now that this batch of tools (including any spawns) has completed.
-            // The icons will re-appear if the model decides to spawn more agents in the next iteration.
+            // Re-sync active_agents from the real AgentManager so icons (👀 reviewer, etc.)
+            // stay visible while the sub-agent is actually Running.
+            // Only clear roles that are no longer running.
             {
+                let manager = crate::tools::agent_tools::get_agent_manager();
+                let still_running: std::collections::HashSet<String> =
+                    manager.running_roles().await.into_iter().collect();
+
                 let mut guard = agent.sessions.write().await;
                 if let Some(s) = guard.get_mut(&session_id.0) {
-                    s.active_agents.clear();
+                    s.active_agents.retain(|r| still_running.contains(r));
+                    // If a spawn just happened in this batch, the role should still be there
+                    // from the pre-processing step above.
                 }
             }
 
@@ -662,6 +669,14 @@ pub fn infer_sub_agent_role_from_config(config: &crate::agent::config::SubAgentC
         "task": task,
         "model": config.model,
     });
+
+    // Always forward the explicit persona role if it's a meaningful one.
+    // This is the most reliable path for reviewer(), coder(), etc.
+    let role = &config.persona.role;
+    if !role.is_empty() && role != "agent" {
+        v["role"] = serde_json::Value::String(role.clone());
+    }
+
     if let Some(sp) = &config.persona.system_prompt {
         v["system_prompt"] = serde_json::Value::String(sp.clone());
     }
@@ -677,6 +692,9 @@ async fn remove_sub_agent_role(agent: &GrokAcpAgent, session_id: &crate::acp::pr
 }
 
 /// Emit context + status bar updates (Task 280.4)
+/// Pulls shoulder icons (👀 reviewer, 💻 coder, etc.) from the global
+/// AgentManager for any currently Running sub-agents. This is the reliable
+/// source of truth and makes icons appear even for reviewer agents.
 pub fn emit_context_and_status(
     agent: &GrokAcpAgent,
     sender: &tokio::sync::mpsc::UnboundedSender<SessionUpdate>,
@@ -710,6 +728,32 @@ pub fn emit_context_and_status(
     // Compression threshold marker: use 75% of context as a reasonable "compress point"
     let compress_at = (max as f64 * 0.75) as usize;
 
+    // === THE FIX FOR 👀 REVIEWER (and other) ICONS ===
+    // Use the global AgentManager as the authoritative source.
+    // Only Running agents contribute icons.
+    let agent_icons: Vec<String> = {
+        let manager = crate::tools::agent_tools::get_agent_manager();
+        // We can't easily await here in all call sites, so we use a blocking
+        // read on the roles that are currently marked Running.
+        // For ACP this is fine because the manager is updated synchronously
+        // on spawn/complete.
+        // In practice the roles are small.
+        //
+        // Note: We use tokio::task::block_in_place + Handle::current().block_on
+        // instead of futures::executor because we only depend on tokio (not the
+        // full "futures" crate).
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                manager
+                    .running_roles()
+                    .await
+                    .into_iter()
+                    .map(|role| crate::acp::status_bar::icon_for_agent_role(&role).to_string())
+                    .collect()
+            })
+        })
+    };
+
     let state = StatusBarState {
         model: model.to_string(),
         thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
@@ -718,7 +762,7 @@ pub fn emit_context_and_status(
         context_percent: if max > 0 { current as f32 / max as f32 } else { 0.0 },
         is_generating,
         context_graph: crate::acp::status_bar::format_context_graph(current, max, compress_at),
-        agent_icons: vec![], // populated later when we track active sub-agents
+        agent_icons,
     };
     agent.emit_status_bar(Some(sender), &state);
 }

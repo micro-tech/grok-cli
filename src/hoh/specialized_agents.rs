@@ -168,26 +168,23 @@ impl AgentProfile {
         // Check action type first for the most reliable signal (especially for governance/extracts)
         match action.action_type {
             RefactoringActionType::ExtractModule | RefactoringActionType::SplitLargeFile | RefactoringActionType::MoveTypesToNewModule => {
-                return AgentProfile::Architect;
+                AgentProfile::Architect
             }
             RefactoringActionType::ExtractCrossCuttingConcern | RefactoringActionType::ExtractGovernanceLayer => {
-                return AgentProfile::Governor;
+                AgentProfile::Governor
             }
             RefactoringActionType::RefactorScoringHeuristic | RefactoringActionType::AddMetaHook => {
-                if action.confidence > 0.85 { return AgentProfile::Refactorer; } else { return AgentProfile::Tester; }
+                if action.confidence > 0.85 { AgentProfile::Refactorer } else { AgentProfile::Tester }
             }
-            RefactoringActionType::IntroduceTrait => return AgentProfile::Refactorer,
+            RefactoringActionType::IntroduceTrait => AgentProfile::Refactorer,
             RefactoringActionType::GeneralStructuralImprovement => {
                 if action.estimated_effort < 2.5 && action.confidence >= 0.75 {
-                    return AgentProfile::Refactorer;
+                    AgentProfile::Refactorer
                 } else {
-                    return AgentProfile::Architect;
+                    AgentProfile::Architect
                 }
             }
         }
-
-        // Fallback (should not normally be reached as all action types are handled above)
-        AgentProfile::Refactorer
     }
 
     /// Returns a short observable signature for telemetry / metrics.
@@ -203,44 +200,6 @@ impl AgentProfile {
     }
 }
 
-/// Legacy compatibility type (maps old SubAgentRole → new AgentProfile).
-/// We are migrating toward AgentProfile (361.5).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SubAgentRole {
-    ModuleExtractor,
-    HeuristicTuner,
-    MetaHookInstaller,
-    GovernanceLayer,
-    GeneralRefactorer,
-    QualityEnhancer,
-}
-
-impl From<AgentProfile> for SubAgentRole {
-    fn from(profile: AgentProfile) -> Self {
-        match profile {
-            AgentProfile::Architect => SubAgentRole::ModuleExtractor,
-            AgentProfile::Debugger => SubAgentRole::GeneralRefactorer,
-            AgentProfile::Researcher => SubAgentRole::GeneralRefactorer,
-            AgentProfile::Tester => SubAgentRole::QualityEnhancer,
-            AgentProfile::Refactorer => SubAgentRole::GeneralRefactorer,
-            AgentProfile::Governor => SubAgentRole::GovernanceLayer,
-        }
-    }
-}
-
-impl SubAgentRole {
-    pub fn name(&self) -> &'static str {
-        match self {
-            SubAgentRole::ModuleExtractor => "ModuleExtractor3614",
-            SubAgentRole::HeuristicTuner => "HeuristicTuner3614",
-            SubAgentRole::MetaHookInstaller => "MetaHookInstaller3614",
-            SubAgentRole::GovernanceLayer => "GovernanceLayer3614",
-            SubAgentRole::GeneralRefactorer => "GeneralRefactorer3614",
-            SubAgentRole::QualityEnhancer => "QualityEnhancer3614",
-        }
-    }
-}
-
 /// 361.5: Choose profile for an action (primary entry point).
 pub fn choose_profile_for_action(action: &RefactoringAction) -> AgentProfile {
     AgentProfile::from_action(action)
@@ -251,17 +210,6 @@ pub fn route_with_profile(action: &RefactoringAction) -> (AgentProfile, String) 
     let profile = choose_profile_for_action(action);
     let hint = profile.system_prompt();
     (profile, hint)
-}
-
-/// Legacy routing (kept for backward compatibility during migration).
-pub fn route_refactoring_action(action: &RefactoringAction) -> SubAgentRole {
-    let profile = choose_profile_for_action(action);
-    SubAgentRole::from(profile)
-}
-
-pub fn route_with_prompt_hint(action: &RefactoringAction) -> (SubAgentRole, String) {
-    let (profile, hint) = route_with_profile(action);
-    (SubAgentRole::from(profile), hint)
 }
 
 /// 361.5 main execution entry point.

@@ -40,7 +40,7 @@ pub async fn generate_improvements(state: &IterationState) -> Vec<String> {
         // === D: Specialized agent routing ===
         if !plan.specialized_agent_routes.is_empty() {
             improvements.push(format!(
-                "361.5/D: {} actions were routed to specialized sub-agents. Track success rate per role (HeuristicTuner vs ModuleExtractor etc.) in future evaluations.",
+                "361.5/D: {} actions were routed to specialized sub-agents. Track success rate per role (Refactorer/Architect etc.) in future evaluations.",
                 plan.specialized_agent_routes.len()
             ));
             improvements.push("361.5: Promote successful specialized routes into permanent agent personas or skill profiles.".to_string());

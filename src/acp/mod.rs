@@ -692,80 +692,8 @@ impl GrokAcpAgent {
         Ok(())
     }
 
-    /// Check if a tool execution is permitted by the user
-    #[allow(dead_code)]
-    pub(crate) async fn check_tool_permission(
-        &self,
-        session_id: &SessionId,
-        function_name: &str,
-        _args: &Value,
-        tool_call_id: &str,
-        permission_bridge: Option<&Arc<PermissionBridge>>,
-    ) -> Result<bool> {
-        let mut sessions = self.sessions.write().await;
-        let session = sessions
-            .get_mut(&session_id.0)
-            .ok_or_else(|| anyhow!("Session not found"))?;
-
-        if !self.config.acp.require_permission || session.always_allow.contains(function_name) {
-            return Ok(true);
-        }
-
-        if let Some(bridge) = permission_bridge {
-            let req_id = uuid::Uuid::new_v4().to_string();
-
-            let params = RequestPermissionParams::new(
-                session_id.clone(),
-                tool_call_id.to_string(),
-                Some(format!("Run {}", function_name)),
-                Some(crate::acp::protocol::ToolKind::Execute),
-            );
-
-            let (tx, rx) = oneshot::channel();
-            if bridge.outbound.send((req_id, params, tx)).is_ok() {
-                // Drop the write lock before awaiting the response!
-                // This allows the rest of the application (like handling the client's response)
-                // to read/write the session if needed.
-                drop(sessions);
-
-                let timeout_secs = self.config.acp.permission_timeout_secs;
-                let outcome_res =
-                    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await;
-
-                // Re-acquire lock to update session state
-                let mut sessions = self.sessions.write().await;
-                let session = sessions
-                    .get_mut(&session_id.0)
-                    .ok_or_else(|| anyhow!("Session not found"))?;
-
-                match outcome_res {
-                    Ok(Ok(outcome)) => {
-                        if outcome.is_cancelled() {
-                            return Ok(false);
-                        }
-                        // Any `selected` outcome is treated as approval.
-                        // Record it permanently for the session if "Always Allow".
-                        if outcome.is_always_allow() {
-                            session.always_allow.insert(function_name.to_string());
-                        }
-                        return Ok(true);
-                    }
-                    Ok(Err(_)) => {
-                        return Err(anyhow!("Permission bridge closed unexpectedly"));
-                    }
-                    Err(_) => {
-                        return Err(anyhow!(
-                            "Timed out waiting for permission ({}s)",
-                            timeout_secs
-                        ));
-                    }
-                }
-            }
-        }
-
-        // If require_permission is true but there's no bridge, default to false
-        Ok(false)
-    }
+    // NOTE: Permission handling was moved into process_tool_calls (chat_turn.rs)
+    // using the PermissionBridge. The old check_tool_permission is no longer used.
 
     /// Handle a chat completion request
     pub async fn handle_chat_completion(
@@ -1233,8 +1161,7 @@ impl GrokAcpAgent {
     /// Adds `tool_name` to the session's always-allow set so that future calls
     /// to that tool within the same session skip the permission prompt.
     ///
-    /// Silently no-ops if the session no longer exists.
-    #[allow(dead_code, reason = "kept for symmetry with is_always_allowed and potential future ACP use")]
+    /// Currently used internally by the permission bridge path.
     pub(crate) async fn set_always_allowed(&self, session_id: &SessionId, tool_name: &str) {
         let mut sessions = self.sessions.write().await;
         if let Some(session) = sessions.get_mut(&session_id.0) {
