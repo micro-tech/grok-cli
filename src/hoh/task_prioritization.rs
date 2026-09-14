@@ -87,6 +87,11 @@ pub struct PrioritizationWeights {
     // 327.20: Definition Health (Harness of Harnesses)
     /// Positive contribution when a task is well-defined (good description + testStrategy + details).
     pub definition_health_bonus: f32,
+
+    // 327.27: Stall Risk (Harness of Harnesses)
+    /// Penalty for long-pending tasks with low movement + poor definition
+    /// (encourages recovery, deferral or deprioritization by the scheduler).
+    pub stall_risk_penalty: f32,
 }
 
 impl Default for PrioritizationWeights {
@@ -110,6 +115,9 @@ impl Default for PrioritizationWeights {
 
             // 327.20 Definition Health (Harness of Harnesses)
             definition_health_bonus: 1.4,
+
+            // 327.27 Stall Risk (Harness of Harnesses)
+            stall_risk_penalty: 1.2,
         }
     }
 }
@@ -145,6 +153,10 @@ pub struct PrioritySignals {
     // 327.20: Definition Health (Harness of Harnesses)
     /// Positive contribution when a task is well-defined.
     pub definition_health_bonus: f32,
+
+    // 327.27: Stall Risk (Harness of Harnesses)
+    /// Negative contribution for long-pending tasks that also show low movement + poor definition.
+    pub stall_risk_penalty: f32,
 }
 
 impl PrioritySignals {
@@ -163,6 +175,7 @@ impl PrioritySignals {
             + self.freshness_boost
             + self.staleness_penalty // already ≤ 0
             + self.definition_health_bonus
+            + self.stall_risk_penalty // already ≤ 0 (327.27)
             // difficulty_penalty intentionally not auto-included here (we keep it explicit in scoring)
     }
 }
@@ -518,6 +531,32 @@ impl TaskPrioritizationModel {
                 "definition health {:.0}% → +{:.2} (327.20)",
                 def_health * 100.0, sig.definition_health_bonus
             ));
+        }
+
+        // ── 14. 327.27 Stall Risk (Harness of Harnesses) ───────────────────────
+        // Long-pending + low recent movement + poor definition = high stall risk.
+        // This is the explicit "stall signal" for the scheduler / evolution loop.
+        // Uses the new Task helpers (age_days, days_since_touched, definition_health).
+        let age = task.age_days();
+        let since_touch = task.days_since_touched();
+        let def_h = task.definition_health();
+
+        // Stall risk triggers when:
+        // - pending for a long time, AND
+        // - not touched recently, AND
+        // - definition is weak
+        if task.status == "pending" && age > 12.0 && since_touch > 7.0 && def_h < 0.45 {
+            let risk = ((age - 12.0) / 10.0).min(4.0)
+                + ((since_touch - 7.0) / 5.0).min(3.0)
+                + (0.45 - def_h).max(0.0) * 4.0;
+
+            if risk > 1.5 {
+                sig.stall_risk_penalty = -(risk.min(6.0) * w.stall_risk_penalty);
+                explanation.push(format!(
+                    "STALL RISK age={:.0}d touch={:.0}d def={:.0}% → {:.2} (327.27)",
+                    age, since_touch, def_h * 100.0, sig.stall_risk_penalty
+                ));
+            }
         }
 
         let score = sig.total();

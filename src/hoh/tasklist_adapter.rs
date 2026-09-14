@@ -60,6 +60,21 @@ impl Task {
         ((now.saturating_sub(created)) as f32 / 86400.0).max(0.0)
     }
 
+    /// 327.25/327.28: Days since last touch (or creation). Used for stalling detection.
+    pub fn days_since_touched(&self) -> f32 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0);
+        let touched = self.last_touched.or(self.created_at).unwrap_or(now);
+        ((now.saturating_sub(touched)) as f32 / 86400.0).max(0.0)
+    }
+
+    /// 327.25: Convenience — is this task considered "stale" for stalling purposes?
+    pub fn is_stale_for_stalling(&self, threshold_days: f32) -> bool {
+        self.days_since_touched() > threshold_days && self.status == "pending"
+    }
+
     /// Touch the task (update last_touched). Used by evolution / mutations.
     pub fn touch(&mut self) {
         let now = std::time::SystemTime::now()
