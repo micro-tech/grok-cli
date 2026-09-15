@@ -508,6 +508,8 @@ mod tests {
             test_strategy: String::new(),
             dependencies: vec![],
             subtasks: vec![],
+            created_at: None,
+            last_touched: None,
         }
     }
 

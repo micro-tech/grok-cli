@@ -581,6 +581,12 @@ mod tests {
             okf_relevance: 0.0,
             completion_history: 0.0,
             complexity_penalty: 0.0,
+            impact: 0.0,
+            difficulty_penalty: 0.0,
+            freshness_boost: 0.0,
+            staleness_penalty: 0.0,
+            definition_health_bonus: 0.0,
+            stall_risk_penalty: 0.0,
         };
         let dir = tempdir().unwrap();
         let adapter = TaskListAdapter::new(dir.path().to_path_buf(), true);

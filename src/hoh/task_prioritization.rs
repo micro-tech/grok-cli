@@ -8,15 +8,16 @@
 //!
 //! | # | Signal | Default weight | Source |
 //! |---|--------|---------------|--------|
-//! | 1 | Static priority | ×3.0 | task.priority |
-//! | 2 | Dependency pressure | ×1.5 per waiter | dependency graph |
-//! | 3 | Goal alignment | ×2.0 per keyword hit | HOH goals |
-//! | 4 | Evaluation feedback | ×2.0 | Helix score |
-//! | 5 | Actionability | ×2.0 | details + testStrategy completeness |
-//! | 6 | Test-strategy bonus | ×2.0 | non-empty testStrategy |
-//! | 7 | Completion history | ×1.5 | TaskCompletionTracker stats |
-//! | 8 | OKF relevance | ×1.0 per term hit | OKF lookup results |
-//! | 9 | Complexity penalty | −0.5 per 500 chars over 1 000 | details length |
+//! | 1 | Static priority | x3.0 | task.priority |
+//! | 2 | Dependency pressure | x1.5 per waiter | dependency graph |
+//! | 3 | Goal alignment | x2.0 per keyword hit | HOH goals |
+//! | 4 | Evaluation feedback | x2.0 | Helix score |
+//! | 5 | Actionability | x2.0 | details + testStrategy completeness |
+//! | 6 | Test-strategy bonus | x2.0 | non-empty testStrategy |
+//! | 7 | Completion history | x1.5 | TaskCompletionTracker stats |
+//! | 8 | OKF relevance | x1.0 per term hit | OKF lookup results |
+//! | 9 | Complexity penalty | -0.5 per 500 chars over 1000 | details length |
+//! | 10 | Stall risk (327.27) | -1.2 x risk | age_days + days_since_touched + low definition_health |
 //!
 //! # Quick start
 //!
@@ -31,7 +32,7 @@
 //! let ctx   = PrioritizationContext::default();
 //! let ranked = model.rank(&tasks, None, &ctx);
 //! for r in &ranked {
-//!     println!("[{:.1}] #{} — {}", r.score, r.task.id, r.task.title);
+//!     println!("[{:.1}] #{} - {}", r.score, r.task.id, r.task.title);
 //!     for line in &r.explanation { println!("  {}", line); }
 //! }
 //! ```
@@ -137,7 +138,7 @@ pub struct PrioritySignals {
     pub test_strategy_bonus: f32,
     pub okf_relevance: f32,
     pub completion_history: f32,
-    /// Negative — reduces score for large, complex tasks.
+    /// Negative - reduces score for large, complex tasks.
     pub complexity_penalty: f32,
 
     // 327.15 + 327.16 new signals (impact & difficulty)
@@ -160,7 +161,7 @@ pub struct PrioritySignals {
 }
 
 impl PrioritySignals {
-    /// Composite score — sum of all signals.
+    /// Composite score - sum of all signals.
     pub fn total(&self) -> f32 {
         self.static_priority
             + self.dependency_pressure
@@ -182,7 +183,7 @@ impl PrioritySignals {
 
 // ─── Context ───────────────────────────────────────────────────────────────────
 
-/// Dynamic context for one ranking run — injected from the outer HOH loop.
+/// Dynamic context for one ranking run - injected from the outer HOH loop.
 #[derive(Debug, Clone, Default)]
 pub struct PrioritizationContext {
     /// Current HOH goals (keywords matched against task text for alignment).
@@ -207,7 +208,7 @@ pub struct RankedTask {
     pub score: f32,
     /// Individual signal contributions (before weights).
     pub signals: PrioritySignals,
-    /// One explanation line per active signal — for logging and debugging.
+    /// One explanation line per active signal - for logging and debugging.
     pub explanation: Vec<String>,
 }
 
@@ -248,9 +249,9 @@ impl TaskPrioritizationModel {
     /// Ties are broken by `task.id` ascending so the ordering is fully
     /// deterministic given the same inputs.
     ///
-    /// * `graph` — optional dependency graph; used for the dependency-pressure
+    /// * `graph` - optional dependency graph; used for the dependency-pressure
     ///   signal.  Pass `None` to skip that signal.
-    /// * `ctx`   — dynamic context (goals, Helix score, OKF terms, history).
+    /// * `ctx`   - dynamic context (goals, Helix score, OKF terms, history).
     pub fn rank(
         &self,
         tasks: &[Task],
@@ -356,10 +357,10 @@ impl TaskPrioritizationModel {
                 || text.contains("fail");
 
             let raw = if helix_clamped >= 0.6 {
-                // Good iteration — small global momentum boost
+                // Good iteration - small global momentum boost
                 (helix_clamped - 0.5) * w.evaluation_feedback
             } else {
-                // Poor iteration — larger boost for remediation-flavoured tasks
+                // Poor iteration - larger boost for remediation-flavoured tasks
                 if is_remediation {
                     (0.6 - helix_clamped) * w.evaluation_feedback * 2.0
                 } else {
@@ -853,6 +854,12 @@ mod tests {
             okf_relevance: 0.0,
             completion_history: 0.0,
             complexity_penalty: 0.0,
+            impact: 0.0,
+            difficulty_penalty: 0.0,
+            freshness_boost: 0.0,
+            staleness_penalty: 0.0,
+            definition_health_bonus: 0.0,
+            stall_risk_penalty: 0.0,
         };
         let model = TaskPrioritizationModel::with_weights(w);
         let tasks = vec![
@@ -884,5 +891,123 @@ mod tests {
         assert_eq!(ctx.helix_score, Some(0.7));
         assert_eq!(ctx.okf_terms.len(), 1);
         assert!(ctx.completion_stats.is_none());
+    }
+
+    // ── 327.27 Stall Risk Signal ───────────────────────────────────────────────
+
+    #[test]
+    fn stall_risk_penalty_applies_to_old_untouched_poorly_defined_tasks() {
+        let model = TaskPrioritizationModel::new();
+
+        // Simulate a task that has been pending for a long time with no recent touch and weak definition
+        // Use old unix timestamps (e.g. ~30 days ago and ~20 days since touch)
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let old_created = now - (30 * 86400);   // 30 days old
+        let last_touch  = now - (20 * 86400);   // last touched 20 days ago
+
+        let mut stalled = task(99, "TODO: investigate old thing", "medium", "short");
+        stalled.status = "pending".to_string();
+        stalled.created_at = Some(old_created);
+        stalled.last_touched = Some(last_touch);
+        stalled.details = "fix later".to_string();           // very weak
+        stalled.description = "old".to_string();
+        stalled.test_strategy = "".to_string();              // no test strategy
+
+        let ranked = model.score_task(&stalled, &HashMap::new(), &ctx());
+
+        // Should have a negative stall_risk_penalty
+        assert!(
+            ranked.signals.stall_risk_penalty < -1.0,
+            "expected meaningful negative stall risk penalty, got {:.2}",
+            ranked.signals.stall_risk_penalty
+        );
+
+        // The overall score should be pulled down compared to a fresh equivalent task
+        let mut fresh = stalled.clone();
+        fresh.created_at = Some(now - 3600);   // ~1 hour old
+        fresh.last_touched = Some(now - 1800);
+
+        let fresh_ranked = model.score_task(&fresh, &HashMap::new(), &ctx());
+
+        assert!(
+            fresh_ranked.score > ranked.score,
+            "fresh version of same task should score higher than stalled version"
+        );
+
+        // Explanation should mention STALL RISK
+        let has_stall_explanation = ranked.explanation.iter().any(|e| e.contains("STALL RISK"));
+        assert!(has_stall_explanation, "explanation should contain STALL RISK note (327.27)");
+    }
+
+    #[test]
+    fn high_quality_recent_tasks_do_not_get_stall_penalty() {
+        let model = TaskPrioritizationModel::new();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let mut good_task = task(100, "Implement new feature X", "high", &"x".repeat(800));
+        good_task.status = "pending".to_string();
+        good_task.created_at = Some(now - 86400 * 2);   // 2 days old
+        good_task.last_touched = Some(now - 3600);      // touched today
+        good_task.test_strategy = "All unit tests + integration test pass.".to_string();
+
+        let ranked = model.score_task(&good_task, &HashMap::new(), &ctx());
+
+        // Should NOT receive a stall risk penalty
+        assert!(
+            ranked.signals.stall_risk_penalty >= -0.1,
+            "well-defined recently-touched task should not receive stall penalty"
+        );
+    }
+
+    #[test]
+    fn stall_risk_affects_full_ranking_order() {
+        let model = TaskPrioritizationModel::new();
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        // Fresh high-quality task
+        let mut fresh = task(200, "Implement critical new capability", "high", &"x".repeat(600));
+        fresh.status = "pending".to_string();
+        fresh.created_at = Some(now - 3600);
+        fresh.last_touched = Some(now - 1800);
+        fresh.test_strategy = "Comprehensive unit and integration tests.".to_string();
+
+        // Stalled low-definition task
+        let mut stalled = task(201, "TODO: old investigation", "medium", "later");
+        stalled.status = "pending".to_string();
+        stalled.created_at = Some(now - 45 * 86400);
+        stalled.last_touched = Some(now - 30 * 86400);
+        stalled.details = "do something".to_string();
+        stalled.test_strategy = "".to_string();
+
+        // Another normal task
+        let normal = task(202, "Regular maintenance task", "medium", "Do the maintenance work as described.");
+
+        let ranked = model.rank(&[fresh.clone(), stalled.clone(), normal.clone()], None, &ctx());
+
+        let ids: Vec<u64> = ranked.iter().map(|r| r.task.id).collect();
+
+        // Fresh high-prio should win
+        assert_eq!(ids[0], 200);
+
+        // Stalled one should be pushed down (likely last among these)
+        let stalled_pos = ids.iter().position(|&id| id == 201).unwrap();
+        let normal_pos = ids.iter().position(|&id| id == 202).unwrap();
+        assert!(stalled_pos > normal_pos, "stalled task should rank below normal task due to 327.27 penalty");
+
+        // Verify stall signal is present on the stalled task
+        let stalled_ranked = ranked.iter().find(|r| r.task.id == 201).unwrap();
+        assert!(stalled_ranked.signals.stall_risk_penalty < 0.0);
     }
 }

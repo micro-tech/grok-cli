@@ -7,12 +7,17 @@
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
 > **Latest improvements**:
-> - **Harness-of-Harnesses (HOH) Autonomous Outer Loop** (Tasks 297 + 361 batch):
->   - Full autonomous multi-day development system.
->   - Architecture Evolution Engine (361.1), Self-Refinement Loop (361.2), Autonomous Refactoring (361.3), Specialized Agent Profiles (361.4), and Continual Improvement meta-loop (361.5).
->   - Reads `.zed/task_list.json`, performs dependency-aware planning, materializes tasks, generates safe patches, and feeds outcomes back into the next cycle.
+> - **Harness-of-Harnesses (HOH) Autonomous Outer Loop** (Tasks 297 + 327 + 361 batch + 401–410 + 361.7–361.11):
+>   - Full autonomous multi-day development system: a true **"Harness around Harnesses"**.
+>   - Outer orchestration loop + inner multi-agent orchestrator.
+>   - Task Intelligence (327): dependency graphs, prioritization, live scheduling, autonomous evolution.
+>   - Core 361: Architecture Evolution (361.1), Self-Refinement (361.2), Autonomous Refactoring with A/B/C/D loop (361.3), Specialized Profiles + Continual Improvement (361.4/361.5).
+>   - Advanced layers: Creativity (401), Generative Design (402), Agent Lifecycle/Birth/Evolution (403–405), Governance (407), Ethics (408), Meta-Planning (409), Meta-Evaluation (410).
+>   - Inner Harness (361.7/361.8): `MultiAgentOrchestrator` with simulation-first delegation, collaboration, and skill evolution.
+>   - Long-term Strategy (361.9), Cross-Project Knowledge (361.11), Multi-Project Orchestration (361.0101).
+>   - Reads `.zed/task_list.json`, performs dependency-aware planning, materializes tasks, generates tiny safe patches, runs what-if simulations, and feeds rich outcomes (including test failures) back into the next cycle.
 >   - Commands: `grok-cli hoh start`, `grok-cli hoh status`, `grok-cli hoh last`, `grok-cli hoh simulate`, `grok-cli hoh versions`, `grok-cli hoh rollback`, etc.
->   - See [Doc/HOH.md](Doc/HOH.md) for details.
+>   - See [Doc/HOH.md](Doc/HOH.md) for the full layered breakdown of features by harness layer.
 > - **Self-Updater System** (Task 296): New built-in update mechanism.
 >   - Run `grok update` (or `grok update --check`) to check GitHub releases.
 >   - Full guided update flow is provided by the dedicated **`self-updater`** skill.
@@ -150,7 +155,7 @@ Full options: [Doc/CONFIGURATION.md](Doc/CONFIGURATION.md)
 | `/bayes show`        | Inspect Bayesian priors                  |
 | `grok update [--check] [--force]` | Check for or perform a self-update of grok-cli |
 | `grok skills generate-catalog` | Regenerate the live skills/hooks/optimization catalog for the model |
-| `grok-cli hoh start` / `status` / `last` / `simulate` | Harness-of-Harnesses autonomous outer loop (see Doc/HOH.md) |
+| `grok-cli hoh start` / `status` / `last` / `simulate` | Harness-of-Harnesses autonomous outer loop — full "harness around harnesses" with 327 task intelligence + 361.x meta layers (see Doc/HOH.md) |
 
 See [Doc/QUICK_REFERENCE.md](Doc/QUICK_REFERENCE.md) for the complete list.
 

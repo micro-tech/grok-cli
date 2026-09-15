@@ -257,14 +257,15 @@ mod tests {
     async fn windows_and_chain_stops_on_failure() {
         let policy = SecurityPolicy::new();
         // First part fails (exit 1), second part must NOT execute.
-        // run_shell_command ALWAYS returns Ok (rich labeled output for harness/ACP/LLM).
+        // Per COR-10, run_shell_command returns Err on non-zero exit — the rich labeled
+        // output is embedded in the error message so the model / harness can still read it.
         // The PowerShell && translation (using $LASTEXITCODE) ensures the echo never runs.
-        // We detect the short-circuit by absence of the marker + presence of failure exit code.
+        // We detect the short-circuit by absence of the marker in the output section.
         let result =
             run_shell_command("cmd /c exit 1 && echo SHOULD_NOT_APPEAR_IN_OUTPUT", &policy).await;
 
-        assert!(result.is_ok(), "non-zero exit must return Ok (rich output for harness/ACP)");
-        let out = result.unwrap();
+        assert!(result.is_err(), "non-zero exit must return Err (COR-10)");
+        let out = result.unwrap_err().to_string();
 
         // The header always repeats the original command (so it legitimately contains the marker text).
         // We must verify the *executed payload* (everything after "Exit code:") does NOT contain it.

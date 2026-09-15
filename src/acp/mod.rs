@@ -692,8 +692,71 @@ impl GrokAcpAgent {
         Ok(())
     }
 
-    // NOTE: Permission handling was moved into process_tool_calls (chat_turn.rs)
-    // using the PermissionBridge. The old check_tool_permission is no longer used.
+    // NOTE: Permission handling for production chat turns lives in process_tool_calls
+    // (chat_turn.rs).  This standalone helper is kept for unit tests and any caller
+    // that needs a focused, synchronous-style permission check outside a full chat turn.
+
+    /// Check whether a tool call is permitted for this session.
+    ///
+    /// - If the tool is already in the always-allow set the call returns `Ok(true)` immediately.
+    /// - If no `bridge` is provided (or `require_permission` is false) the call is allowed.
+    /// - Otherwise a permission request is sent through `bridge` and the result is awaited.
+    ///   - `proceed_always` → grants always-allow, returns `Ok(true)`
+    ///   - `proceed_once`   → returns `Ok(true)` (no persistent grant)
+    ///   - cancel           → returns `Ok(false)`
+    ///   - timeout          → returns `Err(…)`
+    pub async fn check_tool_permission(
+        &self,
+        session_id: &SessionId,
+        tool_name: &str,
+        _args: &Value,
+        tool_call_id: &str,
+        bridge: Option<&Arc<PermissionBridge>>,
+    ) -> Result<bool> {
+        // Fast path: already granted always-allow.
+        if self.is_always_allowed(session_id, tool_name).await {
+            return Ok(true);
+        }
+
+        // If permission gating is off, or there is no bridge to ask through, allow.
+        if !self.config.acp.require_permission {
+            return Ok(true);
+        }
+        let Some(bridge) = bridge else {
+            return Ok(true);
+        };
+
+        // Send the permission request.
+        let req_id = uuid::Uuid::new_v4().to_string();
+        let params = RequestPermissionParams::new(
+            session_id.clone(),
+            tool_call_id.to_string(),
+            Some(format!("Run {}", tool_name)),
+            Some(crate::acp::protocol::ToolKind::Execute),
+        );
+        let (tx, rx) = oneshot::channel();
+        if bridge.outbound.send((req_id, params, tx)).is_err() {
+            return Err(anyhow!("Permission bridge closed"));
+        }
+
+        let timeout_secs = self.config.acp.permission_timeout_secs;
+        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await {
+            Ok(Ok(outcome)) => {
+                if outcome.is_cancelled() {
+                    return Ok(false);
+                }
+                if outcome.is_always_allow() {
+                    let mut sessions = self.sessions.write().await;
+                    if let Some(s) = sessions.get_mut(&session_id.0) {
+                        s.always_allow.insert(tool_name.to_string());
+                    }
+                }
+                Ok(true)
+            }
+            Ok(Err(_)) => Err(anyhow!("Permission bridge closed")),
+            Err(_) => Err(anyhow!("Timed out waiting for permission ({}s)", timeout_secs)),
+        }
+    }
 
     /// Handle a chat completion request
     pub async fn handle_chat_completion(
