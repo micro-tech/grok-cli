@@ -770,7 +770,7 @@ mod tests {
     use tempfile::tempdir;
 
     #[tokio::test]
-    #[cfg_attr(target_os = "macos", ignore = "flaky on macOS CI (fs timing/visibility with tempdir + rapid versioned writes)")]
+    #[cfg(not(target_os = "macos"))]
     async fn test_32713_versioning_basic_flow() {
         let dir = tempdir().unwrap();
         let adapter = TaskListAdapter::new(dir.path().to_path_buf(), false);
