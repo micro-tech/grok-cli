@@ -11,7 +11,13 @@ use std::path::PathBuf;
 pub struct HOHManager {
     pub config: crate::hoh::HOHConfig,
     pub current_iteration: Option<IterationState>,
+    /// The HOH-specific data directory: `<project_root>/.grok/hoh`.
+    /// Use this for HOH-internal storage (backups, etc.) only.
     pub data_dir: PathBuf,
+    /// Root of the project being orchestrated (e.g. ".").
+    /// Passed to `persistence` and `TaskListAdapter` so they resolve
+    /// `.grok/hoh/iterations/` and `.zed/task_list.json` correctly.
+    pub project_root: PathBuf,
     planner: Option<HOHPlanner>,
     /// The central Harness-of-Harness multi-agent orchestrator (361.7/361.8).
     /// This is the "inner harness" that coordinates specialized agents, runs sim-first
@@ -23,18 +29,22 @@ pub struct HOHManager {
 }
 
 impl HOHManager {
-    pub fn new(data_dir: PathBuf) -> Self {
+    /// Create a new `HOHManager` rooted at `project_root` (e.g. `PathBuf::from(".")`).
+    /// The HOH data directory (`.grok/hoh/`) is derived from `project_root` automatically.
+    pub fn new(project_root: PathBuf) -> Self {
+        let data_dir = project_root.join(".grok/hoh");
         let simulation = false;
         let mut mgr = Self {
-            data_dir: data_dir.clone(),
-            planner: Some(HOHPlanner::new(data_dir.clone(), simulation)),
+            data_dir,
+            project_root: project_root.clone(),
+            planner: Some(HOHPlanner::new(project_root.clone(), simulation)),
             multi_agent_orchestrator: Some(crate::hoh::multi_agent_orchestrator::MultiAgentOrchestrator::new(simulation)),
             long_term_strategy_engine: Some(crate::hoh::long_term_strategy::LongTermStrategyEngine::new(simulation)),
             ..Default::default()
         };
 
         // Load previous completed iteration for real multi-cycle memory (361.5 feedback)
-        if let Ok(Some(prev)) = crate::hoh::persistence::load_latest_iteration(&data_dir) {
+        if let Ok(Some(prev)) = crate::hoh::persistence::load_latest_iteration(&project_root) {
             tracing::info!(
                 iteration = prev.iteration_id,
                 "HOH: loaded previous iteration from persistence for feedback"
@@ -49,7 +59,7 @@ impl HOHManager {
         self.config = config;
         if let Some(p) = &mut self.planner {
             // Recreate planner with correct simulation flag
-            *p = HOHPlanner::new(self.data_dir.clone(), self.config.simulation_mode);
+            *p = HOHPlanner::new(self.project_root.clone(), self.config.simulation_mode);
         }
         if let Some(o) = &mut self.multi_agent_orchestrator {
             *o = crate::hoh::multi_agent_orchestrator::MultiAgentOrchestrator::new(self.config.simulation_mode);
@@ -330,7 +340,7 @@ impl HOHManager {
         self.current_iteration = Some(state.clone());
 
         // Persist full iteration (297.10 + multi-day memory)
-        if let Err(e) = crate::hoh::persistence::save_iteration(&self.data_dir, &state) {
+        if let Err(e) = crate::hoh::persistence::save_iteration(&self.project_root, &state) {
             tracing::warn!("HOH: failed to persist iteration {}: {}", state.iteration_id, e);
         } else {
             tracing::info!("HOH: iteration {} persisted", state.iteration_id);
@@ -344,7 +354,7 @@ impl HOHManager {
             simulation_mode: self.config.simulation_mode,
             dry_run: matches!(self.config.autonomy_level, crate::hoh::AutonomyLevel::Observe | crate::hoh::AutonomyLevel::Propose),
             create_backups: true,
-            backup_root: self.data_dir.join(".grok/hoh/backups"),
+            backup_root: self.data_dir.join("backups"),
             max_files_per_patch: 20,
         }
     }
@@ -728,7 +738,7 @@ impl HOHManager {
 
     /// Direct access to TaskListAdapter for 327 features (selection, mutation, consistency)
     pub fn tasklist_adapter(&self) -> TaskListAdapter {
-        TaskListAdapter::new(self.data_dir.clone(), self.config.simulation_mode)
+        TaskListAdapter::new(self.project_root.clone(), self.config.simulation_mode)
     }
 
     /// 361.E + 327.6: Record progress / completions for work that was planned + materialized this iteration.

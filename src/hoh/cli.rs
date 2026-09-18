@@ -17,8 +17,10 @@ use crate::hoh::tasklist_adapter::TaskListAdapter;
 use std::path::PathBuf;
 
 pub async fn handle_hoh_command(sub: &str, simulation: bool) {
-    let data_dir = PathBuf::from(".grok/hoh");
-    let mut manager = HOHManager::new(data_dir.clone());
+    // Use the project root so that persistence (which appends ".grok/hoh")
+    // and TaskListAdapter (which appends ".zed/task_list.json") resolve correctly.
+    let project_root = PathBuf::from(".");
+    let mut manager = HOHManager::new(project_root.clone());
     manager.config.simulation_mode = simulation;
 
     let parts: Vec<&str> = sub.split_whitespace().collect();
@@ -39,11 +41,11 @@ pub async fn handle_hoh_command(sub: &str, simulation: bool) {
         "status" => {
             println!("[HOH] === HOH Status ===");
             // Show persisted history
-            match persistence::list_iterations(&data_dir) {
+            match persistence::list_iterations(&project_root) {
                 Ok(ids) => {
                     println!("Persisted iterations: {} total", ids.len());
                     if let Some(&latest_id) = ids.last() {
-                        if let Ok(Some(state)) = persistence::load_iteration(&data_dir, latest_id) {
+                        if let Ok(Some(state)) = persistence::load_iteration(&project_root, latest_id) {
                             println!("Latest completed: iteration {}", latest_id);
                             print_iteration_summary(&state);
                         }
@@ -64,7 +66,7 @@ pub async fn handle_hoh_command(sub: &str, simulation: bool) {
         }
         "last" => {
             println!("[HOH] === Last Iteration ===");
-            match persistence::load_latest_iteration(&data_dir) {
+            match persistence::load_latest_iteration(&project_root) {
                 Ok(Some(state)) => {
                     println!("Iteration {} (status: {:?})", state.iteration_id, state.status);
                     print_iteration_summary(&state);
@@ -88,13 +90,13 @@ pub async fn handle_hoh_command(sub: &str, simulation: bool) {
         }
         "history" => {
             println!("[HOH] === Iteration History ===");
-            match persistence::list_iterations(&data_dir) {
+            match persistence::list_iterations(&project_root) {
                 Ok(ids) => {
                     if ids.is_empty() {
                         println!("No persisted iterations yet.");
                     } else {
                         for id in ids.iter().rev().take(10) {
-                            if let Ok(Some(state)) = persistence::load_iteration(&data_dir, *id) {
+                            if let Ok(Some(state)) = persistence::load_iteration(&project_root, *id) {
                                 let summary = state.summary.as_deref().unwrap_or("no summary");
                                 println!("  {:04} | {:?} | patches={} | {}", id, state.status, state.patches.len(), summary.chars().take(60).collect::<String>());
                             }
