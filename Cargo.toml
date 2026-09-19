@@ -40,10 +40,10 @@ harness = false
 # HTTP client with timeout support for network drops
 grok_api = "0.2.2"
 
-reqwest = { version = "0.11.27", features = [
+reqwest = { version = "0.13.5", features = [
     "json",
     "native-tls-vendored",
-    "http2",
+    "http3",
     "stream",
 ], default-features = false }
 futures-util = "0.3"
