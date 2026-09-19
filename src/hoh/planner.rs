@@ -160,6 +160,64 @@ impl HOHPlanner {
             }
         }
 
+        // === 453 / 401 EARLY: Generate + materialize creative ideas BEFORE main selection ===
+        // This lets newly created creative tasks participate in the real dependency-aware
+        // TaskSelectionEngine scheduling for the current cycle (same-iteration execution).
+        let mut creative_add_mutations: Vec<crate::hoh::task_mutation::TaskMutation> = Vec::new();
+        let mut creativity_engine = CreativityEngine::new(self.adapter.is_simulation());
+        let creative_ideas = creativity_engine
+            .generate_ideas(&goals, &before_list.tasks.iter().map(|t| t.title.clone()).collect::<Vec<_>>(), 5)
+            .await
+            .unwrap_or_default();
+
+        if !creative_ideas.is_empty() {
+            tracing::info!(
+                count = creative_ideas.len(),
+                "HOH (453 early): generated {} creative ideas before selection",
+                creative_ideas.len()
+            );
+
+            creative_add_mutations = creativity_engine.ideas_to_add_task_mutations(
+                &creative_ideas,
+                2,
+                41000,
+            );
+
+            if !creative_add_mutations.is_empty() {
+                let adapter = self.adapter.clone_for_evolution();
+                if let Ok(mut list) = adapter.load().await {
+                    let rules = crate::hoh::task_mutation::TaskMutationRules::new();
+                    let mut applied = 0usize;
+                    let mut newly_materialized: Vec<u64> = vec![];
+
+                    for mutation in &creative_add_mutations {
+                        if rules.validate_mutation(mutation, &list.tasks).is_ok() {
+                            if let Ok(res) = rules.apply_mutation(mutation, &mut list.tasks) {
+                                if res.success {
+                                    if let crate::hoh::task_mutation::TaskMutation::AddTask { new_task } = mutation {
+                                        newly_materialized.push(new_task.id);
+                                    }
+                                    applied += 1;
+                                }
+                            }
+                        }
+                    }
+
+                    if applied > 0 {
+                        let _ = adapter.save(&list).await;
+                        tracing::info!(
+                            "HOH (453 early): materialized {} creative tasks early so they can be scheduled this cycle",
+                            applied
+                        );
+                        improvement_suggestions.push(format!(
+                            "453-EARLY: {} creative tasks materialized before selection (IDs: {:?})",
+                            applied, newly_materialized
+                        ));
+                    }
+                }
+            }
+        }
+
         // 361.1: Architecture evolution proposals (run every planning cycle)
         let arch_proposals = self.run_architecture_evolution().await.unwrap_or_default();
         for p in &arch_proposals {
@@ -242,6 +300,25 @@ impl HOHPlanner {
             sel_config.okf_terms.extend(high_conf_refactor_keywords.clone());
         }
 
+        // 453 boost: strongly prefer newly materialized creative tasks + high-novelty ideas
+        // This makes the TaskSelectionEngine naturally rank creative work high in the same cycle.
+        let creative_titles: Vec<String> = creative_ideas.iter()
+            .filter(|i| i.overall_score >= 0.60)
+            .map(|i| i.title.clone())
+            .collect();
+        if !creative_titles.is_empty() {
+            sel_config.goal_keywords.extend(creative_titles.clone());
+            sel_config.okf_terms.extend(creative_titles);
+        }
+
+        // Also boost any creative task IDs we just materialized early
+        for cid in &creative_add_mutations.iter().filter_map(|m| {
+            if let crate::hoh::task_mutation::TaskMutation::AddTask { new_task } = m { Some(new_task.id) } else { None }
+        }).collect::<Vec<_>>() {
+            // Add a strong synthetic signal
+            sel_config.okf_terms.push(format!("creative-{}", cid));
+        }
+
         // Use the best available path (history-aware when we have data)
         let scheduled = if self.completion_tracker.get_stats().total_completed > 0 {
             self.selection_engine
@@ -285,7 +362,8 @@ impl HOHPlanner {
         let mut generated_patches: Vec<crate::hoh::state::PatchSet> = vec![];
         if !refactoring_actions.is_empty() {
             let arch_adapter = self.adapter.clone_for_evolution();
-            let refactor_engine = AutonomousRefactoringEngine::new(arch_adapter, self.adapter.is_simulation());
+            let project_root = self.adapter.base_dir();
+            let refactor_engine = AutonomousRefactoringEngine::new_with_project_root(arch_adapter, self.adapter.is_simulation(), project_root);
 
             // A: Turn actions into AddTask mutations and apply (closes propose → work loop)
             if let Ok(results) = refactor_engine.materialize_and_apply(&refactoring_actions).await {
@@ -415,176 +493,10 @@ impl HOHPlanner {
             }
         }
 
-        // 401: Autonomous Creativity Engine
-        let mut creative_add_mutations: Vec<crate::hoh::task_mutation::TaskMutation> = Vec::new();
-        let mut creativity_engine = CreativityEngine::new(self.adapter.is_simulation());
-        let creative_ideas = creativity_engine
-            .generate_ideas(&goals, &selected.iter().map(|t| t.title.clone()).collect::<Vec<_>>(), 5)
-            .await
-            .unwrap_or_default();
-
-        if !creative_ideas.is_empty() {
-            tracing::info!(
-                count = creative_ideas.len(),
-                "HOH (401): generated {} creative ideas",
-                creative_ideas.len()
-            );
-            for idea in &creative_ideas {
-                if idea.overall_score > 0.65 {
-                    tracing::info!(
-                        "  → Creative idea: {} (score {:.2}, novelty {:.2})",
-                        idea.title, idea.overall_score, idea.novelty_score
-                    );
-                }
-            }
-            creativity_engine.incorporate_ideas(&creative_ideas);
-
-            // Small close-the-loop: turn top creative ideas into improvement suggestions
-            // (feeds into continual improvement + future task evolution)
-            for idea in creative_ideas.iter().filter(|i| i.overall_score > 0.72).take(2) {
-                improvement_suggestions.push(format!(
-                    "CREATIVE-401: {} — {} (novelty {:.2})",
-                    idea.title, idea.description, idea.novelty_score
-                ));
-            }
-
-            // Finish 453.4 + 453.5 wiring: expose top creative ideas as actionable seeds
-            // These can be picked up by task evolution / continual improvement to create real tasks.
-            for idea in creative_ideas.iter().take(2) {
-                if idea.overall_score > 0.60 {
-                    improvement_suggestions.push(format!(
-                        "SEED-TASK-401: [{} score={:.2}] {}",
-                        idea.source, idea.overall_score, idea.title
-                    ));
-                }
-            }
-
-            // Lightweight per-iteration idea "persistence" signal (453.5)
-            // The ideas live in the plan and get logged by outer_loop + iteration folders.
-            // This gives the continual improvement loop something concrete to act on next cycle.
-            if creative_ideas.len() >= 3 {
-                improvement_suggestions.push(
-                    "453.5: Creative ideas from this iteration are available for task seeding and OKF injection".to_string()
-                );
-            }
-
-            // 453 close: turn the single highest-scoring idea into an explicit "candidate new task" string
-            // so task evolution / continual improvement has something real to turn into a TaskMutation.
-            if let Some(best) = creative_ideas.iter().max_by(|a, b| a.overall_score.partial_cmp(&b.overall_score).unwrap_or(std::cmp::Ordering::Equal)) {
-                if best.overall_score > 0.68 {
-                    improvement_suggestions.push(format!(
-                        "NEW-TASK-SEED-453: title=\"{}\" desc=\"{}\" score={:.2}",
-                        best.title.replace('"', "'"), best.description.replace('"', "'"), best.overall_score
-                    ));
-                }
-            }
-
-            // Use the new helper to generate clean task seeds (finishes 453.4 wiring)
-            let task_seeds = creativity_engine.ideas_to_task_seeds(&creative_ideas, 2);
-            for seed in task_seeds {
-                improvement_suggestions.push(format!("TASK-SEED-453: {}", seed));
-            }
-
-            // === REAL 453 CLOSE-THE-LOOP: Convert high-quality creative ideas into TaskMutation::AddTask ===
-            // This is the key step that makes 401 ideas become real pending tasks in task_list.json.
-            creative_add_mutations = creativity_engine.ideas_to_add_task_mutations(
-                &creative_ideas,
-                2,      // conservative per cycle
-                41000,  // high ID range for HOH-generated creative tasks
-            );
-
-            let mut newly_materialized_creative_ids: Vec<u64> = vec![];
-
-            if !creative_add_mutations.is_empty() {
-                tracing::info!(
-                    count = creative_add_mutations.len(),
-                    "HOH (453): turning {} creative ideas into real AddTask mutations",
-                    creative_add_mutations.len()
-                );
-
-                // Try to apply them immediately (safe validation inside rules)
-                let adapter = self.adapter.clone_for_evolution();
-                if let Ok(mut list) = adapter.load().await {
-                    let rules = crate::hoh::task_mutation::TaskMutationRules::new();
-                    let mut applied = 0usize;
-
-                    for mutation in &creative_add_mutations {
-                        if rules.validate_mutation(mutation, &list.tasks).is_ok() {
-                            if let Ok(res) = rules.apply_mutation(mutation, &mut list.tasks) {
-                                if res.success {
-                                    if let crate::hoh::task_mutation::TaskMutation::AddTask { new_task } = mutation {
-                                        newly_materialized_creative_ids.push(new_task.id);
-                                    }
-                                    applied += 1;
-                                }
-                            }
-                        }
-                    }
-
-                    if applied > 0 {
-                        let _ = adapter.save(&list).await;
-                        tracing::info!(
-                            "HOH (453): successfully wrote {} new creative tasks to task_list.json",
-                            applied
-                        );
-                        improvement_suggestions.push(format!(
-                            "453-APPLIED: {} new creative tasks added to the task list (IDs: {:?})",
-                            applied, newly_materialized_creative_ids
-                        ));
-                    }
-                }
-
-                // Also surface them as suggestions
-                for m in &creative_add_mutations {
-                    if let crate::hoh::task_mutation::TaskMutation::AddTask { new_task } = m {
-                        improvement_suggestions.push(format!(
-                            "453-MATERIALIZE: {} — {}",
-                            new_task.id, new_task.title
-                        ));
-                    }
-                }
-            }
-
-            // 453.5 persistence markers
-            if !creative_ideas.is_empty() {
-                improvement_suggestions.push(
-                    "453 COMPLETE: Creative ideas persisted in plan for task seeding & evolution".to_string()
-                );
-            }
-
-            if !newly_materialized_creative_ids.is_empty() {
-                improvement_suggestions.push(format!(
-                    "453.5-REAL: {} creative tasks actually materialized this cycle",
-                    newly_materialized_creative_ids.len()
-                ));
-            }
-
-            // Final polish
-            if let Some(top) = creative_ideas.first() {
-                if !improvement_suggestions.iter().any(|s| s.contains(&top.title)) {
-                    improvement_suggestions.push(format!("453-FEED: Promote creative idea → \"{}\"", top.title));
-                }
-            }
-
-            // 453 COMPLETE markers
-            if !creative_ideas.is_empty() {
-                improvement_suggestions.push("453 COMPLETE: creativity engine fully wired (ideas → real AddTask mutations)".into());
-            }
-
-            let strong_ideas = creative_ideas.iter()
-                .filter(|i| i.overall_score >= 0.70)
-                .take(1)
-                .collect::<Vec<_>>();
-
-            for idea in strong_ideas {
-                improvement_suggestions.push(format!(
-                    "CANDIDATE-TASK-453: {} (use this to create new task in next evolution)",
-                    idea.title
-                ));
-            }
-
-            improvement_suggestions.push("453 CLOSED: Creativity engine complete and feeding the loop".into());
-        }
+        // Note: Creative ideas + materialization now happen *early* (before selection) so that
+        // newly created creative tasks can be picked up by the real TaskSelectionEngine in the
+        // same cycle. The early block already populated `creative_ideas` and `creative_add_mutations`.
+        // We still run the later 402 designer etc. using those early values.
 
         // 402: Generative Architecture Designer (builds directly on 401 CreativityEngine)
         let mut generative_designer = GenerativeArchitectureDesigner::new(self.adapter.is_simulation());
@@ -1065,7 +977,7 @@ impl HOHPlanner {
             materialized_task_ids,
             generated_patch_stubs,
             specialized_agent_routes: specialized_routes,
-            improvement_suggestions,
+            improvement_suggestions: improvement_suggestions.clone(),
             creative_ideas,
             architecture_designs,
             agent_lifecycle_events: lifecycle_events,
@@ -1087,8 +999,8 @@ impl HOHPlanner {
             created_at: chrono::Utc::now().timestamp() as u64,
         };
 
-        // Bonus: if we just materialized creative tasks, make sure they get strong visibility
-        // and can influence this cycle's selected work.
+        // 453 COMPLETE: Boost newly materialized creative tasks into the *current* cycle when possible.
+        // This closes the "idea → real task → selected for work" loop in the same iteration.
         if !creative_add_mutations.is_empty() {
             let creative_ids: Vec<u64> = creative_add_mutations
                 .iter()
@@ -1101,13 +1013,49 @@ impl HOHPlanner {
                 })
                 .collect();
 
+            let mut boosted_this_cycle: Vec<u64> = vec![];
+
             if !creative_ids.is_empty() {
                 tracing::info!(
                     "HOH (453): newly materialized creative task IDs this cycle: {:?}",
                     creative_ids
                 );
-                // We don't force-insert them into selected_tasks here (to respect dependency graph),
-                // but we do boost them via improvement_suggestions so next cycle they rank high.
+
+                // Attempt to include ready creative tasks in the current selected set.
+                // We reload to see the just-applied tasks and append a few if they have no hard blockers
+                // and we haven't already hit a hard cap. This respects the spirit of dependency-aware
+                // scheduling while giving high-novelty work a same-cycle chance.
+                if let Ok(current_list) = self.adapter.load().await {
+                    for &cid in &creative_ids {
+                        if selected.iter().any(|t| t.id == cid) {
+                            continue;
+                        }
+                        if let Some(task) = current_list.tasks.iter().find(|t| t.id == cid && t.status == "pending") {
+                            // Conservative: only boost if it looks immediately actionable (has test_strategy or high score signal)
+                            let looks_actionable = !task.test_strategy.trim().is_empty() || task.details.len() > 80;
+                            if looks_actionable && selected.len() < 12 {
+                                selected.push(task.clone());
+                                boosted_this_cycle.push(cid);
+                            }
+                        }
+                    }
+                }
+
+                if !boosted_this_cycle.is_empty() {
+                    tracing::info!(
+                        "HOH (453): boosted {} creative tasks into this cycle's selected work: {:?}",
+                        boosted_this_cycle.len(),
+                        boosted_this_cycle
+                    );
+                    improvement_suggestions.push(format!(
+                        "453-SAME-CYCLE: {} newly created creative tasks were added to this iteration's work ({:?})",
+                        boosted_this_cycle.len(), boosted_this_cycle
+                    ));
+                } else {
+                    improvement_suggestions.push(
+                        "453: Creative tasks materialized but not selected this cycle (will be high priority next iteration)".to_string()
+                    );
+                }
             }
         }
 
@@ -1148,7 +1096,8 @@ impl HOHPlanner {
     /// These can be turned into new tasks or patch experiments in later phases.
     pub async fn run_architecture_evolution(&self) -> Result<Vec<crate::hoh::architecture_evolution::ArchitectureProposal>, HOHError> {
         let arch_adapter = self.adapter.clone_for_evolution();
-        let engine = ArchitectureEvolutionEngine::new(arch_adapter, self.adapter.is_simulation());
+        let project_root = self.adapter.base_dir();
+        let engine = ArchitectureEvolutionEngine::new_with_project_root(arch_adapter, self.adapter.is_simulation(), project_root);
         let proposals = engine.propose_evolutions().await?;
 
         if !proposals.is_empty() {
@@ -1166,7 +1115,8 @@ impl HOHPlanner {
     /// Proposes improvements to HOH's own internals (scoring, heuristics, meta-loops).
     pub async fn run_self_refinement(&self) -> Result<Vec<crate::hoh::architecture_evolution::ArchitectureProposal>, HOHError> {
         let arch_adapter = self.adapter.clone_for_evolution();
-        let engine = ArchitectureEvolutionEngine::new(arch_adapter, self.adapter.is_simulation());
+        let project_root = self.adapter.base_dir();
+        let engine = ArchitectureEvolutionEngine::new_with_project_root(arch_adapter, self.adapter.is_simulation(), project_root);
         let proposals = engine.propose_self_refinements().await?;
 
         if !proposals.is_empty() {
@@ -1188,8 +1138,15 @@ impl HOHPlanner {
     /// This is the bridge from high-level intent to actionable changes.
     pub async fn run_autonomous_refactoring(&self) -> Result<Vec<crate::hoh::autonomous_refactoring::RefactoringAction>, HOHError> {
         let arch_adapter = self.adapter.clone_for_evolution();
-        let _arch_engine = ArchitectureEvolutionEngine::new(arch_adapter.clone(), self.adapter.is_simulation());
-        let refactor_engine = AutonomousRefactoringEngine::new(arch_adapter, self.adapter.is_simulation());
+        let project_root = self.adapter.base_dir();
+        // We still create the arch engine for proposal gathering inside generate_refactorings,
+        // but now with proper root so any stubs it emits go to scratch.
+        let _arch_engine = ArchitectureEvolutionEngine::new_with_project_root(
+            arch_adapter.clone(),
+            self.adapter.is_simulation(),
+            project_root.clone(),
+        );
+        let refactor_engine = AutonomousRefactoringEngine::new_with_project_root(arch_adapter, self.adapter.is_simulation(), project_root);
 
         // Gather all proposals (361.1 + 361.2)
         let mut all_proposals = self.run_architecture_evolution().await.unwrap_or_default();

@@ -15,12 +15,14 @@ pub struct TestRunResult {
     pub exit_code: Option<i32>,
 }
 
-pub async fn run_testing(state: &mut IterationState, data_dir: &std::path::Path) -> Result<TestRunResult, String> {
+pub async fn run_testing(state: &mut IterationState, project_root: &std::path::Path, _hoh_data_dir: &std::path::Path) -> Result<TestRunResult, String> {
     state.status = crate::hoh::state::IterationStatus::Testing;
 
+    // IMPORTANT: Always run `cargo test` from the real project root, never from .grok/hoh/.
+    // The previous bug used data_dir (hoh data dir) as current_dir, which is wrong.
     let output = Command::new("cargo")
         .args(["test", "--quiet"])
-        .current_dir(data_dir)
+        .current_dir(project_root)
         .output();
 
     let res = match output {

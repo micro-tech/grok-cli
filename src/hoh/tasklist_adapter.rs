@@ -142,11 +142,33 @@ pub struct TaskListAdapter {
 
 impl TaskListAdapter {
     pub fn new(base_dir: impl AsRef<Path>, simulation_mode: bool) -> Self {
-        let task_file = base_dir.as_ref().join(".zed").join("task_list.json");
+        let base = base_dir.as_ref();
+        // Ensure HOH structure (scratch, backups, etc.) even though task_list lives in .zed
+        // This keeps the whole HOH working tree tidy.
+        if let Err(e) = crate::hoh::persistence::ensure_hoh_structure(base) {
+            tracing::warn!("TaskListAdapter: ensure_hoh_structure failed: {}", e);
+        }
+
+        let task_file = base.join(".zed").join("task_list.json");
         Self {
             task_file,
             simulation_mode,
         }
+    }
+
+    /// Return the project base directory this adapter was created for.
+    /// Useful for other HOH components that need to know where .grok/hoh/ lives.
+    pub fn base_dir(&self) -> PathBuf {
+        // task_file is <base>/.zed/task_list.json
+        self.task_file
+            .parent()
+            .and_then(|p| p.parent())
+            .map(|p| p.to_path_buf())
+            .unwrap_or_else(|| std::path::PathBuf::from("."))
+    }
+
+    pub fn is_simulation(&self) -> bool {
+        self.simulation_mode
     }
 
     /// Returns a fresh adapter with the same configuration (for evolution engine, etc.).
@@ -188,6 +210,10 @@ impl TaskListAdapter {
     }
 
     /// Save with validation, backup, and atomic write.
+    ///
+    /// **Critical guardrail (HOH safety)**: This method performs multiple layers of protection
+    /// to ensure .zed/task_list.json is *never* corrupted with comments, markers, or invalid JSON.
+    /// All HOH code must go through this (or load/save_versioned) for the canonical task list.
     pub async fn save(&self, list: &TaskList) -> Result<(), HOHError> {
         if self.simulation_mode {
             tracing::info!("HOH TaskListAdapter: simulation mode — skipping write");
@@ -196,6 +222,26 @@ impl TaskListAdapter {
 
         self.validate(list)?;
 
+        // === HARD GUARDRAIL 1: Serialize and round-trip validate ===
+        let json = serde_json::to_string_pretty(list)
+            .map_err(|e| HOHError::Other(format!("Failed to serialize task list: {}", e)))?;
+
+        // Guardrail: Reject anything that looks like it contains comment markers.
+        // This prevents the 361.3-style "materialization marker" corruption from ever landing here.
+        let trimmed = json.trim_start();
+        if trimmed.starts_with("//") || trimmed.starts_with("/*") || trimmed.contains("// HOH ") {
+            return Err(HOHError::Other(
+                "REFUSED: Attempted to write comment-style content or HOH marker to live task_list.json. \
+                 Use sidecar files under .grok/hoh/ for logs/markers. This is a critical self-protection guardrail.".to_string()
+            ));
+        }
+
+        // Guardrail: Round-trip parse to guarantee it's valid JSON that will load later.
+        let _roundtrip: TaskList = serde_json::from_str(&json)
+            .map_err(|e| HOHError::Other(format!(
+                "HOH guardrail: Serialized task list failed round-trip JSON parse: {}", e
+            )))?;
+
         // Ensure .zed directory exists
         if let Some(parent) = self.task_file.parent() {
             tokio::fs::create_dir_all(parent)
@@ -203,14 +249,11 @@ impl TaskListAdapter {
                 .map_err(|e| HOHError::Other(format!("Failed to create .zed dir: {}", e)))?;
         }
 
-        // Create backup
+        // Create backup (always, even on failure path)
         if self.task_file.exists() {
             let bak = self.task_file.with_file_name("task_list.json.hoh.bak");
             let _ = tokio::fs::copy(&self.task_file, &bak).await;
         }
-
-        let json = serde_json::to_string_pretty(list)
-            .map_err(|e| HOHError::Other(format!("Failed to serialize task list: {}", e)))?;
 
         // Atomic write via .tmp
         let tmp = self.task_file.with_file_name("task_list.json.tmp");
@@ -222,7 +265,7 @@ impl TaskListAdapter {
             .await
             .map_err(|e| HOHError::Other(format!("Failed to finalize task list: {}", e)))?;
 
-        tracing::info!(path = %self.task_file.display(), "HOH wrote task_list.json");
+        tracing::info!(path = %self.task_file.display(), "HOH wrote task_list.json (guardrails passed)");
         Ok(())
     }
 
@@ -584,19 +627,6 @@ impl TaskListAdapter {
         let list = self.load().await?;
         Ok(self.detect_conflicts(&list))
     }
-
-    /// Expose simulation mode (used by ArchitectureEvolutionEngine).
-    pub fn is_simulation(&self) -> bool {
-        self.simulation_mode
-    }
-
-    // ============================================================
-    // 327.13 TaskList Versioning (tests are in the same file below)
-    // ============================================================
-
-    // ============================================================
-    // 327.13 TaskList Versioning
-    // ============================================================
 
     fn versions_dir(&self) -> PathBuf {
         self.task_file

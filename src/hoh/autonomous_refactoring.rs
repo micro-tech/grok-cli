@@ -45,13 +45,30 @@ pub enum RefactoringActionType {
 pub struct AutonomousRefactoringEngine {
     adapter: TaskListAdapter,
     simulation_mode: bool,
+    /// Project root so we can always write diagnostic/stub artifacts under
+    /// .grok/hoh/scratch/ instead of polluting src/ or .zed/.
+    project_root: std::path::PathBuf,
 }
 
 impl AutonomousRefactoringEngine {
     pub fn new(adapter: TaskListAdapter, simulation_mode: bool) -> Self {
+        // Default to current dir if no root provided. Callers that have the real root
+        // should prefer the version that takes project_root.
+        let root = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
         Self {
             adapter,
             simulation_mode,
+            project_root: root,
+        }
+    }
+
+    /// Preferred constructor: pass the real project root so all 361.3 artifacts
+    /// land safely in .grok/hoh/scratch/.
+    pub fn new_with_project_root(adapter: TaskListAdapter, simulation_mode: bool, project_root: std::path::PathBuf) -> Self {
+        Self {
+            adapter,
+            simulation_mode,
+            project_root,
         }
     }
 
@@ -347,14 +364,21 @@ impl AutonomousRefactoringEngine {
 
     /// C: Generate a PatchSet with real *intended_content* for high-confidence actions.
     /// This is the key upgrade so the patch_applier can actually write useful files.
+    ///
+    /// All output goes under .grok/hoh/scratch/ (HOH hygiene rule).
     pub fn refactoring_action_to_patch_stub(
         &self,
         action: &RefactoringAction,
     ) -> crate::hoh::state::PatchSet {
+        let scratch = crate::hoh::persistence::scratch_dir(&self.project_root);
         let target_files = if action.target_files.is_empty() {
-            vec![format!("src/hoh/generated/{}.rs", action.id.split('-').last().unwrap_or("refactor"))]
+            vec![scratch.join(format!("refactor_{}.rs", action.id.split('-').last().unwrap_or("refactor"))).to_string_lossy().to_string()]
         } else {
-            action.target_files.clone()
+            // Force everything diagnostic into scratch for safety
+            action.target_files.iter().map(|f| {
+                let safe_name = f.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '.', "_");
+                scratch.join(safe_name).to_string_lossy().to_string()
+            }).collect()
         };
 
         // Build actual intended file content (not just a summary)
@@ -473,23 +497,27 @@ impl AutonomousRefactoringEngine {
 
     /// Produce extra tiny safe real patches for task metadata / comments.
     /// These are deliberately minimal and safe (e.g. comment-only updates or tiny helpers).
+    /// All such diagnostic artifacts now live under .grok/hoh/scratch/ (HOH hygiene).
     pub fn produce_tiny_safe_metadata_patches(&self, actions: &[RefactoringAction]) -> Vec<crate::hoh::state::PatchSet> {
         let mut patches = vec![];
+        let scratch = crate::hoh::persistence::scratch_dir(&self.project_root);
 
         for action in actions.iter().filter(|a| a.confidence >= 0.65) {
-            // Tiny safe task metadata patch (real content)
+            let meta_file = scratch.join("3613_task_metadata.rs").to_string_lossy().to_string();
+
+            // Tiny safe task metadata patch (real content) — now in scratch
             let meta_content = format!(
-                "// HOH 361.3 Task Metadata Update\n\
+                "// HOH 361.3 Task Metadata Update (scratch diagnostic only)\n\
                  // Action: {}\n\
                  // Confidence: {:.2}\n\
-                 // This is a safe, auditable side-effect patch.\n\
+                 // This is a safe, auditable side-effect patch written to .grok/hoh/scratch/.\n\
                  // It records that this refactoring action was turned into work.\n\
                  pub const LAST_3613_ACTION: &str = \"{}\";\n",
                 action.title, action.confidence, action.title.replace('"', "'")
             );
 
             let mut p = crate::hoh::patch_capture::capture_patch_with_content(
-                vec!["src/hoh/generated/3613_task_metadata.rs".to_string()],
+                vec![meta_file],
                 format!("Tiny safe metadata patch for 361.3: {}", action.title),
                 Some(meta_content),
                 "3613_tiny_safe_metadata",

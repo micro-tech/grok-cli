@@ -19,6 +19,64 @@ pub fn hoh_data_dir(base: &Path) -> PathBuf {
     base.join(".grok/hoh")
 }
 
+/// Ensure the full recommended HOH directory structure exists.
+/// This prevents scattered files and keeps all HOH-generated artifacts
+/// (scratch, logs, patches, backups) safely under .grok/hoh/.
+pub fn ensure_hoh_structure(base: &Path) -> Result<(), HOHError> {
+    let root = hoh_data_dir(base);
+
+    fs::create_dir_all(&root)?;
+    fs::create_dir_all(root.join("scratch"))?;
+    fs::create_dir_all(root.join("backups"))?;
+    fs::create_dir_all(root.join("iterations"))?;
+    fs::create_dir_all(root.join("versions"))?;   // for 327.13 task list versions
+    fs::create_dir_all(root.join("logs"))?;
+
+    Ok(())
+}
+
+/// Convenience: return the scratch directory for HOH-generated diagnostic / progress files.
+/// All non-persistent, non-versioned HOH artifacts should live here.
+pub fn scratch_dir(base: &Path) -> PathBuf {
+    hoh_data_dir(base).join("scratch")
+}
+
+/// Produce a safe path inside scratch/ for a diagnostic / stub / progress artifact.
+/// This sanitizes the name and guarantees it never lands in src/ or .zed/.
+pub fn safe_diagnostic_path(base: &Path, name: &str) -> PathBuf {
+    let safe = name.replace(|c: char| !c.is_alphanumeric() && c != '_' && c != '.', "_");
+    scratch_dir(base).join(safe)
+}
+
+/// Light context object that carries the project root and simulation flag.
+/// Makes it harder to accidentally use the wrong root when writing HOH artifacts.
+#[derive(Debug, Clone)]
+pub struct HOHContext {
+    pub project_root: PathBuf,
+    pub simulation_mode: bool,
+}
+
+impl HOHContext {
+    pub fn new(project_root: impl AsRef<Path>, simulation_mode: bool) -> Self {
+        Self {
+            project_root: project_root.as_ref().to_path_buf(),
+            simulation_mode,
+        }
+    }
+
+    pub fn scratch(&self) -> PathBuf {
+        scratch_dir(&self.project_root)
+    }
+
+    pub fn safe_diagnostic(&self, name: &str) -> PathBuf {
+        safe_diagnostic_path(&self.project_root, name)
+    }
+
+    pub fn ensure_structure(&self) -> Result<(), HOHError> {
+        ensure_hoh_structure(&self.project_root)
+    }
+}
+
 /// Directory for a specific iteration.
 pub fn iteration_dir(base: &Path, iteration_id: u64) -> PathBuf {
     hoh_data_dir(base).join("iterations").join(format!("{:04}", iteration_id))

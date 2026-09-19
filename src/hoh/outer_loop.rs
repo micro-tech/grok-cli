@@ -31,8 +31,25 @@ pub struct HOHManager {
 impl HOHManager {
     /// Create a new `HOHManager` rooted at `project_root` (e.g. `PathBuf::from(".")`).
     /// The HOH data directory (`.grok/hoh/`) is derived from `project_root` automatically.
+    ///
+    /// On creation we ensure the full recommended directory structure exists:
+    ///   .grok/hoh/
+    ///     ├── scratch/          (progress markers, diagnostic artifacts — never src/ or .zed/)
+    ///     ├── backups/
+    ///     ├── iterations/
+    ///     ├── versions/         (327.13)
+    ///     └── logs/
     pub fn new(project_root: PathBuf) -> Self {
         let data_dir = project_root.join(".grok/hoh");
+
+        // Central hygiene: make sure the HOH working tree is properly laid out.
+        // This prevents pollution of src/, .zed/, and the project root.
+        if let Err(e) = crate::hoh::persistence::ensure_hoh_structure(&project_root) {
+            tracing::warn!("HOH: failed to ensure directory structure: {}", e);
+        } else {
+            tracing::debug!("HOH: ensured directory structure under .grok/hoh/");
+        }
+
         let simulation = false;
         let mut mgr = Self {
             data_dir,
@@ -73,6 +90,11 @@ impl HOHManager {
     /// Main entry point for running one full HOH iteration (297.1, 297.3, 327)
     /// Now includes 361.x closed loop: Architecture → Refactoring Actions → A/B/C/D
     pub async fn run_iteration(&mut self) -> Result<IterationState, HOHError> {
+        // Re-ensure structure at the start of every iteration (idempotent + defensive)
+        if let Err(e) = crate::hoh::persistence::ensure_hoh_structure(&self.project_root) {
+            tracing::warn!("HOH: ensure_hoh_structure failed at iteration start: {}", e);
+        }
+
         let mut state = IterationState::new(
             self.current_iteration.as_ref().map_or(1, |s| s.iteration_id + 1)
         );
@@ -169,7 +191,9 @@ impl HOHManager {
         // This gives us raw_output + failure hints that flow into EvaluationReport + continual improvement.
         state.status = IterationStatus::Testing;
 
-        let test_result = crate::hoh::testing::run_testing(&mut state, &self.data_dir).await
+        // Pass both project_root (for actual `cargo test`) and data_dir (for HOH artifacts).
+        // This fixes the previous bug where tests were run from .grok/hoh/ instead of the real root.
+        let test_result = crate::hoh::testing::run_testing(&mut state, &self.project_root, &self.data_dir).await
             .unwrap_or_else(|e| crate::hoh::testing::TestRunResult {
                 passed: false,
                 summary: format!("testing module error: {}", e),
@@ -511,12 +535,17 @@ impl HOHManager {
                 tracing::info!("327.17 EXEC: #{} (from plan)", task_id);
             }
 
-            let target_file = format!("src/hoh/generated/task_{}_progress.rs", task_id);
+            // IMPORTANT: Write HOH progress artifacts under .grok/hoh/scratch (never pollute src/ or .zed/).
+            // These are simulation / visibility artifacts only. Use the central helper.
+            let target_file = crate::hoh::persistence::scratch_dir(&self.project_root)
+                .join(format!("task_{}_progress.rs", task_id))
+                .to_string_lossy()
+                .to_string();
             let intended = self.build_task_progress_content(task_id, &plan.goals);
 
             let mut patch = crate::hoh::patch_capture::capture_patch_with_content(
                 vec![target_file],
-                format!("HOH execution work on task {} (361/297/327 progress)", task_id),
+                format!("HOH execution work on task {} (361/297/327 progress) [scratch]", task_id),
                 Some(intended),
                 "hoh_execute_phase",
             );
@@ -526,16 +555,22 @@ impl HOHManager {
         }
 
         if !plan.materialized_task_ids.is_empty() {
-            let target = ".zed/task_list.json".to_string(); // note: we don't actually overwrite it here
+            // Write materialization log to scratch only. Never target the real task_list.json here.
+            // The real mutation (if any) happens via TaskListAdapter + EvolutionEngine.
+            let target = crate::hoh::persistence::scratch_dir(&self.project_root)
+                .join("materialization_log.txt")
+                .to_string_lossy()
+                .to_string();
+
             let intended = format!(
-                "// HOH 361.3 Materialization marker\n// {} new tasks were created this cycle from autonomous refactoring.\n// Task IDs: {:?}\n// This file is intentionally not overwritten by HOH — it is a log marker only.\n",
+                "HOH 361.3 Materialization Log\n{} new tasks created from autonomous refactoring this cycle.\nTask IDs: {:?}\n\nThis is a diagnostic sidecar file under .grok/hoh/scratch/.\nReal task_list.json mutations go through the guarded TaskListAdapter only.\n",
                 plan.materialized_task_ids.len(),
                 plan.materialized_task_ids
             );
 
             let mut patch = crate::hoh::patch_capture::capture_patch_with_content(
                 vec![target],
-                format!("Applied {} new tasks from 361.3 refactoring (A)", plan.materialized_task_ids.len()),
+                format!("A: Materialized {} new tasks (361.3) — scratch log", plan.materialized_task_ids.len()),
                 Some(intended),
                 "hoh_361_materialize",
             );
@@ -581,19 +616,22 @@ impl HOHManager {
 
     async fn refactor_materialize_phase(&self, plan: &HOHPlan) -> Result<Vec<PatchSet>, HOHError> {
         // 361.3 A + C phase: surface the work that was already done in create_plan
-        // Now using capture_patch for consistency + richer PatchSets
+        // All diagnostic / stub artifacts now go under .grok/hoh/scratch/ only.
+        // This is part of HOH hygiene: never pollute src/ or .zed/ with simulation markers.
         let mut patches = Vec::new();
         let now = chrono::Utc::now().timestamp() as u64;
+        let scratch = crate::hoh::persistence::scratch_dir(&self.project_root);
 
         if !plan.materialized_task_ids.is_empty() {
+            let target = scratch.join("3613_materialized.txt").to_string_lossy().to_string();
             let intended = format!(
-                "// HOH 361.3 A: Materialization marker\n// {} new tasks created from autonomous refactoring actions.\n// IDs: {:?}\n// This is a log marker (real task_list.json is mutated separately via TaskEvolutionEngine).\n",
+                "HOH 361.3 A: Materialization Log\n{} new tasks created from autonomous refactoring actions.\nIDs: {:?}\n\nThis is a sidecar log under .grok/hoh/scratch/.\nReal mutations to task_list.json go through the guarded TaskListAdapter + EvolutionEngine.\n",
                 plan.materialized_task_ids.len(),
                 plan.materialized_task_ids
             );
             let mut p = capture_patch_with_content(
-                vec![".zed/task_list.json.hoh-materialized".to_string()],
-                format!("A: Materialized {} new tasks", plan.materialized_task_ids.len()),
+                vec![target],
+                format!("A: Materialized {} new tasks (log)", plan.materialized_task_ids.len()),
                 Some(intended),
                 "autonomous_refactoring",
             );
@@ -602,19 +640,20 @@ impl HOHManager {
             patches.push(p);
         }
 
-        for stub in &plan.generated_patch_stubs {
+        for (i, stub) in plan.generated_patch_stubs.iter().enumerate() {
+            let target = scratch.join(format!("refactor_stub_{}.rs", i)).to_string_lossy().to_string();
             let intended = format!(
-                "//! HOH 361.3 C-phase Patch Stub\n// {}\n\n// This file was generated because a high-confidence refactoring action\n// produced a patch stub. The real content would come from refactoring_action_to_patch_stub.\n\npub fn stub_marker() {{ /* 361.3 */ }}\n",
+                "//! HOH 361.3 C-phase Patch Stub (diagnostic only)\n// {}\n\n// This is a *simulation / visibility* stub written to .grok/hoh/scratch/.\n// It does NOT represent a real patch that will be applied.\n// Real refactoring work is captured via the planner + patch system.\n\npub fn stub_marker() {{ /* 361.3 diagnostic */ }}\n",
                 stub
             );
             let mut p = capture_patch_with_content(
-                vec!["src/hoh/generated/refactor_stub.rs".to_string()],
-                format!("C: {}", stub),
+                vec![target],
+                format!("C: {} (scratch diagnostic)", stub),
                 Some(intended),
                 "autonomous_refactoring_patch_stub",
             );
             p.timestamp = now;
-            p.id = format!("361-c-{}", stub.chars().take(32).collect::<String>());
+            p.id = format!("361-c-{}-{}", plan.created_at, i);
             patches.push(p);
         }
 
