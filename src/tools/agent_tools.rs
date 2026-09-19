@@ -286,9 +286,10 @@ pub async fn spawn_agent_configured(
         return Err(anyhow!("task cannot be empty"));
     }
 
+    let role = crate::acp::chat_turn::infer_sub_agent_role_from_config(&config, task);
     let manager = get_agent_manager();
     let agent_id = manager
-        .spawn(task, parent_id, Some(config.model.clone()), None)
+        .spawn(task, parent_id, Some(config.model.clone()), None, Some(role))
         .await;
 
     crate::agent::activity::emit_agent_activity(
@@ -664,8 +665,12 @@ pub async fn fork_agent(tasks: Vec<String>) -> Result<String> {
     let mut handles: Vec<AgentHandle> = Vec::with_capacity(total);
 
     for task in &tasks {
+        let role = crate::acp::chat_turn::infer_sub_agent_role_from_config(
+            &crate::agent::config::SubAgentConfig::builder().max_tokens(2048).build(),
+            task,
+        );
         let agent_id = manager
-            .spawn(task, None, Some("grok-3-mini".to_string()), None)
+            .spawn(task, None, Some("grok-3-mini".to_string()), None, Some(role))
             .await;
 
         crate::agent::activity::emit_agent_activity(
@@ -882,12 +887,17 @@ pub async fn delegate_plan_step(task: &str, parent_id: Option<&str>) -> Result<S
     }
 
     let manager = get_agent_manager();
+    let role = crate::acp::chat_turn::infer_sub_agent_role_from_config(
+        &crate::agent::config::SubAgentConfig::builder().max_tokens(1024).build(),
+        task,
+    );
     let agent_id = manager
         .spawn(
             task,
             parent_id.map(|s| s.to_string()),
             Some("grok-3-mini".to_string()),
             None,
+            Some(role),
         )
         .await;
 

@@ -111,7 +111,10 @@ pub enum Evidence {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust
+/// use grok_cli::engine::beliefs::{EngineBeliefs, Evidence};
+/// use grok_cli::engine::state::ReasoningEngineState;
+///
 /// let mut beliefs = EngineBeliefs::new();
 /// beliefs.register_tool("list_directory", 0.6);
 /// beliefs.update_from_evidence(&Evidence::UserText("show me all Rust files".into()));

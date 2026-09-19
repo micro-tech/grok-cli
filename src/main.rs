@@ -1,19 +1,8 @@
-//! Grok CLI entry point
+//! Grok CLI entry point (legacy thin wrapper)
 //!
-//! Initialises structured logging (tracing) before handing off to the
-//! library's `cli::app::run()` function.
-//!
-//! ## Logging
-//!
-//! Two sinks are configured at startup:
-//!
-//! 1. **stderr** — compact, coloured output.  Level is controlled by the
-//!    `RUST_LOG` environment variable (defaults to `warn` when unset).
-//!    Example: `RUST_LOG=grok_cli=debug grok`
-//!
-//! 2. **~/.grok/logs/grok-errors.log** — append-only JSON lines, always
-//!    captures `warn` and `error` events regardless of `RUST_LOG`.  Safe to
-//!    tail or ingest into a log aggregator.
+//! NOTE (Task 137): The real binary entry point has been moved to
+//! `src/bin/grok.rs`. This file remains for backwards compatibility during
+//! the transition. All new development should use the binary crate.
 
 use std::sync::Mutex;
 use tracing_subscriber::{EnvFilter, fmt, layer::SubscriberExt, util::SubscriberInitExt};

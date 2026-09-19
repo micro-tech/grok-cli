@@ -12,7 +12,7 @@ use grok_cli::engine::{
     PlanBuilder, PlanBuilderConfig, ReasoningEngineState, StepAction, StepStatus, is_safe_to_log,
     redact_state,
 };
-// ArbitrationEngine is currently private — import disabled
+// ArbitrationEngine moved or made private — test disabled for now
 // use grok_cli::engine::arbitration::ArbitrationEngine;
 use grok_cli::rpl::{ReasoningLogLevel, ReasoningPhase, RplConfig, RplLayer, SuppressionLayer};
 
@@ -122,7 +122,7 @@ fn memory_bridge_writes_summary_on_complete_confident_state() {
 #[test]
 #[ignore = "ArbitrationEngine is currently private"]
 fn arbitration_ranks_tools_from_plan() {
-    // ArbitrationEngine not re-exported — test ignored until made public
+    // test temporarily ignored until ArbitrationEngine is re-exported
 }
 
 /// 6. Under very high uncertainty (0.95) the arbitration engine falls back to
@@ -130,7 +130,7 @@ fn arbitration_ranks_tools_from_plan() {
 #[test]
 #[ignore = "ArbitrationEngine is currently private"]
 fn arbitration_selects_cheapest_on_high_uncertainty() {
-    // ArbitrationEngine not re-exported — test ignored until made public
+    // test temporarily ignored until ArbitrationEngine is re-exported
 }
 
 /// 7. A failed plan step produces a `StepFailed` correction trigger.

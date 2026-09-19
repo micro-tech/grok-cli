@@ -148,6 +148,12 @@ pub enum SlashCommand {
     /// `/compress` — Force an immediate context compression + archive pass (for testing).
     /// This bypasses the normal threshold and compresses the oldest messages right now.
     Compress,
+
+    /// `/cot [on|off]` — control whether Chain-of-Thought / reasoning traces are shown in the UI (Zed).
+    /// `/cot on`  — show thinking blocks
+    /// `/cot off` — hide thinking blocks (default behavior can be set in config)
+    /// `/cot`     — show current setting for this session
+    Cot { enabled: Option<bool> },
 }
 
 // ---------------------------------------------------------------------------
@@ -209,8 +215,9 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         }
         "/visualize" => Some(SlashCommand::Visualize),
         "/think" => {
-            if args.is_empty() {
-                // `/think` with no arg — show current mode
+            let lower = args.to_ascii_lowercase();
+            if args.is_empty() || lower == "show" {
+                // `/think` or `/think show` — show current mode
                 Some(SlashCommand::Think { mode: None })
             } else {
                 // `/think off|low|high` — None for unknown args (AI responds)
@@ -270,6 +277,19 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         "/okf" => Some(SlashCommand::Okf { query: args }),
 
         "/compress" | "/force_compress" => Some(SlashCommand::Compress),
+
+        "/cot" => {
+            let lower = args.to_ascii_lowercase();
+            if args.is_empty() || lower == "show" {
+                Some(SlashCommand::Cot { enabled: None })
+            } else if lower == "on" || lower == "true" || lower == "yes" {
+                Some(SlashCommand::Cot { enabled: Some(true) })
+            } else if lower == "off" || lower == "false" || lower == "no" {
+                Some(SlashCommand::Cot { enabled: Some(false) })
+            } else {
+                None
+            }
+        }
 
         _ => None, // unknown command -- let the AI handle the raw text
     }
@@ -383,6 +403,11 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "compress",
             "Force an immediate context compression + archive (great for testing the compressor)"
         ),
+        AvailableCommand::new(
+            "cot",
+            "Control display of Chain-of-Thought / reasoning traces in the UI (Zed etc.)"
+        )
+        .input(input("on | off — omit to show current setting for this session")),
     ];
 
     // Ensure alphabetical order by command name
@@ -429,7 +454,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Init
         | SlashCommand::Trace { .. }
         | SlashCommand::Okf { .. }
-        | SlashCommand::Compress => None,
+        | SlashCommand::Compress
+        | SlashCommand::Cot { .. } => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -678,6 +704,9 @@ pub enum BuiltinResult {
 
     /// Force an immediate context compression (for testing `/compress`).
     ForceCompress,
+
+    /// Set or query per-session display of Chain-of-Thought / thinking traces.
+    SetShowThinking(Option<bool>),
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -730,6 +759,7 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::Trace { subcommand } => Some(BuiltinResult::ShowTrace(subcommand.clone())),
         SlashCommand::Okf { query } => Some(BuiltinResult::ShowOkf(query.clone())),
         SlashCommand::Compress => Some(BuiltinResult::ForceCompress),
+        SlashCommand::Cot { enabled } => Some(BuiltinResult::SetShowThinking(*enabled)),
         _ => None, // AI-assisted command
     }
 }

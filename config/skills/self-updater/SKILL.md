@@ -31,7 +31,7 @@ You are the **self-updater** for grok-cli itself. Your job is to keep the tool t
 
 ### 1. Check Phase
 Call the equivalent of:
-- Get current version (from build: `CARGO_PKG_VERSION` or `grok --version`)
+- Get current version (from build: `CARGO_PKG_VERSION` or `grok --version` via shell or available version tool)
 - Fetch latest release from: `https://api.github.com/repos/micro-tech/grok-cli/releases/latest`
 - Parse `tag_name`
 - Use semantic version comparison (ignore pre-release suffixes for comparison unless user asks for prereleases)

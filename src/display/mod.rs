@@ -27,9 +27,14 @@ pub use ascii_art::print_grok_logo;
 pub use ascii_art::{format_grok_logo, get_logo_for_width};
 
 pub use banner::{
-    BannerConfig, BannerType, clear_current_line, format_banner, format_directory_recommendation,
-    format_welcome_banner,
+    BannerConfig, BannerType, format_banner, format_directory_recommendation, format_welcome_banner,
 };
+
+#[expect(
+    deprecated,
+    reason = "re-exported for backward compatibility; I/O function pending binary-crate migration"
+)]
+pub use banner::clear_current_line;
 #[expect(
     deprecated,
     reason = "re-exported for backward compatibility; I/O print functions pending binary-crate migration"

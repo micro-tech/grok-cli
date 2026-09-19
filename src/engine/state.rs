@@ -199,7 +199,9 @@ impl PlanStep {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// use grok_cli::engine::state::{PlanStep, StepAction, StepStatus};
+    ///
     /// let step = PlanStep::new("List files in /tmp", StepAction::UseTool {
     ///     tool_name: "list_directory".to_owned(),
     ///     args: serde_json::json!({ "path": "/tmp" }),
@@ -249,7 +251,9 @@ impl Hypothesis {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// use grok_cli::engine::state::Hypothesis;
+    ///
     /// let h = Hypothesis::new("User wants to list files", 0.85);
     /// assert!((h.confidence - 0.85).abs() < f32::EPSILON);
     ///
@@ -431,7 +435,9 @@ impl ReasoningEngineState {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// use grok_cli::engine::state::ReasoningEngineState;
+    ///
     /// let state = ReasoningEngineState::new()
     ///     .with_goal("list all Rust files in the workspace");
     /// assert_eq!(state.goal.as_deref(), Some("list all Rust files in the workspace"));
@@ -445,7 +451,9 @@ impl ReasoningEngineState {
     ///
     /// # Example
     ///
-    /// ```rust,ignore
+    /// ```rust
+    /// use grok_cli::engine::state::ReasoningEngineState;
+    ///
     /// let state = ReasoningEngineState::new().with_max_revisions(5);
     /// assert_eq!(state.max_revisions, 5);
     /// ```
@@ -579,12 +587,17 @@ impl ReasoningEngineState {
     /// `revision_count >= max_revisions` before the revision is applied.
     /// The plan is **not** modified in that case.
     pub fn revise_plan(&mut self, new_steps: Vec<PlanStep>) -> Result<(), PlanError> {
-        if self.revision_count >= self.max_revisions {
+        // Fix: increment first, then check (correct check order).
+        // This ensures we never exceed max_revisions and makes the
+        // "you get exactly N revisions" semantics explicit.
+        self.revision_count += 1;
+        if self.revision_count > self.max_revisions {
+            self.revision_count -= 1; // rollback the increment
             return Err(PlanError::MaxRevisionsExceeded(self.max_revisions));
         }
+
         self.plan = new_steps;
         self.current_step_index = 0;
-        self.revision_count += 1;
         self.touch();
         Ok(())
     }
@@ -648,9 +661,12 @@ fn engine_state_name(state: &EngineState) -> &'static str {
 ///
 /// # Example
 ///
-/// ```rust,ignore
-/// let state: ReasoningEngineState = serde_json::from_str(&raw_json)?;
-/// validate_version(&state).map_err(|e| anyhow::anyhow!(e))?;
+/// ```rust
+/// use grok_cli::engine::state::{ReasoningEngineState, validate_version};
+///
+/// // Example (in real code you would have the JSON string):
+/// // let state: ReasoningEngineState = serde_json::from_str(&raw_json)?;
+/// // validate_version(&state).map_err(|e| anyhow::anyhow!(e))?;
 /// ```
 pub fn validate_version(state: &ReasoningEngineState) -> Result<(), String> {
     if state.schema_version == ENGINE_SCHEMA_VERSION {
@@ -830,7 +846,8 @@ mod tests {
             .expect("first revision should succeed");
         assert_eq!(s.revision_count, 1);
 
-        // Second revision must fail because revision_count (1) >= max_revisions (1).
+        // Second revision must fail because we now allow exactly `max_revisions`
+        // successful revisions (the count is incremented *before* the check).
         let result = s.revise_plan(vec![PlanStep::new("s2", StepAction::NoOp)]);
         assert!(
             matches!(result, Err(PlanError::MaxRevisionsExceeded(1))),
@@ -839,6 +856,22 @@ mod tests {
         // The plan must NOT have been modified.
         assert_eq!(s.plan.len(), 1);
         assert_eq!(s.plan[0].description, "s1");
+    }
+
+    #[test]
+    fn revise_plan_allows_exactly_max_revisions() {
+        let mut s = ReasoningEngineState::new().with_max_revisions(2);
+
+        s.revise_plan(vec![PlanStep::new("r1", StepAction::NoOp)]).unwrap();
+        assert_eq!(s.revision_count, 1);
+
+        s.revise_plan(vec![PlanStep::new("r2", StepAction::NoOp)]).unwrap();
+        assert_eq!(s.revision_count, 2);
+
+        // Third attempt must fail
+        let result = s.revise_plan(vec![PlanStep::new("r3", StepAction::NoOp)]);
+        assert!(matches!(result, Err(PlanError::MaxRevisionsExceeded(2))));
+        assert_eq!(s.revision_count, 2); // count must not have been left incremented
     }
 
     // -----------------------------------------------------------------------

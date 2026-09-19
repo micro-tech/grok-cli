@@ -87,7 +87,7 @@ impl Default for MemoryBridgeConfig {
 ///
 /// # Example
 ///
-/// ```rust,ignore
+/// ```rust
 /// use grok_cli::engine::memory_bridge::MemoryBridge;
 /// use grok_cli::engine::state::ReasoningEngineState;
 ///

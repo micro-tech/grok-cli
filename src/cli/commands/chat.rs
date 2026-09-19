@@ -48,7 +48,17 @@ pub struct ChatOptions<'a> {
 }
 
 pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
-    let client = initialize_router(options.api_key, options.timeout_secs)?;
+    let client = if options.rate_limit_config.max_requests_per_minute > 0
+        || options.rate_limit_config.max_tokens_per_minute > 0
+    {
+        crate::utils::client::initialize_router_with_limits(
+            options.api_key,
+            options.timeout_secs,
+            options.rate_limit_config.clone(),
+        )?
+    } else {
+        initialize_router(options.api_key, options.timeout_secs)?
+    };
 
     if options.interactive {
         handle_interactive_chat(
@@ -353,7 +363,22 @@ async fn handle_interactive_chat(
                     )
                     .await?;
 
-                let response_msg = response_with_finish.message;
+                // === STRICT CoT / THINKING TRACE POLICY (radioactive isotope rule) ===
+                // Chain-of-thought / reasoning_content / thinking_content is NEVER stored,
+                // NEVER fed back to the LLM, NEVER included in conversation_history.
+                // Only for one-shot display, then dropped.
+                let _thinking_content = response_with_finish.thinking_content; // deliberately discarded for money savings
+
+                use crate::cot_guard::clean_and_assert_no_cot;
+
+                // Clean the raw response message (removes any CoT)
+                let clean_response_msg = clean_and_assert_no_cot(
+                    serde_json::to_value(&response_with_finish.message)?
+                );
+
+                // Re-parse a clean version for tool-call handling (no CoT possible after clean)
+                let response_msg: grok_api::Message = serde_json::from_value(clean_response_msg.clone())
+                    .unwrap_or(response_with_finish.message.clone());
 
                 spinner.finish_and_clear();
 
@@ -627,6 +652,13 @@ fn handle_interactive_command(
                             println!(
                                 "   Start an ACP session or use a long conversation + the auto-compress path instead."
                             );
+                        }
+                        slash_commands::BuiltinResult::SetShowThinking(opt_enabled) => {
+                            match opt_enabled {
+                                Some(true) => println!("🧠 Chain-of-Thought display **enabled** for this CLI session."),
+                                Some(false) => println!("🔇 Chain-of-Thought display **disabled** for this CLI session."),
+                                None => println!("🧠 CoT display: use `/cot on` or `/cot off` (CLI session override not fully wired; falls back to global)."),
+                            }
                         }
                     }
                     return Ok(Some(CommandResult::Continue));

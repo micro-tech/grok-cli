@@ -154,6 +154,16 @@ struct SessionData {
     /// Injected into every refined prompt so the model respects them throughout.
     session_rules: crate::context::session_rules::SessionRules,
 
+    /// Active sub-agents for this session (for status bar icons).
+    /// Stored as role names: "planner", "coder", "researcher", etc.
+    active_agents: Vec<String>,
+
+    /// Per-session override for displaying Chain-of-Thought / reasoning traces.
+    /// When `Some(true)` or `Some(false)`, it overrides `config.acp.stream_thinking`.
+    /// `None` means "use the global setting".
+    /// Controlled by the `/cot on|off` slash command.
+    show_thinking: Option<bool>,
+
     /// Last workflow trace recorded for this session (Task 232).
     /// Populated when using `route_with_workflow_trace` (e.g. in sub-agents)
     /// or when a full tool-using code workflow completes.
@@ -401,12 +411,16 @@ impl GrokAcpAgent {
     /// Return a clone of the underlying [`AppRouter`], lazily creating it
     /// on first use if an API key is configured.  This keeps `new()` fast
     /// for ACP stdio startup.
+    ///
+    /// Rate limits from `self.config.rate_limits` are now attached (fresh review fix).
     fn get_router(&self) -> Result<AppRouter> {
         if self.router.get().is_none()
             && let Some(ref api_key) = self.config.api_key
-            && let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs)
         {
-            let _ = self.router.set(r);
+            let mut router = AppRouter::new(api_key, self.config.timeout_secs)?;
+            // Attach rate limiting so enforcement happens on every chat_completion_with_history
+            router = router.with_rate_limits(self.config.rate_limits.clone());
+            let _ = self.router.set(router);
         }
 
         self.router.get().cloned().ok_or_else(|| {
@@ -569,6 +583,8 @@ impl GrokAcpAgent {
             dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
             session_rules: Default::default(),
+            active_agents: Vec::new(),
+            show_thinking: None,
             last_workflow_trace: None,
         };
 
@@ -654,17 +670,20 @@ impl GrokAcpAgent {
             info!("Sent {} slash commands to ACP client", commands.len());
 
             // Emit initial status bar on session start (Task 164)
+            let max0 = model_context_budget(
+                &init_model,
+                self.config.acp.max_context_tokens,
+                self.config.acp.grok4_max_context_tokens,
+            );
             let initial_state = crate::acp::status_bar::StatusBarState {
                 model: init_model.clone(),
                 thinking_mode: init_thinking,
                 current_tokens: 0,
-                max_tokens: model_context_budget(
-                    &init_model,
-                    self.config.acp.max_context_tokens,
-                    self.config.acp.grok4_max_context_tokens,
-                ),
+                max_tokens: max0,
                 context_percent: 0.0,
                 is_generating: false,
+                context_graph: crate::acp::status_bar::format_context_graph(0, max0, (max0 as f64 * 0.75) as usize),
+                agent_icons: vec![],
             };
             self.emit_status_bar(Some(&sender), &initial_state);
         }
@@ -673,79 +692,70 @@ impl GrokAcpAgent {
         Ok(())
     }
 
-    /// Check if a tool execution is permitted by the user
-    #[allow(dead_code)]
-    pub(crate) async fn check_tool_permission(
+    // NOTE: Permission handling for production chat turns lives in process_tool_calls
+    // (chat_turn.rs).  This standalone helper is kept for unit tests and any caller
+    // that needs a focused, synchronous-style permission check outside a full chat turn.
+
+    /// Check whether a tool call is permitted for this session.
+    ///
+    /// - If the tool is already in the always-allow set the call returns `Ok(true)` immediately.
+    /// - If no `bridge` is provided (or `require_permission` is false) the call is allowed.
+    /// - Otherwise a permission request is sent through `bridge` and the result is awaited.
+    ///   - `proceed_always` → grants always-allow, returns `Ok(true)`
+    ///   - `proceed_once`   → returns `Ok(true)` (no persistent grant)
+    ///   - cancel           → returns `Ok(false)`
+    ///   - timeout          → returns `Err(…)`
+    pub async fn check_tool_permission(
         &self,
         session_id: &SessionId,
-        function_name: &str,
+        tool_name: &str,
         _args: &Value,
         tool_call_id: &str,
-        permission_bridge: Option<&Arc<PermissionBridge>>,
+        bridge: Option<&Arc<PermissionBridge>>,
     ) -> Result<bool> {
-        let mut sessions = self.sessions.write().await;
-        let session = sessions
-            .get_mut(&session_id.0)
-            .ok_or_else(|| anyhow!("Session not found"))?;
-
-        if !self.config.acp.require_permission || session.always_allow.contains(function_name) {
+        // Fast path: already granted always-allow.
+        if self.is_always_allowed(session_id, tool_name).await {
             return Ok(true);
         }
 
-        if let Some(bridge) = permission_bridge {
-            let req_id = uuid::Uuid::new_v4().to_string();
+        // If permission gating is off, or there is no bridge to ask through, allow.
+        if !self.config.acp.require_permission {
+            return Ok(true);
+        }
+        let Some(bridge) = bridge else {
+            return Ok(true);
+        };
 
-            let params = RequestPermissionParams::new(
-                session_id.clone(),
-                tool_call_id.to_string(),
-                Some(format!("Run {}", function_name)),
-                Some(crate::acp::protocol::ToolKind::Execute),
-            );
-
-            let (tx, rx) = oneshot::channel();
-            if bridge.outbound.send((req_id, params, tx)).is_ok() {
-                // Drop the write lock before awaiting the response!
-                // This allows the rest of the application (like handling the client's response)
-                // to read/write the session if needed.
-                drop(sessions);
-
-                let timeout_secs = self.config.acp.permission_timeout_secs;
-                let outcome_res =
-                    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await;
-
-                // Re-acquire lock to update session state
-                let mut sessions = self.sessions.write().await;
-                let session = sessions
-                    .get_mut(&session_id.0)
-                    .ok_or_else(|| anyhow!("Session not found"))?;
-
-                match outcome_res {
-                    Ok(Ok(outcome)) => {
-                        if outcome.is_cancelled() {
-                            return Ok(false);
-                        }
-                        // Any `selected` outcome is treated as approval.
-                        // Record it permanently for the session if "Always Allow".
-                        if outcome.is_always_allow() {
-                            session.always_allow.insert(function_name.to_string());
-                        }
-                        return Ok(true);
-                    }
-                    Ok(Err(_)) => {
-                        return Err(anyhow!("Permission bridge closed unexpectedly"));
-                    }
-                    Err(_) => {
-                        return Err(anyhow!(
-                            "Timed out waiting for permission ({}s)",
-                            timeout_secs
-                        ));
-                    }
-                }
-            }
+        // Send the permission request.
+        let req_id = uuid::Uuid::new_v4().to_string();
+        let params = RequestPermissionParams::new(
+            session_id.clone(),
+            tool_call_id.to_string(),
+            Some(format!("Run {}", tool_name)),
+            Some(crate::acp::protocol::ToolKind::Execute),
+        );
+        let (tx, rx) = oneshot::channel();
+        if bridge.outbound.send((req_id, params, tx)).is_err() {
+            return Err(anyhow!("Permission bridge closed"));
         }
 
-        // If require_permission is true but there's no bridge, default to false
-        Ok(false)
+        let timeout_secs = self.config.acp.permission_timeout_secs;
+        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await {
+            Ok(Ok(outcome)) => {
+                if outcome.is_cancelled() {
+                    return Ok(false);
+                }
+                if outcome.is_always_allow() {
+                    let mut sessions = self.sessions.write().await;
+                    if let Some(s) = sessions.get_mut(&session_id.0) {
+                        s.always_allow.insert(tool_name.to_string());
+                    }
+                }
+                Ok(true)
+            }
+            Ok(Err(_)) => Err(anyhow!("Permission bridge closed")),
+            Err(_) => Err(anyhow!("Timed out waiting for permission ({}s)", timeout_secs)),
+        }
     }
 
     /// Handle a chat completion request
@@ -1203,28 +1213,15 @@ impl GrokAcpAgent {
     /// set (i.e. the user previously chose "Always Allow" for this tool).
     ///
     /// Silently returns `false` if the session no longer exists.
+    ///
+    /// Always-allow grants are now managed inside the chat turn via the
+    /// PermissionBridge (newly_always_allowed) and synced back into SessionData.
     pub async fn is_always_allowed(&self, session_id: &SessionId, tool_name: &str) -> bool {
         let sessions = self.sessions.read().await;
         sessions
             .get(&session_id.0)
             .map(|s| s.always_allow.contains(tool_name))
             .unwrap_or(false)
-    }
-
-    /// Adds `tool_name` to the session's always-allow set so that future calls
-    /// to that tool within the same session skip the permission prompt.
-    ///
-    /// Silently no-ops if the session no longer exists.
-    #[allow(dead_code, reason = "kept for symmetry with is_always_allowed and potential future ACP use")]
-    pub(crate) async fn set_always_allowed(&self, session_id: &SessionId, tool_name: &str) {
-        let mut sessions = self.sessions.write().await;
-        if let Some(session) = sessions.get_mut(&session_id.0) {
-            session.always_allow.insert(tool_name.to_string());
-            info!(
-                "Always-allow granted for tool '{}' in session '{}'",
-                tool_name, session_id.0
-            );
-        }
     }
 
     pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
@@ -1251,19 +1248,21 @@ impl GrokAcpAgent {
             );
             let _ = sender.send(crate::acp::protocol::SessionUpdate::StatusBarUpdate(update));
 
-            // Fallback visible line (temporary until Zed supports StatusBarUpdate)
+            // New nice status line with context graph + agent icons
+            let agents_part = if state.agent_icons.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", state.agent_icons.join(" "))
+            };
+
             let status_line = format!(
-                "┌─ Grok ─ {} ─ {} ─ {}/{} tokens ({:.0}%) {}",
+                "┌─ Grok ─ {} ─ {} ─ {}{} {} {}",
                 state.model,
                 state.thinking_mode,
-                state.current_tokens,
-                state.max_tokens,
-                state.context_percent * 100.0,
-                if state.is_generating {
-                    "⏳ generating..."
-                } else {
-                    "✓ ready"
-                }
+                state.context_graph,
+                agents_part,
+                if state.is_generating { "⏳" } else { "✓" },
+                if state.is_generating { "generating..." } else { "ready" }
             );
             // Send as a normal message chunk so it appears in the transcript
             let chunk =
@@ -1284,18 +1283,19 @@ impl GrokAcpAgent {
     pub(crate) fn status_bar_message_update(
         state: &crate::acp::status_bar::StatusBarState,
     ) -> crate::acp::protocol::SessionUpdate {
+        let agents_part = if state.agent_icons.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", state.agent_icons.join(" "))
+        };
+
         let status_line = format!(
-            "-- Grok -- {} -- {} -- {}/{} tokens ({:.0}%) {}",
+            "Grok {} {} {}{} {}",
             state.model,
             state.thinking_mode,
-            state.current_tokens,
-            state.max_tokens,
-            state.context_percent * 100.0,
-            if state.is_generating {
-                "... generating..."
-            } else {
-                "ready"
-            }
+            state.context_graph,
+            agents_part,
+            if state.is_generating { "⏳ generating..." } else { "✓ ready" }
         );
         crate::acp::protocol::SessionUpdate::AgentMessageChunk(
             crate::acp::protocol::ContentChunk::new(crate::acp::protocol::ContentBlock::Text(
@@ -1744,17 +1744,25 @@ impl GrokAcpAgent {
             .get(&session_id.0)
             .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
 
-        let current_tokens = estimate_tokens(&session.messages);
-        let max_tokens = model_context_budget(
+        let current = estimate_tokens(&session.messages);
+        let max = model_context_budget(
             &session.config.model,
             self.config.acp.max_context_tokens,
             self.config.acp.grok4_max_context_tokens,
         );
-        let context_percent = if max_tokens > 0 {
-            current_tokens as f32 / max_tokens as f32
-        } else {
-            0.0
-        };
+        let context_percent = if max > 0 { current as f32 / max as f32 } else { 0.0 };
+        let compress_at = (max as f64 * 0.75) as usize;
+
+        // Drive icons strictly from currently *running* sub-agents in the AgentManager.
+        // This guarantees icons only appear while the agent is actually executing.
+        let running_roles = crate::tools::agent_tools::get_agent_manager()
+            .running_roles()
+            .await;
+
+        let icons: Vec<String> = running_roles
+            .into_iter()
+            .map(|role| crate::acp::status_bar::icon_for_agent_role(&role).to_string())
+            .collect();
 
         Ok(crate::acp::status_bar::StatusBarState {
             model: session.config.model.clone(),
@@ -1764,10 +1772,12 @@ impl GrokAcpAgent {
                 .as_api_str()
                 .unwrap_or("off")
                 .to_string(),
-            current_tokens,
-            max_tokens,
+            current_tokens: current,
+            max_tokens: max,
             context_percent,
             is_generating: false,
+            context_graph: crate::acp::status_bar::format_context_graph(current, max, compress_at),
+            agent_icons: icons,
         })
     }
 
@@ -1800,6 +1810,44 @@ impl GrokAcpAgent {
         sessions
             .get(&session_id.0)
             .map(|s| s.config.thinking_mode.clone())
+    }
+
+    // ── Per-session CoT / thinking display control ( /cot slash command ) ─────
+
+    /// Set whether to display Chain-of-Thought / reasoning traces for this session.
+    /// `true` = show thinking blocks (overrides global `stream_thinking`).
+    /// `false` = hide thinking blocks for this session.
+    pub async fn set_show_thinking(&self, session_id: &SessionId, enabled: bool) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            session.show_thinking = Some(enabled);
+            info!(
+                "CoT display set to {} for session {}",
+                if enabled { "ON" } else { "OFF" },
+                session_id.0
+            );
+            Ok(())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
+    }
+
+    /// Returns the per-session override for thinking display, if any.
+    /// `None` means fall back to global `config.acp.stream_thinking`.
+    pub async fn get_show_thinking(&self, session_id: &SessionId) -> Option<bool> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .and_then(|s| s.show_thinking)
+    }
+
+    /// Effective value used for deciding whether to emit thinking blocks.
+    pub async fn should_stream_thinking(&self, session_id: &SessionId) -> bool {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .and_then(|s| s.show_thinking)
+            .unwrap_or(self.config.acp.stream_thinking)
     }
 
     /// Clean up expired sessions
@@ -1957,6 +2005,8 @@ impl GrokAcpAgent {
                 dna: crate::session::dna::SessionDna::default(),
                 current_goal: source.current_goal.clone(),
                 session_rules: source.session_rules.clone(),
+                active_agents: source.active_agents.clone(),
+                show_thinking: source.show_thinking,
                 last_workflow_trace: None,
             }
         };
@@ -2056,10 +2106,8 @@ mod tests {
         assert_eq!(session_id.0.as_str(), "test-session");
     }
 
-    /// Verify the always-allow round-trip:
-    /// set_always_allowed  →  is_always_allowed returns true for that tool,
-    ///                        false for a different tool,
-    ///                        and silently no-ops for an unknown session.
+    /// Verify the always-allow behavior (grants now come via the PermissionBridge
+    /// inside chat turns and are synced into the session's always_allow set).
     #[tokio::test]
     async fn test_always_allow_round_trip() {
         use std::collections::HashMap;
@@ -2080,6 +2128,8 @@ mod tests {
             bayes_engine: crate::bayes::BayesianEngine::new(),
             current_goal: None,
             session_rules: Default::default(),
+            active_agents: Vec::new(),
+            show_thinking: None,
             last_workflow_trace: None,
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();

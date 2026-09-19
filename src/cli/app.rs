@@ -3,6 +3,8 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 use tracing::{error, info};
 
+
+
 use crate::config::{Config, ConfigSource, ThinkingMode};
 use crate::display::banner::{BannerConfig, format_welcome_banner};
 use crate::display::interactive::{InteractiveConfig, PromptStyle, start_interactive_mode};
@@ -232,6 +234,21 @@ pub enum Commands {
         /// Force the update check even if auto-updates are disabled in config.
         #[arg(long)]
         force: bool,
+    },
+
+    /// Harness-of-Harnesses (HOH) autonomous outer loop commands.
+    ///
+    /// Use the full binary name when invoking:
+    ///   grok-cli hoh start
+    ///   grok-cli hoh status
+    ///   grok-cli hoh last
+    ///   grok-cli hoh history
+    ///   grok-cli hoh apply --dry-run
+    ///   grok-cli hoh simulate
+    Hoh {
+        /// HOH subcommand and arguments (passed through to HOH CLI)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
     },
 }
 
@@ -485,6 +502,16 @@ pub async fn run() -> Result<()> {
                 show_banner_fn();
             }
             crate::cli::commands::update::handle_update_command(*check, *force, &config).await?;
+        }
+        Some(Commands::Hoh { args }) => {
+            // HOH outer loop commands (no API key required for local autonomous loop)
+            let sub = if args.is_empty() {
+                "status".to_string()
+            } else {
+                args.join(" ")
+            };
+            // simulation flag can be inferred or passed via env later; default to false for real runs
+            crate::hoh::cli::handle_hoh_command(&sub, false).await;
         }
         None => {
             // Default to interactive mode

@@ -7,6 +7,18 @@
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
 > **Latest improvements**:
+> - **Harness-of-Harnesses (HOH) Autonomous Outer Loop** (Tasks 297 + 327 + 361 + 401–410):
+>   - Full autonomous multi-day development system: a true **"Harness around Harnesses"**.
+>   - Outer orchestration loop that plans → executes → evaluates → improves itself.
+>   - **Task Intelligence (327)**: dependency graphs, prioritization, conflict detection, autonomous evolution + versioning (327.13/327.34).
+>   - **Agent Ecosystem (403–405)**: Full agent lifecycle management — performance tracking, retirement/hibernation (403), dynamic birth with retired-slot reuse (404), and evolution of capabilities/personalities (405).
+>   - **Governance & Safety (407–408)**: Long-term Governance Engine with hard constitution rules + Ethical Constraint Model.
+>   - **Meta Layer (409–410)**: Meta-Planning and Meta-Evaluation engines that let HOH improve its own planning and evaluation processes.
+>   - **Creativity & Architecture (401–402)**: Autonomous idea generation and generative architecture design.
+>   - Rich inner multi-agent system (361.5–361.8) with specialized profiles, simulation, collaboration, and skill evolution.
+>   - Reads `.zed/task_list.json`, performs dependency-aware planning, materializes creative tasks, runs architecture evolution + safe refactoring, executes what-if simulations, and feeds outcomes back into the next cycle.
+>   - Commands: `grok-cli hoh start`, `grok-cli hoh status`, `grok-cli hoh simulate`, `grok-cli hoh versions`, `grok-cli hoh rollback`.
+>   - See [Doc/HOH.md](Doc/HOH.md) for the full layered breakdown of the Harness-of-Harnesses.
 > - **Self-Updater System** (Task 296): New built-in update mechanism.
 >   - Run `grok update` (or `grok update --check`) to check GitHub releases.
 >   - Full guided update flow is provided by the dedicated **`self-updater`** skill.
@@ -24,6 +36,8 @@ A powerful command-line interface for interacting with Grok AI via X API, featur
 > - Session-only rules (`/rule`), Safety Hooks, Sub-Agents, and ACP improvements remain from v0.2.5.
 
 ## ✨ Features
+
+**Current HOH Status**: The Harness-of-Harnesses (HOH) autonomous outer loop is now operational (tasks 297 + 327 + 361 + 401–410). Core capabilities are implemented and wired into the planner, including task intelligence with autonomous evolution & versioning, full agent lifecycle management (birth, retirement/hibernation, evolution), governance + ethics engines, meta-planning & meta-evaluation, and creativity/generative architecture layers. Most advanced behaviors run in simulation mode by default for safety. See [Doc/HOH.md](Doc/HOH.md) for the full breakdown.
 
 - **Interactive Terminal UI** — Gemini-style rich prompts, adaptive ASCII art, progress indicators, and color output
 - **Self-Updating Skills Catalog** — The model always sees a live, authoritative `.grok/SKILLS_HOOKS_OPTIMIZATION.md` on every turn containing:
@@ -144,6 +158,7 @@ Full options: [Doc/CONFIGURATION.md](Doc/CONFIGURATION.md)
 | `/bayes show`        | Inspect Bayesian priors                  |
 | `grok update [--check] [--force]` | Check for or perform a self-update of grok-cli |
 | `grok skills generate-catalog` | Regenerate the live skills/hooks/optimization catalog for the model |
+| `grok-cli hoh start` / `status` / `simulate` / `versions` / `rollback` | Harness-of-Harnesses (HOH) autonomous outer loop — full multi-layer system with Task Intelligence (327), Agent Lifecycle (403–405), Governance (407–408), and Meta engines (409–410). See [Doc/HOH.md](Doc/HOH.md) |
 
 See [Doc/QUICK_REFERENCE.md](Doc/QUICK_REFERENCE.md) for the complete list.
 

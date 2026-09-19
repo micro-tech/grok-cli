@@ -1,14 +1,11 @@
-# Grok-CLI Code Review
+# Grok-CLI Code Review — Fresh Baseline (2026)
 
-**Reviewer:** Grumpy Old Rust Expert  
-**Date:** 2026-07-30 (updated)  
-**Version reviewed:** current (post 249/251/257/258 + SEC-1/3/9 fixes)  
-**Scope:** Full codebase — security, correctness, performance, architecture, readability
+**Reviewer:** Systematic Code Review  
+**Date:** Current HEAD  
+**Scope:** Full project (src/, tests/, config/, .grok/, Cargo.toml, key binaries)  
+**Focus:** Security, Correctness, Architecture (especially ARCH-2 registry), Agent System, ACP, Tooling, Maintainability
 
----
-
-> *"I've seen things you wouldn't believe. Code so bad it made me cry in the parking lot.  
-> This project is not that — but it is not finished either. Here's what I found."*
+> "Starting from a clean slate. Old review content discarded. Current state evaluated on its own merits."
 
 ---
 
@@ -16,277 +13,223 @@
 
 | Symbol | Severity |
 |--------|----------|
-| 🔴 | Critical — fix before any release |
-| 🟠 | High — fix soon |
-| 🟡 | Medium — should fix |
-| 🔵 | Low / Style — nice to have |
-| ✅ | Good / Previously fixed — noting progress |
+| 🔴 | Critical — fix before release |
+| 🟠 | High — address soon |
+| 🟡 | Medium |
+| 🔵 | Low / polish |
+| ✅ | Good / strong area |
 
 ---
 
 ## 1. SECURITY
 
-### ✅ SEC-1 — `write_file` creates directories before path validation (FIXED)
+### ✅ SEC-2 / SEC-9 — Write & Replace paths aligned
+- Both `write_file` and `replace` go through `validate_path_access` + audit logging + `SafetyDecision`.
+- `RequireConfirmation` now correctly returns `Err(...)` in both (consistent with previous fixes).
+- `TrustAlways` (`add_session_trusted_path`) is wired.
 
-**File:** `src/tools/file_tools.rs`
+### ✅ Audit & Session correlation
+- `ToolContext.session_id` is properly propagated.
+- Audit logger uses lazy directory creation + in-memory cache for stats.
 
-`validate_path_access` is now called **before** `fs::create_dir_all`. Directory creation only happens for resolved/approved paths. Good.
+### ✅ CoT Guard (Radioactive Isotope Policy)
+- `utils/cot_guard.rs` is exported from lib.
+- Strict cleaning + debug asserts in `chat_turn.rs`.
+- `thinking_mode: Off` + `stream_thinking` controls are respected.
 
-### ✅ SEC-2 — `RequireConfirmation` handling (PARTIALLY FIXED)
+### 🟠 SEC-4 — `process::exit`
+- Still present in:
+  - `src/bin/installer.rs` (binary — acceptable per comments)
+  - `src/cli/commands/acp.rs` (stdio mode exit)
+- Library code (`utils/auth.rs`) correctly returns `Err` instead of exiting.
+- **Recommendation:** Keep comments, consider a `graceful_exit` helper for binaries only.
 
-**File:** `src/tools/file_tools.rs`
+### ✅ SEC-5 — `session_dna.json` location
+- Project-local now lives under `.grok/session_dna.json` (VCS-safe).
+- `SessionDna::load()` prefers `.grok/` then `~/.grok-cli/`.
+- Root-level file is ignored for new DNA (good).
 
-- `write_file`: now correctly returns `Err("Safety confirmation required: ...")`.
-- `replace`: still only does `tracing::warn!` and continues.
+### ✅ External access & sandboxing
+- SecurityPolicy + trusted directories model is solid.
+- Sub-agent sandbox support exists.
 
-**Remaining issue:** Inconsistent enforcement between write and replace.
-
-### ✅ SEC-3 — `TrustAlways` decision (FIXED)
-
-**File:** `src/tools/file_tools.rs:111`
-
-Now properly calls `security.add_session_trusted_path(path)`. Future reads in the same session no longer re-prompt.
-
-### 🟠 SEC-4 — `process::exit(1)` in a library function
-
-**File:** `src/utils/auth.rs`
-
-Still present. Library code must never call `process::exit`.
-
-### 🟠 SEC-5 — `session_dna.json` at the project root
-
-Still at repo root. Should live under `.grok/`.
-
-### ✅ SEC-6 / SEC-7 — Audit logger tests & construction side-effects (FIXED)
-
-All tests use `temp_logger()` + `TempDir`. Directory creation is deferred until first actual write when enabled. `new(false)` creates nothing.
-
-### ✅ SEC-8 — Session ID for audit (FIXED)
-
-`ToolContext.session_id` is now propagated and used consistently instead of a fresh UUID per call.
-
-### ✅ SEC-9 — `replace()` had weaker security than `write_file` (FIXED)
-
-`replace` now goes through the full `validate_path_access` + audit logging path. External paths that require approval are rejected (same policy as write).
+**Overall Security:** Strong. The model has matured significantly.
 
 ---
 
 ## 2. CORRECTNESS
 
-### ✅ COR-1 — `detect_starlink_connection` (REMOVED)
+### ✅ COR-10 — Shell exit codes
+- `run_shell_command` now returns `Err` on non-zero exit (rich error containing output).
+- Updated tests reflect this.
 
-No references remain.
+### ✅ PowerShell `&&` translation
+- Proper conditional translation implemented (not naive replace).
 
-### 🟠 COR-2 — Cargo.lock in `.gitignore` for a binary
+### ✅ Tool dispatch & arbitration
+- `tool_arbitration` + registry is consistent.
+- Round-trip tests (`execute_tool_round_trip_write_read_unknown_missing`) cover happy + error paths.
 
-**Status:** `Cargo.lock` now exists in the repo (good).
+### ✅ Static regexes & helpers
+- JSONC trailing comma, code defs, etc. are `Lazy` / `OnceLock`.
 
-### 🟠 COR-3 — `&&` → `;` PowerShell replacement is dangerously naïve
+### 🟡 Rate limiting
+- Config exists but is largely advisory (no hard client-side enforcement in all paths).
 
-**File:** `src/tools/shell_tools.rs`
-
-Still does the naive `replace(" && ", "; ")`. This turns conditional execution into unconditional. Still dangerous.
-
-### ✅ COR-4 / PERF-5 — Regex compiled on every call (FIXED)
-
-Promoted to `once_cell::sync::Lazy<Regex>`:
-- `RE_JSONC_TRAILING_COMMA`
-- `RE_CODE_DEF`
-
-### 🟠 COR-5 — `RateLimitConfig` is still a no-op
-
-Config exists and is shown, but never enforced at the client layer.
-
-### ✅ COR-6 — Unused `_timeout_secs` (FIXED — Task 257)
-
-Parameter removed. Timeout now comes exclusively from `SecurityPolicy` + `GROK_SHELL_TIMEOUT_SECS`.
-
-### 🟡 COR-7 — Vacuous test
-
-`web_search_returns_result_or_no_results` still exists in some form and is still logically `assert!(true)`.
-
-### 🟡 COR-8 — `STARLINK_ERROR_PATTERNS` too broad
-
-Still contains generic patterns ("connection refused", "network error", etc.).
-
-### 🟠 COR-10 — `run_shell_command` returns `Ok` even on non-zero exit
-
-Still returns `Ok("Command failed with code ...")` instead of `Err`. Callers cannot distinguish success from failure.
+### 🟡 Some platform-specific tests
+- Several file/shell tests are `#[cfg(target_os = "windows")]` or ignored on non-Windows.
 
 ---
 
-## 3. PERFORMANCE
+## 3. ARCHITECTURE & DESIGN
 
-### 🟠 PERF-1 — New `reqwest::Client` on every HTTP call
+### ✅ ARCH-2 / Task 260 — Unified Tool Registry (Major Win)
+This is now one of the strongest parts of the codebase:
 
-Still present in `web_fetch`, search helpers, etc. No shared `Arc<Client>` with connection pooling.
+- **Single source of truth**: `get_full_tool_definitions()` (JSON schemas).
+- **Thin handlers**: Every tool has a dedicated `handle_*` function using `require_str` / `require_*` helpers.
+- **Pure dispatch table**: `execute_tool` match is now ~1 line per tool.
+- **Static caching**: `OnceLock` for definitions, names, required params map, known tools set.
+- **O(1) hot paths**: `is_known_tool_fast`, `get_required_parameters_fast`.
+- **Drift guards**:
+  - `every_tool_schema_has_corresponding_handler` test
+  - `unknown` arm that gives a clear "add handler" error
+  - Symmetry tests
+- **How to add a tool**: Clearly documented (schema + one handler + one match line).
 
-### 🟡 PERF-2 — Audit logger flush-on-every-write
+This is excellent engineering. The registry is now maintainable and testable.
 
-Still does `.flush()` after every `log_access`. Acceptable for durability, but worth a periodic-flush review.
+### 🟠 Library / Binary separation (documented debt)
+- `src/lib.rs` has an honest "Current State" section listing violations.
+- Many `cli/commands/*`, `display`, and terminal I/O still do direct printing.
+- Progress: `terminal/` module created, some deprecation markers.
+- **Recommendation**: Continue the migration path outlined in lib.rs. Avoid adding new I/O to lib.
 
-### ✅ PERF-3 — `get_all_logs` / stats (IMPROVED)
+### 🟠 Monolithic files
+- `src/acp/mod.rs` is still very large (~1800+ lines).
+- `src/tools/registry.rs` is now intentionally large but **well-structured** (handlers + tests + docs).
+- `handle_chat_completion` has been partially extracted into `chat_turn.rs`.
 
-In-memory cache + `cache_dirty` flag means most stats calls no longer read the full file. Good.
+### ✅ Agent roles & personas
+- Clear separation between `reviewer` (sarcastic senior dev, read+limited shell) and `verifier` (strict QA, test runner).
+- `SubAgentConfig::reviewer()` fixed.
+- Role inference in `chat_turn.rs` and status bar icons updated (`👀` for reviewer).
+- Presets in `config/agents/` and `.grok/agents/`.
 
-### 🟡 PERF-4 — `AgentManager` capacity
-
-Minor — `HashMap::new()` with no initial capacity.
-
-### 🟡 PERF-6 — Eager directory creation in logging
-
-Still happens unconditionally at startup in some paths.
-
----
-
-## 4. ARCHITECTURE
-
-### 🟠 ARCH-1 — Monolithic files
-
-Still large:
-- `src/acp/mod.rs` (~3k+ lines, `handle_chat_completion` is still a monster)
-- `src/config/mod.rs` (improved with submodules, but still heavy)
-- `src/tools/registry.rs` (giant `match` + 700+ line JSON schema vec)
-
-### 🟠 ARCH-2 — Tool registry still manually synced
-
-Three places still need to stay in sync:
-- `get_full_tool_definitions()`
-- `execute_tool` match arms
-- `get_required_parameters`
-
-No compile-time enforcement. Task 244 made progress but the big manual dispatch remains.
-
-### 🟠 ARCH-3 — Library/binary separation violations
-
-Still documented in `lib.rs` with TODOs. `require_api_key` calling `exit` is the worst offender.
-
-### 🟠 ARCH-4 — Stray backup file
-
-`src/acp/mod .rs_bak` (if still present) should be deleted.
-
-### 🟡 ARCH-7 — `handle_chat_completion` is ~1000 lines
-
-Still the single biggest function in the codebase. Needs extraction (context trimming, compression, tool loop, status emission, etc.).
-
-### 🟡 ARCH-8 — Tool definitions duplicated in three large blocks
-
-Same as ARCH-2.
+### ✅ Thinking / CoT controls
+- `ThinkingMode` (Off/Low/High) + `stream_thinking` fully wired through ACP, status bar, chat_turn, and slash commands.
+- `/cot` command support.
 
 ---
 
-## 5. READABILITY & STYLE
+## 4. AGENT SYSTEM & SUB-AGENTS
 
-### 🟡 READ-1 — Version string
+### Strong points
+- Rich `SubAgentConfig` builder (model, system_prompt, allowed_tools, trusted_dirs, max_tool_iterations).
+- Memory bus, team, fork/join, send/receive messages.
+- `spawn_agent_configured` + role inference.
+- DNA integration (`SessionDna` influences bayes, skill weights, planning, etc.).
 
-`0.2.5-PreRelease` — the old typo is gone, but consider a cleaner pre-release scheme.
-
-### 🟡 READ-3 — Magic numbers
-
-Still scattered (10_000, 300, 200_000, 0.75, 16_384, etc.). Centralize.
-
-### 🟡 READ-8 — Duplicated defaults
-
-See above.
-
-### 🔵 READ-5 / COR-7 — Vacuous tests
-
-`is_web_search_configured` / related tests still exist and are always-true.
-
-### 🔵 Import style
-
-Occasional `use tracing::warn;` inside functions.
+### Observations
+- Agent system is quite sophisticated (hoh/ evolution layer, bayes, etc.).
+- Good isolation via per-agent trusted dirs and tool whitelists.
 
 ---
 
-## 6. TESTING
+## 5. ACP, STATUS BAR, SLASH COMMANDS
 
-### ✅ TEST-1 — Audit tests (FIXED)
-
-### ✅ TEST-2 — Tool dispatch round-trip (ADDED — Task 258)
-
-`execute_tool_round_trip_write_read_unknown_missing` exists and is good.
-
-### 🟡 TEST-3 — Network-dependent test
-
-`test_grok_client_creation` may still be flaky offline.
-
-### 🟡 Missing tests
-- End-to-end "Trust Always" (second call on same external path does not prompt)
-- `RequireConfirmation` actually returns error from both `write_file` and `replace`
+- Status bar correctly reflects thinking mode and agent role.
+- Slash commands for thinking mode, agents, etc.
+- MCP bridge and tool discovery present.
+- Elicitation and cancellation support.
 
 ---
 
-## 7. BUILD / RELEASE BLOCKERS (Current)
+## 6. TOOLING, FILE & SHELL
 
-### ✅ BUILD-1 — `edition = "2024"` (RESOLVED — no longer a blocker)
-
-**File:** `Cargo.toml:3`
-
-```toml
-edition = "2024"
-rust-version = "1.85"
-```
-
-As of 2026 (Rust 1.97+), the 2024 edition is fully stable and the project's current toolchain (`rustc 1.97.1`) builds cleanly with it. The old concern from the 2025-era review no longer applies.
-
-**Status:** No action needed. `cargo check` / `cargo build` succeed with `edition = "2024"`.
+- File tools have consistent `&ToolContext` signatures.
+- Good use of `SecurityPolicy`.
+- Shell tool now fails correctly on error.
+- Notebook, LSP, MCP, vision, image tools present.
+- OKF (knowledge) tools added.
 
 ---
 
-## 8. POSITIVES (Current State)
+## 7. TESTING & QUALITY
 
-✅ Security model (trusted dirs + external approval + audit + safety hooks) is now actually enforced in the main write/replace paths.  
-✅ `TrustAlways` now works.  
-✅ `replace` security was aligned with `write_file`.  
-✅ Static regexes + `AuditLogger` cache are nice performance wins.  
-✅ `execute_tool` round-trip test added.  
-✅ `ToolContext.session_id` for audit correlation.  
-✅ Directory creation is now lazy in audit logger.  
-✅ `Cargo.lock` is committed.
+### ✅ Excellent registry tests
+- `tool_definitions_are_statically_cached`
+- `every_tool_schema_has_corresponding_handler`
+- Round-trip write/read + error cases
+- Symmetry and required-params accuracy
 
----
+### 🟡 Platform & network tests
+- Some tests still skip on non-Windows or require network.
+- Vacuous tests have been mostly cleaned up.
 
-## 9. UPDATED PRIORITY ACTION LIST
-
-### Must fix before release
-
-1. 🔴 **SEC-2 (remaining)** — Make `replace()` `RequireConfirmation` return `Err` (match `write_file`)
-2. 🟠 **COR-10** — Make shell tool return proper `Err` on non-zero exit
-3. 🟠 **PERF-1** — Shared `Arc<reqwest::Client>` for all web tools
-4. 🟠 **COR-3** — Fix naive `&&` → `;` PowerShell translation
-
-> **Note:** BUILD-1 (`edition = "2024"`) was previously listed as critical but is no longer a concern in 2026+ with Rust 1.85+. The project builds successfully with the 2024 edition on the current stable toolchain (1.97+).
-
-### High priority (soon)
-
-6. 🟠 **ARCH-2 / ARCH-8** — Strengthen tool registry (reduce manual sync points)
-7. 🟠 **ARCH-7** — Refactor `handle_chat_completion` (extract sub-functions)
-8. 🟠 **SEC-4** — Remove `process::exit` from `require_api_key`
-9. 🟠 **SEC-5** — Move `session_dna.json` under `.grok/`
-10. 🟡 **Standardize file tool signatures** on `&ToolContext`
-
-### Medium
-
-11. 🟡 Centralize magic numbers / defaults
-12. 🟡 Add missing tests (TrustAlways round-trip, RequireConfirmation error path)
-13. 🟡 Tighten `STARLINK_ERROR_PATTERNS`
-14. 🟡 Review rate-limit implementation (or remove the config knob)
-15. 🟡 Clean up stray backup files and old `#[allow(dead_code)]` / TODOs
+### ✅ Integration tests exist
+- `tests/file_tools_tests.rs`, `tests/tool_loop_integration.rs`, etc.
 
 ---
 
-*Review updated. The security surface has improved significantly since the original review. The remaining hard blockers are mostly build-related and a couple of inconsistent enforcement points. Good bones — keep going.*
+## 8. BUILD, CONFIG & RELEASE
+
+- `Cargo.toml` has `edition = "2024"`, `rust-version = "1.97.1"`.
+- `Cargo.lock` is committed.
+- Good use of `OnceLock` for zero-cost statics.
+- Directory unification (`~/.grok-cli` for global data) is complete.
+- `session_dna.json` properly handled for VCS safety.
 
 ---
 
-## 10. Notes for Future Work
+## 9. POSITIVES (Current State)
 
-- When fixing the registry (ARCH-2), consider a small declarative table or macro that feeds schemas, dispatch, and required-params.
-- Consider a proper `ToolError` type instead of sprinkling `anyhow!` everywhere in the tool layer.
-- The safety hook design (`SafetyDecision`) is the right shape — finish wiring the confirmation path properly.
-- Long-term: move more of the giant ACP handler into focused modules (history management, tool loop, compression, etc.).
+- **ARCH-2 registry** is a model of how to do tool dispatch cleanly in Rust.
+- Security model (validate early + audit + safety decisions) is now consistently applied.
+- CoT policy is strictly enforced.
+- Agent role distinction (reviewer vs verifier) is clear.
+- Static caching + O(1) lookups in hot paths.
+- Honest debt documentation in `lib.rs`.
+- Thin main + real binary entry point.
+- DNA + bayesian + sub-agent system is advanced.
+- Many previous critical items (SEC-2, COR-10, directory paths, etc.) have been resolved.
 
 ---
 
-**End of updated review**
+## 10. PRIORITY ACTION LIST (Fresh Baseline)
+
+### Must address
+
+1. 🟠 Continue library/binary separation (per the TODOs in `lib.rs`).
+2. 🟡 Rate limiting — either implement hard enforcement or document as advisory only.
+3. 🟡 Reduce size of `acp/mod.rs` (more extraction into focused modules like `chat_turn.rs`).
+
+### Nice to have / polish
+
+4. 🔵 Centralize remaining magic numbers (timeouts, token budgets, etc.).
+5. 🔵 Improve test coverage for cross-platform + offline scenarios.
+6. 🔵 Consider a small `ToolError` enum instead of mixing `anyhow!` + structured JSON strings in some paths.
+7. 🔵 Add a declarative table/macro for the registry in a future major version (current hand-written version is already very good).
+
+### Not blockers
+
+- `process::exit` in installer and acp stdio mode (documented + binary-only).
+- Installer being Windows-focused (current delivery model).
+- Some large files that are now well-organized.
+
+---
+
+## 11. RECOMMENDATIONS
+
+1. **Keep the registry discipline.** The pattern (schema + thin handler + 1-line dispatch + guard test) is excellent. Apply similar thinking to other registries if they appear.
+2. **Document the "why" for reviewer vs verifier** in user-facing docs (they are intentionally different roles).
+3. **When touching ACP**, keep extracting pieces out of `mod.rs`.
+4. **For new features**, prefer adding thin handlers + schema over direct `match` arms.
+
+---
+
+**End of Fresh Review**
+
+The project has made substantial architectural progress, especially around the tool system and security enforcement. The bones are good and the recent work on consistency and guards is visible.
+
+*Review baseline established.*

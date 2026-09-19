@@ -57,11 +57,17 @@ impl UsageStats {
         let current_requests = self.request_history.len() as u32;
 
         if current_requests >= config.max_requests_per_minute {
-            return Err("Rate limit exceeded: Requests per minute".to_string());
+            return Err("Requests per minute".to_string());
         }
 
-        if current_tokens + estimated_tokens > config.max_tokens_per_minute {
-            return Err("Rate limit exceeded: Tokens per minute".to_string());
+        // Only enforce the token budget when there are already requests recorded in
+        // this window.  If the window is empty (first call of the minute) we always
+        // allow the request, even if the estimated size exceeds the per-minute cap.
+        // This prevents blocking large-but-valid first requests in long conversations.
+        if current_requests > 0
+            && current_tokens.saturating_add(estimated_tokens) > config.max_tokens_per_minute
+        {
+            return Err("Tokens per minute".to_string());
         }
 
         Ok(())
@@ -163,5 +169,20 @@ mod tests {
 
         // 101st token should fail
         assert!(stats.check_limit(&config, 1).is_err());
+    }
+
+    #[test]
+    fn test_first_request_always_allowed_even_if_large() {
+        // A single large request (estimated_tokens > max_tokens_per_minute) must
+        // be allowed when no prior requests exist in the current window.
+        // This prevents blocking valid first calls from long conversation histories.
+        let config = RateLimitConfig {
+            max_requests_per_minute: 10,
+            max_tokens_per_minute: 100,
+        };
+        let mut stats = UsageStats::default();
+
+        // estimated_tokens (200) > max_tokens_per_minute (100) — still OK on first call
+        assert!(stats.check_limit(&config, 200).is_ok());
     }
 }

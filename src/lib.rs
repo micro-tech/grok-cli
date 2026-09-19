@@ -58,8 +58,10 @@ pub mod skills;
 pub mod task_graph;
 pub mod tools;
 pub mod utils;
+pub use utils::cot_guard; // CoT guard (radioactive isotope policy)
 pub mod visualizer;
 pub mod workflow;
+pub mod hoh;
 
 #[cfg(feature = "tgs-rag")]
 pub mod rag;

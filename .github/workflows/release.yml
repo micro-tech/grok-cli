@@ -20,23 +20,21 @@ jobs:
           - os: ubuntu-latest
             target: x86_64-unknown-linux-gnu
             artifact_name: grok-cli-linux-x86_64
-            binary_name: grok
-          - os: macos-latest
-            target: x86_64-apple-darwin
-            artifact_name: grok-cli-macos-x86_64
-            binary_name: grok
-          - os: macos-latest
+            binary_name: grok-cli
+
+          - os: macos-14 # ARM runner
             target: aarch64-apple-darwin
             artifact_name: grok-cli-macos-aarch64
-            binary_name: grok
+            binary_name: grok-cli
+
           - os: windows-latest
             target: x86_64-pc-windows-msvc
             artifact_name: grok-cli-windows-x86_64
-            binary_name: grok.exe
+            binary_name: grok-cli.exe
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4 - pinned to address Node 20 deprecation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4 pinned (Node 24 compatible)
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
@@ -87,7 +85,7 @@ jobs:
           ls -lh ${{ matrix.artifact_name }}.zip
 
       - name: Upload artifact
-        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4
+        uses: actions/upload-artifact@4cec3d8aa04e39d1a68397de0c4cd6fb9dce8ec1 # v4 pinned
         with:
           name: ${{ matrix.artifact_name }}
           path: ${{ matrix.artifact_name }}.zip
@@ -101,10 +99,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4 - pinned to address Node 20 deprecation
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4 pinned (Node 24 compatible)
 
       - name: Download all artifacts
-        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229a5806 # v4
+        uses: actions/download-artifact@cc203385981b70ca67e1cc392babf9cc229a5806 # v4 pinned
         with:
           path: artifacts
 
@@ -154,7 +152,7 @@ jobs:
 
           1. Download the ZIP file for your platform
           2. Extract the archive
-          3. Run the `grok` (or `grok.exe` on Windows) binary
+          3. Run the `grok` (or `grok-cli.exe` on Windows) binary
 
           ### ✨ What's New
 

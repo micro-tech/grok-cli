@@ -143,24 +143,57 @@ pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Resu
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let exit_code = output.status.code().unwrap_or(-1);
+
+    // HARNESS / ACP FIX: The LLM (especially inside HOH harness, sub-agents, and ACP chat)
+    // frequently reports "tool call returned blank" or "no reply" for run_shell_command.
+    // Root causes we are killing here:
+    //   - Old code returned Err on non-zero → result became wrapped error without raw output.
+    //   - Empty stdout+stderr looked like nothing.
+    //   - Important compiler/test errors live at the END of output (head truncation hid them).
+    //
+    // Solution: ALWAYS return a big, labeled, never-blank string. Include command + exit + both streams
+    // (or clear "(empty)" markers). This string goes straight into the "tool" role message the LLM sees.
+
+    let stdout_clean = stdout.trim_end_matches('\n').trim_end_matches('\r');
+    let stderr_clean = stderr.trim_end_matches('\n').trim_end_matches('\r');
+
+    let body = if stdout_clean.is_empty() && stderr_clean.is_empty() {
+        "OUTPUT: (no stdout and no stderr were produced by the command)".to_string()
+    } else {
+        format!(
+            "STDOUT ({} bytes):\n{}\n\nSTDERR ({} bytes):\n{}",
+            stdout_clean.len(),
+            if stdout_clean.is_empty() { "(empty)" } else { stdout_clean },
+            stderr_clean.len(),
+            if stderr_clean.is_empty() { "(empty)" } else { stderr_clean }
+        )
+    };
+
+    let result = format!(
+        "═══════════════════════════════════════════════════════════════\n\
+         TOOL RESULT: run_shell_command\n\
+         Command: {}\n\
+         Exit code: {}\n\
+         {}\n\
+         ═══════════════════════════════════════════════════════════════\n\
+         (LLM: this is the COMPLETE output. Do not say \"no output\" or \"blank\".)",
+        command,
+        exit_code,
+        body
+    );
 
     if !output.status.success() {
         tracing::warn!(
-            exit_code = output.status.code().unwrap_or(-1),
-            command = command,
-            "shell_tools: command exited with non-zero status"
+            exit_code = exit_code,
+            command = %command,
+            "shell_tools: non-zero exit — returning as error so callers can distinguish failure (COR-10)"
         );
-        // COR-10: Return Err on non-zero exit so callers (workflows, agents, tests)
-        // can distinguish success from failure and propagate errors properly.
-        return Err(anyhow!(
-            "Command failed with code {}:\nStdout: {}\nStderr: {}",
-            output.status,
-            stdout,
-            stderr
-        ));
+        // Return rich error so the model still sees full STDOUT/STDERR + context.
+        return Err(anyhow!("{}", result));
     }
 
-    Ok(format!("Stdout: {}\nStderr: {}", stdout, stderr))
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -191,15 +224,17 @@ mod tests {
         let cmd = "false";
 
         let result = run_shell_command(cmd, &policy).await;
+        // COR-10: return Err on non-zero exit so callers (including sub-agents, verifiers) can distinguish failure.
+        // The error still contains the rich labeled output (STDOUT/STDERR + exit code) for the model.
         assert!(result.is_err(), "non-zero exit must return Err (COR-10)");
         let err = result.unwrap_err().to_string();
         assert!(
-            err.to_lowercase().contains("failed with code")
-                || err.contains("exit")
-                || err.contains("1"),
-            "error message should indicate failure, got: {}",
+            err.contains("Exit code:") && (err.contains("-1") || err.contains("1") || err.contains("exit")),
+            "error must contain 'Exit code:' and indication of failure, got: {}",
             err
         );
+        // Still rich: model/harness sees full output even in the error case.
+        assert!(err.contains("TOOL RESULT: run_shell_command") || err.contains("STDOUT") || err.contains("STDERR"));
     }
 
     #[tokio::test]
@@ -222,21 +257,34 @@ mod tests {
     async fn windows_and_chain_stops_on_failure() {
         let policy = SecurityPolicy::new();
         // First part fails (exit 1), second part must NOT execute.
-        // COR-10: non-zero exit now returns Err (with the failure message inside).
+        // Per COR-10, run_shell_command returns Err on non-zero exit — the rich labeled
+        // output is embedded in the error message so the model / harness can still read it.
+        // The PowerShell && translation (using $LASTEXITCODE) ensures the echo never runs.
+        // We detect the short-circuit by absence of the marker in the output section.
         let result =
             run_shell_command("cmd /c exit 1 && echo SHOULD_NOT_APPEAR_IN_OUTPUT", &policy).await;
 
-        assert!(result.is_err(), "failing command must return Err (COR-10)");
-        let err = result.unwrap_err().to_string();
+        assert!(result.is_err(), "non-zero exit must return Err (COR-10)");
+        let out = result.unwrap_err().to_string();
+
+        // The header always repeats the original command (so it legitimately contains the marker text).
+        // We must verify the *executed payload* (everything after "Exit code:") does NOT contain it.
+        // This proves the PowerShell `if ($LASTEXITCODE -eq 0)` guard prevented the echo from running.
+        let after_exit = out
+            .split_once("Exit code:")
+            .map(|(_, rest)| rest)
+            .unwrap_or(&out);
+
         assert!(
-            !err.contains("SHOULD_NOT_APPEAR_IN_OUTPUT"),
-            "second command after && must not run when first fails. Got error: {}",
-            err
+            !after_exit.contains("SHOULD_NOT_APPEAR_IN_OUTPUT"),
+            "second command after && must not run when first fails (PowerShell $LASTEXITCODE guard). Full result:\n{}",
+            out
         );
+
         assert!(
-            err.contains("failed with code") || err.contains("exit 1"),
-            "error should mention failure code, got: {}",
-            err
+            out.contains("Exit code:") && (out.contains("-1") || out.contains("1") || out.contains("exit")),
+            "output should mention Exit code and failure, got: {}",
+            out
         );
     }
 

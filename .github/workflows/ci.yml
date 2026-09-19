@@ -37,4 +37,3 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo check
       - run: cargo test -- --quiet
-

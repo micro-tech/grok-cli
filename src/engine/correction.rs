@@ -152,8 +152,12 @@ impl Default for CorrectionConfig {
 ///
 /// # Usage pattern
 ///
-/// ```rust,ignore
+/// ```rust
+/// use grok_cli::engine::correction::CorrectionEngine;
+/// use grok_cli::engine::state::ReasoningEngineState;
+///
 /// let engine = CorrectionEngine::default();
+/// let mut state = ReasoningEngineState::new().with_goal("test");
 ///
 /// // Single-round, safe:
 /// if let Some((trigger, outcome)) = engine.maybe_correct(&mut state) {
