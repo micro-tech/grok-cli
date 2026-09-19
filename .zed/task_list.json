@@ -1445,12 +1445,12 @@
       "id": 403,
       "title": "Add HOH Agent Retirement System",
       "description": "Retire agents whose performance declines or whose skill profiles no longer match project needs.",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [
         361
       ],
       "priority": "high",
-      "details": "AgentLifecycleManager + retirement/hibernation logic implemented in agent_lifecycle.rs and wired in planner (403 section). Tracks metrics, evaluates retirement, produces LifecycleEvents.",
+      "details": "AgentLifecycleManager + retirement/hibernation logic implemented in agent_lifecycle.rs and wired in planner (403 section). Tracks metrics, evaluates retirement, produces LifecycleEvents. Retirement decisions flow into birth system for slot reuse.",
       "testStrategy": "1. Agent with declining metrics is correctly flagged for retirement.\n2. Retirement process runs cleanly and frees resources.\n3. Hand-off of in-flight work succeeds.\n4. Retired agent no longer receives new tasks unless explicitly revived.",
       "subtasks": []
     },
@@ -1458,13 +1458,13 @@
       "id": 404,
       "title": "Add HOH Agent Birth System",
       "description": "Spawn new agents with specialized roles when HOH detects emerging needs or opportunities.",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [
         361,
         403
       ],
       "priority": "high",
-      "details": "AgentBirthSystem in agent_birth.rs. detect_and_birth called from planner with goals, creative ideas, architecture designs. Produces birth events, reuses retired slots.",
+      "details": "AgentBirthSystem in agent_birth.rs. detect_and_birth called from planner with goals, creative ideas, architecture designs. Produces birth events, reuses retired slots from 403. Real spawn path + simulation support.",
       "testStrategy": "1. Need detection correctly triggers agent creation.\n2. Newly born agent has appropriate specialization and can be assigned work immediately.\n3. New agent contributes usefully within one iteration.\n4. Birth process respects resource budgets and safety guardrails.",
       "subtasks": []
     },
@@ -1472,12 +1472,12 @@
       "id": 405,
       "title": "Add HOH Agent Evolution Engine",
       "description": "Allow agents to evolve their capabilities, personalities, and heuristics over time.",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [
         361
       ],
       "priority": "high",
-      "details": "AgentEvolutionSystem in agent_evolution.rs. evolve_agents called from planner using lifecycle signals. Produces evolution events.",
+      "details": "AgentEvolutionSystem in agent_evolution.rs. evolve_agents called from planner using lifecycle signals. Produces evolution events with lineage and fitness deltas.",
       "testStrategy": "1. Agent performance improves measurably across iterations due to evolution.\n2. Evolution produces diverse agent variants.\n3. Poor mutations are eventually discarded (negative selection).\n4. Evolution logs are auditable.",
       "subtasks": []
     },
@@ -1485,12 +1485,12 @@
       "id": 406,
       "title": "Add HOH Multi-Domain Reasoning Pipeline",
       "description": "Enable HOH to reason across multiple domains such as architecture, testing, research, and documentation simultaneously.",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [
         361
       ],
       "priority": "high",
-      "details": "MultiDomainReasoner implemented and called in planner. Produces multi_domain_outputs.",
+      "details": "MultiDomainReasoner implemented and called in planner. Produces multi_domain_outputs with coordinated results across architecture, testing, research, etc.",
       "testStrategy": "1. A planning step produces coordinated outputs in at least 3 domains.\n2. Changes proposed in one domain correctly account for constraints in others.\n3. Cross-domain conflicts are detected and surfaced.",
       "subtasks": []
     },
@@ -1498,7 +1498,7 @@
       "id": 407,
       "title": "Add HOH Long-Term Governance Engine",
       "description": "Implement governance rules that guide HOH decision-making over months of autonomous development.",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [
         361
       ],
@@ -1511,13 +1511,13 @@
       "id": 408,
       "title": "Add HOH Ethical Constraint Model",
       "description": "Define constraints to prevent harmful, destructive, or unsafe autonomous behavior.",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [
         361,
         407
       ],
       "priority": "high",
-      "details": "EthicsEngine exists (ethics.rs). check_proposal logic present and wired in planner for refactoring actions.",
+      "details": "EthicsEngine exists (ethics.rs). check_proposal logic present and wired in planner for risky actions (e.g. refactoring).",
       "testStrategy": "1. Clearly harmful actions are blocked even when the inner agent is prompted to perform them.\n2. Constraint violations are logged with high visibility.\n3. Model is versioned and reviewable.",
       "subtasks": []
     },
@@ -1525,7 +1525,7 @@
       "id": 409,
       "title": "Add HOH Meta-Planning Engine",
       "description": "Enable HOH to plan improvements to HOH itself, creating recursive self-improvement loops.",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [
         361
       ],
@@ -1538,13 +1538,13 @@
       "id": 410,
       "title": "Add HOH Meta-Evaluation Engine",
       "description": "Evaluate HOH’s own performance using metrics such as stability, improvement rate, and agent effectiveness.",
-      "status": "in_progress",
+      "status": "done",
       "dependencies": [
         361,
         409
       ],
       "priority": "high",
-      "details": "MetaEvaluationEngine in meta_evaluation.rs. evaluate_hoh_performance called from planner every cycle.",
+      "details": "MetaEvaluationEngine in meta_evaluation.rs. evaluate_hoh_performance called from planner every cycle. Produces stability, agent effectiveness, and improvement metrics.",
       "testStrategy": "1. Meta-evaluation produces actionable scores.\n2. Degradation is reliably detected.\n3. Improvement trends are visible over simulated multi-iteration runs.",
       "subtasks": []
     },
