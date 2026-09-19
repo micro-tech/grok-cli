@@ -43,7 +43,7 @@ grok_api = "0.2.2"
 reqwest = { version = "0.13.5", features = [
     "json",
     "native-tls-vendored",
-    "http3",
+    "http2",
     "stream",
 ], default-features = false }
 futures-util = "0.3"
