@@ -9,11 +9,11 @@ env:
 
 jobs:
   msrv:
-    name: MSRV (1.97)
+    name: MSRV (1.75)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4  # v4 (Node 24 compatible)
-      - uses: dtolnay/rust-toolchain@1.97
+      - uses: dtolnay/rust-toolchain@1.75
       - run: cargo check
       - run: cargo test
 
@@ -27,7 +27,7 @@ jobs:
           components: rustfmt, clippy
       - run: cargo check
       - run: cargo test
-      - run: cargo clippy -- -D warnings || true   # non-blocking for now
+      - run: cargo clippy -- -D warnings || true  # non-blocking for now
 
   windows:
     name: Windows (stable)
