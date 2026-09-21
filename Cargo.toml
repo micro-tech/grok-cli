@@ -40,7 +40,7 @@ harness = false
 # HTTP client with timeout support for network drops
 grok_api = "0.2.2"
 
-reqwest = { version = "0.12", features = [
+reqwest = { version = "0.13.5", features = [
     "json",
     "native-tls-vendored",
     "http2",
@@ -76,13 +76,13 @@ colored = "3.1.1"
 # Progress indicators
 indicatif = "0.18"
 # File I/O and paths
-dirs = "5"
+dirs = "7"
 # UUID generation
 uuid = { version = "1", features = ["v4", "serde"] }
 # TGS-RAG dependencies (gated behind "tgs-rag" feature)
-tree-sitter = { version = "0.22", optional = true }
-tree-sitter-rust = { version = "0.22", optional = true }
-syn = { version = "2", features = [
+tree-sitter = { version = "0.27", optional = true }
+tree-sitter-rust = { version = "0.24.2", optional = true }
+syn = { version = "3.0.6", features = [
     "full",
     "parsing",
     "visit",
@@ -93,7 +93,7 @@ proc-macro2 = { version = "1", optional = true }
 base64 = "0.23.1"
 # Terminal utilities (using terminal_size instead)
 # Random number generation for retry backoff
-rand = "0.8"
+rand = "0.10.3"
 async-trait = "0.1"
 # Date and time handling for sessions
 chrono = { version = "0.4", features = ["serde"] }
@@ -124,7 +124,7 @@ mockito = "1.7"
 tokio-test = "0.4"
 serial_test = "4.0.1"
 # For Task 266 benchmarks (optional but recommended for perf work)
-criterion = { version = "0.5", features = ["html_reports"] }
+criterion = { version = "0.8.2", features = ["html_reports"] }
 
 [profile.release]
 # Task 272: Strong release profile for small binary + fast cold starts
