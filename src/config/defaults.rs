@@ -13,7 +13,7 @@ use crate::constants::{
 
 /// Current recommended default model. Update when xAI releases a new flagship.
 pub(crate) fn default_model() -> String {
-    "grok-4".to_string()
+    "grok-4".to_string()  // grok-4.7 is out — grok-4 alias points to latest 4.x
 }
 
 pub(crate) fn default_temperature() -> f32 {

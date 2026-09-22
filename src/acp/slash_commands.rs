@@ -328,7 +328,7 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
         )),
         AvailableCommand::new("help", "Show all available slash commands and their usage"),
         AvailableCommand::new("model", "Switch to a different Grok model for this session")
-            .input(input("model name (e.g. grok-4, grok-4.3, grok-3, grok-3-mini)")),
+            .input(input("model name (e.g. grok-4, grok-4.7, grok-4.3, grok-3, grok-3-mini)")),
         AvailableCommand::new("plan", "Create a detailed step-by-step implementation plan")
             .input(input("description of what to plan")),
         AvailableCommand::new(
@@ -897,6 +897,7 @@ pub fn format_model_list() -> String {
         ("grok-4", "Latest flagship Grok 4 (recommended)"),
         ("grok-4-latest", "Grok 4 latest alias"),
         ("grok-4.3", "Grok 4.3 (1M context)"),
+        ("grok-4.7", "Grok 4.7 (latest)"),
         ("grok-3", "Grok 3"),
         ("grok-3-mini", "Grok 3 mini (fast & lightweight)"),
         (

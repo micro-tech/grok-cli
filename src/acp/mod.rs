@@ -478,6 +478,7 @@ impl GrokAcpAgent {
                 "grok-4.3".to_string(), // 1M context variant
                 "grok-4.5".to_string(),
                 "grok-4.6".to_string(),
+                "grok-4.7".to_string(), // Grok 4.7
                 "grok-4.20".to_string(),
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),

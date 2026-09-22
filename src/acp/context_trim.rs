@@ -59,6 +59,7 @@ static MODEL_CONTEXT_TABLE: &[(&str, ModelContextInfo)] = &[
     ("grok-4-latest", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
     ("grok-4.5", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
     ("grok-4.6", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
+    ("grok-4.7", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
     ("grok-4.20", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
     // Legacy / smaller models
     ("grok-3", ModelContextInfo { is_grok4_family: false, context_window: LEGACY_CONTEXT_WINDOW }),

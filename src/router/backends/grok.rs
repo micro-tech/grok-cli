@@ -141,8 +141,7 @@ impl Backend for GrokBackend {
 
         // Only pass reasoning_effort for models that actually support it
         let reasoning_effort: Option<&str> = if req.model.contains("reasoning")
-            || req.model.starts_with("grok-4.20")
-            || req.model.starts_with("grok-4.3")
+            || req.model.starts_with("grok-4.")
         {
             req.reasoning_effort.as_deref()
         } else {
