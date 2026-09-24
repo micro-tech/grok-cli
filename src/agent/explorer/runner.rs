@@ -20,13 +20,16 @@ pub async fn run_explorer_mode(
         crate::utils::messages::user(query),
     ];
 
-    // Only allow read/search tools
+    // Only allow read/search tools + OKF Knowledge OS tools
+    // OKF tools give the explorer access to structured knowledge (runbooks, schemas, metrics, etc.)
     let allowed_tools = [
         "fs_glob",
         "fs_read",
         "fs_grep",
         "list_directory",
         "search_file_content",
+        "okf_lookup",
+        "okf_get",
     ];
 
     let all_tools = crate::acp::tools::get_available_tool_definitions();

@@ -417,12 +417,15 @@ impl SubAgentConfig {
     // ── Preset constructors ───────────────────────────────────────────────────
 
     /// Read-only research agent — web + filesystem reads, no writes.
+    /// Includes OKF Knowledge OS tools (`okf_lookup`, `okf_get`) so the agent
+    /// can query structured knowledge bundles loaded via `[okf]` config.
     pub fn research() -> Self {
         Self::builder()
             .role("researcher")
             .system_prompt(
                 "You are a thorough research agent. Read files carefully, cite evidence, \
-                 and return well-structured findings. Never modify files.",
+                 and return well-structured findings. Never modify files. \
+                 Use `okf_lookup` and `okf_get` to search any loaded OKF Knowledge OS bundles.",
             )
             .allow_tools(vec![
                 "read_file",
@@ -430,6 +433,8 @@ impl SubAgentConfig {
                 "search_file_content",
                 "fs_grep",
                 "fs_glob",
+                "okf_lookup",
+                "okf_get",
             ])
             .max_tokens(4096)
             .build()
@@ -458,12 +463,15 @@ impl SubAgentConfig {
     }
 
     /// Read-only code reviewer.
+    /// Includes OKF tools so the reviewer can look up architecture docs, runbooks,
+    /// schemas, or any other structured knowledge in loaded bundles.
     pub fn reviewer() -> Self {
         Self::builder()
             .role("verifier")
             .system_prompt(
                 "You are a senior code reviewer. Identify bugs, security issues, \
-                 performance problems, and style violations. Be specific and actionable.",
+                 performance problems, and style violations. Be specific and actionable. \
+                 Use `okf_lookup` and `okf_get` when relevant knowledge exists in OKF bundles.",
             )
             .allow_tools(vec![
                 "read_file",
@@ -471,6 +479,8 @@ impl SubAgentConfig {
                 "search_file_content",
                 "fs_grep",
                 "fs_glob",
+                "okf_lookup",
+                "okf_get",
             ])
             .max_tokens(4096)
             .temperature(0.3)
@@ -730,6 +740,10 @@ mod tests {
         let cfg = SubAgentConfig::research();
         assert!(!cfg.tool_permissions.is_allowed("write_file"));
         assert!(cfg.tool_permissions.is_allowed("read_file"));
+        // OKF Knowledge OS tools are included for structured knowledge access
+        assert!(cfg.tool_permissions.is_allowed("okf_lookup"));
+        assert!(cfg.tool_permissions.is_allowed("okf_get"));
+        assert!(!cfg.tool_permissions.is_allowed("okf_create")); // write op, not for research
     }
 
     #[test]
