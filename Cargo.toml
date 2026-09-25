@@ -38,7 +38,7 @@ harness = false
 [dependencies]
 # grok_api = { path = "../grok_crate/grok_api", version = "0.2.1" }
 # HTTP client with timeout support for network drops
-grok_api = "0.2.2"
+grok_api = "0.2.4"
 
 reqwest = { version = "0.13.5", features = [
     "json",
@@ -93,7 +93,7 @@ proc-macro2 = { version = "1.0", optional = true }
 base64 = "0.23.1"
 # Terminal utilities (using terminal_size instead)
 # Random number generation for retry backoff
-rand = "0.10.2"
+rand = "0.10.3"
 async-trait = "0.1"
 # Date and time handling for sessions
 chrono = { version = "0.4", features = ["serde"] }
