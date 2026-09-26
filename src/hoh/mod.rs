@@ -49,6 +49,16 @@ pub mod long_term_strategy;
 pub mod cross_project_knowledge;
 pub mod multi_project_orchestrator;
 
+// Task 297.x — HOH Core completions
+pub mod resource_budget;
+pub mod summary;
+pub mod visualizer;
+pub mod llm_backend;
+pub mod memory_integration;
+pub mod conflict_resolver;
+pub mod snapshot;
+pub mod knowledge_injection;
+
 pub use outer_loop::HOHManager;
 pub use state::{IterationState, PatchSet};
 pub use evolution_engine::TaskEvolutionEngine;
@@ -79,7 +89,9 @@ pub use multi_agent_simulation::{
 pub use multi_agent_orchestrator::{
     MultiAgentOrchestrator, MultiAgentRequest, OrchestrationResult,
 };
-pub use multi_agent::{AgentRole, run_multi_agent_iteration};
+pub use multi_agent::{AgentRole, AgentContribution, MultiAgentRunner, run_multi_agent_iteration, assign_tasks_to_roles, default_roles};
+pub use recovery::{FailureKind, RecoveryStrategy, RecoveryAction, classify_failure, choose_recovery_strategy, recover_from_failure, recover};
+pub use simulation::{HOHSimulator, SimulationConfig as HOHSimulationConfig, SimulationEvent, SimulationResult};
 pub use multi_domain::{MultiDomainReasoner, DomainOutput};
 pub use governance::GovernanceEngine;
 pub use ethics::EthicsEngine;
@@ -89,6 +101,14 @@ pub use long_term_strategy::{LongTermStrategyEngine, StrategicGoal, Milestone, S
 pub use cross_project_knowledge::{
     CrossProjectKnowledgeTransfer, TransferablePattern, CrossProjectTransfer, PatternType,
 };
+pub use resource_budget::{ResourceBudget, BudgetExceeded};
+pub use summary::{IterationSummary, generate_summary, format_summary, save_summary};
+pub use visualizer::{render_iteration, render_history, print_iteration};
+pub use llm_backend::{LLMBackend, BackendConfig, get_model_for_phase};
+pub use memory_integration::{HOHMemory, MemoryEntry, inject_into_plan};
+pub use conflict_resolver::{PatchConflict, ConflictResolution, resolve_all, detect_conflicts};
+pub use snapshot::{Snapshot, SnapshotKind, SnapshotManager};
+pub use knowledge_injection::{KnowledgeBundle, KnowledgeInjector, inject_knowledge};
 pub use multi_project_orchestrator::{
     MultiProjectOrchestrator, MultiProjectRequest, MultiProjectOrchestrationResult,
     ProjectRef, CrossProjectDependency, ResourceAllocation,
