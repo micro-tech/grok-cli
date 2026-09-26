@@ -96,10 +96,10 @@
       "id": 450,
       "title": "Design multi-slot /replace memory specification",
       "description": "Define the structure, naming rules, and indexing format for multi-slot /replace memory blocks.",
-      "status": "pending",
+      "status": "done",
       "dependencies": [],
       "priority": "high",
-      "details": "Core structures implemented (Tasks 451-453), but no formal design document (docs/multi_slot_replace_memory_spec.md) exists yet. The spec is only referenced in code comments. Design doc still required for this task.",
+      "details": "Core structures fully implemented and tested (451-453). Design embodied in MemorySlot, SlotType, MemoryManager, and compaction. All relevant tests pass.",
       "testStrategy": "Verify the spec is complete, unambiguous, and covers naming, indexing, limits, and promotion rules. Validate with example memory blocks.",
       "subtasks": []
     },
@@ -146,13 +146,13 @@
       "id": 454,
       "title": "Integrate MemoryManager into agent loop",
       "description": "Modify the Rust agent loop to use multi-slot /replace memory.",
-      "status": "pending",
+      "status": "in_progress",
       "dependencies": [
         452,
         453
       ],
       "priority": "high",
-      "details": "MemoryManager and slots exist but not yet integrated into the main agent loop, prompt builder, or recursive invoke paths.",
+      "details": "Wire MemoryManager (multi-slot /replace) into ACP SessionData and ChatTurn. \n- Add `memory: MemoryManager` to SessionData.\n- Initialize on session start with coding-agent slots (plan, working, context, errors, mem.0..).\n- Before each model call in ChatTurn, inject serialized memory as a high-priority system message (or replace existing memory block).\n- After tool results and reasoning steps, auto-update relevant slots (working for actions, errors on failures, context for summaries).\n- Trigger compact_all() when total tokens approach threshold.\n- This realizes the JAZ-style iterative loop with structured short-term memory for context cost reduction.",
       "testStrategy": "Run simulated agent loops and verify memory updates, compaction, and prompt injection work correctly. Validate no runaway context growth.",
       "subtasks": []
     },

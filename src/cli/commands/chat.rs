@@ -660,6 +660,15 @@ fn handle_interactive_command(
                                 None => println!("🧠 CoT display: use `/cot on` or `/cot off` (CLI session override not fully wired; falls back to global)."),
                             }
                         }
+                        slash_commands::BuiltinResult::ReplaceMemory { slot, content } => {
+                            println!(
+                                "📝 Memory slot update requested (CLI): `{}`\n{}",
+                                slot, content
+                            );
+                            println!(
+                                "(Full effect only in ACP sessions. In CLI this is noted for the current turn.)"
+                            );
+                        }
                     }
                     return Ok(Some(CommandResult::Continue));
                 }

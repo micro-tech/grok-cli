@@ -149,6 +149,45 @@ impl ChatTurn {
 
             self.reapply_trims(&agent.config);
 
+            // === Task 454: Inject multi-slot /replace memory (JAZ-style short-term memory) ===
+            // Serialize the named + indexed slots and inject as a high-priority system message.
+            // This gives the LLM explicit, addressable working memory (plan, working, context, errors, mem.N).
+            // The slots are kept small by compaction (Task 453) → big context cost savings.
+            {
+                let mut sessions = agent.sessions.write().await;
+                if let Some(session) = sessions.get_mut(&session_id.0) {
+                    let mem_section = session.memory.serialize_for_prompt(&[]);
+                    if !mem_section.trim().is_empty() {
+                        // Prepend (or replace) a dedicated memory system block so the model sees it early.
+                        // We keep only one active memory block to avoid duplication.
+                        if let Some(existing_idx) = self.messages.iter().position(|m| {
+                            m.get("role") == Some(&json!("system"))
+                                && m.get("content").and_then(|c| c.as_str()).map_or(false, |s| s.contains("## Memory Slots"))
+                        }) {
+                            self.messages.remove(existing_idx);
+                        }
+
+                        let memory_msg = json!({
+                            "role": "system",
+                            "content": format!(
+                                "## Active Short-Term Memory (/replace slots)\n\
+                                 You have access to these named and indexed memory slots.\n\
+                                 Use them as structured working memory for this coding task.\n\
+                                 Update them by asking the system to /replace[slot] (the harness will do it).\n\n{}",
+                                mem_section
+                            )
+                        });
+                        // Insert right after the first system message (if any) so it is prominent but after persona.
+                        let insert_pos = if self.messages.first().and_then(|m| m.get("role")).and_then(|r| r.as_str()) == Some("system") {
+                            1
+                        } else {
+                            0
+                        };
+                        self.messages.insert(insert_pos, memory_msg);
+                    }
+                }
+            }
+
             // Use extracted retrying API caller (Task 280.2)
             let response_with_finish =
                 perform_api_call_with_retries(agent, self, tool_defs).await?;
@@ -575,6 +614,12 @@ pub async fn process_tool_calls(
             }
         };
 
+        // Clone once for the auto-memory update block below (which runs
+        // unconditionally after the final_tool_content decision).  We keep the
+        // original `content` for the move into final_tool_content in the
+        // non-replace path.
+        let content_for_memory = content.clone();
+
         // Emit update
         if let Some(sender) = event_sender {
             let update = ToolCallUpdate {
@@ -599,11 +644,76 @@ pub async fn process_tool_calls(
             hooks.execute_after_tool(function_name, &args, &content)?;
         }
 
+        // Special handling for the replace_memory_slot tool: actually apply the update
+        // to the session's MemoryManager so the change is visible in the next prompt injection.
+        let final_tool_content = if function_name == "replace_memory_slot" {
+            // Parse the original args (we already have `args`)
+            let slot = args.get("slot").and_then(|v| v.as_str()).unwrap_or("working");
+            let content_arg = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("replace");
+
+            match agent.replace_memory_slot(session_id, slot, content_arg, mode).await {
+                Ok(success_msg) => {
+                    info!("Applied explicit replace_memory_slot for {}: {}", slot, success_msg);
+                    success_msg
+                }
+                Err(e) => {
+                    warn!("Failed to apply replace_memory_slot for {}: {}", slot, e);
+                    format!("Failed to update memory slot '{}': {}", slot, e)
+                }
+            }
+        } else {
+            content.clone()
+        };
+
         turn.messages.push(json!({
             "role": "tool",
             "tool_call_id": tool_call.id,
-            "content": content
+            "content": final_tool_content
         }));
+
+        // === Task 454: Auto-update multi-slot /replace memory from tool results ===
+        // This implements the JAZ-style "LLM acts → sees result → memory updated → next turn"
+        // Keeps short-term memory fresh and bounded (compaction + token budgets).
+        {
+            let mut sessions = agent.sessions.write().await;
+            if let Some(session) = sessions.get_mut(&session_id.0) {
+                let mem = &mut session.memory;
+
+                // Always update "working" with a compact summary of the latest action + result.
+                let working_update = format!(
+                    "Action: {}\nResult (truncated):\n{}",
+                    function_name,
+                    content_for_memory.chars().take(600).collect::<String>()
+                );
+                let _ = mem.update_slot("working", working_update);
+
+                // On failure, capture in the dedicated errors slot (high signal for next planning).
+                if matches!(status, ToolCallStatus::Failed) {
+                    let err_update = format!("{} failed: {}", function_name, content_for_memory.chars().take(400).collect::<String>());
+                    let _ = mem.update_slot("errors", err_update);
+                }
+
+                // Occasionally roll recent working into the rolling context slots (mem.N).
+                // This gives the model a lightweight history without bloating the main context.
+                if mem.total_tokens() > mem.config.indexed_max_tokens * 2 {
+                    // Find the next mem.N slot or reuse the oldest
+                    for i in 0..mem.config.indexed_slots {
+                        let name = format!("mem.{}", i);
+                        if let Some(slot) = mem.get_slot(&name) {
+                            if slot.content.trim().is_empty() || i == mem.config.indexed_slots - 1 {
+                                let summary = format!("Recent step: {}", content_for_memory.chars().take(200).collect::<String>());
+                                let _ = mem.update_slot(&name, summary);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Trigger compaction to keep total context cost low (core money-saving feature).
+                let _ = mem.compact_all();
+            }
+        }
 
         // Final-answer guard (helps prevent max-loop)
         turn.messages.push(json!({

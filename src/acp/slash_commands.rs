@@ -154,6 +154,12 @@ pub enum SlashCommand {
     /// `/cot off` — hide thinking blocks (default behavior can be set in config)
     /// `/cot`     — show current setting for this session
     Cot { enabled: Option<bool> },
+
+    /// `/replace[slot] <content>` or `/replace slot <content>`
+    /// Explicitly update one of the agent's short-term memory slots.
+    /// Slots: plan, working, context, errors, mem.0 ... mem.5
+    /// This is the user-facing way to drive the JAZ-style /replace memory.
+    ReplaceMemory { slot: String, content: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -291,6 +297,32 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
             }
         }
 
+        // /replace[slot] content  or  /replace slot content
+        // This is the explicit user command to drive the agent's short-term memory slots.
+        "/replace" => {
+            let (slot, content) = if args.starts_with('[') {
+                if let Some(end) = args.find(']') {
+                    let slot = args[1..end].trim().to_string();
+                    let content = args[end + 1..].trim().to_string();
+                    (slot, content)
+                } else {
+                    return None;
+                }
+            } else {
+                let parts: Vec<&str> = args.splitn(2, ' ').collect();
+                if parts.len() == 2 {
+                    (parts[0].to_string(), parts[1].to_string())
+                } else {
+                    return None;
+                }
+            };
+            if slot.is_empty() || content.is_empty() {
+                None
+            } else {
+                Some(SlashCommand::ReplaceMemory { slot, content })
+            }
+        }
+
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -408,6 +440,12 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "Control display of Chain-of-Thought / reasoning traces in the UI (Zed etc.)"
         )
         .input(input("on | off — omit to show current setting for this session")),
+
+        AvailableCommand::new(
+            "replace",
+            "Explicitly update one of the agent's short-term memory slots (plan, working, context, errors, mem.0–5). This is the JAZ-style /replace working memory."
+        )
+        .input(input("[slot] <content>  or  slot <content>   e.g. /replace[plan] implement auth with JWT")),
     ];
 
     // Ensure alphabetical order by command name
@@ -455,7 +493,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Trace { .. }
         | SlashCommand::Okf { .. }
         | SlashCommand::Compress
-        | SlashCommand::Cot { .. } => None,
+        | SlashCommand::Cot { .. }
+        | SlashCommand::ReplaceMemory { .. } => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -707,6 +746,10 @@ pub enum BuiltinResult {
 
     /// Set or query per-session display of Chain-of-Thought / thinking traces.
     SetShowThinking(Option<bool>),
+
+    /// Update a short-term /replace memory slot (plan, working, context, errors, mem.N).
+    /// This is the explicit slash-command form of the memory tool.
+    ReplaceMemory { slot: String, content: String },
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -760,6 +803,9 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::Okf { query } => Some(BuiltinResult::ShowOkf(query.clone())),
         SlashCommand::Compress => Some(BuiltinResult::ForceCompress),
         SlashCommand::Cot { enabled } => Some(BuiltinResult::SetShowThinking(*enabled)),
+        SlashCommand::ReplaceMemory { slot, content } => {
+            Some(BuiltinResult::ReplaceMemory { slot: slot.clone(), content: content.clone() })
+        }
         _ => None, // AI-assisted command
     }
 }

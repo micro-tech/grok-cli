@@ -1131,6 +1131,14 @@ async fn handle_builtin_result(
                 }
             }
         }
+
+        // ── /replace[slot] or /replace slot  ─────────────────────────────────────
+        BuiltinResult::ReplaceMemory { slot, content } => {
+            match agent.replace_memory_slot(session_id, &slot, &content, "replace").await {
+                Ok(msg) => msg,
+                Err(e) => format!("❌ Failed to update memory slot `{}`: {}", slot, e),
+            }
+        }
     }
 }
 

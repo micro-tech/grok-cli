@@ -171,6 +171,12 @@ struct SessionData {
     /// Kept (and read in save/restore paths) rather than removed.
     #[expect(dead_code, reason = "reserved for future use")]
     last_workflow_trace: Option<crate::workflow::WorkflowTrace>,
+
+    /// Multi-slot short-term /replace memory (Tasks 450-454).
+    /// This is the JAZ-inspired structured working memory for the coding agent.
+    /// Named slots: plan, working, context, errors + indexed mem.0, mem.1...
+    /// Injected into prompts + auto-compacted to control context cost.
+    pub memory: crate::memory::memory_manager::MemoryManager,
 }
 
 impl SessionData {
@@ -586,6 +592,9 @@ impl GrokAcpAgent {
             active_agents: Vec::new(),
             show_thinking: None,
             last_workflow_trace: None,
+
+            // Multi-slot /replace memory (JAZ-inspired short-term structured memory for coding agent)
+            memory: crate::memory::memory_manager::MemoryManager::new(),
         };
 
         // --- Task 102: Knowledge Pack Loader ---
@@ -1687,6 +1696,59 @@ impl GrokAcpAgent {
         sessions.get(session_id).map(|s| s.cwd.clone())
     }
 
+    /// Explicitly update one of the short-term /replace memory slots for a session.
+    /// This is the implementation behind both the `replace_memory_slot` tool
+    /// and the `/replace[slot] ...` slash command.
+    ///
+    /// Slots: "plan", "working", "context", "errors", "mem.0" ... "mem.5"
+    pub async fn replace_memory_slot(
+        &self,
+        session_id: &SessionId,
+        slot: &str,
+        content: &str,
+        mode: &str, // "replace" | "append"
+    ) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        let session = sessions
+            .get_mut(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+
+        let mem = &mut session.memory;
+
+        let effective_mode = if mode.eq_ignore_ascii_case("append") {
+            "append"
+        } else {
+            "replace"
+        };
+
+        let result = if effective_mode == "append" {
+            // Append logic: get current, append, update
+            let current = mem
+                .get_slot(slot)
+                .map(|s| s.content.clone())
+                .unwrap_or_default();
+            let new_content = if current.trim().is_empty() {
+                content.to_string()
+            } else {
+                format!("{}\n\n{}", current.trim_end(), content.trim())
+            };
+            mem.update_slot(slot, new_content)
+        } else {
+            mem.update_slot(slot, content.to_string())
+        };
+
+        match result {
+            Ok(()) => {
+                let _ = mem.compact_all();
+                Ok(format!(
+                    "✅ Updated memory slot `{}` (mode: {})",
+                    slot, effective_mode
+                ))
+            }
+            Err(e) => Err(anyhow!("Failed to update memory slot '{}': {}", slot, e)),
+        }
+    }
+
     /// Store the list of slash commands the client advertised in a
     /// `session/update { sessionUpdate: "available_commands_update" }` notification.
     ///
@@ -2008,6 +2070,9 @@ impl GrokAcpAgent {
                 active_agents: source.active_agents.clone(),
                 show_thinking: source.show_thinking,
                 last_workflow_trace: None,
+
+                // Multi-slot /replace memory (cloned for fork; fresh memory is often desired but we copy for continuity)
+                memory: source.memory.clone(),
             }
         };
         let mut sessions = self.sessions.write().await;
@@ -2131,6 +2196,9 @@ mod tests {
             active_agents: Vec::new(),
             show_thinking: None,
             last_workflow_trace: None,
+
+            // Multi-slot /replace memory (JAZ-inspired short-term structured memory for coding agent)
+            memory: crate::memory::memory_manager::MemoryManager::new(),
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);

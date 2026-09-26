@@ -522,6 +522,27 @@ async fn handle_okf_create(args: &Value) -> Result<String> {
     crate::tools::okf_tools::okf_create(r#type, title, body, description, tags, resource, id).await
 }
 
+/// Handle explicit model-driven updates to the per-session multi-slot memory.
+/// This is the tool form of `/replace[plan]`, `/replace[working]`, etc.
+async fn handle_replace_memory_slot(args: &Value, _ctx: &ToolContext) -> Result<String> {
+    let slot = require_str(args, "slot")?;
+    let content = require_str(args, "content")?;
+    let mode = args["mode"].as_str().unwrap_or("replace");
+
+    // Return a structured result. The actual update to SessionData.memory
+    // happens in the chat turn loop (chat_turn.rs) after tool execution,
+    // because that's where we have access to the per-session MemoryManager.
+    // This keeps the tool registry stateless while still allowing the model
+    // to drive memory updates.
+    Ok(serde_json::json!({
+        "status": "memory_update_requested",
+        "slot": slot,
+        "mode": mode,
+        "content_preview": content.chars().take(120).collect::<String>(),
+        "note": "The agent harness will apply this to the current session's /replace memory slots."
+    }).to_string())
+}
+
 /// Execute a named tool with the provided JSON arguments and context.
 ///
 /// This is the **unified entry-point** used by the main agent loop, chat router,
@@ -625,6 +646,8 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                 "okf_lookup" => handle_okf_lookup(&args).await,
                 "okf_get" => handle_okf_get(&args).await,
                 "okf_create" => handle_okf_create(&args).await,
+
+                "replace_memory_slot" => handle_replace_memory_slot(&args, ctx).await,
 
                 // Runtime guard for ARCH-2 consistency
                 unknown => Err(anyhow!(
@@ -1491,6 +1514,34 @@ pub fn get_full_tool_definitions() -> &'static [serde_json::Value] {
                             }
                         },
                         "required": ["title", "body"]
+                    }
+                }
+            }),
+
+            // ── Multi-slot /replace memory (JAZ-style working memory) ─────────────
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "replace_memory_slot",
+                    "description": "Update one of the named or indexed short-term memory slots used by the agent. Slots: 'plan' (high-level goals), 'working' (current task state), 'context' (retrieved facts), 'errors' (recent failures), 'mem.0'..'mem.5' (rolling history). This is the explicit way for the model to maintain structured working memory across tool-using turns. Preferred over stuffing everything into conversation history.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "slot": {
+                                "type": "string",
+                                "description": "Slot name: plan | working | context | errors | mem.0 | mem.1 | ... | mem.5"
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "New content for the slot (will replace or append depending on mode)."
+                            },
+                            "mode": {
+                                "type": "string",
+                                "enum": ["replace", "append"],
+                                "description": "How to apply the content. 'replace' (default) overwrites the slot. 'append' adds to existing content."
+                            }
+                        },
+                        "required": ["slot", "content"]
                     }
                 }
             }),
