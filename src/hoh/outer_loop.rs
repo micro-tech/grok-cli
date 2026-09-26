@@ -280,6 +280,30 @@ impl HOHManager {
         let eval = self.evaluate_phase(&plan, &state.patches, test_passed, test_summary.clone(), test_output.clone()).await?;
         state.evaluations.push(eval.clone());
 
+        // === Task 411: Evaluation-Driven Self-Improvement Loop ===
+        // Generate concrete, reviewable proposals from the just-completed evaluation + history.
+        let self_improvement_proposals = crate::hoh::self_improvement::generate_self_improvement_proposals(&state);
+        if !self_improvement_proposals.is_empty() {
+            tracing::info!(
+                count = self_improvement_proposals.len(),
+                "HOH (411): Generated {} evaluation-driven self-improvement proposals",
+                self_improvement_proposals.len()
+            );
+            for p in &self_improvement_proposals {
+                tracing::info!(
+                    "  411: [{}] {} (conf {:.2}) — {}",
+                    format!("{:?}", p.target),
+                    p.title,
+                    p.confidence,
+                    p.description.chars().take(80).collect::<String>()
+                );
+            }
+        }
+
+        if let Some(plan_mut) = &mut state.plan {
+            plan_mut.self_improvement_proposals = self_improvement_proposals;
+        }
+
         // Run independent Helix evaluation for objective cross-check (297.7)
         let helix_eval = crate::hoh::helix::evaluate_with_helix(&state.patches).await;
         tracing::info!(
@@ -484,6 +508,7 @@ impl HOHManager {
                 multi_project_result: None,       // 361.0101
                 registered_projects: vec![],      // 361.0101
                 creative_task_mutations: vec![],
+                self_improvement_proposals: vec![],
                 created_at: chrono::Utc::now().timestamp() as u64,
             })
         }

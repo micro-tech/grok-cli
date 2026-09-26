@@ -114,6 +114,11 @@ pub struct HOHPlan {
     #[serde(default)]
     pub creative_task_mutations: Vec<crate::hoh::task_mutation::TaskMutation>,
 
+    /// 411: Evaluation-driven self-improvement proposals generated this cycle.
+    /// These are concrete, reviewable suggestions for prompts, heuristics, or agent behavior.
+    #[serde(default)]
+    pub self_improvement_proposals: Vec<crate::hoh::self_improvement::SelfImprovementProposal>,
+
     pub created_at: u64,
 }
 

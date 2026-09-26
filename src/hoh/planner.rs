@@ -1307,6 +1307,7 @@ pub async fn create_plan(goals: Vec<String>) -> HOHPlan {
         multi_project_result: None,       // 361.0101 / 370
         registered_projects: vec![],      // 361.0101
         creative_task_mutations: vec![],
+        self_improvement_proposals: vec![],
         created_at: 0,
     })
 }

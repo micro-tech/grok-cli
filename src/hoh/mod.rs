@@ -92,6 +92,7 @@ pub mod memory_consolidation;
 pub mod patch_fusion;
 pub mod patch_arbitration;
 pub mod self_optimizer;
+pub mod self_improvement;
 
 // Task 297.x — HOH Core completions
 pub mod resource_budget;

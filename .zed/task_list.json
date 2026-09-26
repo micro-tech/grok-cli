@@ -1,648 +1,110 @@
-﻿{
-    "tasks":  [
-                  {
-                      "id":  411,
-                      "title":  "Add HOH Meta-Refinement Engine",
-                      "description":  "Refine HOH’s own algorithms, heuristics, and decision-making strategies based on meta-evaluation.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           410
-                                       ],
-                      "priority":  "high",
-                      "details":  "Close the meta-refinement loop.\n- Take meta-evaluation output and produce targeted refinements (prompt changes, parameter tuning, new heuristics, structural changes).\n- Prefer small, testable refinements with rollback capability.\n- Validate refinements in simulation before promoting to production HOH.",
-                      "testStrategy":  "1. Refinements measurably improve the metrics identified by meta-evaluation.\n2. Refinement process itself is logged and reviewable.\n3. Bad refinements are detected and rolled back.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  412,
-                      "title":  "Add HOH Future Trajectory Simulator",
-                      "description":  "Simulate future development paths and predict long-term outcomes of architectural decisions.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "high",
-                      "details":  "Long-horizon simulation.\n- Run many possible futures from current state using different policy choices.\n- Model second- and third-order effects.\n- Produce probability distributions over key outcomes (velocity, stability, technical debt, etc.).\n- Use results to inform governance and long-term strategy.",
-                      "testStrategy":  "1. Simulator can run 10-50 step trajectories.\n2. Predictions are directionally useful when compared to actual historical runs.\n3. Simulator is fast enough to be used inside planning loops.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  413,
-                      "title":  "Add HOH Autonomous Roadmap Generator",
-                      "description":  "Generate multi-year roadmaps based on project goals, evaluation trends, and predicted trajectories.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           412
-                                       ],
-                      "priority":  "high",
-                      "details":  "Long-term autonomous roadmap creation.\n- Synthesize goals, current state, evaluation history, and trajectory simulations into phased roadmaps.\n- Include milestones, risk points, and decision branches.\n- Update roadmaps automatically as reality diverges from predictions.\n- Expose roadmaps in human-readable and machine-consumable forms.",
-                      "testStrategy":  "1. A coherent multi-phase roadmap is generated.\n2. Roadmap is updated after significant events.\n3. Roadmap influences near-term planning in a visible way.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  414,
-                      "title":  "Add HOH Multi-Project Strategy Engine",
-                      "description":  "Coordinate strategy across multiple projects, sharing knowledge and optimizing resource allocation.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "medium",
-                      "details":  "Cross-project orchestration.\n- Maintain shared strategic context across projects.\n- Allocate HOH attention and agent resources optimally.\n- Propagate high-value patterns and avoid duplicated effort.\n- Support project-specific governance while maintaining global principles.",
-                      "testStrategy":  "1. Engine can plan work that spans two or more projects.\n2. Knowledge and improvements are shared appropriately.\n3. Resource conflicts are detected and resolved.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  415,
-                      "title":  "Add HOH Cross-Domain Knowledge Fusion",
-                      "description":  "Fuse knowledge from different domains into unified OKF bundles for improved reasoning.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "high",
-                      "details":  "Knowledge fusion layer.\n- Detect when knowledge in one domain (e.g. architecture) is relevant to another (e.g. testing strategy).\n- Create or update unified OKF concepts that combine signals from multiple sources.\n- Maintain provenance so fused knowledge can be audited or split if needed.",
-                      "testStrategy":  "1. Fusion produces new OKF entries that are more useful than the sum of their parts.\n2. Downstream reasoning improves when using fused knowledge.\n3. Fusion does not create incorrect or overly confident claims.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  416,
-                      "title":  "Add HOH Autonomous Research Planner",
-                      "description":  "Plan long-term research tasks to explore unknown areas or emerging technologies.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "high",
-                      "details":  "Strategic research planning.\n- Identify high-leverage unknown areas from trajectory simulations and knowledge gaps.\n- Generate multi-iteration research programs with clear hypotheses and success criteria.\n- Balance exploration vs exploitation in the overall HOH portfolio.\n- Integrate results back into OKF and the main development roadmap.",
-                      "testStrategy":  "1. Research plans are generated for identified knowledge gaps.\n2. Research tasks have clear hypotheses and measurable outcomes.\n3. Completed research measurably reduces uncertainty in subsequent planning.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  417,
-                      "title":  "Add HOH Autonomous Innovation Engine",
-                      "description":  "Generate innovative features, tools, or subsystems based on gaps or opportunities detected in the project.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           401
-                                       ],
-                      "priority":  "high",
-                      "details":  "Systematic innovation generation.\n- Combine creativity engine output with opportunity detection (from metrics, user signals, technology trends).\n- Produce concrete innovation proposals with rough effort estimates and expected value.\n- Support staged validation (idea → prototype → experiment → integration).\n- Track innovation success rate over time.",
-                      "testStrategy":  "1. Engine produces innovations that are not obvious extensions of current work.\n2. At least one innovation progresses through multiple validation stages.\n3. Innovation pipeline metrics are tracked and improve over time.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  418,
-                      "title":  "Add HOH Agent Specialization Engine",
-                      "description":  "Specialize agents into roles such as architect, debugger, researcher, tester, or refactorer.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           405
-                                       ],
-                      "priority":  "high",
-                      "details":  "Role-based specialization system.\n- Define core roles with characteristic tool sets, prompts, evaluation criteria, and risk profiles.\n- Allow dynamic specialization and re-specialization based on workload and performance.\n- Support composite roles and ad-hoc teams.\n- Measure specialization effectiveness (specialists outperform generalists on role-appropriate tasks).",
-                      "testStrategy":  "1. Specialists outperform generalists on tasks matching their role.\n2. Specialization can be changed or deepened over time.\n3. Role definitions are versioned and reviewable.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  419,
-                      "title":  "Add HOH Agent Collaboration Graph",
-                      "description":  "Model agent interactions and optimize collaboration patterns for maximum productivity.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           418
-                                       ],
-                      "priority":  "high",
-                      "details":  "Collaboration modeling and optimization.\n- Build a graph of agent-to-agent interactions, handoffs, and conflicts.\n- Analyze the graph for bottlenecks, underused connections, and high-performing patterns.\n- Use analysis to suggest or automatically adjust collaboration topology.\n- Feed results into multi-agent protocol improvements.",
-                      "testStrategy":  "1. Collaboration graph is built and updated during runs.\n2. Analysis identifies real collaboration issues.\n3. Suggested changes improve measured collaboration efficiency.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  420,
-                      "title":  "Add HOH Agent Personality Evolution",
-                      "description":  "Allow agent personalities to evolve based on performance, collaboration, and evaluation feedback.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           405,
-                                           427
-                                       ],
-                      "priority":  "high",
-                      "details":  "Personality as an evolvable trait.\n- Represent personality as a vector or set of traits with history.\n- Evolve traits using the same mechanisms as other agent capabilities (405).\n- Correlate personality changes with performance and collaboration outcomes.\n- Support \u0027personality archetypes\u0027 that can be cloned or hybridized.",
-                      "testStrategy":  "1. Personality traits evolve in response to feedback.\n2. Certain personality configurations correlate with better outcomes in specific roles.\n3. Evolution preserves useful personality diversity.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  421,
-                      "title":  "Add HOH Autonomous Creativity Scoring",
-                      "description":  "Score creative outputs based on novelty, usefulness, and alignment with project goals.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           401
-                                       ],
-                      "priority":  "high",
-                      "details":  "Multi-dimensional creativity evaluation.\n- Novelty: distance from existing patterns (embeddings + structural diff).\n- Usefulness: predicted or measured value (Helix scores, downstream adoption).\n- Alignment: fit with current goals, governance, and roadmap.\n- Combine into a composite creativity score used for ranking and selection.",
-                      "testStrategy":  "1. Scoring produces consistent, explainable results.\n2. High-scoring outputs are more likely to be selected for further development.\n3. Scoring improves over time as more data is collected.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  422,
-                      "title":  "Add HOH Autonomous Experimentation Engine",
-                      "description":  "Run controlled experiments on architecture, agents, or algorithms to discover better approaches.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "high",
-                      "details":  "Scientific experimentation framework inside HOH.\n- Design experiments with clear hypotheses, controls, and success metrics.\n- Run experiments in simulation or isolated branches.\n- Analyze results with statistical rigor appropriate to the domain.\n- Promote winning variants into the main system and record them in OKF.",
-                      "testStrategy":  "1. Experiment design is valid (clear hypothesis + metrics).\n2. Results are statistically sound and reproducible.\n3. Winning variants are promoted and produce measurable improvement.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  423,
-                      "title":  "Add HOH Hypothesis Generator",
-                      "description":  "Generate hypotheses about system behavior, performance bottlenecks, or architectural weaknesses.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           422
-                                       ],
-                      "priority":  "high",
-                      "details":  "Automated hypothesis generation.\n- Analyze telemetry, evaluation results, code structure, and iteration history.\n- Produce testable hypotheses in a structured format.\n- Prioritize hypotheses by expected information gain and impact.\n- Feed directly into the Experimentation Engine (422).",
-                      "testStrategy":  "1. Generator produces hypotheses that are specific and testable.\n2. Generated hypotheses cover a useful range of the system.\n3. At least some hypotheses, when tested, yield actionable insights.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  424,
-                      "title":  "Add HOH Hypothesis Testing Engine",
-                      "description":  "Test hypotheses using controlled experiments, simulations, and evaluation feedback.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           422,
-                                           423
-                                       ],
-                      "priority":  "high",
-                      "details":  "Hypothesis testing execution layer.\n- Translate hypotheses into experiments or observational studies.\n- Run tests (simulation, A/B, historical replay).\n- Apply statistical tests and record confidence.\n- Update beliefs in OKF and influence planning.",
-                      "testStrategy":  "1. Hypotheses are tested with appropriate rigor.\n2. Results include clear accept/reject/uncertain outcomes with evidence.\n3. Belief updates are visible in subsequent planning.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  425,
-                      "title":  "Add HOH Autonomous Theory Builder",
-                      "description":  "Build theories about system behavior, agent dynamics, and architectural evolution.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           424
-                                       ],
-                      "priority":  "high",
-                      "details":  "Theory construction from evidence.\n- Aggregate results from many experiments and observations.\n- Synthesize higher-level explanatory models.\n- Represent theories in a machine-readable + human-readable form (in OKF).\n- Use theories to guide future hypothesis generation and planning (strong priors).",
-                      "testStrategy":  "1. Coherent theories are constructed from raw data.\n2. Theories make non-trivial, testable predictions that hold up.\n3. Use of theories improves planning quality over time.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  426,
-                      "title":  "Add HOH Autonomous Concept Discovery",
-                      "description":  "Discover new concepts, abstractions, or patterns within the codebase or architecture.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "high",
-                      "details":  "Concept discovery system.\n- Analyze code, patches, evaluations, and agent behavior for recurring or emerging abstractions.\n- Propose new named concepts with definitions and examples.\n- Add discovered concepts to OKF with provenance.\n- Use new concepts in future reasoning and code generation.",
-                      "testStrategy":  "1. Meaningful new concepts are discovered and named.\n2. Concepts are useful in downstream tasks (planning, explanation, generation).\n3. Concept quality improves with more data.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  427,
-                      "title":  "Add HOH Autonomous Pattern Mining",
-                      "description":  "Mine recurring patterns from patches, evaluations, and agent behavior.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "high",
-                      "details":  "Pattern mining pipeline.\n- Extract structural, behavioral, and process patterns from the full history of HOH activity.\n- Cluster similar patterns and identify high-value ones.\n- Represent patterns in a form usable by the Pattern Application and Evolution engines.\n- Track pattern usage and success rate.",
-                      "testStrategy":  "1. Recurring high-value patterns are automatically identified.\n2. Patterns have clear applicability conditions.\n3. Mining improves over time as more history accumulates.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  428,
-                      "title":  "Add HOH Autonomous Pattern Application",
-                      "description":  "Apply discovered patterns to improve architecture, code quality, or agent performance.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           427
-                                       ],
-                      "priority":  "high",
-                      "details":  "Pattern application engine.\n- Match current situation against known good patterns.\n- Generate concrete applications (refactors, prompt changes, process adjustments).\n- Validate applications before wide use.\n- Measure lift from pattern application.",
-                      "testStrategy":  "1. Patterns are successfully applied to new situations.\n2. Applied patterns produce measurable improvement.\n3. Inappropriate pattern applications are rejected.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  429,
-                      "title":  "Add HOH Autonomous Pattern Evolution",
-                      "description":  "Evolve patterns over time as the system grows and new requirements emerge.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           427,
-                                           428
-                                       ],
-                      "priority":  "high",
-                      "details":  "Pattern evolution.\n- Treat patterns as evolvable artifacts (similar to agents and strategies).\n- Combine, specialize, generalize, and retire patterns based on usage data and outcomes.\n- Maintain a living pattern library with version history and success metrics.",
-                      "testStrategy":  "1. High-value patterns evolve and improve.\n2. Low-value or outdated patterns are deprecated.\n3. The pattern library grows in both quantity and quality.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  430,
-                      "title":  "Add HOH Multi-Agent Ecosystem Manager",
-                      "description":  "Manage the lifecycle, roles, and interactions of all agents in the HOH ecosystem.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           403,
-                                           404,
-                                           418
-                                       ],
-                      "priority":  "high",
-                      "details":  "Full agent ecosystem management.\n- Track all agents (birth, specialization, performance, retirement).\n- Manage capacity, diversity, and role coverage.\n- Handle agent communication topology and shared resources.\n- Provide ecosystem-level views and interventions for governance.",
-                      "testStrategy":  "1. Ecosystem state is always consistent and queryable.\n2. Birth/retirement/specialization events are properly orchestrated.\n3. Ecosystem health metrics are maintained and acted upon.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  431,
-                      "title":  "Add HOH Agent Ecology Simulator",
-                      "description":  "Simulate agent ecosystems to predict emergent behavior and optimize collaboration.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           430
-                                       ],
-                      "priority":  "high",
-                      "details":  "Agent population simulation.\n- Model populations of agents with different profiles interacting over time.\n- Predict emergent phenomena (specialization, dominance, collaboration breakdowns).\n- Use simulation results to tune ecosystem parameters before applying them to reality.\n- Support \u0027what-if\u0027 experiments on ecosystem composition.",
-                      "testStrategy":  "1. Simulation produces plausible emergent behaviors.\n2. Simulation predictions correlate with real multi-agent run outcomes.\n3. Simulation is used to improve real ecosystem configuration.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  432,
-                      "title":  "Add HOH Autonomous Domain Expansion",
-                      "description":  "Expand HOH into new domains such as UI design, DevOps, documentation, or research.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "medium",
-                      "details":  "Domain expansion framework.\n- Detect when a new domain would be high-value.\n- Bootstrap minimal capability in the new domain (tools, knowledge, agent profiles).\n- Gradually increase autonomy in the new domain while maintaining safety.\n- Integrate new domain knowledge into the broader HOH system.",
-                      "testStrategy":  "1. At least one new domain is successfully bootstrapped.\n2. Work in the new domain produces useful output.\n3. Expansion does not destabilize existing domains.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  433,
-                      "title":  "Add HOH Autonomous Tool Creation",
-                      "description":  "Allow HOH to design and implement new tools when existing ones are insufficient.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "high",
-                      "details":  "Autonomous tool synthesis.\n- Identify tool gaps from failed tasks or repeated workarounds.\n- Design new tool interfaces and implementations.\n- Generate, test, and integrate the new tool into the tool registry.\n- Deprecate or evolve tools via the companion retirement/evolution tasks.",
-                      "testStrategy":  "1. A genuinely useful new tool is created and integrated.\n2. The new tool is used successfully by agents in subsequent work.\n3. Tool creation follows safety and review processes.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  434,
-                      "title":  "Add HOH Autonomous Tool Retirement",
-                      "description":  "Retire tools that are obsolete, redundant, or underperforming.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           433
-                                       ],
-                      "priority":  "medium",
-                      "details":  "Tool lifecycle management (retirement side).\n- Detect low-usage, superseded, or harmful tools.\n- Safely remove or deprecate tools while updating dependent prompts and agents.\n- Archive tool history and rationale.",
-                      "testStrategy":  "1. Obsolete tools are correctly identified.\n2. Retirement does not break legitimate ongoing work.\n3. Dependent agents and plans are updated.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  435,
-                      "title":  "Add HOH Autonomous Tool Evolution",
-                      "description":  "Evolve tools based on usage patterns, evaluation feedback, and emerging needs.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           433
-                                       ],
-                      "priority":  "high",
-                      "details":  "Continuous tool improvement.\n- Collect usage telemetry and outcome data per tool.\n- Propose and apply improvements (new parameters, better error handling, performance, new capabilities).\n- Version tools and support gradual rollout.",
-                      "testStrategy":  "1. Tool evolution produces measurable improvements in success rate or efficiency.\n2. Evolution is driven by real usage data.\n3. Tool versions are properly tracked.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  436,
-                      "title":  "Add HOH Autonomous Workflow Optimization",
-                      "description":  "Optimize workflows across agents, tools, and tasks for maximum efficiency.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "high",
-                      "details":  "End-to-end workflow optimization.\n- Model current workflows (sequences of agent + tool usage).\n- Identify bottlenecks, redundant steps, and low-value work.\n- Propose and validate improved workflows.\n- Automatically adopt high-confidence improvements.",
-                      "testStrategy":  "1. Workflow bottlenecks are correctly identified.\n2. Optimized workflows show clear efficiency or quality gains.\n3. Optimization is applied safely with rollback.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  437,
-                      "title":  "Add HOH Autonomous Strategy Mutation",
-                      "description":  "Mutate long-term strategies when HOH detects stagnation or new opportunities.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361
-                                       ],
-                      "priority":  "high",
-                      "details":  "Strategy mutation system.\n- Monitor strategy effectiveness over time.\n- When stagnation or new opportunities are detected, generate strategic mutations.\n- Test mutations in simulation before promoting.\n- Maintain a portfolio of active and experimental strategies.",
-                      "testStrategy":  "1. Strategy mutations are generated in response to real signals.\n2. Successful mutations improve long-term metrics.\n3. Failed mutations are retired cleanly.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  438,
-                      "title":  "Add HOH Autonomous Strategy Fusion",
-                      "description":  "Fuse multiple strategies into unified plans for complex multi-domain projects.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           437
-                                       ],
-                      "priority":  "high",
-                      "details":  "Strategy combination.\n- Detect when multiple strategies are relevant to the same goal.\n- Intelligently combine them (sequencing, parallel execution, conditional branching).\n- Resolve conflicts between strategies.\n- Produce coherent unified execution plans.",
-                      "testStrategy":  "1. Fusion produces plans that are better than using any single strategy alone.\n2. Conflicts between strategies are resolved explicitly.\n3. Fused plans execute successfully.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  439,
-                      "title":  "Add HOH Autonomous Strategy Evolution",
-                      "description":  "Evolve strategies over time based on performance, evaluation, and trajectory predictions.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           437,
-                                           412
-                                       ],
-                      "priority":  "high",
-                      "details":  "Long-term strategy evolution.\n- Treat strategies as evolvable artifacts with fitness based on real outcomes.\n- Combine successful elements from multiple strategies.\n- Retire or de-emphasize underperforming strategies.\n- Use trajectory simulation to evaluate potential strategy changes before committing.",
-                      "testStrategy":  "1. Strategy portfolio evolves toward higher-performing strategies.\n2. Evolution is driven by evidence.\n3. The system maintains strategic diversity when appropriate.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  440,
-                      "title":  "Add HOH Autonomous Meta-Agent",
-                      "description":  "Create a meta-agent responsible for overseeing HOH itself and coordinating self-improvement.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           409,
-                                           410
-                                       ],
-                      "priority":  "high",
-                      "details":  "Meta-agent implementation.\n- A special high-privilege agent whose sole job is to improve HOH.\n- Has privileged access to HOH internals, logs, and configuration.\n- Operates under very strong governance and safety constraints.\n- Can spawn temporary sub-agents for specific meta-tasks.",
-                      "testStrategy":  "1. Meta-agent is created and can observe HOH internals.\n2. Meta-agent successfully proposes and drives at least one self-improvement.\n3. Meta-agent actions are heavily logged and auditable.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  441,
-                      "title":  "Add HOH Meta-Agent Reasoning Engine",
-                      "description":  "Enable the meta-agent to reason about HOH’s architecture, agents, and long-term goals.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           440
-                                       ],
-                      "priority":  "high",
-                      "details":  "Specialized reasoning for the meta-agent.\n- Deep models of HOH\u0027s own components and dynamics.\n- Ability to simulate \u0027HOH improving HOH\u0027 at multiple levels of recursion.\n- Strong focus on second-order effects and stability.",
-                      "testStrategy":  "1. Meta-agent produces high-quality reasoning about HOH internals.\n2. Reasoning leads to proposals that are accepted by governance.\n3. Recursive reasoning does not cause instability.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  442,
-                      "title":  "Add HOH Meta-Agent Planning Engine",
-                      "description":  "Allow the meta-agent to generate plans for improving HOH’s internal systems.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           440,
-                                           409
-                                       ],
-                      "priority":  "high",
-                      "details":  "Meta-level planning.\n- Plans that target HOH components (planner, memory, evaluation, agents, etc.).\n- Heavy use of simulation and risk assessment.\n- Explicit consideration of meta-risk (risk of the improvement process itself).",
-                      "testStrategy":  "1. Meta-plans are generated for real HOH improvement opportunities.\n2. Plans include strong validation and rollback steps.\n3. At least one meta-plan is successfully executed.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  443,
-                      "title":  "Add HOH Meta-Agent Evaluation Engine",
-                      "description":  "Evaluate the performance of HOH’s subsystems and generate improvement tasks.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           440,
-                                           410
-                                       ],
-                      "priority":  "high",
-                      "details":  "Meta-evaluation specialized for HOH internals.\n- Detailed instrumentation and analysis of every HOH component.\n- Generate specific, actionable improvement tasks (not just high-level observations).\n- Track the \u0027improvement of the improvement process\u0027 over time.",
-                      "testStrategy":  "1. Meta-evaluation identifies specific, fixable weaknesses in HOH.\n2. Generated tasks are accepted into the task list and completed.\n3. HOH performance improves as a result.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  444,
-                      "title":  "Add HOH Meta-Agent Evolution Engine",
-                      "description":  "Allow the meta-agent to evolve its own reasoning, heuristics, and strategies.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           440,
-                                           411
-                                       ],
-                      "priority":  "high",
-                      "details":  "Meta-agent self-evolution.\n- The meta-agent can apply the same evolution mechanisms it uses on other agents to itself (with extra caution).\n- Focus on improving meta-reasoning quality, planning horizon, and safety judgment.\n- Extremely conservative promotion of changes to the meta-agent.",
-                      "testStrategy":  "1. Meta-agent evolves in ways that improve its own effectiveness.\n2. Self-evolution is slower and more heavily validated than regular agent evolution.\n3. Evolution history of the meta-agent is especially well documented.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  445,
-                      "title":  "Add HOH Autonomous Future Simulation Engine",
-                      "description":  "Simulate future states of the project, agents, and architecture to guide long-term planning.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           412
-                                       ],
-                      "priority":  "high",
-                      "details":  "Comprehensive future simulation.\n- Simulate project state, agent populations, knowledge base, and architecture under different policy choices.\n- Support multi-year horizons with appropriate abstraction.\n- Produce scenario trees and key decision points.\n- Directly feed the Roadmap Generator and Strategy engines.",
-                      "testStrategy":  "1. Multi-step future simulations run successfully.\n2. Simulated futures are useful for distinguishing good vs bad long-term decisions.\n3. Simulation is regularly used in real planning.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  446,
-                      "title":  "Add HOH Autonomous Creativity Ecosystem",
-                      "description":  "Create an ecosystem where agents collaborate to generate creative solutions and innovations.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           401,
-                                           417,
-                                           419
-                                       ],
-                      "priority":  "high",
-                      "details":  "Creativity as an ecosystem property.\n- Multiple agents with different creativity profiles work together on idea generation.\n- Structured collaboration patterns (brainstorming, critique, combination, selection).\n- Ideas are evolved, combined, and stress-tested inside the ecosystem before being promoted.\n- Measure and optimize the \u0027creative output\u0027 of the entire ecosystem.",
-                      "testStrategy":  "1. The ecosystem produces higher-quality and more diverse ideas than individual agents alone.\n2. Collaboration patterns for creativity are effective.\n3. Ecosystem creativity metrics trend upward over time.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  447,
-                      "title":  "Add HOH Autonomous Innovation Scoring",
-                      "description":  "Score innovations based on novelty, feasibility, and alignment with long-term goals.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           417,
-                                           421
-                                       ],
-                      "priority":  "high",
-                      "details":  "Innovation-specific scoring.\n- Extend creativity scoring with long-term value, platform potential, and strategic fit.\n- Include expected cost, time-to-value, and risk.\n- Use scores to prioritize which innovations receive resources for prototyping and integration.",
-                      "testStrategy":  "1. Scoring correctly ranks innovations by overall value.\n2. High-scoring innovations are more likely to be pursued and succeed.\n3. Scoring model improves with more innovation outcomes data.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  448,
-                      "title":  "Add HOH Autonomous Innovation Evolution",
-                      "description":  "Evolve innovations over time as new insights and evaluation feedback emerge.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           417,
-                                           447
-                                       ],
-                      "priority":  "high",
-                      "details":  "Innovation maturation.\n- Treat promising innovations as living artifacts that can be refined, combined, or pivoted.\n- Use evaluation feedback from prototypes and experiments to evolve the innovation concept itself.\n- Maintain an innovation portfolio with stages (idea, validated, prototype, integrated, mature).",
-                      "testStrategy":  "1. Innovations evolve from raw ideas into higher-maturity forms.\n2. Evolution is driven by real evidence.\n3. The portfolio shows a healthy pipeline of innovations at different stages.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  449,
-                      "title":  "Add HOH Autonomous Innovation Fusion",
-                      "description":  "Fuse multiple innovations into unified architectural or system-level improvements.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           417,
-                                           438
-                                       ],
-                      "priority":  "high",
-                      "details":  "Innovation combination at scale.\n- Identify complementary or synergistic innovations.\n- Design fused solutions that are greater than the sum of parts.\n- Handle the increased complexity and risk of fused innovations.\n- Produce integrated implementation plans.",
-                      "testStrategy":  "1. Fusion produces innovations that are clearly superior to applying the parts separately.\n2. Fused innovations are successfully implemented.\n3. Fusion process manages complexity appropriately.",
-                      "subtasks":  [
-
-                                   ]
-                  },
-                  {
-                      "id":  450,
-                      "title":  "Add HOH Meta-HOH Layer",
-                      "description":  "Implement a higher-order HOH layer that oversees and improves the primary HOH system, enabling recursive self-improvement.",
-                      "status":  "pending",
-                      "dependencies":  [
-                                           361,
-                                           440
-                                       ],
-                      "priority":  "high",
-                      "details":  "The Meta-HOH (HOH-of-HOH) layer.\n- A higher-order outer loop that treats the primary HOH as its \u0027inner harness\u0027.\n- Responsible for long-term evolution of HOH\u0027s own architecture, governance, evaluation, and improvement processes.\n- Operates on even longer timescales and with even stronger safety constraints.\n- This is the ultimate recursive self-improvement mechanism described in the HOH vision.",
-                      "testStrategy":  "1. Meta-HOH layer is implemented as a distinct (but related) system to primary HOH.\n2. Meta-HOH can observe, evaluate, and propose changes to primary HOH.\n3. At least one improvement originating from Meta-HOH is successfully applied to primary HOH.\n4. The recursive structure remains stable and auditable.",
-                      "subtasks":  [
-
-                                   ]
-                  }
-              ]
+{
+  "tasks": [
+    {
+      "id": 411,
+      "title": "Add Evaluation-Driven Self-Improvement Loop",
+      "description": "Use evaluation results and task outcomes to suggest concrete improvements to prompts, heuristics, and agent behavior.",
+      "status": "pending",
+      "dependencies": [
+        361,
+        410
+      ],
+      "priority": "high",
+      "details": "Grounded self-improvement.\n- Collect structured feedback from completed tasks and evaluations.\n- Identify recurring failure modes or opportunities.\n- Generate small, specific proposals (prompt tweaks, new heuristics, tool usage changes).\n- Require human review or simulation before applying.\n- Track which changes actually improve performance.",
+      "testStrategy": "1. The system can produce 3-5 concrete improvement proposals from a batch of recent tasks.\n2. At least some proposals are accepted and show measurable lift.\n3. All proposals are logged with rationale and outcome.",
+      "subtasks": []
+    },
+    {
+      "id": 418,
+      "title": "Add Basic Agent Role Specialization",
+      "description": "Support different agent modes or personas optimized for common coding tasks (e.g. planner, implementer, debugger, reviewer).",
+      "status": "pending",
+      "dependencies": [
+        361,
+        405
+      ],
+      "priority": "medium",
+      "details": "Practical role differentiation.\n- Define a small set of roles with distinct system prompts, tool preferences, and evaluation criteria.\n- Allow the main agent to switch roles or spawn role-specific sub-agents for parts of a task.\n- Make role selection explicit and logged.\n- Measure whether specialized roles perform better than a single general agent on matching tasks.",
+      "testStrategy": "1. Roles can be selected or assigned during task execution.\n2. Role-specific behavior is observable (different prompts/tools used).\n3. Specialized roles show better results on targeted task types in evaluations.",
+      "subtasks": []
+    },
+    {
+      "id": 419,
+      "title": "Add Collaboration and Handoff Tracking",
+      "description": "Record and analyze how agents (or agent steps) hand off work to each other.",
+      "status": "pending",
+      "dependencies": [
+        361,
+        418
+      ],
+      "priority": "medium",
+      "details": "Visibility into multi-step and multi-agent work.\n- Log handoffs, context passed, decisions made at each step.\n- Surface common handoff patterns and friction points.\n- Use the data to improve context passing and reduce lost information between steps.\n- Keep it lightweight — focus on the current session first.",
+      "testStrategy": "1. Handoffs are automatically logged with useful context.\n2. The system can show a simple trace of a multi-step task.\n3. Analysis identifies at least one recurring handoff problem.",
+      "subtasks": []
+    },
+    {
+      "id": 426,
+      "title": "Discover Recurring Code Abstractions and Patterns",
+      "description": "Automatically surface useful abstractions, naming patterns, and architectural idioms from the codebase and recent changes.",
+      "status": "pending",
+      "dependencies": [
+        361
+      ],
+      "priority": "medium",
+      "details": "Lightweight concept mining for code.\n- Scan recent patches, files, and task outcomes for repeated structures.\n- Propose named abstractions or conventions when they appear multiple times.\n- Store them in a simple, queryable form (OKF or local index).\n- Use discovered patterns to improve future code generation suggestions.\n- Keep scope to this project — no wild cross-domain claims.",
+      "testStrategy": "1. The system identifies at least 2-3 meaningful recurring patterns per significant batch of changes.\n2. Discovered abstractions are human-readable and actionable.\n3. Using the discovered patterns measurably improves suggestion quality in later tasks.",
+      "subtasks": []
+    },
+    {
+      "id": 427,
+      "title": "Mine Common Improvement Patterns from Task History",
+      "description": "Extract recurring successful (and unsuccessful) approaches from past tasks, patches, and reviews.",
+      "status": "pending",
+      "dependencies": [
+        361
+      ],
+      "priority": "high",
+      "details": "Practical pattern mining for a coding agent.\n- Focus on code changes, debugging steps, refactor types, and testing approaches.\n- Cluster similar successful tactics.\n- Represent patterns simply (e.g. 'when you see X, try Y').\n- Make patterns available during planning and code generation.\n- Track which patterns correlate with better outcomes.",
+      "testStrategy": "1. System can surface 5-10 high-frequency patterns from history.\n2. Patterns are specific enough to be applied by the agent.\n3. Using mined patterns improves task success rate or reduces iterations in experiments.",
+      "subtasks": []
+    },
+    {
+      "id": 428,
+      "title": "Apply Mined Patterns During Code Changes",
+      "description": "Use discovered patterns to guide or validate code generation and refactoring.",
+      "status": "pending",
+      "dependencies": [
+        361,
+        427
+      ],
+      "priority": "high",
+      "details": "Pattern application layer.\n- Before making changes, check against known good patterns.\n- Suggest applying relevant patterns when appropriate.\n- After changes, check whether known patterns were followed or violated.\n- Allow easy override and learning from exceptions.\n- Start with read-only suggestions before any automatic application.",
+      "testStrategy": "1. Relevant patterns are surfaced during realistic coding tasks.\n2. Pattern suggestions are accepted at a reasonable rate.\n3. Following patterns correlates with fewer review comments or faster task completion.",
+      "subtasks": []
+    },
+    {
+      "id": 433,
+      "title": "Analyze Tool Usage and Suggest Improvements",
+      "description": "Review how tools are actually used and propose practical improvements to tool design or prompts.",
+      "status": "pending",
+      "dependencies": [
+        361
+      ],
+      "priority": "medium",
+      "details": "Grounded tool evolution.\n- Collect telemetry on tool calls, success/failure rates, and common errors.\n- Identify frequently misused, underused, or painful tools.\n- Generate concrete suggestions (better descriptions, parameter changes, new helper tools, prompt adjustments).\n- Keep all suggestions human-reviewable.\n- Do not allow fully autonomous tool creation or deletion yet.",
+      "testStrategy": "1. Usage data is collected automatically.\n2. The system produces at least a few actionable tool improvement proposals from real usage.\n3. Implemented suggestions reduce tool-related failures or friction.",
+      "subtasks": []
+    },
+    {
+      "id": 434,
+      "title": "Implement Task 411: Evaluation-Driven Self-Improvement Loop",
+      "description": "Grounded self-improvement: Turn evaluation results, improvement_suggestions, and task outcomes into concrete, reviewable proposals for prompts, heuristics, and agent behavior. Start simple and human-review gated.",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Completed: Added SelfImprovementProposal type, generate_self_improvement_proposals() in new self_improvement.rs module. Wired generation into outer_loop after evaluation. Proposals are logged, stored in HOHPlan, and are concrete/reviewable (prompt tweaks, heuristic changes, test_strategy enforcement, patch quality). All changes human-gated. Updated state + planner fallbacks.",
+      "testStrategy": "After running a HOH iteration, the system should surface at least 2-3 concrete self-improvement proposals in logs or state. Proposals should be specific and actionable.",
+      "subtasks": []
+    }
+  ]
 }
