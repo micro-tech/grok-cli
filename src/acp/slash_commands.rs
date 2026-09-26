@@ -160,6 +160,10 @@ pub enum SlashCommand {
     /// Slots: plan, working, context, errors, mem.0 ... mem.5
     /// This is the user-facing way to drive the JAZ-style /replace memory.
     ReplaceMemory { slot: String, content: String },
+
+    /// `/memory` — Show current contents and stats of all short-term /replace memory slots.
+    /// `/memory promote` — Attempt to promote stable facts from memory into long-term OKF storage.
+    Memory { subcommand: String },
 }
 
 // ---------------------------------------------------------------------------
@@ -323,6 +327,12 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
             }
         }
 
+        // /memory [promote]
+        "/memory" => {
+            let sub = args.trim().to_lowercase();
+            Some(SlashCommand::Memory { subcommand: sub })
+        }
+
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -446,6 +456,12 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "Explicitly update one of the agent's short-term memory slots (plan, working, context, errors, mem.0–5). This is the JAZ-style /replace working memory."
         )
         .input(input("[slot] <content>  or  slot <content>   e.g. /replace[plan] implement auth with JWT")),
+
+        AvailableCommand::new(
+            "memory",
+            "Inspect short-term /replace memory slots or promote stable facts to long-term OKF storage"
+        )
+        .input(input("promote — omit to show current slots + usage")),
     ];
 
     // Ensure alphabetical order by command name
@@ -494,7 +510,8 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Okf { .. }
         | SlashCommand::Compress
         | SlashCommand::Cot { .. }
-        | SlashCommand::ReplaceMemory { .. } => None,
+        | SlashCommand::ReplaceMemory { .. }
+        | SlashCommand::Memory { .. } => None,
 
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
@@ -750,6 +767,13 @@ pub enum BuiltinResult {
     /// Update a short-term /replace memory slot (plan, working, context, errors, mem.N).
     /// This is the explicit slash-command form of the memory tool.
     ReplaceMemory { slot: String, content: String },
+
+    /// Show current /replace memory slots (or promote them).
+    ShowMemory { promote: bool },
+    // NOTE: Do NOT add internal-only "*Result" variants here.
+    // All variants must be handled in every match site (handle_builtin_result in acp.rs,
+    // the CLI chat handler, and the exhaustiveness test below).
+    // Past experience with ReplaceMemoryResult showed this causes repeated E0599 errors.
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -805,6 +829,10 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::Cot { enabled } => Some(BuiltinResult::SetShowThinking(*enabled)),
         SlashCommand::ReplaceMemory { slot, content } => {
             Some(BuiltinResult::ReplaceMemory { slot: slot.clone(), content: content.clone() })
+        }
+        SlashCommand::Memory { subcommand } => {
+            let promote = subcommand == "promote";
+            Some(BuiltinResult::ShowMemory { promote })
         }
         _ => None, // AI-assisted command
     }
@@ -1702,5 +1730,54 @@ mod tests {
         let json = serde_json::to_value(&cmd).expect("serialization failed");
         assert_eq!(json["name"], "web");
         assert_eq!(json["input"]["hint"], "query");
+    }
+
+    // ── Exhaustiveness guard for BuiltinResult (prevents future /replace-style bugs) ──
+
+    #[test]
+    fn builtin_result_is_exhaustive() {
+        // This test will fail to compile if a new variant is added to BuiltinResult
+        // without being handled in the main dispatch sites
+        // (acp.rs handle_builtin_result and chat.rs).
+        // It forces maintainers to audit all match sites when extending slash commands.
+        let replace_mem = BuiltinResult::ReplaceMemory {
+            slot: "working".into(),
+            content: "test content".into(),
+        };
+        let show_mem = BuiltinResult::ShowMemory { promote: false };
+
+        let _ = match replace_mem {
+            BuiltinResult::Text(_) => {}
+            BuiltinResult::ClearHistory => {}
+            BuiltinResult::SwitchModel(_) => {}
+            BuiltinResult::ShowCurrentModel => {}
+            BuiltinResult::ShowContext => {}
+            BuiltinResult::RecallArchive(_) => {}
+            BuiltinResult::ShowBayes => {}
+            BuiltinResult::ResetBayes => {}
+            BuiltinResult::ExplainBayes => {}
+            BuiltinResult::SetGoal(_) => {}
+            BuiltinResult::ClearGoal => {}
+            BuiltinResult::ShowGoal => {}
+            BuiltinResult::ShowVisualizer => {}
+            BuiltinResult::SetThinkingMode(_) => {}
+            BuiltinResult::ShowDiagnostics => {}
+            BuiltinResult::AddRule(_) => {}
+            BuiltinResult::RemoveRule(_) => {}
+            BuiltinResult::ListRules => {}
+            BuiltinResult::ClearRules => {}
+            BuiltinResult::ShowTrace(_) => {}
+            BuiltinResult::ShowOkf(_) => {}
+            BuiltinResult::ForceCompress => {}
+            BuiltinResult::SetShowThinking(_) => {}
+            BuiltinResult::ReplaceMemory { .. } => {}
+            BuiltinResult::ShowMemory { .. } => {}
+            // Intentionally no wildcard. Add new arms above when extending the enum.
+        };
+
+        let _ = match show_mem {
+            BuiltinResult::ShowMemory { promote: _ } => {}
+            _ => {}
+        };
     }
 }

@@ -669,6 +669,13 @@ fn handle_interactive_command(
                                 "(Full effect only in ACP sessions. In CLI this is noted for the current turn.)"
                             );
                         }
+                        slash_commands::BuiltinResult::ShowMemory { promote } => {
+                            if promote {
+                                println!("📝 Memory promotion requested (CLI). Full promotion only works inside an ACP session with a live MemoryManager.");
+                            } else {
+                                println!("📋 /memory (CLI): memory inspection is best viewed inside an ACP session. Use `/replace` to update slots.");
+                            }
+                        }
                     }
                     return Ok(Some(CommandResult::Continue));
                 }

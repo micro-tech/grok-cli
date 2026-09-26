@@ -240,21 +240,86 @@ impl MemoryManager {
         Ok(())
     }
 
-    /// Promote important facts from slots into OKF.
+    /// Promote important facts from slots into OKF (Task 456).
     ///
-    /// Current implementation is a stub that calls each slot's promote_to_okf()
-    /// and collects the resulting concept IDs.
+    /// This is the real implementation:
+    /// - Uses the heuristic in each slot to decide candidacy.
+    /// - Calls `okf_create` for stable, high-value content.
+    /// - On success, replaces the slot content with a short reference.
     ///
-    /// Real OKF writing + removal from short-term memory happens in Task 456.
-    pub fn promote_all(&mut self) -> Result<Vec<String>> {
+    /// Respects per-slot priority (plan is protected).
+    pub async fn promote_all(&mut self) -> Result<Vec<String>> {
+        use crate::tools::okf_tools::okf_create;
+
         let mut promoted = Vec::new();
 
-        for (name, slot) in &self.slots {
-            if let Some(concept_id) = slot.promote_to_okf() {
-                // In a fuller implementation we would:
-                // 1. Call okf_create(...)
-                // 2. Replace content in the slot with a reference
-                promoted.push(format!("{}:{}", name, concept_id));
+        // We collect candidates first (to avoid borrow issues while calling async)
+        let candidates: Vec<(String, String, String)> = self
+            .slots
+            .iter()
+            .filter_map(|(name, slot)| {
+                if name == "plan" {
+                    return None; // Never auto-promote plan
+                }
+                if let Some(concept_id) = slot.promote_to_okf() {
+                    // Only promote if content is substantial
+                    if slot.content.len() > 200 && slot.token_count() > 60 {
+                        Some((
+                            name.clone(),
+                            slot.content.clone(),
+                            concept_id,
+                        ))
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                }
+            })
+            .collect();
+
+        for (name, content, suggested_id) in candidates {
+            // Create a good title from the slot name + first line
+            let first_line = content.lines().next().unwrap_or("Memory fact").trim();
+            let title = format!("{}: {}", name, first_line.chars().take(60).collect::<String>());
+
+            let body = format!(
+                "{}\n\n---\n*Promoted automatically from short-term memory slot `{}`*",
+                content, name
+            );
+
+            match okf_create(
+                "Fact", // or "Decision" / "Pattern" based on slot
+                &title,
+                &body,
+                Some(&format!("Auto-promoted from /replace[{}] memory", name)),
+                Some(vec!["memory".to_string(), "short-term".to_string(), name.clone()]),
+                None,
+                Some(&suggested_id),
+            ).await {
+                Ok(result) => {
+                    // Extract the actual ID from the success message (very rough but works)
+                    let concept_id = if result.contains("ID:") {
+                        result.split("ID:").nth(1).unwrap_or(&suggested_id).trim().to_string()
+                    } else {
+                        suggested_id
+                    };
+
+                    // Replace slot content with reference
+                    if let Some(slot) = self.slots.get_mut(&name) {
+                        let ref_text = format!(
+                            "[Promoted to OKF: {}]\n\n(Stable knowledge moved to long-term store. Use `okf_lookup {}` to retrieve.)",
+                            concept_id, concept_id
+                        );
+                        slot.update(ref_text);
+                    }
+
+                    promoted.push(format!("{} → {}", name, concept_id));
+                    tracing::info!("Promoted memory slot '{}' to OKF concept {}", name, concept_id);
+                }
+                Err(e) => {
+                    tracing::warn!("Failed to promote memory slot '{}': {}", name, e);
+                }
             }
         }
 
@@ -354,6 +419,61 @@ impl MemoryManager {
         let mut names: Vec<_> = self.slots.keys().cloned().collect();
         names.sort();
         names
+    }
+
+    /// Human-readable summary of all memory slots (for /memory and /context).
+    /// This is the key piece for Task 458 (observability).
+    pub fn format_for_display(&self) -> String {
+        let mut lines = vec![
+            "## 🧠 Short-Term Memory Slots (/replace)".to_string(),
+            String::new(),
+            format!(
+                "**Total tokens:** {} / {}  |  Compaction threshold: {}",
+                self.total_tokens(),
+                self.config.max_total_tokens,
+                self.config.compaction_threshold()
+            ),
+            String::new(),
+        ];
+
+        let mut sorted: Vec<_> = self.slots.iter().collect();
+        sorted.sort_by_key(|(name, _)| {
+            match name.as_str() {
+                "plan" => 0,
+                "working" => 1,
+                "context" => 2,
+                "errors" => 3,
+                n if n.starts_with("mem.") => 10 + n.trim_start_matches("mem.").parse::<u32>().unwrap_or(99),
+                _ => 99,
+            }
+        });
+
+        for (name, slot) in sorted {
+            let content_preview = if slot.content.trim().is_empty() {
+                "(empty)".to_string()
+            } else {
+                let first = slot.content.lines().next().unwrap_or("").trim();
+                if first.len() > 80 {
+                    format!("{}…", &first[..77])
+                } else {
+                    first.to_string()
+                }
+            };
+
+            lines.push(format!(
+                "### [{}]  ({} tokens, {} chars)",
+                name,
+                slot.token_count(),
+                slot.content.len()
+            ));
+            lines.push(content_preview);
+            lines.push(String::new());
+        }
+
+        lines.push("Use `/replace[slot] new content` or the `replace_memory_slot` tool to update.".to_string());
+        lines.push("Use `/memory promote` to move stable facts into long-term OKF storage.".to_string());
+
+        lines.join("\n")
     }
 
     /// Get a snapshot of all slots (useful for debugging / persistence).

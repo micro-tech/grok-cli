@@ -594,7 +594,14 @@ impl GrokAcpAgent {
             last_workflow_trace: None,
 
             // Multi-slot /replace memory (JAZ-inspired short-term structured memory for coding agent)
-            memory: crate::memory::memory_manager::MemoryManager::new(),
+            // Now respects the [memory] section from config.toml (Task 459)
+            memory: if self.config.memory.enabled {
+                crate::memory::memory_manager::MemoryManager::with_config(
+                    self.config.memory.to_memory_manager_config()
+                )
+            } else {
+                crate::memory::memory_manager::MemoryManager::new()
+            },
         };
 
         // --- Task 102: Knowledge Pack Loader ---
@@ -1749,6 +1756,37 @@ impl GrokAcpAgent {
         }
     }
 
+    /// Test helper: read back the content of a /replace memory slot.
+    /// Only available in tests so we can verify the memory feature end-to-end
+    /// without exposing internal SessionData.
+    #[cfg(test)]
+    pub async fn get_memory_slot(&self, session_id: &SessionId, slot: &str) -> Option<String> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .and_then(|s| s.memory.get_slot(slot).map(|sl| sl.content.clone()))
+    }
+
+    /// Return a formatted summary of all current memory slots (for /memory and enhanced /context).
+    /// Task 458 observability.
+    pub async fn get_memory_summary(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        let session = sessions
+            .get(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+        Ok(session.memory.format_for_display())
+    }
+
+    /// Attempt to promote stable facts from this session's memory into OKF (Task 456).
+    /// Returns list of promoted slot → concept mappings.
+    pub async fn promote_memory_to_okf(&self, session_id: &SessionId) -> Result<Vec<String>> {
+        let mut sessions = self.sessions.write().await;
+        let session = sessions
+            .get_mut(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+        session.memory.promote_all().await
+    }
+
     /// Store the list of slash commands the client advertised in a
     /// `session/update { sessionUpdate: "available_commands_update" }` notification.
     ///
@@ -2198,7 +2236,14 @@ mod tests {
             last_workflow_trace: None,
 
             // Multi-slot /replace memory (JAZ-inspired short-term structured memory for coding agent)
-            memory: crate::memory::memory_manager::MemoryManager::new(),
+            // Now respects the [memory] section from config.toml (Task 459)
+            memory: if self.config.memory.enabled {
+                crate::memory::memory_manager::MemoryManager::with_config(
+                    self.config.memory.to_memory_manager_config()
+                )
+            } else {
+                crate::memory::memory_manager::MemoryManager::new()
+            },
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);

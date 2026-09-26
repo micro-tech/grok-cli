@@ -171,9 +171,31 @@ impl ChatTurn {
                             "role": "system",
                             "content": format!(
                                 "## Active Short-Term Memory (/replace slots)\n\
-                                 You have access to these named and indexed memory slots.\n\
-                                 Use them as structured working memory for this coding task.\n\
-                                 Update them by asking the system to /replace[slot] (the harness will do it).\n\n{}",
+                                 \n\
+                                 **CRITICAL WORKING MEMORY SYSTEM**\n\
+                                 You have explicit, addressable short-term memory slots.\n\
+                                 These are the ONLY way to maintain state across tool calls and turns.\n\
+                                 \n\
+                                 **Available slots (use exactly these names):**\n\
+                                 - `plan` — High-level goals, architecture decisions, current plan. **Highest priority**. Rarely compact. Update when goals change.\n\
+                                 - `working` — Current task scratchpad. What you are doing RIGHT NOW. Update after every significant action.\n\
+                                 - `context` — Retrieved facts, code snippets, file contents you may need again.\n\
+                                 - `errors` — Recent failures, diagnostics, stack traces. High signal for debugging.\n\
+                                 - `mem.0` … `mem.5` — Rolling short-term history. Use when you want to remember recent steps without polluting working.\n\
+                                 \n\
+                                 **How to update:**\n\
+                                 Call the `replace_memory_slot` tool **or** use the slash command `/replace[slot] content`\n\
+                                 Example: replace_memory_slot with slot=\"plan\", content=\"Refactor auth to use JWT + refresh tokens\"\n\
+                                 \n\
+                                 **Best practices:**\n\
+                                 1. After every major step, update `working` with a 1-2 sentence summary of what you just did + current state.\n\
+                                 2. When you discover a stable architectural decision or repeated fact, put it in `plan` or `context`.\n\
+                                 3. On failures, always record the key error in `errors`.\n\
+                                 4. Use `mem.N` slots for step-by-step history when the main context would get too long.\n\
+                                 5. Keep slots short — the system will compact them automatically.\n\
+                                 6. Stable long-lived knowledge may be promoted to permanent OKF storage (you will see a reference left behind).\n\
+                                 \n\
+                                 **Current slot contents:**\n\n{}",
                                 mem_section
                             )
                         });
