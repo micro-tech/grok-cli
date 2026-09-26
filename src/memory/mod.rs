@@ -46,10 +46,13 @@
 
 // ── Sub-modules ───────────────────────────────────────────────────────────────
 
+pub mod compaction;        // Task 453: Deterministic context compaction algorithm
 pub mod context_archive;
 pub mod context_compressor;
 pub mod episodic;
 pub mod long_term;
+pub mod memory_manager;    // Task 452: MemoryManager for multi-slot /replace system
+pub mod replace_slot;      // Task 451: Multi-slot /replace memory (MemorySlot + SlotType)
 pub mod short_term;
 pub mod skill_memory;
 pub mod tool_memory;

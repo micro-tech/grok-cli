@@ -996,6 +996,7 @@ impl HOHPlanner {
             multi_project_result,                        // 361.0101 / 370: Multi-Project Orchestrator
             registered_projects: multi_project_orch.projects.values().cloned().collect(),
             creative_task_mutations: creative_add_mutations.clone(),
+            self_improvement_proposals: vec![],
             created_at: chrono::Utc::now().timestamp() as u64,
         };
 

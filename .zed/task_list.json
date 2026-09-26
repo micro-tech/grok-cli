@@ -1,20 +1,6 @@
 {
   "tasks": [
     {
-      "id": 411,
-      "title": "Add Evaluation-Driven Self-Improvement Loop",
-      "description": "Use evaluation results and task outcomes to suggest concrete improvements to prompts, heuristics, and agent behavior.",
-      "status": "pending",
-      "dependencies": [
-        361,
-        410
-      ],
-      "priority": "high",
-      "details": "Grounded self-improvement.\n- Collect structured feedback from completed tasks and evaluations.\n- Identify recurring failure modes or opportunities.\n- Generate small, specific proposals (prompt tweaks, new heuristics, tool usage changes).\n- Require human review or simulation before applying.\n- Track which changes actually improve performance.",
-      "testStrategy": "1. The system can produce 3-5 concrete improvement proposals from a batch of recent tasks.\n2. At least some proposals are accepted and show measurable lift.\n3. All proposals are logged with rationale and outcome.",
-      "subtasks": []
-    },
-    {
       "id": 418,
       "title": "Add Basic Agent Role Specialization",
       "description": "Support different agent modes or personas optimized for common coding tasks (e.g. planner, implementer, debugger, reviewer).",
@@ -104,6 +90,138 @@
       "priority": "high",
       "details": "Completed: Added SelfImprovementProposal type, generate_self_improvement_proposals() in new self_improvement.rs module. Wired generation into outer_loop after evaluation. Proposals are logged, stored in HOHPlan, and are concrete/reviewable (prompt tweaks, heuristic changes, test_strategy enforcement, patch quality). All changes human-gated. Updated state + planner fallbacks.",
       "testStrategy": "After running a HOH iteration, the system should surface at least 2-3 concrete self-improvement proposals in logs or state. Proposals should be specific and actionable.",
+      "subtasks": []
+    },
+    {
+      "id": 450,
+      "title": "Design multi-slot /replace memory specification",
+      "description": "Define the structure, naming rules, and indexing format for multi-slot /replace memory blocks.",
+      "status": "pending",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Create a formal specification for multi-slot /replace memory. Include:\n- Naming conventions: /replace[plan], /replace[working], /replace[context], /replace[errors]\n- Indexed blocks: /replace[mem.0], /replace[mem.1], /replace[mem.2]\n- Rules for LLM access and update\n- Maximum token limits per slot\n- Eviction rules\n- Promotion rules to OKF bundles\n- JSON schema for internal representation",
+      "testStrategy": "Verify the spec is complete, unambiguous, and covers naming, indexing, limits, and promotion rules. Validate with example memory blocks.",
+      "subtasks": []
+    },
+    {
+      "id": 451,
+      "title": "Implement Rust MemorySlot struct",
+      "description": "Create the Rust struct representing a single /replace memory slot.",
+      "status": "pending",
+      "dependencies": [
+        450
+      ],
+      "priority": "high",
+      "details": "Implement struct MemorySlot {\n  name: String,\n  content: String,\n  max_tokens: usize,\n  last_updated: DateTime,\n  slot_type: SlotType // plan, working, context, errors, indexed\n}\nAdd methods:\n- update(content)\n- summarize()\n- compact()\n- promote_to_okf()\n- token_count()",
+      "testStrategy": "Unit test struct creation, updating, token counting, and summarization. Ensure max_tokens enforcement works.",
+      "subtasks": []
+    },
+    {
+      "id": 452,
+      "title": "Implement MemoryManager for multi-slot system",
+      "description": "Create a manager that handles multiple named and indexed /replace memory slots.",
+      "status": "pending",
+      "dependencies": [
+        451
+      ],
+      "priority": "high",
+      "details": "Implement MemoryManager with:\n- HashMap<String, MemorySlot>\n- Methods: get_slot(name), update_slot(name, content), compact_all(), promote_all(), evict_oldest(), serialize_for_prompt()\n- Automatic compaction when total tokens exceed threshold\n- Automatic promotion of important facts to OKF bundles\n- Support for indexed slots: mem.0, mem.1, mem.2",
+      "testStrategy": "Test adding, updating, compacting, and promoting slots. Validate serialization output matches prompt builder requirements.",
+      "subtasks": []
+    },
+    {
+      "id": 453,
+      "title": "Implement context compaction algorithm",
+      "description": "Create the algorithm that summarizes older memory blocks and reduces token usage.",
+      "status": "done",
+      "dependencies": [
+        452
+      ],
+      "priority": "high",
+      "details": "Implemented full deterministic compaction in src/memory/compaction.rs:\n\n- compact_content() entry point with 8-step pipeline\n- deduplicate_lines + fuzzy near-duplicate removal\n- slot-specific hard rules (plan protected, errors keep recent)\n- strip_verbose_sections (stack traces, debug logs)\n- deduplicate_code_blocks (repeated code → reference)\n- bulletize_paragraphs (dense prose → bullets)\n- smart_truncate (head+tail for most slots, conservative for plan)\n- Integrated into MemorySlot::compact() and MemorySlot::summarize()\n- MemoryManager::compact_all() now uses the real algorithm\n- All existing tests pass + new compaction tests\n- cargo check clean\n\nTarget: 50-80% reduction while preserving meaning. Deterministic & Rust-only.",
+      "testStrategy": "Feed large memory sets and verify compaction reduces tokens by 50–80% while preserving meaning. Validate deterministic output.",
+      "subtasks": []
+    },
+    {
+      "id": 454,
+      "title": "Integrate MemoryManager into agent loop",
+      "description": "Modify the Rust agent loop to use multi-slot /replace memory.",
+      "status": "pending",
+      "dependencies": [
+        452,
+        453
+      ],
+      "priority": "high",
+      "details": "Update agent loop:\n- Load MemoryManager\n- After each LLM call: update working slot\n- After each tool call: update results slot\n- Before each LLM call: compact memory\n- Inject memory slots into prompt\n- Support recursive invoke() calls\n- Ensure deterministic ordering of memory blocks",
+      "testStrategy": "Run simulated agent loops and verify memory updates, compaction, and prompt injection work correctly. Validate no runaway context growth.",
+      "subtasks": []
+    },
+    {
+      "id": 455,
+      "title": "Update prompt builder to include named memory slots",
+      "description": "Modify prompt builder to inject multi-slot /replace blocks into the LLM prompt.",
+      "status": "pending",
+      "dependencies": [
+        454
+      ],
+      "priority": "medium",
+      "details": "Update prompt builder:\n- Add sections for each slot: plan, working, context, errors\n- Add indexed blocks: mem.0, mem.1, mem.2\n- Ensure consistent formatting\n- Ensure LLM instructions explain how to use slots\n- Add token budgeting logic",
+      "testStrategy": "Verify prompt output includes all slots in correct order. Validate formatting and token budgeting.",
+      "subtasks": []
+    },
+    {
+      "id": 456,
+      "title": "Implement OKF promotion pipeline",
+      "description": "Add logic to promote important memory facts into OKF bundles.",
+      "status": "pending",
+      "dependencies": [
+        453
+      ],
+      "priority": "medium",
+      "details": "Implement promotion rules:\n- Detect stable facts\n- Detect repeated patterns\n- Detect long-term relevance\n- Write promoted facts into OKF bundles via Helix\n- Remove promoted content from short-term memory",
+      "testStrategy": "Test promotion with simulated memory. Verify OKF bundles update correctly and memory shrinks.",
+      "subtasks": []
+    },
+    {
+      "id": 457,
+      "title": "Add LLM instructions for multi-slot memory",
+      "description": "Update system prompt to teach the LLM how to use named and indexed memory slots.",
+      "status": "pending",
+      "dependencies": [
+        455
+      ],
+      "priority": "medium",
+      "details": "Add instructions:\n- Explain each slot: plan, working, context, errors\n- Explain indexed slots: mem.0, mem.1, mem.2\n- Explain update rules\n- Explain compaction behavior\n- Explain OKF promotion\n- Provide usage examples",
+      "testStrategy": "Run LLM tests verifying correct usage of memory slots. Validate no hallucinated slot names.",
+      "subtasks": []
+    },
+    {
+      "id": 458,
+      "title": "End-to-end integration test",
+      "description": "Test the full multi-slot memory system inside the coding agent.",
+      "status": "pending",
+      "dependencies": [
+        454,
+        455,
+        456,
+        457
+      ],
+      "priority": "high",
+      "details": "Perform full integration test:\n- Run agent through multi-step coding task\n- Verify memory updates\n- Verify compaction\n- Verify OKF promotion\n- Verify prompt injection\n- Verify cost reduction\n- Verify stability across recursive invoke() calls",
+      "testStrategy": "Run long-horizon coding tasks and confirm stable behavior, reduced context size, and correct memory usage.",
+      "subtasks": []
+    },
+    {
+      "id": 459,
+      "title": "Document multi-slot memory system",
+      "description": "Write full documentation for the new memory system.",
+      "status": "pending",
+      "dependencies": [
+        458
+      ],
+      "priority": "low",
+      "details": "Document:\n- MemorySlot struct\n- MemoryManager\n- Compaction algorithm\n- OKF promotion\n- Prompt builder integration\n- LLM usage rules\n- Examples and diagrams",
+      "testStrategy": "Verify documentation is complete, accurate, and matches implementation.",
       "subtasks": []
     }
   ]
