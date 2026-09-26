@@ -103,6 +103,7 @@ mod tests {
         let proposals = engine.propose_evolutions(&root);
         // The project almost certainly has some multi-param functions
         // Just verify it doesn't panic and returns a vec
-        assert!(proposals.len() >= 0);
+        // len() is always >= 0 for usize; use a no-op to prove it ran without panic
+        let _ = proposals.len();
     }
 }

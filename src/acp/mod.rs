@@ -3,8 +3,24 @@
 //! This module provides the Grok AI agent implementation for the Agent Client Protocol,
 //! enabling seamless integration with Zed editor and other ACP-compatible clients.
 
-use crate::acp::protocol::SessionId;
+pub mod chat_turn;
+pub mod context_trim;
+pub mod elicitation;
+pub mod handlers;
+pub mod mcp_bridge;
+pub mod protocol;
+pub mod security;
+pub mod slash_commands;
+pub mod status_bar;
+pub mod tools;
+
+// Re-export SessionId publicly so external code and tests can use it directly:
+//   use grok_cli::acp::SessionId;
+//   let sid = SessionId::new("my-session");
+pub use protocol::SessionId;
+
 use anyhow::{Result, anyhow};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,18 +32,6 @@ use crate::config::{Config, ThinkingMode};
 use crate::content_to_string;
 use crate::hooks::HookManager;
 use crate::router::AppRouter;
-use serde::{Deserialize, Serialize};
-
-pub mod chat_turn;
-pub mod context_trim;
-pub mod elicitation;
-pub mod handlers;
-pub mod mcp_bridge;
-pub mod protocol;
-pub mod security;
-pub mod slash_commands;
-pub mod status_bar;
-pub mod tools;
 
 use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams};
 use crate::acp::chat_turn::ChatTurn;
@@ -595,12 +599,15 @@ impl GrokAcpAgent {
 
             // Multi-slot /replace memory (JAZ-inspired short-term structured memory for coding agent)
             // Now respects the [memory] section from config.toml (Task 459)
-            memory: if self.config.memory.enabled {
-                crate::memory::memory_manager::MemoryManager::with_config(
-                    self.config.memory.to_memory_manager_config()
-                )
-            } else {
-                crate::memory::memory_manager::MemoryManager::new()
+            memory: {
+                let cfg = crate::config::Config::default();
+                if cfg.memory.enabled {
+                    crate::memory::memory_manager::MemoryManager::with_config(
+                        cfg.memory.to_memory_manager_config()
+                    )
+                } else {
+                    crate::memory::memory_manager::MemoryManager::new()
+                }
             },
         };
 
@@ -2237,12 +2244,15 @@ mod tests {
 
             // Multi-slot /replace memory (JAZ-inspired short-term structured memory for coding agent)
             // Now respects the [memory] section from config.toml (Task 459)
-            memory: if self.config.memory.enabled {
-                crate::memory::memory_manager::MemoryManager::with_config(
-                    self.config.memory.to_memory_manager_config()
-                )
-            } else {
-                crate::memory::memory_manager::MemoryManager::new()
+            memory: {
+                let cfg = crate::config::Config::default();
+                if cfg.memory.enabled {
+                    crate::memory::memory_manager::MemoryManager::with_config(
+                        cfg.memory.to_memory_manager_config()
+                    )
+                } else {
+                    crate::memory::memory_manager::MemoryManager::new()
+                }
             },
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();

@@ -90,7 +90,8 @@ mod tests {
         let dgen = DocGenerator::new(true);
         let entries = dgen.generate_docs(&root);
         // Should find at least some undocumented pub fns
-        assert!(entries.len() >= 0); // just don't panic
+        // len() is always >= 0 for usize; use a no-op to prove it ran without panic
+        let _ = entries.len(); // just don't panic
     }
 
     #[test]

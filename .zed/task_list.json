@@ -93,135 +93,87 @@
       "subtasks": []
     },
     {
-      "id": 450,
-      "title": "Design multi-slot /replace memory specification",
-      "description": "Define the structure, naming rules, and indexing format for multi-slot /replace memory blocks.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Core structures fully implemented and tested (451-453). Design embodied in MemorySlot, SlotType, MemoryManager, and compaction. All relevant tests pass.",
-      "testStrategy": "Verify the spec is complete, unambiguous, and covers naming, indexing, limits, and promotion rules. Validate with example memory blocks.",
-      "subtasks": []
-    },
-    {
-      "id": 451,
-      "title": "Implement Rust MemorySlot struct",
-      "description": "Create the Rust struct representing a single /replace memory slot.",
-      "status": "done",
+    Compiling grok-cli v0.3.0 (H:\GitHub\grok-cli)
+    error[E0428]: the name `protocol` is defined multiple times
+      --> src\acp\mod.rs:35:1
+       |
+     6 | pub mod protocol;
+       | ----------------- previous definition of the module `protocol` here
+    ...
+    35 | pub mod protocol;
+       | ^^^^^^^^^^^^^^^^^ `protocol` redefined here
+       |
+       = note: `protocol` must be defined only once in the type namespace of this module
+
+    error[E0252]: the name `SessionId` is defined multiple times
+      --> src\acp\mod.rs:15:9
+       |
+    10 | pub use protocol::SessionId;
+       |         ------------------- previous import of the type `SessionId` here
+    ...
+    15 | pub use protocol::SessionId;
+       |         ^^^^^^^^^^^^^^^^^^^ `SessionId` reimported here
+       |
+       = note: `SessionId` must be defined only once in the type namespace of this module
+
+    error[E0252]: the name `SessionId` is defined multiple times
+      --> src\acp\mod.rs:39:9
+       |
+    10 | pub use protocol::SessionId;
+       |         ------------------- previous import of the type `SessionId` here
+    ...
+    39 | pub use protocol::SessionId;
+       |         ^^^^^^^^^^^^^^^^^^^ `SessionId` reimported here
+       |
+       = note: `SessionId` must be defined only once in the type namespace of this module      "id": 460,
+      "title": "Polish: Persist memory slots across restarts",
+      "description": "Save/restore MemoryManager state (slots) alongside session snapshots on disk.",
+      "status": "pending",
       "dependencies": [
-        450
+        459
       ],
-      "priority": "high",
-      "details": "Fully implemented in src/memory/replace_slot.rs with MemorySlot + SlotType, update/append, token_count, compact, summarize, promote_to_okf, and tests.",
-      "testStrategy": "Unit test struct creation, updating, token counting, and summarization. Ensure max_tokens enforcement works.",
+      "priority": "medium",
+      "details": "Currently memory is in-memory only per ACP session. Add serde round-tripping for MemorySlot + MemoryManager into the existing session save/load paths (session_dna or dedicated memory.json per session).",
+      "testStrategy": "Create session, populate slots, save, reload, verify slot contents survive.",
       "subtasks": []
     },
     {
-      "id": 452,
-      "title": "Implement MemoryManager for multi-slot system",
-      "description": "Create a manager that handles multiple named and indexed /replace memory slots.",
-      "status": "done",
+      "id": 461,
+      "title": "Polish: Surface memory stats in status bar",
+      "description": "Show memory token usage / slot summary in the dynamic status bar.",
+      "status": "pending",
       "dependencies": [
-        451
+        459
       ],
-      "priority": "high",
-      "details": "Fully implemented in src/memory/memory_manager.rs: named slots (plan/working/context/errors), indexed mem.N slots, update_slot, get_slot, compact_all (priority order), evict_oldest, serialize_for_prompt, promote_all stub, auto-compaction, and unit tests.",
-      "testStrategy": "Test adding, updating, compacting, and promoting slots. Validate serialization output matches prompt builder requirements.",
+      "priority": "low",
+      "details": "Expose total_tokens + per-slot preview via existing status bar update mechanism. Make /memory stats visible without typing the command.",
+      "testStrategy": "After populating memory, status bar update contains memory section or token count.",
       "subtasks": []
     },
     {
-      "id": 453,
-      "title": "Implement context compaction algorithm",
-      "description": "Create the algorithm that summarizes older memory blocks and reduces token usage.",
-      "status": "done",
+      "id": 462,
+      "title": "Polish: Wire auto_promote_to_okf config flag",
+      "description": "Respect MemoryConfig.auto_promote_to_okf (or equivalent) to automatically promote on compaction or turn boundaries.",
+      "status": "pending",
       "dependencies": [
-        452
+        459
       ],
-      "priority": "high",
-      "details": "Full deterministic compaction implemented in src/memory/compaction.rs with 8-step pipeline, slot-specific rules, integrated into MemorySlot and MemoryManager. All tests pass.",
-      "testStrategy": "Feed large memory sets and verify compaction reduces tokens by 50–80% while preserving meaning. Validate deterministic output.",
+      "priority": "low",
+      "details": "Currently promotion is only explicit (/memory promote). Add a non-intrusive auto path (e.g. after compact_all or at end of turn for high-value slots) gated by the flag.",
+      "testStrategy": "Set flag true, populate qualifying content, trigger compaction/turn, verify promotion happened without explicit command.",
       "subtasks": []
     },
     {
-      "id": 454,
-      "title": "Integrate MemoryManager into agent loop",
-      "description": "Modify the Rust agent loop to use multi-slot /replace memory.",
+      "id": 463,
+      "title": "Polish: More memory integration tests",
+      "description": "Add stronger end-to-end tests for promotion, compaction under load, cross-turn persistence, and slash command flows.",
       "status": "in_progress",
-      "dependencies": [
-        452,
-        453
-      ],
-      "priority": "high",
-      "details": "Wire MemoryManager (multi-slot /replace) into ACP SessionData and ChatTurn. \n- Add `memory: MemoryManager` to SessionData.\n- Initialize on session start with coding-agent slots (plan, working, context, errors, mem.0..).\n- Before each model call in ChatTurn, inject serialized memory as a high-priority system message (or replace existing memory block).\n- After tool results and reasoning steps, auto-update relevant slots (working for actions, errors on failures, context for summaries).\n- Trigger compact_all() when total tokens approach threshold.\n- This realizes the JAZ-style iterative loop with structured short-term memory for context cost reduction.",
-      "testStrategy": "Run simulated agent loops and verify memory updates, compaction, and prompt injection work correctly. Validate no runaway context growth.",
-      "subtasks": []
-    },
-    {
-      "id": 455,
-      "title": "Update prompt builder to include named memory slots",
-      "description": "Modify prompt builder to inject multi-slot /replace blocks into the LLM prompt.",
-      "status": "pending",
-      "dependencies": [
-        454
-      ],
-      "priority": "medium",
-      "details": "Update prompt builder:\n- Add sections for each slot: plan, working, context, errors\n- Add indexed blocks: mem.0, mem.1, mem.2\n- Ensure consistent formatting\n- Ensure LLM instructions explain how to use slots\n- Add token budgeting logic",
-      "testStrategy": "Verify prompt output includes all slots in correct order. Validate formatting and token budgeting.",
-      "subtasks": []
-    },
-    {
-      "id": 456,
-      "title": "Implement OKF promotion pipeline",
-      "description": "Add logic to promote important memory facts into OKF bundles.",
-      "status": "pending",
-      "dependencies": [
-        453
-      ],
-      "priority": "medium",
-      "details": "Implement promotion rules:\n- Detect stable facts\n- Detect repeated patterns\n- Detect long-term relevance\n- Write promoted facts into OKF bundles via Helix\n- Remove promoted content from short-term memory",
-      "testStrategy": "Test promotion with simulated memory. Verify OKF bundles update correctly and memory shrinks.",
-      "subtasks": []
-    },
-    {
-      "id": 457,
-      "title": "Add LLM instructions for multi-slot memory",
-      "description": "Update system prompt to teach the LLM how to use named and indexed memory slots.",
-      "status": "pending",
-      "dependencies": [
-        455
-      ],
-      "priority": "medium",
-      "details": "Add instructions:\n- Explain each slot: plan, working, context, errors\n- Explain indexed slots: mem.0, mem.1, mem.2\n- Explain update rules\n- Explain compaction behavior\n- Explain OKF promotion\n- Provide usage examples",
-      "testStrategy": "Run LLM tests verifying correct usage of memory slots. Validate no hallucinated slot names.",
-      "subtasks": []
-    },
-    {
-      "id": 458,
-      "title": "End-to-end integration test",
-      "description": "Test the full multi-slot memory system inside the coding agent.",
-      "status": "pending",
-      "dependencies": [
-        454,
-        455,
-        456,
-        457
-      ],
-      "priority": "high",
-      "details": "Perform full integration test:\n- Run agent through multi-step coding task\n- Verify memory updates\n- Verify compaction\n- Verify OKF promotion\n- Verify prompt injection\n- Verify cost reduction\n- Verify stability across recursive invoke() calls",
-      "testStrategy": "Run long-horizon coding tasks and confirm stable behavior, reduced context size, and correct memory usage.",
-      "subtasks": []
-    },
-    {
-      "id": 459,
-      "title": "Document multi-slot memory system",
-      "description": "Write full documentation for the new memory system.",
-      "status": "pending",
       "dependencies": [
         458
       ],
-      "priority": "low",
-      "details": "Document:\n- MemorySlot struct\n- MemoryManager\n- Compaction algorithm\n- OKF promotion\n- Prompt builder integration\n- LLM usage rules\n- Examples and diagrams",
-      "testStrategy": "Verify documentation is complete, accurate, and matches implementation.",
+      "priority": "medium",
+      "details": "Basic protocol + unit coverage exists. Add dedicated test exercising /replace + /memory promote via ACP protocol (using run_acp_session_for_test_arc + handle_builtin_result simulation or direct agent calls).",
+      "testStrategy": "New test in tests/acp_protocol.rs (or memory_integration.rs) that populates a slot with substantial content, runs promote, and asserts promotion message + slot content replaced with OKF reference.",
       "subtasks": []
     }
   ]
