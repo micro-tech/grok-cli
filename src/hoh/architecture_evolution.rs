@@ -467,7 +467,6 @@ impl ArchitectureEvolutionEngine {
 mod tests {
     use super::*;
     use crate::hoh::tasklist_adapter::TaskListAdapter;
-    use std::path::PathBuf;
 
     #[tokio::test]
     async fn test_propose_evolutions_in_simulation() {

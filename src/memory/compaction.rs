@@ -159,45 +159,51 @@ fn keep_most_recent_errors(text: &str, keep_last: usize) -> String {
 
 /// Strip verbose sections: long stack traces, repeated logs, debug dumps.
 fn strip_verbose_sections(text: &str) -> String {
-    let mut result = String::new();
+    let mut result = Vec::new();
     let mut in_stack = false;
-    let mut stack_lines = 0;
 
     for line in text.lines() {
-        let l = line.trim();
+        let t = line.trim();
 
-        // Detect start of stack trace
-        if l.starts_with("thread '") || l.contains("panicked at") || l.starts_with("stack backtrace:") {
+        // Start of stack trace / panic
+        if !in_stack && (
+            line.contains("panicked at") ||
+            line.contains("thread '") ||
+            line.trim_start().starts_with("stack backtrace:")
+        ) {
             in_stack = true;
-            stack_lines = 0;
-            result.push_str("[stack trace summarized]\n");
+            result.push("[stack trace summarized]".to_string());
             continue;
         }
 
         if in_stack {
-            stack_lines += 1;
-            if stack_lines > 2 {
-                // skip deep stack frames
+            let looks_like_stack = t.is_empty()
+                || t.starts_with("0:")
+                || t.starts_with("1:")
+                || t.starts_with("2:")
+                || t.contains("::")
+                || t.starts_with("   ")
+                || t.starts_with("    ")
+                || t.contains(" at ")
+                || t.starts_with("note:");
+
+            if looks_like_stack {
                 continue;
             }
-            if l.starts_with("   ") || l.contains("::") {
-                continue;
-            }
-            if l.is_empty() || l.starts_with("note:") {
-                in_stack = false;
-            }
+
+            // Real content again → stop skipping
+            in_stack = false;
         }
 
-        // Skip extremely repetitive log lines
-        if l.starts_with("DEBUG ") || l.starts_with("TRACE ") {
+        // Skip noisy log lines
+        if t.starts_with("DEBUG ") || t.starts_with("TRACE ") {
             continue;
         }
 
-        result.push_str(line);
-        result.push('\n');
+        result.push(line.to_string());
     }
 
-    result
+    result.join("\n")
 }
 
 /// Replace repeated long code blocks with a reference.

@@ -441,7 +441,7 @@ mod tests {
     #[test]
     fn promote_all_collects_candidates() {
         let mut mgr = MemoryManager::new();
-        mgr.update_slot("plan", "This is a very long and stable decision that has been repeated many times across iterations and should be promoted.").unwrap();
+        mgr.update_slot("plan", "This is a very long and stable decision that has been repeated many times across iterations and should be promoted.".to_string()).unwrap();
 
         let promoted = mgr.promote_all().unwrap();
         // The heuristic in MemorySlot may or may not trigger; just ensure it doesn't crash

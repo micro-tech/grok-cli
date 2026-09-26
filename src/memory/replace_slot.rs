@@ -250,20 +250,23 @@ mod tests {
 
     #[test]
     fn summarize_reduces_size() {
-        let mut slot = MemorySlot::new("context", SlotType::Context, 1000);
-        let long_text = "x".repeat(800);
+        let mut slot = MemorySlot::new("context", SlotType::Context, 50);
+        let long_text = "This is a very long piece of repeated context that should be compacted down significantly. ".repeat(30);
         slot.update(long_text);
 
         let summary = slot.summarize();
-        assert!(summary.len() < slot.content.len());
+        assert!(summary.len() < slot.content.len(), "summarize should reduce size when over budget");
+        assert!(crate::memory::compaction::estimate_tokens(&summary) <= 70);
     }
 
     #[test]
     fn promote_to_okf_heuristic() {
         let mut slot = MemorySlot::new("plan", SlotType::Plan, 800);
-        slot.update("A very long and stable architectural decision that has survived many iterations and should probably be promoted to OKF.");
+        // Make content long enough to trigger the length + token heuristic
+        let long_decision = "This is a very long and stable architectural decision that has survived many iterations and should probably be promoted to OKF. ".repeat(5);
+        slot.update(long_decision);
 
         let promoted = slot.promote_to_okf();
-        assert!(promoted.is_some());
+        assert!(promoted.is_some(), "long stable content should trigger promotion heuristic");
     }
 }
