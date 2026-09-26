@@ -49,6 +49,50 @@ pub mod long_term_strategy;
 pub mod cross_project_knowledge;
 pub mod multi_project_orchestrator;
 
+// Task 327.x — TaskList Intelligence
+pub mod task_impact;
+pub mod task_difficulty;
+pub mod task_conflict_detector;
+pub mod task_semantic;
+pub mod task_risk;
+pub mod task_reward;
+pub mod task_agent_assignment;
+pub mod task_progress;
+pub mod task_recovery_planner;
+pub mod task_completion_validator;
+pub mod task_quality;
+pub mod tasklist_telemetry;
+pub mod tasklist_exporter;
+pub mod tasklist_importer;
+
+// Task 361.x — Advanced Autonomy
+pub mod autonomous_debugger;
+pub mod research_agent;
+pub mod architecture_stability;
+pub mod codebase_health;
+pub mod semantic_code;
+pub mod api_evolution;
+pub mod risk_planning;
+pub mod failure_prediction;
+pub mod test_generation;
+pub mod regression_recovery;
+pub mod architecture_simulation;
+pub mod doc_generator;
+pub mod knowledge_compression;
+pub mod knowledge_expansion;
+pub mod knowledge_rewriting;
+pub mod agent_personality;
+pub mod agent_negotiation;
+pub mod design_review;
+pub mod patch_quality;
+pub mod patch_risk;
+pub mod patch_optimizer;
+pub mod patch_semantic_validation;
+pub mod memory_consolidation;
+pub mod patch_fusion;
+pub mod patch_arbitration;
+pub mod self_optimizer;
+
 // Task 297.x — HOH Core completions
 pub mod resource_budget;
 pub mod summary;
