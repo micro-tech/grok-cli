@@ -628,11 +628,11 @@ impl TaskListAdapter {
         Ok(self.detect_conflicts(&list))
     }
 
+    /// Returns the canonical HOH versions directory for task list snapshots.
+    /// This is now consistently under .grok/hoh/versions/ (instead of .zed/versions)
+    /// so that all HOH artifacts live together.
     fn versions_dir(&self) -> PathBuf {
-        self.task_file
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("versions")
+        crate::hoh::persistence::hoh_data_dir(&self.base_dir()).join("versions")
     }
 
     fn versions_index_path(&self) -> PathBuf {
@@ -670,9 +670,10 @@ impl TaskListAdapter {
             .duration_since(UNIX_EPOCH)
             .map_err(|e| HOHError::Other(format!("Time error: {}", e)))?;
 
-        // Unique ID using seconds + millis to avoid collisions when multiple versions
-        // are created in the same second (common in fast tests).
-        let id = format!("v{}.{}", now.as_secs(), now.subsec_millis());
+        // Unique ID using seconds + nanos to avoid collisions when multiple versions
+        // are created in the same millisecond (very common in fast tests / CI).
+        // nanos gives ~9 digits of precision, making same-id extremely unlikely.
+        let id = format!("v{}.{}", now.as_secs(), now.subsec_nanos());
 
         let meta = TaskListVersionMeta {
             id: id.clone(),
