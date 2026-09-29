@@ -705,8 +705,15 @@ impl TaskListAdapter {
 
     async fn append_version_to_index(&self, meta: &TaskListVersionMeta) -> Result<(), HOHError> {
         let index_path = self.versions_index_path();
+
+        // Ensure versions dir exists before trying to read or write the index.
+        // This is critical on fresh CI workspaces and first-run scenarios.
+        self.ensure_versions_dir().await?;
+
         let mut versions: Vec<TaskListVersionMeta> = if index_path.exists() {
-            let content = tokio::fs::read_to_string(&index_path).await.unwrap_or_default();
+            let content = tokio::fs::read_to_string(&index_path)
+                .await
+                .unwrap_or_default();
             serde_json::from_str(&content).unwrap_or_default()
         } else {
             vec![]
@@ -724,9 +731,15 @@ impl TaskListAdapter {
         let json = serde_json::to_string_pretty(&versions)
             .map_err(|e| HOHError::Other(format!("Failed to serialize versions index: {}", e)))?;
 
-        tokio::fs::write(&index_path, json)
+        // Atomic write via .tmp (same pattern as save()) for robustness in CI and concurrent use.
+        let tmp = index_path.with_file_name("versions.json.tmp");
+        tokio::fs::write(&tmp, &json)
             .await
-            .map_err(|e| HOHError::Other(format!("Failed to write versions index: {}", e)))?;
+            .map_err(|e| HOHError::Other(format!("Failed to write temp versions index: {}", e)))?;
+
+        tokio::fs::rename(&tmp, &index_path)
+            .await
+            .map_err(|e| HOHError::Other(format!("Failed to finalize versions index: {}", e)))?;
 
         Ok(())
     }
