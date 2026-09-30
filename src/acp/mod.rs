@@ -7,6 +7,7 @@ pub mod chat_turn;
 pub mod context_trim;
 pub mod elicitation;
 pub mod handlers;
+pub mod handoff;
 pub mod mcp_bridge;
 pub mod protocol;
 pub mod security;
@@ -154,6 +155,18 @@ struct SessionData {
     /// always interprets messages through the lens of this goal.
     current_goal: Option<String>,
 
+    /// Active agent role/persona set via `/role <name>`.
+    /// Used for Task 418 basic role specialization.
+    /// Roles: planner, implementer, debugger, reviewer, etc.
+    /// When set, a role-specific system instruction is injected.
+    current_role: Option<String>,
+
+    /// Lightweight handoff / collaboration log (Task 419).
+    /// Records transfers of work between agents, roles, or steps within this session.
+    /// Format: (from, to, context_summary, decision, timestamp)
+    /// Auto-populated at spawn, delegation, role switch, and explicit handoffs.
+    pub handoffs: Vec<crate::acp::handoff::HandoffEvent>,
+
     /// Temporary rules added via `/rule add <text>` for this session.
     /// Injected into every refined prompt so the model respects them throughout.
     session_rules: crate::context::session_rules::SessionRules,
@@ -244,9 +257,43 @@ impl SessionData {
             refined_message = format!("{}{}", refined_message, rules_text);
         }
 
+        // 6. Role specialization injection (Task 418)
+        if let Some(ref role) = self.current_role {
+            let role_instruction = get_role_instruction(role);
+            refined_message = format!(
+                "{}\n\n[Agent Role: {} — {}]",
+                refined_message, role, role_instruction
+            );
+        }
+
         refined_message
     }
 }
+
+/// Returns a concise role-specific instruction for the given role name.
+/// Used by Task 418 basic agent role specialization.
+fn get_role_instruction(role: &str) -> &'static str {
+    match role.to_lowercase().as_str() {
+        "planner" | "plan" => {
+            "Focus on high-level planning, architecture, task breakdown, and sequencing. \
+             Produce clear step-by-step plans. Do not write large amounts of code yet."
+        }
+        "implementer" | "coder" | "implement" | "code" => {
+            "Focus on writing clean, correct, well-tested implementation code. \
+             Follow the plan if one exists. Make minimal safe changes."
+        }
+        "debugger" | "debug" | "fixer" => {
+            "Focus on root-cause analysis. Examine errors, logs, and failing tests. \
+             Propose the smallest fix that addresses the actual defect. Be evidence-driven."
+        }
+        "reviewer" | "review" | "critic" => {
+            "Act as a strict code reviewer. Look for bugs, security issues, performance problems, \
+             readability, and maintainability. Give specific, actionable feedback with severity."
+        }
+        _ => "Operate in the requested specialized role while staying helpful and precise.",
+    }
+}
+
 
 /// Session-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -280,7 +327,10 @@ pub struct PersistedSession {
     pub(crate) messages: Vec<serde_json::Value>,
     pub(crate) config: SessionConfig,
     pub(crate) current_goal: Option<String>,
+    pub(crate) current_role: Option<String>,
     pub(crate) always_allow: Vec<String>,
+    #[serde(default)]
+    pub(crate) handoffs: Vec<crate::acp::handoff::HandoffEvent>,
     pub(crate) saved_at_unix: u64,
 }
 
@@ -592,6 +642,7 @@ impl GrokAcpAgent {
             bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
             dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
+            current_role: None,
             session_rules: Default::default(),
             active_agents: Vec::new(),
             show_thinking: None,
@@ -609,6 +660,9 @@ impl GrokAcpAgent {
                     crate::memory::memory_manager::MemoryManager::new()
                 }
             },
+
+            // Task 419: lightweight handoff tracking
+            handoffs: Vec::new(),
         };
 
         // --- Task 102: Knowledge Pack Loader ---
@@ -1484,6 +1538,131 @@ impl GrokAcpAgent {
         }
     }
 
+    // ── Task 418: Agent Role Specialization ──────────────────────────────────────
+
+    /// Set the active role for a session (used by the `/role <name>` slash command).
+    pub async fn set_session_role(&self, session_id: &SessionId, role: String) -> Result<String> {
+        let old_role = {
+            let sessions = self.sessions.read().await;
+            sessions.get(&session_id.0).and_then(|s| s.current_role.clone())
+        };
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found — role not set.".to_string()),
+            Some(session) => {
+                session.current_role = Some(role.clone());
+                info!("Role set for session {}: {}", session_id.0, role);
+                Ok(format!(
+                    "**Role set:** `{role}`\n\nSubsequent messages will be specialised for this role. \
+                     Use `/role clear` to reset to the general agent.",
+                ))
+            }
+        }
+    }
+
+    /// Clear the active role for a session (used by `/role clear`).
+    pub async fn clear_session_role(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                session.current_role = None;
+                info!("Role cleared for session {}", session_id.0);
+                Ok("Role cleared. Back to general agent mode.".to_string())
+            }
+        }
+    }
+
+    /// Return the current role for a session (used by `/role show`).
+    pub async fn get_session_role(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => Ok(match &session.current_role {
+                Some(role) => format!("**Current role:** `{role}`"),
+                None => "No active role — operating as general agent. Use `/role <name>` to specialise.".to_string(),
+            }),
+        }
+    }
+
+    /// Log a handoff event for the session.
+    /// Automatically called at role switches, spawns, delegations, etc.
+    pub async fn log_handoff(
+        &self,
+        session_id: &SessionId,
+        from: &str,
+        to: &str,
+        context_summary: &str,
+        decision: &str,
+    ) {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            let event = crate::acp::handoff::HandoffEvent::new(from, to, context_summary, decision);
+            session.handoffs.push(event);
+            // Keep bounded (last N) to avoid unbounded growth
+            const MAX_HANDOFFS: usize = 100;
+            if session.handoffs.len() > MAX_HANDOFFS {
+                session.handoffs.drain(0..(session.handoffs.len() - MAX_HANDOFFS));
+            }
+            info!("Handoff logged for {}: {} → {} ({})", session_id.0, from, to, decision);
+        }
+    }
+
+    /// Return a human-readable log of all recorded handoffs for the session.
+    /// Also includes a short analysis.
+    pub async fn get_handoff_log(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                if session.handoffs.is_empty() {
+                    return Ok("No handoffs recorded for this session yet.\n\
+                               Handoffs are automatically logged on role switches, agent spawns, and delegations.".to_string());
+                }
+
+                let analysis = crate::acp::handoff::HandoffAnalysis::from_events(&session.handoffs);
+                let mut out = format!("## Handoff Log ({} events)\n\n", session.handoffs.len());
+                out.push_str(&analysis.to_summary());
+                out.push_str("\n\n");
+
+                for (i, h) in session.handoffs.iter().enumerate() {
+                    let ctx = if h.context_summary.trim().is_empty() {
+                        "(no context summary)".to_string()
+                    } else {
+                        h.context_summary.chars().take(80).collect::<String>()
+                    };
+                    out.push_str(&format!(
+                        "{}. **{} → {}**  | {} | *{}*\n   ctx: {}\n\n",
+                        i + 1,
+                        h.from,
+                        h.to,
+                        h.decision,
+                        h.timestamp.format("%H:%M:%S"),
+                        ctx
+                    ));
+                }
+
+                if analysis.empty_context_count > 0 {
+                    out.push_str("\n⚠️  **Warning:** Some handoffs had empty context — information may have been lost between steps.");
+                }
+
+                Ok(out)
+            }
+        }
+    }
+
+    /// Convenience: log a role switch handoff (from Task 418 integration).
+    pub async fn log_role_handoff(&self, session_id: &SessionId, from_role: Option<&str>, to_role: &str) {
+        let from = from_role.unwrap_or("general");
+        self.log_handoff(
+            session_id,
+            from,
+            to_role,
+            &format!("Role change from {} to {}", from, to_role),
+            "role specialization switch",
+        ).await;
+    }
+
     /// Add a session-only rule (used by `/rule add <text>`).
     pub async fn add_session_rule(&self, session_id: &SessionId, text: String) -> Result<String> {
         let mut sessions = self.sessions.write().await;
@@ -1999,7 +2178,9 @@ impl GrokAcpAgent {
                 messages: session.messages.clone(),
                 config: session.config.clone(),
                 current_goal: session.current_goal.clone(),
+                current_role: session.current_role.clone(),
                 always_allow: session.always_allow.iter().cloned().collect(),
+                handoffs: session.handoffs.clone(),
                 saved_at_unix: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -2087,7 +2268,9 @@ impl GrokAcpAgent {
         if let Some(session) = sessions.get_mut(&state.session_id) {
             session.messages = state.messages;
             session.current_goal = state.current_goal;
+            session.current_role = state.current_role;
             session.always_allow = state.always_allow.into_iter().collect();
+            session.handoffs = state.handoffs;
         }
         info!("Session '{}' restored from disk", sid.0);
         Ok(())
@@ -2111,6 +2294,7 @@ impl GrokAcpAgent {
                 bayes_engine: crate::bayes::BayesianEngine::new_with_default_priors(),
                 dna: crate::session::dna::SessionDna::default(),
                 current_goal: source.current_goal.clone(),
+                current_role: source.current_role.clone(),
                 session_rules: source.session_rules.clone(),
                 active_agents: source.active_agents.clone(),
                 show_thinking: source.show_thinking,
@@ -2118,6 +2302,9 @@ impl GrokAcpAgent {
 
                 // Multi-slot /replace memory (cloned for fork; fresh memory is often desired but we copy for continuity)
                 memory: source.memory.clone(),
+
+                // Task 419: lightweight handoff tracking
+                handoffs: source.handoffs.clone(),
             }
         };
         let mut sessions = self.sessions.write().await;
@@ -2237,6 +2424,7 @@ mod tests {
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new(),
             current_goal: None,
+            current_role: None,
             session_rules: Default::default(),
             active_agents: Vec::new(),
             show_thinking: None,
@@ -2254,6 +2442,9 @@ mod tests {
                     crate::memory::memory_manager::MemoryManager::new()
                 }
             },
+
+            // Task 419: lightweight handoff tracking
+            handoffs: Vec::new(),
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);

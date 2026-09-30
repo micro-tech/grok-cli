@@ -164,6 +164,15 @@ pub enum SlashCommand {
     /// `/memory` — Show current contents and stats of all short-term /replace memory slots.
     /// `/memory promote` — Attempt to promote stable facts from memory into long-term OKF storage.
     Memory { subcommand: String },
+
+    /// `/role [planner|implementer|debugger|reviewer|show|clear]` — Switch the active agent role/persona.
+    /// Roles give the agent specialized system instructions for common tasks.
+    /// `/role` or `/role show` — show current role.
+    /// `/role clear` — return to general agent.
+    Role { name: String },
+
+    /// `/handoffs` — show the collaboration / handoff log for this session (Task 419).
+    Handoffs,
 }
 
 // ---------------------------------------------------------------------------
@@ -333,6 +342,12 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
             Some(SlashCommand::Memory { subcommand: sub })
         }
 
+        // /role [planner|implementer|debugger|reviewer|show|clear]
+        "/role" => {
+            let name = args.trim().to_lowercase();
+            Some(SlashCommand::Role { name })
+        }
+
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -462,6 +477,17 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "Inspect short-term /replace memory slots or promote stable facts to long-term OKF storage"
         )
         .input(input("promote — omit to show current slots + usage")),
+
+        AvailableCommand::new(
+            "role",
+            "Switch agent role/persona for this session (planner, implementer, debugger, reviewer, etc.)"
+        )
+        .input(input("planner | implementer | debugger | reviewer | show | clear — omit to show current role")),
+
+        AvailableCommand::new(
+            "handoffs",
+            "Show collaboration / handoff log for this session (role switches, agent spawns, delegations)"
+        ),
     ];
 
     // Ensure alphabetical order by command name
@@ -511,8 +537,9 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Compress
         | SlashCommand::Cot { .. }
         | SlashCommand::ReplaceMemory { .. }
-        | SlashCommand::Memory { .. } => None,
-
+        | SlashCommand::Memory { .. }
+        | SlashCommand::Role { .. }
+        | SlashCommand::Handoffs => None,
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
             let topic = if query.is_empty() {
@@ -770,6 +797,17 @@ pub enum BuiltinResult {
 
     /// Show current /replace memory slots (or promote them).
     ShowMemory { promote: bool },
+
+    /// Set or show the active agent role for this session.
+    /// "clear" → reset to general.
+    SetRole(String),
+    /// Show the current role.
+    ShowRole,
+    /// Clear / reset to the general agent.
+    ClearRole,
+
+    /// /handoffs — show the collaboration / handoff log for this session (Task 419).
+    ShowHandoffs,
     // NOTE: Do NOT add internal-only "*Result" variants here.
     // All variants must be handled in every match site (handle_builtin_result in acp.rs,
     // the CLI chat handler, and the exhaustiveness test below).
@@ -834,6 +872,17 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
             let promote = subcommand == "promote";
             Some(BuiltinResult::ShowMemory { promote })
         }
+        SlashCommand::Role { name } => {
+            let n = name.trim().to_lowercase();
+            if n.is_empty() || n == "show" {
+                Some(BuiltinResult::ShowRole)
+            } else if n == "clear" {
+                Some(BuiltinResult::ClearRole)
+            } else {
+                Some(BuiltinResult::SetRole(n))
+            }
+        }
+        SlashCommand::Handoffs => Some(BuiltinResult::ShowHandoffs),
         _ => None, // AI-assisted command
     }
 }
@@ -1771,6 +1820,10 @@ mod tests {
             BuiltinResult::ForceCompress => {}
             BuiltinResult::SetShowThinking(_) => {}
             BuiltinResult::ReplaceMemory { .. } => {}
+            BuiltinResult::SetRole(_) => {}
+            BuiltinResult::ShowRole => {}
+            BuiltinResult::ClearRole => {}
+            BuiltinResult::ShowHandoffs => {}
             BuiltinResult::ShowMemory { .. } => {}
             // Intentionally no wildcard. Add new arms above when extending the enum.
         };

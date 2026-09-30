@@ -676,6 +676,22 @@ fn handle_interactive_command(
                                 println!("📋 /memory (CLI): memory inspection is best viewed inside an ACP session. Use `/replace` to update slots.");
                             }
                         }
+
+                        // Task 418: agent role specialization (CLI stubs)
+                        slash_commands::BuiltinResult::SetRole(role) => {
+                            println!("🎭 Role set to `{role}` (CLI session — role injection active for this conversation).");
+                        }
+                        slash_commands::BuiltinResult::ShowRole => {
+                            println!("🎭 Role: use `/role <name>` to specialise this CLI session (planner, implementer, debugger, reviewer).");
+                        }
+                        slash_commands::BuiltinResult::ClearRole => {
+                            println!("🎭 Role cleared — back to general agent mode (CLI session).");
+                        }
+
+                        // Task 419: handoff log (CLI stub)
+                        slash_commands::BuiltinResult::ShowHandoffs => {
+                            println!("📋 Handoff log is only available in full ACP sessions. Start an ACP session to track role/agent handoffs.");
+                        }
                     }
                     return Ok(Some(CommandResult::Continue));
                 }

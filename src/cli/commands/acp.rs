@@ -1166,6 +1166,40 @@ async fn handle_builtin_result(
                 }
             }
         }
+
+        // Task 418: agent role specialization
+        BuiltinResult::SetRole(role) => {
+            let old_role = agent.get_session_role(session_id).await.ok()
+                .filter(|s| s.starts_with("**Current role:"));
+            let result = agent.set_session_role(session_id, role.clone()).await;
+            agent.log_role_handoff(
+                session_id,
+                old_role.as_deref(),
+                &role,
+            ).await;
+            match result {
+                Ok(msg) => msg,
+                Err(e) => format!("❌ Could not set role: {e}"),
+            }
+        }
+        BuiltinResult::ShowRole => match agent.get_session_role(session_id).await {
+            Ok(msg) => msg,
+            Err(e) => format!("❌ Could not retrieve role: {e}"),
+        },
+        BuiltinResult::ClearRole => {
+            let result = agent.clear_session_role(session_id).await;
+            agent.log_role_handoff(session_id, None, "general").await;
+            match result {
+                Ok(msg) => msg,
+                Err(e) => format!("❌ Could not clear role: {e}"),
+            }
+        }
+
+        // Task 419: handoff log
+        BuiltinResult::ShowHandoffs => match agent.get_handoff_log(session_id).await {
+            Ok(log) => log,
+            Err(e) => format!("❌ Could not retrieve handoff log: {e}"),
+        },
     }
 }
 

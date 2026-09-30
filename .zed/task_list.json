@@ -1,41 +1,11 @@
 {
   "tasks": [
     {
-      "id": 418,
-      "title": "Add Basic Agent Role Specialization",
-      "description": "Support different agent modes or personas optimized for common coding tasks (e.g. planner, implementer, debugger, reviewer).",
-      "status": "pending",
-      "dependencies": [
-        361,
-        405
-      ],
-      "priority": "medium",
-      "details": "Practical role differentiation.\n- Define a small set of roles with distinct system prompts, tool preferences, and evaluation criteria.\n- Allow the main agent to switch roles or spawn role-specific sub-agents for parts of a task.\n- Make role selection explicit and logged.\n- Measure whether specialized roles perform better than a single general agent on matching tasks.",
-      "testStrategy": "1. Roles can be selected or assigned during task execution.\n2. Role-specific behavior is observable (different prompts/tools used).\n3. Specialized roles show better results on targeted task types in evaluations.",
-      "subtasks": []
-    },
-    {
-      "id": 419,
-      "title": "Add Collaboration and Handoff Tracking",
-      "description": "Record and analyze how agents (or agent steps) hand off work to each other.",
-      "status": "pending",
-      "dependencies": [
-        361,
-        418
-      ],
-      "priority": "medium",
-      "details": "Visibility into multi-step and multi-agent work.\n- Log handoffs, context passed, decisions made at each step.\n- Surface common handoff patterns and friction points.\n- Use the data to improve context passing and reduce lost information between steps.\n- Keep it lightweight — focus on the current session first.",
-      "testStrategy": "1. Handoffs are automatically logged with useful context.\n2. The system can show a simple trace of a multi-step task.\n3. Analysis identifies at least one recurring handoff problem.",
-      "subtasks": []
-    },
-    {
       "id": 426,
       "title": "Discover Recurring Code Abstractions and Patterns",
       "description": "Automatically surface useful abstractions, naming patterns, and architectural idioms from the codebase and recent changes.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "medium",
       "details": "Lightweight concept mining for code.\n- Scan recent patches, files, and task outcomes for repeated structures.\n- Propose named abstractions or conventions when they appear multiple times.\n- Store them in a simple, queryable form (OKF or local index).\n- Use discovered patterns to improve future code generation suggestions.\n- Keep scope to this project — no wild cross-domain claims.",
       "testStrategy": "1. The system identifies at least 2-3 meaningful recurring patterns per significant batch of changes.\n2. Discovered abstractions are human-readable and actionable.\n3. Using the discovered patterns measurably improves suggestion quality in later tasks.",
@@ -46,9 +16,7 @@
       "title": "Mine Common Improvement Patterns from Task History",
       "description": "Extract recurring successful (and unsuccessful) approaches from past tasks, patches, and reviews.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "high",
       "details": "Practical pattern mining for a coding agent.\n- Focus on code changes, debugging steps, refactor types, and testing approaches.\n- Cluster similar successful tactics.\n- Represent patterns simply (e.g. 'when you see X, try Y').\n- Make patterns available during planning and code generation.\n- Track which patterns correlate with better outcomes.",
       "testStrategy": "1. System can surface 5-10 high-frequency patterns from history.\n2. Patterns are specific enough to be applied by the agent.\n3. Using mined patterns improves task success rate or reduces iterations in experiments.",
@@ -59,10 +27,7 @@
       "title": "Apply Mined Patterns During Code Changes",
       "description": "Use discovered patterns to guide or validate code generation and refactoring.",
       "status": "pending",
-      "dependencies": [
-        361,
-        427
-      ],
+      "dependencies": [361, 427],
       "priority": "high",
       "details": "Pattern application layer.\n- Before making changes, check against known good patterns.\n- Suggest applying relevant patterns when appropriate.\n- After changes, check whether known patterns were followed or violated.\n- Allow easy override and learning from exceptions.\n- Start with read-only suggestions before any automatic application.",
       "testStrategy": "1. Relevant patterns are surfaced during realistic coding tasks.\n2. Pattern suggestions are accepted at a reasonable rate.\n3. Following patterns correlates with fewer review comments or faster task completion.",
@@ -73,9 +38,7 @@
       "title": "Analyze Tool Usage and Suggest Improvements",
       "description": "Review how tools are actually used and propose practical improvements to tool design or prompts.",
       "status": "pending",
-      "dependencies": [
-        361
-      ],
+      "dependencies": [361],
       "priority": "medium",
       "details": "Grounded tool evolution.\n- Collect telemetry on tool calls, success/failure rates, and common errors.\n- Identify frequently misused, underused, or painful tools.\n- Generate concrete suggestions (better descriptions, parameter changes, new helper tools, prompt adjustments).\n- Keep all suggestions human-reviewable.\n- Do not allow fully autonomous tool creation or deletion yet.",
       "testStrategy": "1. Usage data is collected automatically.\n2. The system produces at least a few actionable tool improvement proposals from real usage.\n3. Implemented suggestions reduce tool-related failures or friction.",
@@ -93,87 +56,124 @@
       "subtasks": []
     },
     {
-    Compiling grok-cli v0.3.0 (H:\GitHub\grok-cli)
-    error[E0428]: the name `protocol` is defined multiple times
-      --> src\acp\mod.rs:35:1
-       |
-     6 | pub mod protocol;
-       | ----------------- previous definition of the module `protocol` here
-    ...
-    35 | pub mod protocol;
-       | ^^^^^^^^^^^^^^^^^ `protocol` redefined here
-       |
-       = note: `protocol` must be defined only once in the type namespace of this module
-
-    error[E0252]: the name `SessionId` is defined multiple times
-      --> src\acp\mod.rs:15:9
-       |
-    10 | pub use protocol::SessionId;
-       |         ------------------- previous import of the type `SessionId` here
-    ...
-    15 | pub use protocol::SessionId;
-       |         ^^^^^^^^^^^^^^^^^^^ `SessionId` reimported here
-       |
-       = note: `SessionId` must be defined only once in the type namespace of this module
-
-    error[E0252]: the name `SessionId` is defined multiple times
-      --> src\acp\mod.rs:39:9
-       |
-    10 | pub use protocol::SessionId;
-       |         ------------------- previous import of the type `SessionId` here
-    ...
-    39 | pub use protocol::SessionId;
-       |         ^^^^^^^^^^^^^^^^^^^ `SessionId` reimported here
-       |
-       = note: `SessionId` must be defined only once in the type namespace of this module      "id": 460,
-      "title": "Polish: Persist memory slots across restarts",
-      "description": "Save/restore MemoryManager state (slots) alongside session snapshots on disk.",
-      "status": "pending",
-      "dependencies": [
-        459
-      ],
-      "priority": "medium",
-      "details": "Currently memory is in-memory only per ACP session. Add serde round-tripping for MemorySlot + MemoryManager into the existing session save/load paths (session_dna or dedicated memory.json per session).",
-      "testStrategy": "Create session, populate slots, save, reload, verify slot contents survive.",
+      "id": 450,
+      "title": "Design multi-slot /replace memory specification",
+      "description": "Define the structure, naming rules, and indexing format for multi-slot /replace memory blocks.",
+      "status": "done",
+      "dependencies": [],
+      "priority": "high",
+      "details": "Core structures fully implemented and tested (451-453). Design embodied in MemorySlot, SlotType, MemoryManager, and compaction. All relevant tests pass.",
+      "testStrategy": "Verify the spec is complete, unambiguous, and covers naming, indexing, limits, and promotion rules. Validate with example memory blocks.",
       "subtasks": []
     },
     {
-      "id": 461,
-      "title": "Polish: Surface memory stats in status bar",
-      "description": "Show memory token usage / slot summary in the dynamic status bar.",
+      "id": 451,
+      "title": "Implement Rust MemorySlot struct",
+      "description": "Create the Rust struct representing a single /replace memory slot.",
+      "status": "done",
+      "dependencies": [450],
+      "priority": "high",
+      "details": "Fully implemented in src/memory/replace_slot.rs with MemorySlot + SlotType, update/append, token_count, compact, summarize, promote_to_okf, and tests.",
+      "testStrategy": "Unit test struct creation, updating, token counting, and summarization. Ensure max_tokens enforcement works.",
+      "subtasks": []
+    },
+    {
+      "id": 452,
+      "title": "Implement MemoryManager for multi-slot system",
+      "description": "Create a manager that handles multiple named and indexed /replace memory slots.",
+      "status": "done",
+      "dependencies": [451],
+      "priority": "high",
+      "details": "Fully implemented in src/memory/memory_manager.rs: named slots (plan/working/context/errors), indexed mem.N slots, update_slot, get_slot, compact_all (priority order), evict_oldest, serialize_for_prompt, promote_all stub, auto-compaction, and unit tests.",
+      "testStrategy": "Test adding, updating, compacting, and promoting slots. Validate serialization output matches prompt builder requirements.",
+      "subtasks": []
+    },
+    {
+      "id": 453,
+      "title": "Implement context compaction algorithm",
+      "description": "Create the algorithm that summarizes older memory blocks and reduces token usage.",
+      "status": "done",
+      "dependencies": [452],
+      "priority": "high",
+      "details": "Full deterministic compaction implemented in src/memory/compaction.rs with 8-step pipeline, slot-specific rules, integrated into MemorySlot and MemoryManager. All tests pass.",
+      "testStrategy": "Feed large memory sets and verify compaction reduces tokens by 50–80% while preserving meaning. Validate deterministic output.",
+      "subtasks": []
+    },
+    {
+      "id": 454,
+      "title": "Integrate MemoryManager into agent loop",
+      "description": "Modify the Rust agent loop to use multi-slot /replace memory.",
       "status": "pending",
-      "dependencies": [
-        459
-      ],
+      "dependencies": [452, 453],
+      "priority": "high",
+      "details": "MemoryManager and slots exist but not yet integrated into the main agent loop, prompt builder, or recursive invoke paths.",
+      "testStrategy": "Run simulated agent loops and verify memory updates, compaction, and prompt injection work correctly. Validate no runaway context growth.",
+      "subtasks": []
+    },
+    {
+      "id": 455,
+      "title": "Update prompt builder to include named memory slots",
+      "description": "Modify prompt builder to inject multi-slot /replace blocks into the LLM prompt.",
+      "status": "pending",
+      "dependencies": [454],
+      "priority": "medium",
+      "details": "Update prompt builder:\n- Add sections for each slot: plan, working, context, errors\n- Add indexed blocks: mem.0, mem.1, mem.2\n- Ensure consistent formatting\n- Ensure LLM instructions explain how to use slots\n- Add token budgeting logic",
+      "testStrategy": "Verify prompt output includes all slots in correct order. Validate formatting and token budgeting.",
+      "subtasks": []
+    },
+    {
+      "id": 456,
+      "title": "Implement OKF promotion pipeline",
+      "description": "Add logic to promote important memory facts into OKF bundles.",
+      "status": "pending",
+      "dependencies": [453],
+      "priority": "medium",
+      "details": "Implement promotion rules:\n- Detect stable facts\n- Detect repeated patterns\n- Detect long-term relevance\n- Write promoted facts into OKF bundles via Helix\n- Remove promoted content from short-term memory",
+      "testStrategy": "Test promotion with simulated memory. Verify OKF bundles update correctly and memory shrinks.",
+      "subtasks": []
+    },
+    {
+      "id": 457,
+      "title": "Add LLM instructions for multi-slot memory",
+      "description": "Update system prompt to teach the LLM how to use named and indexed memory slots.",
+      "status": "pending",
+      "dependencies": [455],
+      "priority": "medium",
+      "details": "Add instructions:\n- Explain each slot: plan, working, context, errors\n- Explain indexed slots: mem.0, mem.1, mem.2\n- Explain update rules\n- Explain compaction behavior\n- Explain OKF promotion\n- Provide usage examples",
+      "testStrategy": "Run LLM tests verifying correct usage of memory slots. Validate no hallucinated slot names.",
+      "subtasks": []
+    },
+    {
+      "id": 458,
+      "title": "End-to-end integration test",
+      "description": "Test the full multi-slot memory system inside the coding agent.",
+      "status": "pending",
+      "dependencies": [454, 455, 456, 457],
+      "priority": "high",
+      "details": "Perform full integration test:\n- Run agent through multi-step coding task\n- Verify memory updates\n- Verify compaction\n- Verify OKF promotion\n- Verify prompt injection\n- Verify cost reduction\n- Verify stability across recursive invoke() calls",
+      "testStrategy": "Run long-horizon coding tasks and confirm stable behavior, reduced context size, and correct memory usage.",
+      "subtasks": []
+    },
+    {
+      "id": 459,
+      "title": "Document multi-slot memory system",
+      "description": "Write full documentation for the new memory system.",
+      "status": "pending",
+      "dependencies": [458],
       "priority": "low",
-      "details": "Expose total_tokens + per-slot preview via existing status bar update mechanism. Make /memory stats visible without typing the command.",
-      "testStrategy": "After populating memory, status bar update contains memory section or token count.",
+      "details": "Document:\n- MemorySlot struct\n- MemoryManager\n- Compaction algorithm\n- OKF promotion\n- Prompt builder integration\n- LLM usage rules\n- Examples and diagrams",
+      "testStrategy": "Verify documentation is complete, accurate, and matches implementation.",
       "subtasks": []
     },
     {
       "id": 462,
-      "title": "Polish: Wire auto_promote_to_okf config flag",
-      "description": "Respect MemoryConfig.auto_promote_to_okf (or equivalent) to automatically promote on compaction or turn boundaries.",
+      "title": "Complete /handoffs Slash Command Wiring and Handoff Logging Integration (Code Review Follow-up)",
+      "description": "Finish the integration of the /handoffs feature (Tasks 418/419) so the command is advertised, dispatched, auto-logs on every planner step, appears in status bar, and exposes analysis programmatically for HOH.",
       "status": "pending",
-      "dependencies": [
-        459
-      ],
-      "priority": "low",
-      "details": "Currently promotion is only explicit (/memory promote). Add a non-intrusive auto path (e.g. after compact_all or at end of turn for high-value slots) gated by the flag.",
-      "testStrategy": "Set flag true, populate qualifying content, trigger compaction/turn, verify promotion happened without explicit command.",
-      "subtasks": []
-    },
-    {
-      "id": 463,
-      "title": "Polish: More memory integration tests",
-      "description": "Add stronger end-to-end tests for promotion, compaction under load, cross-turn persistence, and slash command flows.",
-      "status": "in_progress",
-      "dependencies": [
-        458
-      ],
-      "priority": "medium",
-      "details": "Basic protocol + unit coverage exists. Add dedicated test exercising /replace + /memory promote via ACP protocol (using run_acp_session_for_test_arc + handle_builtin_result simulation or direct agent calls).",
-      "testStrategy": "New test in tests/acp_protocol.rs (or memory_integration.rs) that populates a slot with substantial content, runs promote, and asserts promotion message + slot content replaced with OKF reference.",
+      "dependencies": [418, 419],
+      "priority": "high",
+      "details": "Code review (post-418/419) identified critical gaps:\n- /handoffs not present in get_available_commands() (invisible in Zed picker)\n- BuiltinResult::ShowHandoffs never handled in handle_builtin_result (acp.rs + chat.rs)\n- Exhaustiveness test in slash_commands.rs is missing the variant (repeat of ReplaceMemory bug)\n- log_role_handoff() and log_handoff() have almost zero callers\n- No status bar integration\n\nConfirmed decisions from review:\n- Command variant: BuiltinResult::ShowHandoffs\n- Persistence: session snapshot only (no extra OKF/persistence for now)\n- Auto-log aggressiveness: log a handoff on every planner step + role switches + agent spawns/delegates\n- Programmatic access: expose structured analysis (not just string) for HOH consumption\n- UI: show a short handoff summary in the status bar when events exist\n\nScope of work:\n1. Add \"handoffs\" entry to get_available_commands() (with good description).\n2. Implement handling for BuiltinResult::ShowHandoffs in acp.rs handle_builtin_result (call get_handoff_log).\n3. Wire the same in CLI interactive chat slash handler.\n4. Fix the builtin_result_is_exhaustive test (and any other match sites).\n5. Call log_role_handoff from actual role switch paths.\n6. Add auto-log calls on planner steps (and key spawn/delegate points).\n7. Add programmatic API (e.g. get_handoff_analysis or expose HandoffAnalysis) for HOH.\n8. Surface short summary in status bar (emit_context_and_status / status_bar paths).\n9. Add/update tests (unit for analysis, integration for full command flow).\n10. Update task 418/419 descriptions to note wiring completed in 462.\n\nKeep the design lightweight and session-scoped as originally implemented in handoff.rs.",
+      "testStrategy": "1. /handoffs appears in ACP available commands, /help, and Zed slash picker.\n2. /handoffs in both ACP and CLI returns useful markdown including total, empty-context warnings, role switches, and most-common pair.\n3. Role switches automatically produce HandoffEvent entries.\n4. Planner steps (and at least one spawn/delegate) automatically log handoffs.\n5. Exhaustiveness test compiles cleanly and covers ShowHandoffs.\n6. HOH code can call a new get_handoff_analysis() (or equivalent) and receive structured data (not just string).\n7. Status bar shows a short handoff indicator/summary when events exist.\n8. Session save/load round-trips the handoffs vec correctly.\n9. No regression in other slash commands (full test suite for slash_commands + handle_builtin_result).\n10. cargo test + cargo check clean.",
       "subtasks": []
     }
   ]
