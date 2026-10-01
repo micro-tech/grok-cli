@@ -206,7 +206,16 @@ pub async fn start_interactive_mode(
     // rather than loading all skills at startup
 
     let mut session = InteractiveSession::new(model.to_string(), project_context);
-    let client = AppRouter::new(api_key, 30)?;
+    let mut client = AppRouter::new(api_key, 30)?;
+    // Prompt-cache affinity: key the xAI prefix cache to this interactive
+    // session so follow-up turns hit the cache instead of rebilling the
+    // full prompt (sent as the `x-grok-conv-id` header).
+    if config.network.prompt_cache_enabled {
+        client = client.with_prompt_cache_key(format!(
+            "grok-cli-interactive-{}",
+            session.session_id
+        ));
+    }
 
     // Display startup elements
     if interactive_config.show_banner {
@@ -1367,7 +1376,22 @@ async fn send_to_grok(
         .await
     {
         Ok(response_with_finish) => {
-            let response_msg = response_with_finish.message;
+            // === STRICT CoT / THINKING TRACE POLICY (radioactive isotope rule) ===
+            // thinking_content / reasoning_content is NEVER stored or sent back to the LLM.
+            // Only for one-shot display, then dropped (saves money).
+            let _thinking_content = response_with_finish.thinking_content; // deliberately discarded
+
+            use crate::cot_guard::clean_and_assert_no_cot;
+
+            // Clean the message with strong debug guard (panics in dev if CoT leaks)
+            let clean_msg = clean_and_assert_no_cot(
+                serde_json::to_value(&response_with_finish.message)?
+            );
+
+            // Parse back for tool handling if needed
+            let response_msg: grok_api::Message = serde_json::from_value(clean_msg)
+                .unwrap_or(response_with_finish.message.clone());
+
             clear_current_line();
 
             // Task 266: report per-turn timing (only if GROK_PERF=1)
