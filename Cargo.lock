@@ -1479,7 +1479,7 @@ dependencies = [
  "syn 3.0.6",
  "tempfile",
  "terminal_size",
- "thiserror 1.0.69",
+ "thiserror 2.0.20",
  "tokio",
  "tokio-test",
  "tokio-util",
@@ -1497,9 +1497,9 @@ dependencies = [
 
 [[package]]
 name = "grok_api"
-version = "0.2.2"
+version = "0.2.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "89eb75f36c4b7122113f721bf6dc0c577122ac78dfd87af134e7bcd01714c41f"
+checksum = "97e47d2fa16b3ffd38b0ae05c29da1b42bc59efbbdf75c137ec8894dd63e80c5"
 dependencies = [
  "anyhow",
  "futures-util",

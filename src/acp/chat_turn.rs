@@ -15,6 +15,8 @@ use crate::acp::protocol::{SessionUpdate, ToolCall as ProtocolToolCall, ToolCall
 use crate::acp::{PermissionBridge, GrokAcpAgent};
 use crate::acp::status_bar::StatusBarState;
 use crate::content_to_string;
+use crate::context::prompt_builder::build_prompt_with_delta;
+use crate::context::tool_optimizer::{compress_schema, prune_unused_tools};
 use crate::tools;
 use anyhow::{Result, anyhow};
 use serde_json::{json, Value};
@@ -160,6 +162,46 @@ impl ChatTurn {
             info!("🔄 Tool loop iteration {}/{}", current_loop, self.max_loops);
 
             self.reapply_trims(&agent.config);
+
+            // === Cobble Jr context-control: build_prompt_with_delta + pruning + compression ===
+            // Optimizer is now wired into the hot path.
+            let mut tools_for_call = self.tool_defs.clone();
+
+            let (delta, optimized_tools) = build_prompt_with_delta(
+                None,
+                "",
+                false,
+                tools_for_call,
+                &[],
+            );
+            tools_for_call = optimized_tools;
+
+            for schema in &mut tools_for_call {
+                let _ = compress_schema(schema);
+            }
+
+            // Per-turn metrics (core vs active vs full) as requested
+            let core_len = crate::tools::registry::get_core_tool_definitions().len();
+            let active_len = tools_for_call.len();
+            let full_len = crate::tools::registry::get_full_tool_definitions().len();
+            info!(
+                "🛠️  Tool schemas this turn: core={} | active={} | full_registry={} | delta={}",
+                core_len, active_len, full_len, delta.description()
+            );
+
+            self.tool_defs = tools_for_call.clone();
+
+            // Busy indicator for Zed / ACP client so it knows we are not hung
+            if let Some(sender) = event_sender {
+                emit_context_and_status(
+                    agent,
+                    sender,
+                    &self.messages,
+                    &self.model,
+                    &self.thinking_mode,
+                    true,   // is_generating = true → ⏳ busy spinner
+                );
+            }
 
             // === Task 454: Inject multi-slot /replace memory (JAZ-style short-term memory) ===
             // Serialize the named + indexed slots and inject as a high-priority system message.
@@ -450,6 +492,8 @@ pub async fn perform_api_call_with_retries(
     loop {
         attempt += 1;
 
+        // Use the (already optimized via build_prompt_with_delta) tool_defs on the turn.
+        // The optimizer ran at the top of the loop and updated self.tool_defs.
         match agent
             .get_router()?
             .chat_completion_with_history(
@@ -668,7 +712,7 @@ pub async fn process_tool_calls(
 
         let result = tools::execute_tool(function_name, &augmented, &ctx).await;
 
-        let (mut content, status) = match result {
+        let (content, status) = match result {
             Ok(s) => {
                 info!("Tool {} completed in {:?}", function_name, tool_start.elapsed());
                 {

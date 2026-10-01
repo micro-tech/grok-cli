@@ -1567,16 +1567,16 @@ pub fn get_available_tool_definitions() -> &'static [serde_json::Value] {
 ///
 /// Keep this list tight: every entry here is paid for on every model call.
 pub static CORE_TOOL_NAMES: &[&str] = &[
+    // Tight core toolset (from Cobble Jr context-control merge)
+    // Goal: minimal schema per turn + tool_search for discovery.
+    // Keep only the absolute essentials for read/edit/navigate/shell + discovery.
     "read_file",
-    "read_multiple_files",
-    "list_code_definitions",
-    "replace",
-    "write_file",
+    "replace",           // covers most write/edit needs
     "list_directory",
     "glob_search",
     "search_file_content",
     "run_shell_command",
-    "tool_search",
+    "tool_search",       // the unlock mechanism — do not remove
 ];
 
 /// Filtered view of [`get_full_tool_definitions`] containing only
