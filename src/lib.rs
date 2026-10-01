@@ -58,8 +58,10 @@ pub mod skills;
 pub mod task_graph;
 pub mod tools;
 pub mod utils;
+pub use utils::cot_guard; // CoT guard (radioactive isotope policy)
 pub mod visualizer;
 pub mod workflow;
+pub mod hoh;
 
 #[cfg(feature = "tgs-rag")]
 pub mod rag;
@@ -69,7 +71,7 @@ pub use grok_api::{
 };
 
 // Re-export the extended GrokClient and types
-pub use grok_client_ext::{GrokClient, MessageWithFinishReason};
+pub use grok_client_ext::{GrokClient, MessageWithFinishReason, process_prompt_cache_key};
 
 /// Helper function to extract text content from String
 /// Kept for backwards compatibility with refactored code
