@@ -3,8 +3,25 @@
 //! This module provides the Grok AI agent implementation for the Agent Client Protocol,
 //! enabling seamless integration with Zed editor and other ACP-compatible clients.
 
-use crate::acp::protocol::SessionId;
+pub mod chat_turn;
+pub mod context_trim;
+pub mod elicitation;
+pub mod handlers;
+pub mod handoff;
+pub mod mcp_bridge;
+pub mod protocol;
+pub mod security;
+pub mod slash_commands;
+pub mod status_bar;
+pub mod tools;
+
+// Re-export SessionId publicly so external code and tests can use it directly:
+//   use grok_cli::acp::SessionId;
+//   let sid = SessionId::new("my-session");
+pub use protocol::SessionId;
+
 use anyhow::{Result, anyhow};
+use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::collections::HashMap;
 use std::sync::Arc;
@@ -16,18 +33,6 @@ use crate::config::{Config, ThinkingMode};
 use crate::content_to_string;
 use crate::hooks::HookManager;
 use crate::router::AppRouter;
-use serde::{Deserialize, Serialize};
-
-pub mod chat_turn;
-pub mod context_trim;
-pub mod elicitation;
-pub mod handlers;
-pub mod mcp_bridge;
-pub mod protocol;
-pub mod security;
-pub mod slash_commands;
-pub mod status_bar;
-pub mod tools;
 
 use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams};
 use crate::acp::chat_turn::ChatTurn;
@@ -150,9 +155,31 @@ struct SessionData {
     /// always interprets messages through the lens of this goal.
     current_goal: Option<String>,
 
+    /// Active agent role/persona set via `/role <name>`.
+    /// Used for Task 418 basic role specialization.
+    /// Roles: planner, implementer, debugger, reviewer, etc.
+    /// When set, a role-specific system instruction is injected.
+    current_role: Option<String>,
+
+    /// Lightweight handoff / collaboration log (Task 419).
+    /// Records transfers of work between agents, roles, or steps within this session.
+    /// Format: (from, to, context_summary, decision, timestamp)
+    /// Auto-populated at spawn, delegation, role switch, and explicit handoffs.
+    pub handoffs: Vec<crate::acp::handoff::HandoffEvent>,
+
     /// Temporary rules added via `/rule add <text>` for this session.
     /// Injected into every refined prompt so the model respects them throughout.
     session_rules: crate::context::session_rules::SessionRules,
+
+    /// Active sub-agents for this session (for status bar icons).
+    /// Stored as role names: "planner", "coder", "researcher", etc.
+    active_agents: Vec<String>,
+
+    /// Per-session override for displaying Chain-of-Thought / reasoning traces.
+    /// When `Some(true)` or `Some(false)`, it overrides `config.acp.stream_thinking`.
+    /// `None` means "use the global setting".
+    /// Controlled by the `/cot on|off` slash command.
+    show_thinking: Option<bool>,
 
     /// Last workflow trace recorded for this session (Task 232).
     /// Populated when using `route_with_workflow_trace` (e.g. in sub-agents)
@@ -161,6 +188,12 @@ struct SessionData {
     /// Kept (and read in save/restore paths) rather than removed.
     #[expect(dead_code, reason = "reserved for future use")]
     last_workflow_trace: Option<crate::workflow::WorkflowTrace>,
+
+    /// Multi-slot short-term /replace memory (Tasks 450-454).
+    /// This is the JAZ-inspired structured working memory for the coding agent.
+    /// Named slots: plan, working, context, errors + indexed mem.0, mem.1...
+    /// Injected into prompts + auto-compacted to control context cost.
+    pub memory: crate::memory::memory_manager::MemoryManager,
 }
 
 impl SessionData {
@@ -224,9 +257,43 @@ impl SessionData {
             refined_message = format!("{}{}", refined_message, rules_text);
         }
 
+        // 6. Role specialization injection (Task 418)
+        if let Some(ref role) = self.current_role {
+            let role_instruction = get_role_instruction(role);
+            refined_message = format!(
+                "{}\n\n[Agent Role: {} — {}]",
+                refined_message, role, role_instruction
+            );
+        }
+
         refined_message
     }
 }
+
+/// Returns a concise role-specific instruction for the given role name.
+/// Used by Task 418 basic agent role specialization.
+fn get_role_instruction(role: &str) -> &'static str {
+    match role.to_lowercase().as_str() {
+        "planner" | "plan" => {
+            "Focus on high-level planning, architecture, task breakdown, and sequencing. \
+             Produce clear step-by-step plans. Do not write large amounts of code yet."
+        }
+        "implementer" | "coder" | "implement" | "code" => {
+            "Focus on writing clean, correct, well-tested implementation code. \
+             Follow the plan if one exists. Make minimal safe changes."
+        }
+        "debugger" | "debug" | "fixer" => {
+            "Focus on root-cause analysis. Examine errors, logs, and failing tests. \
+             Propose the smallest fix that addresses the actual defect. Be evidence-driven."
+        }
+        "reviewer" | "review" | "critic" => {
+            "Act as a strict code reviewer. Look for bugs, security issues, performance problems, \
+             readability, and maintainability. Give specific, actionable feedback with severity."
+        }
+        _ => "Operate in the requested specialized role while staying helpful and precise.",
+    }
+}
+
 
 /// Session-specific configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,7 +327,10 @@ pub struct PersistedSession {
     pub(crate) messages: Vec<serde_json::Value>,
     pub(crate) config: SessionConfig,
     pub(crate) current_goal: Option<String>,
+    pub(crate) current_role: Option<String>,
     pub(crate) always_allow: Vec<String>,
+    #[serde(default)]
+    pub(crate) handoffs: Vec<crate::acp::handoff::HandoffEvent>,
     pub(crate) saved_at_unix: u64,
 }
 
@@ -306,6 +376,11 @@ impl Default for SessionConfig {
                 Your primary goal is to write high-quality, efficient, and maintainable code. \
                 You have access to tools to read files, write files, and list directories. \
                 Use these tools to understand the codebase and perform tasks. \
+                Only a core set of tools is attached to each request to save context; \
+                when you need a capability you don't currently have (web, agents, skills, \
+                memory, notebooks, etc.), call the tool_search tool to discover and \
+                unlock additional tools — unlocked tools become callable for the rest \
+                of the session. \
                 Follow these guidelines:\n\
                 1. Write clean, idiomatic code adhering to standard conventions.\n\
                 2. Prioritize correctness, performance, and security.\n\
@@ -401,12 +476,23 @@ impl GrokAcpAgent {
     /// Return a clone of the underlying [`AppRouter`], lazily creating it
     /// on first use if an API key is configured.  This keeps `new()` fast
     /// for ACP stdio startup.
+    ///
+    /// Rate limits from `self.config.rate_limits` are now attached (fresh review fix).
     fn get_router(&self) -> Result<AppRouter> {
         if self.router.get().is_none()
             && let Some(ref api_key) = self.config.api_key
-            && let Ok(r) = AppRouter::new(api_key, self.config.timeout_secs)
         {
-            let _ = self.router.set(r);
+            let mut router = AppRouter::new(api_key, self.config.timeout_secs)?;
+            // Attach rate limiting so enforcement happens on every chat_completion_with_history
+            router = router.with_rate_limits(self.config.rate_limits.clone());
+            // Prompt-cache affinity: one ACP process serves one session, so a
+            // process-stable key routes the session's turns to the same xAI
+            // server and the automatic prefix cache hits across turns.
+            if self.config.network.prompt_cache_enabled {
+                router =
+                    router.with_prompt_cache_key(crate::process_prompt_cache_key());
+            }
+            let _ = self.router.set(router);
         }
 
         self.router.get().cloned().ok_or_else(|| {
@@ -478,7 +564,6 @@ impl GrokAcpAgent {
                 "grok-4.3".to_string(), // 1M context variant
                 "grok-4.5".to_string(),
                 "grok-4.6".to_string(),
-                "grok-4.7".to_string(), // Grok 4.7
                 "grok-4.20".to_string(),
                 "grok-3".to_string(),
                 "grok-3-mini".to_string(),
@@ -569,8 +654,27 @@ impl GrokAcpAgent {
             bayes_engine: crate::bayes::BayesianEngine::new_with_config(&self.config.bayesian),
             dna: crate::session::dna::SessionDna::default(),
             current_goal: None,
+            current_role: None,
             session_rules: Default::default(),
+            active_agents: Vec::new(),
+            show_thinking: None,
             last_workflow_trace: None,
+
+            // Multi-slot /replace memory (JAZ-inspired short-term structured memory for coding agent)
+            // Now respects the [memory] section from config.toml (Task 459)
+            memory: {
+                let cfg = crate::config::Config::default();
+                if cfg.memory.enabled {
+                    crate::memory::memory_manager::MemoryManager::with_config(
+                        cfg.memory.to_memory_manager_config()
+                    )
+                } else {
+                    crate::memory::memory_manager::MemoryManager::new()
+                }
+            },
+
+            // Task 419: lightweight handoff tracking
+            handoffs: Vec::new(),
         };
 
         // --- Task 102: Knowledge Pack Loader ---
@@ -655,17 +759,20 @@ impl GrokAcpAgent {
             info!("Sent {} slash commands to ACP client", commands.len());
 
             // Emit initial status bar on session start (Task 164)
+            let max0 = model_context_budget(
+                &init_model,
+                self.config.acp.max_context_tokens,
+                self.config.acp.grok4_max_context_tokens,
+            );
             let initial_state = crate::acp::status_bar::StatusBarState {
                 model: init_model.clone(),
                 thinking_mode: init_thinking,
                 current_tokens: 0,
-                max_tokens: model_context_budget(
-                    &init_model,
-                    self.config.acp.max_context_tokens,
-                    self.config.acp.grok4_max_context_tokens,
-                ),
+                max_tokens: max0,
                 context_percent: 0.0,
                 is_generating: false,
+                context_graph: crate::acp::status_bar::format_context_graph(0, max0, (max0 as f64 * 0.75) as usize),
+                agent_icons: vec![],
             };
             self.emit_status_bar(Some(&sender), &initial_state);
         }
@@ -674,79 +781,70 @@ impl GrokAcpAgent {
         Ok(())
     }
 
-    /// Check if a tool execution is permitted by the user
-    #[allow(dead_code)]
-    pub(crate) async fn check_tool_permission(
+    // NOTE: Permission handling for production chat turns lives in process_tool_calls
+    // (chat_turn.rs).  This standalone helper is kept for unit tests and any caller
+    // that needs a focused, synchronous-style permission check outside a full chat turn.
+
+    /// Check whether a tool call is permitted for this session.
+    ///
+    /// - If the tool is already in the always-allow set the call returns `Ok(true)` immediately.
+    /// - If no `bridge` is provided (or `require_permission` is false) the call is allowed.
+    /// - Otherwise a permission request is sent through `bridge` and the result is awaited.
+    ///   - `proceed_always` → grants always-allow, returns `Ok(true)`
+    ///   - `proceed_once`   → returns `Ok(true)` (no persistent grant)
+    ///   - cancel           → returns `Ok(false)`
+    ///   - timeout          → returns `Err(…)`
+    pub async fn check_tool_permission(
         &self,
         session_id: &SessionId,
-        function_name: &str,
+        tool_name: &str,
         _args: &Value,
         tool_call_id: &str,
-        permission_bridge: Option<&Arc<PermissionBridge>>,
+        bridge: Option<&Arc<PermissionBridge>>,
     ) -> Result<bool> {
-        let mut sessions = self.sessions.write().await;
-        let session = sessions
-            .get_mut(&session_id.0)
-            .ok_or_else(|| anyhow!("Session not found"))?;
-
-        if !self.config.acp.require_permission || session.always_allow.contains(function_name) {
+        // Fast path: already granted always-allow.
+        if self.is_always_allowed(session_id, tool_name).await {
             return Ok(true);
         }
 
-        if let Some(bridge) = permission_bridge {
-            let req_id = uuid::Uuid::new_v4().to_string();
+        // If permission gating is off, or there is no bridge to ask through, allow.
+        if !self.config.acp.require_permission {
+            return Ok(true);
+        }
+        let Some(bridge) = bridge else {
+            return Ok(true);
+        };
 
-            let params = RequestPermissionParams::new(
-                session_id.clone(),
-                tool_call_id.to_string(),
-                Some(format!("Run {}", function_name)),
-                Some(crate::acp::protocol::ToolKind::Execute),
-            );
-
-            let (tx, rx) = oneshot::channel();
-            if bridge.outbound.send((req_id, params, tx)).is_ok() {
-                // Drop the write lock before awaiting the response!
-                // This allows the rest of the application (like handling the client's response)
-                // to read/write the session if needed.
-                drop(sessions);
-
-                let timeout_secs = self.config.acp.permission_timeout_secs;
-                let outcome_res =
-                    tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await;
-
-                // Re-acquire lock to update session state
-                let mut sessions = self.sessions.write().await;
-                let session = sessions
-                    .get_mut(&session_id.0)
-                    .ok_or_else(|| anyhow!("Session not found"))?;
-
-                match outcome_res {
-                    Ok(Ok(outcome)) => {
-                        if outcome.is_cancelled() {
-                            return Ok(false);
-                        }
-                        // Any `selected` outcome is treated as approval.
-                        // Record it permanently for the session if "Always Allow".
-                        if outcome.is_always_allow() {
-                            session.always_allow.insert(function_name.to_string());
-                        }
-                        return Ok(true);
-                    }
-                    Ok(Err(_)) => {
-                        return Err(anyhow!("Permission bridge closed unexpectedly"));
-                    }
-                    Err(_) => {
-                        return Err(anyhow!(
-                            "Timed out waiting for permission ({}s)",
-                            timeout_secs
-                        ));
-                    }
-                }
-            }
+        // Send the permission request.
+        let req_id = uuid::Uuid::new_v4().to_string();
+        let params = RequestPermissionParams::new(
+            session_id.clone(),
+            tool_call_id.to_string(),
+            Some(format!("Run {}", tool_name)),
+            Some(crate::acp::protocol::ToolKind::Execute),
+        );
+        let (tx, rx) = oneshot::channel();
+        if bridge.outbound.send((req_id, params, tx)).is_err() {
+            return Err(anyhow!("Permission bridge closed"));
         }
 
-        // If require_permission is true but there's no bridge, default to false
-        Ok(false)
+        let timeout_secs = self.config.acp.permission_timeout_secs;
+        match tokio::time::timeout(std::time::Duration::from_secs(timeout_secs), rx).await {
+            Ok(Ok(outcome)) => {
+                if outcome.is_cancelled() {
+                    return Ok(false);
+                }
+                if outcome.is_always_allow() {
+                    let mut sessions = self.sessions.write().await;
+                    if let Some(s) = sessions.get_mut(&session_id.0) {
+                        s.always_allow.insert(tool_name.to_string());
+                    }
+                }
+                Ok(true)
+            }
+            Ok(Err(_)) => Err(anyhow!("Permission bridge closed")),
+            Err(_) => Err(anyhow!("Timed out waiting for permission ({}s)", timeout_secs)),
+        }
     }
 
     /// Handle a chat completion request
@@ -1029,6 +1127,11 @@ impl GrokAcpAgent {
             self.config.acp.max_tool_loop_iterations,
         );
 
+        // Opt out of the core-toolset mode: send all tool definitions on every call (old behavior).
+        if !self.config.acp.core_toolset_only {
+            turn.tool_defs = crate::tools::registry::get_available_tool_definitions().to_vec();
+        }
+
         turn.run(
             self,
             session_id,
@@ -1204,28 +1307,15 @@ impl GrokAcpAgent {
     /// set (i.e. the user previously chose "Always Allow" for this tool).
     ///
     /// Silently returns `false` if the session no longer exists.
+    ///
+    /// Always-allow grants are now managed inside the chat turn via the
+    /// PermissionBridge (newly_always_allowed) and synced back into SessionData.
     pub async fn is_always_allowed(&self, session_id: &SessionId, tool_name: &str) -> bool {
         let sessions = self.sessions.read().await;
         sessions
             .get(&session_id.0)
             .map(|s| s.always_allow.contains(tool_name))
             .unwrap_or(false)
-    }
-
-    /// Adds `tool_name` to the session's always-allow set so that future calls
-    /// to that tool within the same session skip the permission prompt.
-    ///
-    /// Silently no-ops if the session no longer exists.
-    #[allow(dead_code, reason = "kept for symmetry with is_always_allowed and potential future ACP use")]
-    pub(crate) async fn set_always_allowed(&self, session_id: &SessionId, tool_name: &str) {
-        let mut sessions = self.sessions.write().await;
-        if let Some(session) = sessions.get_mut(&session_id.0) {
-            session.always_allow.insert(tool_name.to_string());
-            info!(
-                "Always-allow granted for tool '{}' in session '{}'",
-                tool_name, session_id.0
-            );
-        }
     }
 
     pub fn get_capabilities(&self) -> &GrokAgentCapabilities {
@@ -1252,19 +1342,21 @@ impl GrokAcpAgent {
             );
             let _ = sender.send(crate::acp::protocol::SessionUpdate::StatusBarUpdate(update));
 
-            // Fallback visible line (temporary until Zed supports StatusBarUpdate)
+            // New nice status line with context graph + agent icons
+            let agents_part = if state.agent_icons.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", state.agent_icons.join(" "))
+            };
+
             let status_line = format!(
-                "┌─ Grok ─ {} ─ {} ─ {}/{} tokens ({:.0}%) {}",
+                "┌─ Grok ─ {} ─ {} ─ {}{} {} {}",
                 state.model,
                 state.thinking_mode,
-                state.current_tokens,
-                state.max_tokens,
-                state.context_percent * 100.0,
-                if state.is_generating {
-                    "⏳ generating..."
-                } else {
-                    "✓ ready"
-                }
+                state.context_graph,
+                agents_part,
+                if state.is_generating { "⏳" } else { "✓" },
+                if state.is_generating { "generating..." } else { "ready" }
             );
             // Send as a normal message chunk so it appears in the transcript
             let chunk =
@@ -1285,18 +1377,19 @@ impl GrokAcpAgent {
     pub(crate) fn status_bar_message_update(
         state: &crate::acp::status_bar::StatusBarState,
     ) -> crate::acp::protocol::SessionUpdate {
+        let agents_part = if state.agent_icons.is_empty() {
+            String::new()
+        } else {
+            format!(" {}", state.agent_icons.join(" "))
+        };
+
         let status_line = format!(
-            "-- Grok -- {} -- {} -- {}/{} tokens ({:.0}%) {}",
+            "Grok {} {} {}{} {}",
             state.model,
             state.thinking_mode,
-            state.current_tokens,
-            state.max_tokens,
-            state.context_percent * 100.0,
-            if state.is_generating {
-                "... generating..."
-            } else {
-                "ready"
-            }
+            state.context_graph,
+            agents_part,
+            if state.is_generating { "⏳ generating..." } else { "✓ ready" }
         );
         crate::acp::protocol::SessionUpdate::AgentMessageChunk(
             crate::acp::protocol::ContentChunk::new(crate::acp::protocol::ContentBlock::Text(
@@ -1460,6 +1553,131 @@ impl GrokAcpAgent {
                 None => "No active goal set. Use `/goal <description>` to set one.".to_string(),
             }),
         }
+    }
+
+    // ── Task 418: Agent Role Specialization ──────────────────────────────────────
+
+    /// Set the active role for a session (used by the `/role <name>` slash command).
+    pub async fn set_session_role(&self, session_id: &SessionId, role: String) -> Result<String> {
+        let old_role = {
+            let sessions = self.sessions.read().await;
+            sessions.get(&session_id.0).and_then(|s| s.current_role.clone())
+        };
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found — role not set.".to_string()),
+            Some(session) => {
+                session.current_role = Some(role.clone());
+                info!("Role set for session {}: {}", session_id.0, role);
+                Ok(format!(
+                    "**Role set:** `{role}`\n\nSubsequent messages will be specialised for this role. \
+                     Use `/role clear` to reset to the general agent.",
+                ))
+            }
+        }
+    }
+
+    /// Clear the active role for a session (used by `/role clear`).
+    pub async fn clear_session_role(&self, session_id: &SessionId) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        match sessions.get_mut(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                session.current_role = None;
+                info!("Role cleared for session {}", session_id.0);
+                Ok("Role cleared. Back to general agent mode.".to_string())
+            }
+        }
+    }
+
+    /// Return the current role for a session (used by `/role show`).
+    pub async fn get_session_role(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => Ok(match &session.current_role {
+                Some(role) => format!("**Current role:** `{role}`"),
+                None => "No active role — operating as general agent. Use `/role <name>` to specialise.".to_string(),
+            }),
+        }
+    }
+
+    /// Log a handoff event for the session.
+    /// Automatically called at role switches, spawns, delegations, etc.
+    pub async fn log_handoff(
+        &self,
+        session_id: &SessionId,
+        from: &str,
+        to: &str,
+        context_summary: &str,
+        decision: &str,
+    ) {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            let event = crate::acp::handoff::HandoffEvent::new(from, to, context_summary, decision);
+            session.handoffs.push(event);
+            // Keep bounded (last N) to avoid unbounded growth
+            const MAX_HANDOFFS: usize = 100;
+            if session.handoffs.len() > MAX_HANDOFFS {
+                session.handoffs.drain(0..(session.handoffs.len() - MAX_HANDOFFS));
+            }
+            info!("Handoff logged for {}: {} → {} ({})", session_id.0, from, to, decision);
+        }
+    }
+
+    /// Return a human-readable log of all recorded handoffs for the session.
+    /// Also includes a short analysis.
+    pub async fn get_handoff_log(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        match sessions.get(&session_id.0) {
+            None => Ok("Session not found.".to_string()),
+            Some(session) => {
+                if session.handoffs.is_empty() {
+                    return Ok("No handoffs recorded for this session yet.\n\
+                               Handoffs are automatically logged on role switches, agent spawns, and delegations.".to_string());
+                }
+
+                let analysis = crate::acp::handoff::HandoffAnalysis::from_events(&session.handoffs);
+                let mut out = format!("## Handoff Log ({} events)\n\n", session.handoffs.len());
+                out.push_str(&analysis.to_summary());
+                out.push_str("\n\n");
+
+                for (i, h) in session.handoffs.iter().enumerate() {
+                    let ctx = if h.context_summary.trim().is_empty() {
+                        "(no context summary)".to_string()
+                    } else {
+                        h.context_summary.chars().take(80).collect::<String>()
+                    };
+                    out.push_str(&format!(
+                        "{}. **{} → {}**  | {} | *{}*\n   ctx: {}\n\n",
+                        i + 1,
+                        h.from,
+                        h.to,
+                        h.decision,
+                        h.timestamp.format("%H:%M:%S"),
+                        ctx
+                    ));
+                }
+
+                if analysis.empty_context_count > 0 {
+                    out.push_str("\n⚠️  **Warning:** Some handoffs had empty context — information may have been lost between steps.");
+                }
+
+                Ok(out)
+            }
+        }
+    }
+
+    /// Convenience: log a role switch handoff (from Task 418 integration).
+    pub async fn log_role_handoff(&self, session_id: &SessionId, from_role: Option<&str>, to_role: &str) {
+        let from = from_role.unwrap_or("general");
+        self.log_handoff(
+            session_id,
+            from,
+            to_role,
+            &format!("Role change from {} to {}", from, to_role),
+            "role specialization switch",
+        ).await;
     }
 
     /// Add a session-only rule (used by `/rule add <text>`).
@@ -1688,6 +1906,90 @@ impl GrokAcpAgent {
         sessions.get(session_id).map(|s| s.cwd.clone())
     }
 
+    /// Explicitly update one of the short-term /replace memory slots for a session.
+    /// This is the implementation behind both the `replace_memory_slot` tool
+    /// and the `/replace[slot] ...` slash command.
+    ///
+    /// Slots: "plan", "working", "context", "errors", "mem.0" ... "mem.5"
+    pub async fn replace_memory_slot(
+        &self,
+        session_id: &SessionId,
+        slot: &str,
+        content: &str,
+        mode: &str, // "replace" | "append"
+    ) -> Result<String> {
+        let mut sessions = self.sessions.write().await;
+        let session = sessions
+            .get_mut(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+
+        let mem = &mut session.memory;
+
+        let effective_mode = if mode.eq_ignore_ascii_case("append") {
+            "append"
+        } else {
+            "replace"
+        };
+
+        let result = if effective_mode == "append" {
+            // Append logic: get current, append, update
+            let current = mem
+                .get_slot(slot)
+                .map(|s| s.content.clone())
+                .unwrap_or_default();
+            let new_content = if current.trim().is_empty() {
+                content.to_string()
+            } else {
+                format!("{}\n\n{}", current.trim_end(), content.trim())
+            };
+            mem.update_slot(slot, new_content)
+        } else {
+            mem.update_slot(slot, content.to_string())
+        };
+
+        match result {
+            Ok(()) => {
+                let _ = mem.compact_all();
+                Ok(format!(
+                    "✅ Updated memory slot `{}` (mode: {})",
+                    slot, effective_mode
+                ))
+            }
+            Err(e) => Err(anyhow!("Failed to update memory slot '{}': {}", slot, e)),
+        }
+    }
+
+    /// Test helper: read back the content of a /replace memory slot.
+    /// Only available in tests so we can verify the memory feature end-to-end
+    /// without exposing internal SessionData.
+    #[cfg(test)]
+    pub async fn get_memory_slot(&self, session_id: &SessionId, slot: &str) -> Option<String> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .and_then(|s| s.memory.get_slot(slot).map(|sl| sl.content.clone()))
+    }
+
+    /// Return a formatted summary of all current memory slots (for /memory and enhanced /context).
+    /// Task 458 observability.
+    pub async fn get_memory_summary(&self, session_id: &SessionId) -> Result<String> {
+        let sessions = self.sessions.read().await;
+        let session = sessions
+            .get(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+        Ok(session.memory.format_for_display())
+    }
+
+    /// Attempt to promote stable facts from this session's memory into OKF (Task 456).
+    /// Returns list of promoted slot → concept mappings.
+    pub async fn promote_memory_to_okf(&self, session_id: &SessionId) -> Result<Vec<String>> {
+        let mut sessions = self.sessions.write().await;
+        let session = sessions
+            .get_mut(&session_id.0)
+            .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
+        session.memory.promote_all().await
+    }
+
     /// Store the list of slash commands the client advertised in a
     /// `session/update { sessionUpdate: "available_commands_update" }` notification.
     ///
@@ -1745,17 +2047,25 @@ impl GrokAcpAgent {
             .get(&session_id.0)
             .ok_or_else(|| anyhow!("Session not found: {}", session_id.0))?;
 
-        let current_tokens = estimate_tokens(&session.messages);
-        let max_tokens = model_context_budget(
+        let current = estimate_tokens(&session.messages);
+        let max = model_context_budget(
             &session.config.model,
             self.config.acp.max_context_tokens,
             self.config.acp.grok4_max_context_tokens,
         );
-        let context_percent = if max_tokens > 0 {
-            current_tokens as f32 / max_tokens as f32
-        } else {
-            0.0
-        };
+        let context_percent = if max > 0 { current as f32 / max as f32 } else { 0.0 };
+        let compress_at = (max as f64 * 0.75) as usize;
+
+        // Drive icons strictly from currently *running* sub-agents in the AgentManager.
+        // This guarantees icons only appear while the agent is actually executing.
+        let running_roles = crate::tools::agent_tools::get_agent_manager()
+            .running_roles()
+            .await;
+
+        let icons: Vec<String> = running_roles
+            .into_iter()
+            .map(|role| crate::acp::status_bar::icon_for_agent_role(&role).to_string())
+            .collect();
 
         Ok(crate::acp::status_bar::StatusBarState {
             model: session.config.model.clone(),
@@ -1765,10 +2075,12 @@ impl GrokAcpAgent {
                 .as_api_str()
                 .unwrap_or("off")
                 .to_string(),
-            current_tokens,
-            max_tokens,
+            current_tokens: current,
+            max_tokens: max,
             context_percent,
             is_generating: false,
+            context_graph: crate::acp::status_bar::format_context_graph(current, max, compress_at),
+            agent_icons: icons,
         })
     }
 
@@ -1801,6 +2113,44 @@ impl GrokAcpAgent {
         sessions
             .get(&session_id.0)
             .map(|s| s.config.thinking_mode.clone())
+    }
+
+    // ── Per-session CoT / thinking display control ( /cot slash command ) ─────
+
+    /// Set whether to display Chain-of-Thought / reasoning traces for this session.
+    /// `true` = show thinking blocks (overrides global `stream_thinking`).
+    /// `false` = hide thinking blocks for this session.
+    pub async fn set_show_thinking(&self, session_id: &SessionId, enabled: bool) -> Result<()> {
+        let mut sessions = self.sessions.write().await;
+        if let Some(session) = sessions.get_mut(&session_id.0) {
+            session.show_thinking = Some(enabled);
+            info!(
+                "CoT display set to {} for session {}",
+                if enabled { "ON" } else { "OFF" },
+                session_id.0
+            );
+            Ok(())
+        } else {
+            Err(anyhow!("Session not found: {}", session_id.0))
+        }
+    }
+
+    /// Returns the per-session override for thinking display, if any.
+    /// `None` means fall back to global `config.acp.stream_thinking`.
+    pub async fn get_show_thinking(&self, session_id: &SessionId) -> Option<bool> {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .and_then(|s| s.show_thinking)
+    }
+
+    /// Effective value used for deciding whether to emit thinking blocks.
+    pub async fn should_stream_thinking(&self, session_id: &SessionId) -> bool {
+        let sessions = self.sessions.read().await;
+        sessions
+            .get(&session_id.0)
+            .and_then(|s| s.show_thinking)
+            .unwrap_or(self.config.acp.stream_thinking)
     }
 
     /// Clean up expired sessions
@@ -1845,7 +2195,9 @@ impl GrokAcpAgent {
                 messages: session.messages.clone(),
                 config: session.config.clone(),
                 current_goal: session.current_goal.clone(),
+                current_role: session.current_role.clone(),
                 always_allow: session.always_allow.iter().cloned().collect(),
+                handoffs: session.handoffs.clone(),
                 saved_at_unix: std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap_or_default()
@@ -1933,7 +2285,9 @@ impl GrokAcpAgent {
         if let Some(session) = sessions.get_mut(&state.session_id) {
             session.messages = state.messages;
             session.current_goal = state.current_goal;
+            session.current_role = state.current_role;
             session.always_allow = state.always_allow.into_iter().collect();
+            session.handoffs = state.handoffs;
         }
         info!("Session '{}' restored from disk", sid.0);
         Ok(())
@@ -1957,8 +2311,17 @@ impl GrokAcpAgent {
                 bayes_engine: crate::bayes::BayesianEngine::new_with_default_priors(),
                 dna: crate::session::dna::SessionDna::default(),
                 current_goal: source.current_goal.clone(),
+                current_role: source.current_role.clone(),
                 session_rules: source.session_rules.clone(),
+                active_agents: source.active_agents.clone(),
+                show_thinking: source.show_thinking,
                 last_workflow_trace: None,
+
+                // Multi-slot /replace memory (cloned for fork; fresh memory is often desired but we copy for continuity)
+                memory: source.memory.clone(),
+
+                // Task 419: lightweight handoff tracking
+                handoffs: source.handoffs.clone(),
             }
         };
         let mut sessions = self.sessions.write().await;
@@ -2057,10 +2420,8 @@ mod tests {
         assert_eq!(session_id.0.as_str(), "test-session");
     }
 
-    /// Verify the always-allow round-trip:
-    /// set_always_allowed  →  is_always_allowed returns true for that tool,
-    ///                        false for a different tool,
-    ///                        and silently no-ops for an unknown session.
+    /// Verify the always-allow behavior (grants now come via the PermissionBridge
+    /// inside chat turns and are synced into the session's always_allow set).
     #[tokio::test]
     async fn test_always_allow_round_trip() {
         use std::collections::HashMap;
@@ -2080,8 +2441,27 @@ mod tests {
             client_commands: Vec::new(),
             bayes_engine: crate::bayes::BayesianEngine::new(),
             current_goal: None,
+            current_role: None,
             session_rules: Default::default(),
+            active_agents: Vec::new(),
+            show_thinking: None,
             last_workflow_trace: None,
+
+            // Multi-slot /replace memory (JAZ-inspired short-term structured memory for coding agent)
+            // Now respects the [memory] section from config.toml (Task 459)
+            memory: {
+                let cfg = crate::config::Config::default();
+                if cfg.memory.enabled {
+                    crate::memory::memory_manager::MemoryManager::with_config(
+                        cfg.memory.to_memory_manager_config()
+                    )
+                } else {
+                    crate::memory::memory_manager::MemoryManager::new()
+                }
+            },
+
+            // Task 419: lightweight handoff tracking
+            handoffs: Vec::new(),
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);
