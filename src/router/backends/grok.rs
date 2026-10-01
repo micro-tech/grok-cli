@@ -165,8 +165,15 @@ impl Backend for GrokBackend {
 
             debug!(attempt, model = %req.model, "Grok backend: sending request");
 
-            let result = self
-                .client
+            // Prompt-cache affinity: clone the client and attach this
+            // request's conversation key (if any) so xAI routes the turn to
+            // the server holding the conversation's prefix cache.
+            let mut client = self.client.clone();
+            if let Some(key) = req.prompt_cache_key.clone() {
+                client = client.with_prompt_cache_key(key);
+            }
+
+            let result = client
                 .chat_completion_with_history(
                     messages,
                     temperature,
