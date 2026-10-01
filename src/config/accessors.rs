@@ -199,6 +199,7 @@ impl Config {
             "acp.max_history_messages" => Ok(self.acp.max_history_messages.to_string()),
             "acp.thinking_mode" => Ok(format!("{:?}", self.acp.thinking_mode).to_lowercase()),
             "acp.stream_thinking" => Ok(self.acp.stream_thinking.to_string()),
+            "acp.core_toolset_only" => Ok(self.acp.core_toolset_only.to_string()),
 
             // Network settings
             "network.starlink_optimizations" => Ok(self.network.starlink_optimizations.to_string()),
@@ -207,6 +208,7 @@ impl Config {
             "network.health_monitoring" => Ok(self.network.health_monitoring.to_string()),
             "network.connect_timeout" => Ok(self.network.connect_timeout.to_string()),
             "network.read_timeout" => Ok(self.network.read_timeout.to_string()),
+            "network.prompt_cache_enabled" => Ok(self.network.prompt_cache_enabled.to_string()),
 
             // Logging settings
             "logging.level" => Ok(self.logging.level.clone()),
@@ -734,6 +736,11 @@ impl Config {
                     .parse()
                     .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
             }
+            "acp.core_toolset_only" => {
+                self.acp.core_toolset_only = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
+            }
             "acp.permission_timeout_secs" => {
                 let secs: u64 = value
                     .parse()
@@ -794,6 +801,11 @@ impl Config {
                 self.network.read_timeout = value
                     .parse()
                     .map_err(|_| anyhow!("Invalid number: {}", value))?;
+            }
+            "network.prompt_cache_enabled" => {
+                self.network.prompt_cache_enabled = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean: {}", value))?;
             }
 
             // Logging settings
