@@ -60,6 +60,7 @@ use crate::router::{CpuRouter, RouterError, RouterRequest, RouterResponse};
 #[derive(Clone, Debug)]
 pub struct AppRouter {
     inner: Arc<CpuRouter>,
+    rate_limit_config: Option<crate::config::RateLimitConfig>,
 }
 
 impl AppRouter {
@@ -76,7 +77,16 @@ impl AppRouter {
             .map_err(|e| anyhow::anyhow!("{e}"))?;
         Ok(Self {
             inner: Arc::new(CpuRouter::new(vec![Box::new(backend)])),
+            rate_limit_config: None,
         })
+    }
+
+    /// Attach rate limit configuration.
+    /// When set, `chat_completion_with_history` will enforce
+    /// `max_requests_per_minute` and `max_tokens_per_minute` before every LLM call.
+    pub fn with_rate_limits(mut self, config: crate::config::RateLimitConfig) -> Self {
+        self.rate_limit_config = Some(config);
+        self
     }
 
     // ── GrokClient-compatible methods ────────────────────────────────────────
@@ -127,6 +137,16 @@ impl AppRouter {
     ///   [`crate::acp::tools::get_available_tool_definitions`].
     ///
     /// Mirrors [`crate::GrokClient::chat_completion_with_history`].
+    /// Multi-turn chat with full conversation history and optional tools.
+    ///
+    /// ## IMPORTANT: CoT / Thinking Trace Policy (MONEY SAVER)
+    /// The response may contain `thinking_content` (when reasoning_effort is used).
+    /// **NEVER** put the raw message back into future conversation history or prompts
+    /// without stripping the CoT first.
+    ///
+    /// Callers must use `crate::cot_guard::clean_assistant_message(...)` (or equivalent)
+    /// before pushing any assistant response into history that will be sent to the LLM again.
+    /// This is critical to avoid wasting tokens on internal reasoning traces.
     pub async fn chat_completion_with_history(
         &self,
         messages: &[Value],
@@ -136,6 +156,26 @@ impl AppRouter {
         tools: Option<Vec<Value>>,
         reasoning_effort: Option<&str>,
     ) -> Result<MessageWithFinishReason> {
+        // === STRONG CoT LEAK GUARD (debug builds only) ===
+        // This is the money-saving radioactive isotope rule.
+        // In debug builds this will **panic** if any message still contains
+        // reasoning_content or thinking_content. This catches mistakes early.
+        crate::cot_guard::debug_assert_no_cot_in_messages(messages);
+
+        // === Rate limit enforcement (COR-5 / fresh review) ===
+        // If a RateLimitConfig was attached via `with_rate_limits()`, enforce it here.
+        // This is the single enforcement point for the modern router path (ACP + CLI).
+        if let Some(ref cfg) = self.rate_limit_config {
+            let prompt_chars: usize = messages.iter().map(|v| v.to_string().len()).sum();
+            // Rough but conservative estimate: ~1 token per 3 chars + headroom for response
+            let estimated_tokens: u32 = ((prompt_chars / 3) as u32).saturating_add(800);
+
+            let mut stats = crate::utils::rate_limiter::UsageStats::load().unwrap_or_default();
+            if let Err(msg) = stats.check_limit(cfg, estimated_tokens) {
+                return Err(anyhow::anyhow!("Rate limit exceeded: {}", msg));
+            }
+        }
+
         // Pass messages as raw JSON so that fields like `tool_call_id` are
         // preserved through the full pipeline.  Typed deserialization was
         // silently stripping that field, breaking multi-turn tool calls.
@@ -156,6 +196,14 @@ impl AppRouter {
             .route(&req)
             .await
             .map_err(|e| anyhow::anyhow!("{e}"))?;
+
+        // Record actual usage for rate limiting (best-effort; do not fail the call)
+        if self.rate_limit_config.is_some() {
+            if let Some(usage) = &resp.usage {
+                let mut stats = crate::utils::rate_limiter::UsageStats::load().unwrap_or_default();
+                stats.record_usage(usage.prompt_tokens as u32, usage.completion_tokens as u32);
+            }
+        }
 
         Ok(resp.into_message_with_finish_reason())
     }

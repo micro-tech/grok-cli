@@ -698,19 +698,6 @@ pub async fn process_tool_calls(
             }
         };
 
-        // On-demand tool unlock: only the core toolset is sent to the model
-        // by default, so when it calls `tool_search` we append the matching
-        // definitions to this turn's toolset for all subsequent API calls.
-        if function_name == "tool_search" {
-            let unlocked = unlock_tools_from_search(&args, turn);
-            if unlocked > 0 {
-                content.push_str(&format!(
-                    "\n\n[{} tool(s) unlocked and now available for you to call.]",
-                    unlocked
-                ));
-            }
-        }
-
         // Clone once for the auto-memory update block below (which runs
         // unconditionally after the final_tool_content decision).  We keep the
         // original `content` for the move into final_tool_content in the
