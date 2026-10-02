@@ -11,7 +11,7 @@ use anyhow::Result;
 use colored::*;
 use serde_json::Value;
 // Cheap message builders to reduce allocations (Task 267)
-use crate::utils::messages::{assistant, assistant_with_tool_calls, system, user};
+use crate::utils::messages::{assistant, assistant_with_tool_calls, system, tool_result, user};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -172,7 +172,10 @@ async fn handle_single_chat(
 /// Execute a tool call from the AI using the full tool registry (all 31 tools).
 /// Previously only ~9 tools were handled here; now every tool defined in
 /// `tools::registry::get_tool_definitions` is dispatched correctly.
-async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<()> {
+///
+/// Returns the tool output string (or an error message string) so the caller
+/// can feed it back to the model as a `role: "tool"` message.
+async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<String> {
     let name = &tool_call.function.name;
     let args: Value = serde_json::from_str(&tool_call.function.arguments)?;
     let ctx = ToolContext::new(security.clone());
@@ -188,15 +191,15 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
             if lines.len() > 20 {
                 println!("    {} ({} more lines)", "...".dimmed(), lines.len() - 20);
             }
+            Ok(output)
         }
         Err(e) => {
-            println!(
-                "{}",
-                format_error(&format!("Tool '{}' failed: {}", name, e))
-            );
+            let msg = format!("Error executing {}: {}", name, e);
+            println!("{}", format_error(&msg));
+            // Return the error as the tool result so the model knows what happened
+            Ok(msg)
         }
     }
-    Ok(())
 }
 
 async fn handle_interactive_chat(
@@ -329,7 +332,8 @@ async fn handle_interactive_chat(
 
                     if router.is_low_confidence() {
                         actual_input = format!(
-                            "{}\n[System Alert: The intent probability is below threshold (low_confidence). Do NOT call any tools yet. Output a brief 3-step Markdown plan and ask the user if it looks correct before proceeding.]",
+                            "{}
+[System Advisory: Intent confidence is below threshold. If the request is ambiguous, briefly confirm the goal with the user before taking irreversible actions. You may still use tools when the intent is clear enough.]",
                             actual_input
                         );
                     } else if let Some(persona) = router.get_adaptive_system_prompt() {
@@ -358,7 +362,7 @@ async fn handle_interactive_chat(
                         temperature,
                         max_tokens,
                         model,
-                        Some(active_tools),
+                        Some(active_tools.clone()),
                         thinking_mode.as_api_str(),
                     )
                     .await?;
@@ -377,7 +381,7 @@ async fn handle_interactive_chat(
                 );
 
                 // Re-parse a clean version for tool-call handling (no CoT possible after clean)
-                let response_msg: grok_api::Message = serde_json::from_value(clean_response_msg.clone())
+                let mut current_response: grok_api::Message = serde_json::from_value(clean_response_msg)
                     .unwrap_or(response_with_finish.message.clone());
 
                 spinner.finish_and_clear();
@@ -385,43 +389,86 @@ async fn handle_interactive_chat(
                 // Task 266: report per-turn timing (CLI interactive) — gated by GROK_PERF
                 crate::utils::perf::report_turn("cli-interactive turn", turn_start);
 
-                // Handle tool calls if present
-                if let Some(tool_calls) = &response_msg.tool_calls
-                    && !tool_calls.is_empty()
-                {
+                // ── Agentic tool loop ──────────────────────────────────────────────────────
+                // If the model requested tool calls, execute them, feed the results back,
+                // and call the model again — repeating until it produces a plain text reply
+                // or we hit the safety cap (MAX_TOOL_LOOP_ITERATIONS).
+                let mut tool_loop_count: u32 = 0;
+                const MAX_CLI_TOOL_LOOPS: u32 = crate::constants::MAX_TOOL_LOOP_ITERATIONS;
+
+                loop {
+                    let tool_calls = match &current_response.tool_calls {
+                        Some(tc) if !tc.is_empty() => tc.clone(),
+                        _ => break, // No tool calls — display final response
+                    };
+
+                    if tool_loop_count >= MAX_CLI_TOOL_LOOPS {
+                        println!(
+                            "{}",
+                            format_error(&format!(
+                                "Reached max tool loop iterations ({}). Stopping.",
+                                MAX_CLI_TOOL_LOOPS
+                            ))
+                        );
+                        break;
+                    }
+                    tool_loop_count += 1;
+
                     println!("{}", "Grok is executing operations...".blue().dimmed());
 
-                    for tool_call in tool_calls {
-                        if let Err(e) = execute_tool_call(tool_call, &security).await {
-                            println!("{}", format_error(&format!("Tool execution failed: {}", e)));
-                        } else {
-                            if enable_bayesian_router {
-                                router.learn_from_tool(&tool_call.function.name);
-                            }
-                        }
-                    }
-
-                    // Add assistant's tool call response to history (Task 267)
-                    let content_str = content_to_string(response_msg.content.as_ref());
+                    // 1. Add the assistant's tool-call request to history FIRST
+                    let content_str = content_to_string(current_response.content.as_ref());
                     let tool_calls_json: Vec<serde_json::Value> = tool_calls
                         .iter()
-                        .map(|tc| {
-                            serde_json::to_value(tc).unwrap_or_else(|_| serde_json::json!({}))
-                        })
+                        .map(|tc| serde_json::to_value(tc).unwrap_or_else(|_| serde_json::json!({})))
                         .collect();
                     conversation_history.push(assistant_with_tool_calls(
-                        if content_str.is_empty() {
-                            None
-                        } else {
-                            Some(content_str)
-                        },
+                        if content_str.is_empty() { None } else { Some(content_str) },
                         tool_calls_json,
                     ));
 
-                    continue;
-                }
+                    // 2. Execute each tool and add its result to history
+                    for tool_call in &tool_calls {
+                        let output = execute_tool_call(tool_call, &security).await
+                            .unwrap_or_else(|e| format!("Error dispatching tool: {}", e));
+                        if enable_bayesian_router {
+                            router.learn_from_tool(&tool_call.function.name);
+                        }
+                        // Feed the result back as a tool message so the model can see it
+                        conversation_history.push(tool_result(&tool_call.id, output));
+                    }
 
-                let response = content_to_string(response_msg.content.as_ref());
+                    // 3. Call the model again with the tool results
+                    let follow_spinner = create_spinner("Grok is processing results...");
+                    let follow_up = match client
+                        .chat_completion_with_history(
+                            &conversation_history,
+                            temperature,
+                            max_tokens,
+                            model,
+                            Some(active_tools.clone()),
+                            thinking_mode.as_api_str(),
+                        )
+                        .await
+                    {
+                        Ok(r) => r,
+                        Err(e) => {
+                            follow_spinner.finish_and_clear();
+                            println!("{}", format_error(&format!("Follow-up call failed: {}", e)));
+                            break;
+                        }
+                    };
+                    follow_spinner.finish_and_clear();
+
+                    let clean_follow = clean_and_assert_no_cot(
+                        serde_json::to_value(&follow_up.message)?
+                    );
+                    current_response = serde_json::from_value(clean_follow)
+                        .unwrap_or(follow_up.message);
+                }
+                // ── End agentic tool loop ──────────────────────────────────────────────────
+
+                let response = content_to_string(current_response.content.as_ref());
 
                 // Add assistant response to history (cheap builder)
                 conversation_history.push(assistant(response.clone()));

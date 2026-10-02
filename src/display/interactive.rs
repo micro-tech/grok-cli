@@ -35,7 +35,7 @@ use crate::utils::session::{list_sessions, load_session, save_session};
 use crate::utils::shell_permissions::{ApprovalMode, ShellPermissions};
 use serde::{Deserialize, Serialize};
 // Use cheap message builders (Task 267)
-use crate::utils::messages::{assistant, system, user};
+use crate::utils::messages::{assistant, system, tool_result, user};
 
 /// Interactive session state
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1388,35 +1388,87 @@ async fn send_to_grok(
             // Task 266: report per-turn timing (only if GROK_PERF=1)
             crate::utils::perf::report_turn("interactive turn", turn_start);
 
-            // Handle tool calls if present
-            if let Some(tool_calls) = &response_msg.tool_calls
-                && !tool_calls.is_empty()
-            {
+            // ── Agentic tool loop ──────────────────────────────────────────────────────
+            // Execute tool calls, feed the results back to the model, and repeat
+            // until the model produces a plain-text reply or we hit the cap.
+            let active_tools: Vec<serde_json::Value> =
+                tools.iter().map(|t| serde_json::json!(t)).collect();
+            let mut current_response = response_msg;
+            let mut tool_loop_count: u32 = 0;
+            const MAX_CLI_TOOL_LOOPS: u32 = crate::constants::MAX_TOOL_LOOP_ITERATIONS;
+
+            loop {
+                let tool_calls = match &current_response.tool_calls {
+                    Some(tc) if !tc.is_empty() => tc.clone(),
+                    _ => break, // No tool calls — display final response
+                };
+
+                if tool_loop_count >= MAX_CLI_TOOL_LOOPS {
+                    eprintln!(
+                        "Reached max tool loop iterations ({}). Stopping.",
+                        MAX_CLI_TOOL_LOOPS
+                    );
+                    break;
+                }
+                tool_loop_count += 1;
+
                 println!("{}", "Grok is executing operations...".blue().bold());
                 println!();
 
-                for tool_call in tool_calls {
-                    if let Err(e) = execute_tool_call_interactive(tool_call, &security).await {
-                        eprintln!("  {} Tool execution failed: {}", "✗".red(), e);
-                    }
+                // 1. Add the assistant's tool-call request to messages FIRST
+                let content_str = content_to_string(current_response.content.as_ref());
+                let tool_calls_json: Vec<serde_json::Value> = tool_calls
+                    .iter()
+                    .map(|tc| serde_json::to_value(tc).unwrap_or_else(|_| serde_json::json!({})))
+                    .collect();
+                use crate::utils::messages::assistant_with_tool_calls;
+                messages.push(assistant_with_tool_calls(
+                    if content_str.is_empty() { None } else { Some(content_str) },
+                    tool_calls_json,
+                ));
+
+                // 2. Execute each tool and add its result to messages
+                for tool_call in &tool_calls {
+                    let output = execute_tool_call_interactive(tool_call, &security).await
+                        .unwrap_or_else(|e| format!("Error dispatching tool: {}", e));
+                    messages.push(tool_result(&tool_call.id, output));
                 }
 
                 println!();
-                println!("{}", "All operations completed!".green().bold());
-                println!();
 
-                // Add assistant's response to history
-                let content = content_to_string(response_msg.content.as_ref());
-                let content = if content.is_empty() {
-                    "Operations completed.".to_string()
-                } else {
-                    content
+                // 3. Call the model again with the accumulated tool results
+                print!("{} ", "Processing results...".bright_yellow());
+                io::stdout().flush().ok();
+
+                let follow_up = match client
+                    .chat_completion_with_history(
+                        &messages,
+                        session.temperature,
+                        session.max_tokens,
+                        &effective_model,
+                        Some(active_tools.clone()),
+                        None,
+                    )
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        clear_current_line();
+                        eprintln!("Follow-up call failed: {}", e);
+                        break;
+                    }
                 };
-                session.add_conversation_item("assistant", &content, None);
-                return Ok(());
-            }
+                clear_current_line();
 
-            let content = content_to_string(response_msg.content.as_ref());
+                let clean_follow = clean_and_assert_no_cot(
+                    serde_json::to_value(&follow_up.message)?
+                );
+                current_response = serde_json::from_value(clean_follow)
+                    .unwrap_or(follow_up.message);
+            }
+            // ── End agentic tool loop ──────────────────────────────────────────────────
+
+            let content = content_to_string(current_response.content.as_ref());
 
             // Print Grok's response with nice formatting
             println!("{} {}", "🤖".bright_blue(), "Grok:".bright_blue().bold());
@@ -1522,10 +1574,13 @@ async fn run_simulation(
 }
 
 /// Execute a tool call in interactive mode
+/// Execute a single tool call and return its output string.
+/// On tool failure the error is printed and returned as the output so the model
+/// can see what went wrong in its follow-up response.
 async fn execute_tool_call_interactive(
     tool_call: &crate::ToolCall,
     security: &SecurityPolicy,
-) -> Result<()> {
+) -> Result<String> {
     let name = &tool_call.function.name;
     let args: serde_json::Value = serde_json::from_str(&tool_call.function.arguments)?;
     let ctx = ToolContext::new(security.clone());
@@ -1541,12 +1596,14 @@ async fn execute_tool_call_interactive(
             if lines.len() > 20 {
                 println!("    {} ({} more lines)", "...".dimmed(), lines.len() - 20);
             }
+            Ok(output)
         }
         Err(e) => {
-            eprintln!("  {} Tool '{}' failed: {}", "✗".red(), name, e);
+            let msg = format!("Error executing {}: {}", name, e);
+            eprintln!("  {} {}", "✗".red(), msg);
+            Ok(msg)
         }
     }
-    Ok(())
 }
 
 /// Check if current directory is the home directory
