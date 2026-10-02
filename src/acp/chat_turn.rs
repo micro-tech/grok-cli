@@ -16,7 +16,7 @@ use crate::acp::{PermissionBridge, GrokAcpAgent};
 use crate::acp::status_bar::StatusBarState;
 use crate::content_to_string;
 use crate::context::prompt_builder::build_prompt_with_delta;
-use crate::context::tool_optimizer::{compress_schema, prune_unused_tools};
+use crate::context::tool_optimizer::compress_schema;
 use crate::tools;
 use anyhow::{Result, anyhow};
 use serde_json::{json, Value};
@@ -711,6 +711,12 @@ pub async fn process_tool_calls(
         }
 
         let result = tools::execute_tool(function_name, &augmented, &ctx).await;
+
+        // When the model calls `tool_search`, also append the matching tool
+        // definitions to this turn so the model can actually invoke them.
+        if function_name == "tool_search" {
+            unlock_tools_from_search(&args, turn);
+        }
 
         let (content, status) = match result {
             Ok(s) => {

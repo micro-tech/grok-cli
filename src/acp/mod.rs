@@ -1552,10 +1552,6 @@ impl GrokAcpAgent {
 
     /// Set the active role for a session (used by the `/role <name>` slash command).
     pub async fn set_session_role(&self, session_id: &SessionId, role: String) -> Result<String> {
-        let old_role = {
-            let sessions = self.sessions.read().await;
-            sessions.get(&session_id.0).and_then(|s| s.current_role.clone())
-        };
         let mut sessions = self.sessions.write().await;
         match sessions.get_mut(&session_id.0) {
             None => Ok("Session not found — role not set.".to_string()),
