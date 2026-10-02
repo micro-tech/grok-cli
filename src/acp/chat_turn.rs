@@ -612,6 +612,28 @@ fn unlock_tools_from_search(args: &Value, turn: &mut ChatTurn) -> usize {
     added
 }
 
+/// Apply the on-demand unlock after a tool executes.
+///
+/// In core-toolset mode the model is promised that `tool_search` results
+/// become callable for the rest of the session. This appends the matching
+/// definitions to the turn's `tool_defs` and returns a confirmation note to
+/// include in the tool result (empty string when nothing was unlocked or the
+/// executed tool wasn't `tool_search`).
+fn apply_search_unlock(function_name: &str, args: &Value, turn: &mut ChatTurn) -> String {
+    if function_name != "tool_search" {
+        return String::new();
+    }
+    let added = unlock_tools_from_search(args, turn);
+    if added > 0 {
+        format!(
+            "\n\n[{} tool(s) unlocked — you can call them for the rest of this session.]",
+            added
+        )
+    } else {
+        String::new()
+    }
+}
+
 pub async fn process_tool_calls(
     agent: &GrokAcpAgent,
     session_id: &crate::acp::protocol::SessionId,
@@ -712,11 +734,11 @@ pub async fn process_tool_calls(
 
         let result = tools::execute_tool(function_name, &augmented, &ctx).await;
 
-        // When the model calls `tool_search`, also append the matching tool
-        // definitions to this turn so the model can actually invoke them.
-        if function_name == "tool_search" {
-            unlock_tools_from_search(&args, turn);
-        }
+        // === ON-DEMAND UNLOCK (core-toolset mode) ===
+        // Without this, `tool_search` results are never appended to
+        // `turn.tool_defs`, so the model can discover tools it can never
+        // actually invoke.
+        let unlock_note = apply_search_unlock(function_name, &args, turn);
 
         let (content, status) = match result {
             Ok(s) => {
@@ -727,7 +749,7 @@ pub async fn process_tool_calls(
                         s.dna.update_from_tool_result(true, function_name);
                     }
                 }
-                (s, ToolCallStatus::Completed)
+                (format!("{}{}", s, unlock_note), ToolCallStatus::Completed)
             }
             Err(e) => {
                 warn!("Tool {} failed: {}", function_name, e);
@@ -1085,5 +1107,39 @@ mod tests {
             0
         );
         assert_eq!(turn.tool_defs.len(), before, "no tools should be added");
+    }
+
+    #[test]
+    fn apply_search_unlock_wires_tool_search_into_tool_defs() {
+        // Regression test: `unlock_tools_from_search` existed but was never
+        // called from the live tool loop, so discovered tools stayed
+        // uncallable. `apply_search_unlock` is the wiring — it must grow
+        // `tool_defs` for tool_search calls and stay a no-op otherwise.
+        let mut turn = test_turn();
+        let before = turn.tool_defs.len();
+        let note = apply_search_unlock("tool_search", &json!({"query": "cron"}), &mut turn);
+        assert!(
+            turn.tool_defs.len() > before,
+            "tool_search must append unlocked definitions to tool_defs"
+        );
+        assert!(
+            !note.is_empty(),
+            "tool result should confirm the unlock to the model"
+        );
+        let names: Vec<&str> = turn.tool_defs.iter().map(tool_name).collect();
+        assert!(names.contains(&"cron_create"), "got {:?}", names);
+    }
+
+    #[test]
+    fn apply_search_unlock_ignores_other_tools() {
+        let mut turn = test_turn();
+        let before = turn.tool_defs.len();
+        let note = apply_search_unlock(
+            "read_file",
+            &json!({"query": "cron"}),
+            &mut turn,
+        );
+        assert_eq!(turn.tool_defs.len(), before, "non-search tools must not unlock");
+        assert!(note.is_empty(), "no confirmation note for non-search tools");
     }
 }
