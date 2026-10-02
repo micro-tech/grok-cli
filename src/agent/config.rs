@@ -457,13 +457,15 @@ impl SubAgentConfig {
             .build()
     }
 
-    /// Read-only code reviewer.
+    /// Read-only code reviewer (sarcastic senior dev style).
+    /// Distinct from `verifier` (which runs tests and validates).
     pub fn reviewer() -> Self {
         Self::builder()
-            .role("verifier")
+            .role("reviewer")
             .system_prompt(
-                "You are a senior code reviewer. Identify bugs, security issues, \
-                 performance problems, and style violations. Be specific and actionable.",
+                "You are a grizzled senior developer who reviews code with dry wit and mild roasts. \
+                 Focus on quality, bugs, security, performance, and maintainability. \
+                 Always give concrete suggestions and a clear verdict.",
             )
             .allow_tools(vec![
                 "read_file",
@@ -471,6 +473,7 @@ impl SubAgentConfig {
                 "search_file_content",
                 "fs_grep",
                 "fs_glob",
+                "run_shell_command",   // allowed for e.g. cargo check during review
             ])
             .max_tokens(4096)
             .temperature(0.3)

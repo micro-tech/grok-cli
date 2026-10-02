@@ -21,6 +21,7 @@ The root [`README.md`](../README.md) and [`CHANGELOG.md`](../CHANGELOG.md) are k
 | [EXTERNAL_ACCESS_QUICK_START.md](EXTERNAL_ACCESS_QUICK_START.md) | External file access guide     |
 | [SKILLS_QUICK_START.md](SKILLS_QUICK_START.md) | Skills system quick start               |
 | [SKILLS_CATALOG.md](SKILLS_CATALOG.md)         | Self-updating skills catalog (Task 273) |
+| [HOH.md](HOH.md)                               | Harness-of-Harnesses (HOH) autonomous outer loop (Tasks 297 + 361) |
 | Self-updater skill (`skills/self-updater/SKILL.md`) | Built-in self-update system (Task 296) — `grok update` + safe binary replacement |
 | [CONFIG_QUICK_START.md](CONFIG_QUICK_START.md) | Configuration quick start               |
 | [acp-migration-map.md](acp-migration-map.md) | ACP migration status & plan             |

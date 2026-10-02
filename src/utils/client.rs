@@ -43,3 +43,27 @@ pub fn initialize_client(
 pub fn initialize_router(api_key: &str, timeout_secs: u64) -> Result<AppRouter> {
     AppRouter::new(api_key, timeout_secs)
 }
+
+/// Same as `initialize_router`, but also attaches rate limiting from config.
+pub fn initialize_router_with_limits(
+    api_key: &str,
+    timeout_secs: u64,
+    rate_limit_config: RateLimitConfig,
+) -> Result<AppRouter> {
+    let router = AppRouter::new(api_key, timeout_secs)?;
+    Ok(router.with_rate_limits(rate_limit_config))
+}
+
+/// Initialise an [`AppRouter`] with rate limiting configuration attached.
+///
+/// This is the recommended path when you have a `RateLimitConfig` (from
+/// the user's config). Rate limits will be enforced on every
+/// `chat_completion_with_history` call.
+pub fn initialize_router_with_rate_limits(
+    api_key: &str,
+    timeout_secs: u64,
+    rate_limit_config: RateLimitConfig,
+) -> Result<AppRouter> {
+    let router = AppRouter::new(api_key, timeout_secs)?;
+    Ok(router.with_rate_limits(rate_limit_config))
+}

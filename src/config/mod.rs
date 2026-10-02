@@ -27,6 +27,7 @@ mod env;
 pub mod experimental;
 pub mod general;
 pub mod logging;
+pub mod memory;
 pub mod model;
 pub mod network;
 pub mod okf;
@@ -157,6 +158,11 @@ pub struct Config {
     /// Rate limiting configuration
     #[serde(default)]
     pub rate_limits: RateLimitConfig,
+
+    /// Multi-slot /replace short-term memory configuration (JAZ-style working memory).
+    /// Controls plan, working, context, errors, mem.N slots.
+    #[serde(default)]
+    pub memory: crate::config::memory::MemoryConfig,
 }
 
 impl Default for Config {
@@ -185,6 +191,7 @@ impl Default for Config {
             telemetry: TelemetryConfig::default(),
             okf: OkfConfig::default(),
             rate_limits: RateLimitConfig::default(),
+            memory: crate::config::memory::MemoryConfig::default(),
         }
     }
 }

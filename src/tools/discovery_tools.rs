@@ -51,26 +51,22 @@ pub fn tool_search(query: &str) -> Result<String> {
         return Err(e);
     }
 
-    let query_lower = query.to_lowercase();
     let all_tools = crate::tools::registry::get_full_tool_definitions();
+    let matched_names = crate::tools::registry::search_tool_names(query);
 
     let matches: Vec<String> = all_tools
         .iter()
         .filter_map(|v| {
             let func = v.get("function")?;
             let name = func.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            if !matched_names.iter().any(|m| m == name) {
+                return None;
+            }
             let desc = func
                 .get("description")
                 .and_then(|d| d.as_str())
                 .unwrap_or("");
-
-            if name.to_lowercase().contains(&query_lower)
-                || desc.to_lowercase().contains(&query_lower)
-            {
-                Some(format!("{}: {}", name, desc))
-            } else {
-                None
-            }
+            Some(format!("{}: {}", name, desc))
         })
         .collect();
 

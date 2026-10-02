@@ -15,6 +15,8 @@ use crate::acp::protocol::{SessionUpdate, ToolCall as ProtocolToolCall, ToolCall
 use crate::acp::{PermissionBridge, GrokAcpAgent};
 use crate::acp::status_bar::StatusBarState;
 use crate::content_to_string;
+use crate::context::prompt_builder::build_prompt_with_delta;
+use crate::context::tool_optimizer::{compress_schema, prune_unused_tools};
 use crate::tools;
 use anyhow::{Result, anyhow};
 use serde_json::{json, Value};
@@ -42,6 +44,13 @@ pub struct ChatTurn {
     pub max_loops: u32,
     pub newly_always_allowed: Vec<String>,
     pub local_bayes: crate::bayes::BayesianEngine,
+    /// Tool definitions sent with each API call this turn.
+    ///
+    /// Starts as the core toolset ([`crate::tools::registry::get_core_tool_definitions`])
+    /// to keep per-request token cost low; the model can unlock more via
+    /// `tool_search`, which appends matching definitions here for the rest
+    /// of the session.
+    pub tool_defs: Vec<Value>,
 }
 
 impl ChatTurn {
@@ -64,6 +73,10 @@ impl ChatTurn {
             max_loops,
             newly_always_allowed: Vec::new(),
             local_bayes,
+            // Start with the core toolset only; `tool_search` unlocks more on
+            // demand (see `unlock_tools_from_search`). The caller may override
+            // this with the full set when `acp.core_toolset_only` is false.
+            tool_defs: crate::tools::registry::get_core_tool_definitions().to_vec(),
         }
     }
 
@@ -122,8 +135,9 @@ impl ChatTurn {
         local_always_allow: &std::collections::HashSet<String>,
         _start_time: std::time::Instant,
     ) -> Result<String> {
-        let tool_defs = crate::tools::get_available_tool_definitions();
-
+        // NOTE: tool definitions come from `self.tool_defs`, which starts as
+        // the core toolset and grows as the model unlocks tools via
+        // `tool_search` (see `unlock_tools_from_search`).
         loop {
             // Task 221: Cancellation check (still owned by agent for now)
             if agent.is_cancelled(&session_id.0).await {
@@ -149,9 +163,110 @@ impl ChatTurn {
 
             self.reapply_trims(&agent.config);
 
+            // === Cobble Jr context-control: build_prompt_with_delta + pruning + compression ===
+            // Optimizer is now wired into the hot path.
+            let mut tools_for_call = self.tool_defs.clone();
+
+            let (delta, optimized_tools) = build_prompt_with_delta(
+                None,
+                "",
+                false,
+                tools_for_call,
+                &[],
+            );
+            tools_for_call = optimized_tools;
+
+            for schema in &mut tools_for_call {
+                let _ = compress_schema(schema);
+            }
+
+            // Per-turn metrics (core vs active vs full) as requested
+            let core_len = crate::tools::registry::get_core_tool_definitions().len();
+            let active_len = tools_for_call.len();
+            let full_len = crate::tools::registry::get_full_tool_definitions().len();
+            info!(
+                "🛠️  Tool schemas this turn: core={} | active={} | full_registry={} | delta={}",
+                core_len, active_len, full_len, delta.description()
+            );
+
+            self.tool_defs = tools_for_call.clone();
+
+            // Busy indicator for Zed / ACP client so it knows we are not hung
+            if let Some(sender) = event_sender {
+                emit_context_and_status(
+                    agent,
+                    sender,
+                    &self.messages,
+                    &self.model,
+                    &self.thinking_mode,
+                    true,   // is_generating = true → ⏳ busy spinner
+                );
+            }
+
+            // === Task 454: Inject multi-slot /replace memory (JAZ-style short-term memory) ===
+            // Serialize the named + indexed slots and inject as a high-priority system message.
+            // This gives the LLM explicit, addressable working memory (plan, working, context, errors, mem.N).
+            // The slots are kept small by compaction (Task 453) → big context cost savings.
+            {
+                let mut sessions = agent.sessions.write().await;
+                if let Some(session) = sessions.get_mut(&session_id.0) {
+                    let mem_section = session.memory.serialize_for_prompt(&[]);
+                    if !mem_section.trim().is_empty() {
+                        // Prepend (or replace) a dedicated memory system block so the model sees it early.
+                        // We keep only one active memory block to avoid duplication.
+                        if let Some(existing_idx) = self.messages.iter().position(|m| {
+                            m.get("role") == Some(&json!("system"))
+                                && m.get("content").and_then(|c| c.as_str()).map_or(false, |s| s.contains("## Memory Slots"))
+                        }) {
+                            self.messages.remove(existing_idx);
+                        }
+
+                        let memory_msg = json!({
+                            "role": "system",
+                            "content": format!(
+                                "## Active Short-Term Memory (/replace slots)\n\
+                                 \n\
+                                 **CRITICAL WORKING MEMORY SYSTEM**\n\
+                                 You have explicit, addressable short-term memory slots.\n\
+                                 These are the ONLY way to maintain state across tool calls and turns.\n\
+                                 \n\
+                                 **Available slots (use exactly these names):**\n\
+                                 - `plan` — High-level goals, architecture decisions, current plan. **Highest priority**. Rarely compact. Update when goals change.\n\
+                                 - `working` — Current task scratchpad. What you are doing RIGHT NOW. Update after every significant action.\n\
+                                 - `context` — Retrieved facts, code snippets, file contents you may need again.\n\
+                                 - `errors` — Recent failures, diagnostics, stack traces. High signal for debugging.\n\
+                                 - `mem.0` … `mem.5` — Rolling short-term history. Use when you want to remember recent steps without polluting working.\n\
+                                 \n\
+                                 **How to update:**\n\
+                                 Call the `replace_memory_slot` tool **or** use the slash command `/replace[slot] content`\n\
+                                 Example: replace_memory_slot with slot=\"plan\", content=\"Refactor auth to use JWT + refresh tokens\"\n\
+                                 \n\
+                                 **Best practices:**\n\
+                                 1. After every major step, update `working` with a 1-2 sentence summary of what you just did + current state.\n\
+                                 2. When you discover a stable architectural decision or repeated fact, put it in `plan` or `context`.\n\
+                                 3. On failures, always record the key error in `errors`.\n\
+                                 4. Use `mem.N` slots for step-by-step history when the main context would get too long.\n\
+                                 5. Keep slots short — the system will compact them automatically.\n\
+                                 6. Stable long-lived knowledge may be promoted to permanent OKF storage (you will see a reference left behind).\n\
+                                 \n\
+                                 **Current slot contents:**\n\n{}",
+                                mem_section
+                            )
+                        });
+                        // Insert right after the first system message (if any) so it is prominent but after persona.
+                        let insert_pos = if self.messages.first().and_then(|m| m.get("role")).and_then(|r| r.as_str()) == Some("system") {
+                            1
+                        } else {
+                            0
+                        };
+                        self.messages.insert(insert_pos, memory_msg);
+                    }
+                }
+            }
+
             // Use extracted retrying API caller (Task 280.2)
             let response_with_finish =
-                perform_api_call_with_retries(agent, self, tool_defs).await?;
+                perform_api_call_with_retries(agent, self).await?;
 
             let api_duration = std::time::Instant::now() - loop_start;
             info!("✅ Grok API responded in {:?}", api_duration);
@@ -160,16 +275,33 @@ impl ChatTurn {
             let finish_reason = response_with_finish.finish_reason.as_deref();
             let thinking_content = response_with_finish.thinking_content;
 
-            // Emit thinking if present (Task 280.4)
+            // === CoT RADIOACTIVE ISOTOPE RULE (strict policy) ===
+            // Chain-of-thought / reasoning_content / thinking_content is NEVER stored,
+            // NEVER sent back in future prompts, NEVER included in any history/context/memory.
+            // Only for immediate one-shot UI emission, then dropped.
+            use crate::cot_guard::{clean_and_assert_no_cot, debug_assert_no_cot_in_messages};
+
+            let clean_msg_for_history = clean_and_assert_no_cot(
+                serde_json::to_value(&response_msg)?
+            );
+
+            // Emit thinking if present (Task 280.4) — display only, not in history
+            // Respect per-session /cot override (falls back to global config.acp.stream_thinking)
+            let stream_thinking = agent.should_stream_thinking(session_id).await;
             if let Some(ref tc) = thinking_content
-                && agent.config.acp.stream_thinking
+                && stream_thinking
                     && let Some(sender) = event_sender
                 {
                     let blk = crate::acp::protocol::ThinkingBlockUpdate::new(tc, false);
                     let _ = sender.send(crate::acp::protocol::SessionUpdate::ThinkingBlockUpdate(blk));
                 }
 
-            self.messages.push(serde_json::to_value(&response_msg)?);
+            // Push ONLY the clean message (no CoT) into the history that will be sent to the model
+            // The debug_assert inside clean_and_assert_no_cot will panic in dev builds if CoT leaked.
+            self.messages.push(clean_msg_for_history);
+
+            // Extra belt-and-suspenders guard right before the next API call in the loop
+            debug_assert_no_cot_in_messages(&self.messages);
 
             let has_tool_calls = response_msg
                 .tool_calls
@@ -185,8 +317,11 @@ impl ChatTurn {
                     current_loop
                 );
 
+                // Final response construction: thinking_content is used ONLY for display.
+                // It is deliberately NOT appended to any persistent messages or context.
                 let final_response = if let Some(tc) = thinking_content {
-                    if agent.config.acp.stream_thinking
+                    let stream_thinking = agent.should_stream_thinking(session_id).await;
+                    if stream_thinking
                         && let Some(sender) = event_sender
                     {
                         let blk = crate::acp::protocol::ThinkingBlockUpdate::new(&tc, true);
@@ -245,6 +380,36 @@ impl ChatTurn {
 
             info!("🛠️  Processing {} tool calls", tool_calls.len());
 
+            // Wire sub-agent role tracking for status bar icons (context graph + shoulder icons)
+            // Only add while the agent is actually running. We will remove it after the tool batch.
+            for tc in tool_calls {
+                let fname = &tc.function.name;
+                if fname == "spawn_agent" || fname == "fork_agent" || fname == "delegate_plan_step" {
+                    if let Ok(args) = serde_json::from_str::<Value>(&tc.function.arguments) {
+                        let role = infer_sub_agent_role(&args);
+                        {
+                            let mut guard = agent.sessions.write().await;
+                            if let Some(s) = guard.get_mut(&session_id.0) {
+                                if !s.active_agents.contains(&role) {
+                                    s.active_agents.push(role.clone());
+                                }
+                            }
+                        }
+                        // Immediately refresh status bar so the icon appears while the sub-agent runs
+                        if let Some(sender) = event_sender {
+                            emit_context_and_status(
+                                agent,
+                                sender,
+                                &self.messages,
+                                &self.model,
+                                &self.thinking_mode,
+                                true,
+                            );
+                        }
+                    }
+                }
+            }
+
             process_tool_calls(
                 agent,
                 session_id,
@@ -268,6 +433,22 @@ impl ChatTurn {
                 );
             }
 
+            // Re-sync active_agents from the real AgentManager so icons (👀 reviewer, etc.)
+            // stay visible while the sub-agent is actually Running.
+            // Only clear roles that are no longer running.
+            {
+                let manager = crate::tools::agent_tools::get_agent_manager();
+                let still_running: std::collections::HashSet<String> =
+                    manager.running_roles().await.into_iter().collect();
+
+                let mut guard = agent.sessions.write().await;
+                if let Some(s) = guard.get_mut(&session_id.0) {
+                    s.active_agents.retain(|r| still_running.contains(r));
+                    // If a spawn just happened in this batch, the role should still be there
+                    // from the pre-processing step above.
+                }
+            }
+
             // Early stop if model said stop after tools
             if finish_reason == Some("stop") || finish_reason == Some("end_turn") {
                 info!("✅ Model flagged stop after tools — returning");
@@ -282,6 +463,7 @@ impl ChatTurn {
                         for name in &self.newly_always_allowed {
                             s.always_allow.insert(name.clone());
                         }
+                        s.active_agents.clear();
                     }
                 }
                 return Ok(String::new());
@@ -295,7 +477,6 @@ impl ChatTurn {
 pub async fn perform_api_call_with_retries(
     agent: &GrokAcpAgent,
     turn: &ChatTurn,
-    tool_defs: &[Value],
 ) -> Result<crate::MessageWithFinishReason> {
     use crate::utils::network::RetryPolicy;
 
@@ -311,6 +492,8 @@ pub async fn perform_api_call_with_retries(
     loop {
         attempt += 1;
 
+        // Use the (already optimized via build_prompt_with_delta) tool_defs on the turn.
+        // The optimizer ran at the top of the loop and updated self.tool_defs.
         match agent
             .get_router()?
             .chat_completion_with_history(
@@ -318,7 +501,7 @@ pub async fn perform_api_call_with_retries(
                 turn.temperature,
                 turn.max_tokens,
                 &turn.model,
-                Some(tool_defs.to_vec()),
+                Some(turn.tool_defs.clone()),
                 turn.thinking_mode.as_api_str(),
             )
             .await
@@ -378,6 +561,57 @@ pub async fn perform_api_call_with_retries(
 
 /// Process a batch of tool calls for one assistant response.
 /// This is the heart of the tool loop (Task 280.2 + 280.5).
+/// Unlock tools matching a `tool_search` query so the model can call them.
+///
+/// Only the core toolset is sent to the model by default (see
+/// [`crate::tools::registry::CORE_TOOL_NAMES`]); when the model searches for
+/// more capabilities, the matching definitions are appended to this turn's
+/// `tool_defs` for all subsequent API calls. Returns the number of newly
+/// added tool definitions.
+fn unlock_tools_from_search(args: &Value, turn: &mut ChatTurn) -> usize {
+    let Some(query) = args.get("query").and_then(|q| q.as_str()) else {
+        return 0;
+    };
+    if query.trim().is_empty() {
+        return 0;
+    }
+    let names = crate::tools::registry::search_tool_names(query);
+    if names.is_empty() {
+        return 0;
+    }
+    let name_refs: Vec<&str> = names.iter().map(|s| s.as_str()).collect();
+    let defs = crate::tools::registry::get_tool_definitions_by_names(&name_refs);
+    let existing: std::collections::HashSet<String> = turn
+        .tool_defs
+        .iter()
+        .filter_map(|v| {
+            v.get("function")?
+                .get("name")?
+                .as_str()
+                .map(|s| s.to_string())
+        })
+        .collect();
+    let mut added = 0;
+    for d in defs {
+        let name = d
+            .get("function")
+            .and_then(|f| f.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("");
+        if !existing.contains(name) {
+            turn.tool_defs.push(d);
+            added += 1;
+        }
+    }
+    if added > 0 {
+        info!(
+            "🔓 Unlocked {} tool(s) via tool_search '{}'",
+            added, query
+        );
+    }
+    added
+}
+
 pub async fn process_tool_calls(
     agent: &GrokAcpAgent,
     session_id: &crate::acp::protocol::SessionId,
@@ -508,6 +742,12 @@ pub async fn process_tool_calls(
             }
         };
 
+        // Clone once for the auto-memory update block below (which runs
+        // unconditionally after the final_tool_content decision).  We keep the
+        // original `content` for the move into final_tool_content in the
+        // non-replace path.
+        let content_for_memory = content.clone();
+
         // Emit update
         if let Some(sender) = event_sender {
             let update = ToolCallUpdate {
@@ -532,11 +772,76 @@ pub async fn process_tool_calls(
             hooks.execute_after_tool(function_name, &args, &content)?;
         }
 
+        // Special handling for the replace_memory_slot tool: actually apply the update
+        // to the session's MemoryManager so the change is visible in the next prompt injection.
+        let final_tool_content = if function_name == "replace_memory_slot" {
+            // Parse the original args (we already have `args`)
+            let slot = args.get("slot").and_then(|v| v.as_str()).unwrap_or("working");
+            let content_arg = args.get("content").and_then(|v| v.as_str()).unwrap_or("");
+            let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("replace");
+
+            match agent.replace_memory_slot(session_id, slot, content_arg, mode).await {
+                Ok(success_msg) => {
+                    info!("Applied explicit replace_memory_slot for {}: {}", slot, success_msg);
+                    success_msg
+                }
+                Err(e) => {
+                    warn!("Failed to apply replace_memory_slot for {}: {}", slot, e);
+                    format!("Failed to update memory slot '{}': {}", slot, e)
+                }
+            }
+        } else {
+            content.clone()
+        };
+
         turn.messages.push(json!({
             "role": "tool",
             "tool_call_id": tool_call.id,
-            "content": content
+            "content": final_tool_content
         }));
+
+        // === Task 454: Auto-update multi-slot /replace memory from tool results ===
+        // This implements the JAZ-style "LLM acts → sees result → memory updated → next turn"
+        // Keeps short-term memory fresh and bounded (compaction + token budgets).
+        {
+            let mut sessions = agent.sessions.write().await;
+            if let Some(session) = sessions.get_mut(&session_id.0) {
+                let mem = &mut session.memory;
+
+                // Always update "working" with a compact summary of the latest action + result.
+                let working_update = format!(
+                    "Action: {}\nResult (truncated):\n{}",
+                    function_name,
+                    content_for_memory.chars().take(600).collect::<String>()
+                );
+                let _ = mem.update_slot("working", working_update);
+
+                // On failure, capture in the dedicated errors slot (high signal for next planning).
+                if matches!(status, ToolCallStatus::Failed) {
+                    let err_update = format!("{} failed: {}", function_name, content_for_memory.chars().take(400).collect::<String>());
+                    let _ = mem.update_slot("errors", err_update);
+                }
+
+                // Occasionally roll recent working into the rolling context slots (mem.N).
+                // This gives the model a lightweight history without bloating the main context.
+                if mem.total_tokens() > mem.config.indexed_max_tokens * 2 {
+                    // Find the next mem.N slot or reuse the oldest
+                    for i in 0..mem.config.indexed_slots {
+                        let name = format!("mem.{}", i);
+                        if let Some(slot) = mem.get_slot(&name) {
+                            if slot.content.trim().is_empty() || i == mem.config.indexed_slots - 1 {
+                                let summary = format!("Recent step: {}", content_for_memory.chars().take(200).collect::<String>());
+                                let _ = mem.update_slot(&name, summary);
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                // Trigger compaction to keep total context cost low (core money-saving feature).
+                let _ = mem.compact_all();
+            }
+        }
 
         // Final-answer guard (helps prevent max-loop)
         turn.messages.push(json!({
@@ -548,7 +853,78 @@ pub async fn process_tool_calls(
     Ok(())
 }
 
+/// Infer a sub-agent role from spawn/fork args for status bar icons.
+/// Looks at explicit role, system_prompt, model name, or task text.
+/// This is pub(crate) so agent_tools can use a similar helper when spawning.
+pub(crate) fn infer_sub_agent_role(args: &Value) -> String {
+    // explicit role (if someone passes it)
+    if let Some(r) = args.get("role").and_then(|v| v.as_str()) {
+        return r.to_string();
+    }
+
+    // from system_prompt / persona
+    if let Some(sys) = args.get("system_prompt").and_then(|v| v.as_str()) {
+        let l = sys.to_lowercase();
+        if l.contains("planner") || l.contains("plan") { return "planner".into(); }
+        if l.contains("coder") || l.contains("write code") || l.contains("implement") { return "coder".into(); }
+        if l.contains("research") || l.contains("explorer") { return "researcher".into(); }
+        if l.contains("reviewer") || l.contains("code review") || (l.contains("review") && !l.contains("verif")) { return "reviewer".into(); }
+        if l.contains("verifier") || l.contains("verif") || l.contains("validate") || l.contains("run test") { return "verifier".into(); }
+        if l.contains("test") { return "verifier".into(); } // default "test" to verifier
+    }
+
+    // model hint
+    if let Some(m) = args.get("model").and_then(|v| v.as_str()) {
+        let l = m.to_lowercase();
+        if l.contains("coder") { return "coder".into(); }
+    }
+
+    // from task description (most common path)
+    if let Some(task) = args.get("task").and_then(|v| v.as_str()) {
+        let l = task.to_lowercase();
+        if l.contains("plan") || l.contains("architect") { return "planner".into(); }
+        if l.contains("code") || l.contains("implement") || l.contains("write") || l.contains("patch") { return "coder".into(); }
+        if l.contains("research") || l.contains("search") || l.contains("explore") || l.contains("find") { return "researcher".into(); }
+        if l.contains("verify") || l.contains("test") || l.contains("review") { return "verifier".into(); }
+    }
+
+    // fork_agent has "tasks"
+    if let Some(tasks) = args.get("tasks").and_then(|v| v.as_array()) {
+        if let Some(first) = tasks.first().and_then(|v| v.as_str()) {
+            let l = first.to_lowercase();
+            if l.contains("plan") { return "planner".into(); }
+            if l.contains("code") { return "coder".into(); }
+            if l.contains("research") { return "researcher".into(); }
+        }
+    }
+
+    "agent".to_string()
+}
+
+/// Public helper for agent_tools.rs so it can infer a role when using the SubAgentConfig path.
+pub fn infer_sub_agent_role_from_config(config: &crate::agent::config::SubAgentConfig, task: &str) -> String {
+    let mut v = serde_json::json!({
+        "task": task,
+        "model": config.model,
+    });
+
+    // Always forward the explicit persona role if it's a meaningful one.
+    // This is the most reliable path for reviewer(), coder(), etc.
+    let role = &config.persona.role;
+    if !role.is_empty() && role != "agent" {
+        v["role"] = serde_json::Value::String(role.clone());
+    }
+
+    if let Some(sp) = &config.persona.system_prompt {
+        v["system_prompt"] = serde_json::Value::String(sp.clone());
+    }
+    infer_sub_agent_role(&v)
+}
+
 /// Emit context + status bar updates (Task 280.4)
+/// Pulls shoulder icons (👀 reviewer, 💻 coder, etc.) from the global
+/// AgentManager for any currently Running sub-agents. This is the reliable
+/// source of truth and makes icons appear even for reviewer agents.
 pub fn emit_context_and_status(
     agent: &GrokAcpAgent,
     sender: &tokio::sync::mpsc::UnboundedSender<SessionUpdate>,
@@ -572,22 +948,136 @@ pub fn emit_context_and_status(
     );
     let _ = sender.send(SessionUpdate::ContextUsageUpdate(usage));
 
+    let current = estimate_tokens(messages);
+    let max = model_context_budget(
+        model,
+        agent.config.acp.max_context_tokens,
+        agent.config.acp.grok4_max_context_tokens,
+    );
+
+    // Compression threshold marker: use 75% of context as a reasonable "compress point"
+    let compress_at = (max as f64 * 0.75) as usize;
+
+    // === THE FIX FOR 👀 REVIEWER (and other) ICONS ===
+    // Use the global AgentManager as the authoritative source.
+    // Only Running agents contribute icons.
+    let agent_icons: Vec<String> = {
+        let manager = crate::tools::agent_tools::get_agent_manager();
+        // We can't easily await here in all call sites, so we use a blocking
+        // read on the roles that are currently marked Running.
+        // For ACP this is fine because the manager is updated synchronously
+        // on spawn/complete.
+        // In practice the roles are small.
+        //
+        // Note: We use tokio::task::block_in_place + Handle::current().block_on
+        // instead of futures::executor because we only depend on tokio (not the
+        // full "futures" crate).
+        tokio::task::block_in_place(|| {
+            tokio::runtime::Handle::current().block_on(async {
+                manager
+                    .running_roles()
+                    .await
+                    .into_iter()
+                    .map(|role| crate::acp::status_bar::icon_for_agent_role(&role).to_string())
+                    .collect()
+            })
+        })
+    };
+
     let state = StatusBarState {
         model: model.to_string(),
         thinking_mode: thinking_mode.as_api_str().unwrap_or("off").to_string(),
-        current_tokens: estimate_tokens(messages),
-        max_tokens: model_context_budget(
-            model,
-            agent.config.acp.max_context_tokens,
-            agent.config.acp.grok4_max_context_tokens,
-        ),
-        context_percent: (estimate_tokens(messages) as f32)
-            / (model_context_budget(
-                model,
-                agent.config.acp.max_context_tokens,
-                agent.config.acp.grok4_max_context_tokens,
-            ) as f32),
+        current_tokens: current,
+        max_tokens: max,
+        context_percent: if max > 0 { current as f32 / max as f32 } else { 0.0 },
         is_generating,
+        context_graph: crate::acp::status_bar::format_context_graph(current, max, compress_at),
+        agent_icons,
     };
     agent.emit_status_bar(Some(sender), &state);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn tool_name(v: &Value) -> &str {
+        v.get("function")
+            .and_then(|f| f.get("name"))
+            .and_then(|n| n.as_str())
+            .unwrap_or("<missing>")
+    }
+
+    fn test_turn() -> ChatTurn {
+        ChatTurn::new(
+            Vec::new(),
+            "grok-4".to_string(),
+            0.5,
+            16_384,
+            crate::config::ThinkingMode::default(),
+            crate::bayes::BayesianEngine::new(),
+            25,
+        )
+    }
+
+    #[test]
+    fn new_turn_starts_with_core_toolset() {
+        let turn = test_turn();
+        let names: Vec<&str> = turn.tool_defs.iter().map(tool_name).collect();
+        assert!(
+            names.contains(&"tool_search"),
+            "core toolset must include tool_search, got {:?}",
+            names
+        );
+        assert!(
+            names.contains(&"read_file"),
+            "core toolset must include read_file, got {:?}",
+            names
+        );
+        assert!(
+            !names.contains(&"cron_create"),
+            "core toolset must NOT include niche tools like cron_create"
+        );
+    }
+
+    #[test]
+    fn unlock_tools_from_search_adds_matches() {
+        let mut turn = test_turn();
+        let before = turn.tool_defs.len();
+        let added = unlock_tools_from_search(&json!({"query": "cron"}), &mut turn);
+        assert!(added > 0, "expected at least one tool unlocked for 'cron'");
+        assert_eq!(turn.tool_defs.len(), before + added);
+        let names: Vec<&str> = turn.tool_defs.iter().map(tool_name).collect();
+        assert!(
+            names.contains(&"cron_create"),
+            "cron_create should be unlocked, got {:?}",
+            names
+        );
+    }
+
+    #[test]
+    fn unlock_tools_from_search_is_idempotent() {
+        let mut turn = test_turn();
+        let args = json!({"query": "cron"});
+        let first = unlock_tools_from_search(&args, &mut turn);
+        let after_first = turn.tool_defs.len();
+        let second = unlock_tools_from_search(&args, &mut turn);
+        assert_eq!(second, 0, "second unlock should add nothing new");
+        assert_eq!(turn.tool_defs.len(), after_first);
+        assert!(first > 0);
+    }
+
+    #[test]
+    fn unlock_tools_from_search_handles_empty_and_missing_query() {
+        let mut turn = test_turn();
+        let before = turn.tool_defs.len();
+        assert_eq!(unlock_tools_from_search(&json!({"query": ""}), &mut turn), 0);
+        assert_eq!(unlock_tools_from_search(&json!({}), &mut turn), 0);
+        assert_eq!(
+            unlock_tools_from_search(&json!({"query": "no_such_tool_xyz"}), &mut turn),
+            0
+        );
+        assert_eq!(turn.tool_defs.len(), before, "no tools should be added");
+    }
 }

@@ -8,6 +8,7 @@ pub mod auth;
 pub mod chat_logger;
 pub mod client;
 pub mod context;
+pub mod cot_guard; // CoT / thinking trace guard (radioactive isotope policy)
 pub mod history_compressor;
 pub mod http; // Centralized reqwest client (Task 281)
 pub mod messages;

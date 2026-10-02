@@ -199,6 +199,7 @@ impl Config {
             "acp.max_history_messages" => Ok(self.acp.max_history_messages.to_string()),
             "acp.thinking_mode" => Ok(format!("{:?}", self.acp.thinking_mode).to_lowercase()),
             "acp.stream_thinking" => Ok(self.acp.stream_thinking.to_string()),
+            "acp.core_toolset_only" => Ok(self.acp.core_toolset_only.to_string()),
 
             // Network settings
             "network.starlink_optimizations" => Ok(self.network.starlink_optimizations.to_string()),
@@ -731,6 +732,11 @@ impl Config {
             }
             "acp.require_permission" => {
                 self.acp.require_permission = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
+            }
+            "acp.core_toolset_only" => {
+                self.acp.core_toolset_only = value
                     .parse()
                     .map_err(|_| anyhow!("Invalid boolean value: {}", value))?;
             }

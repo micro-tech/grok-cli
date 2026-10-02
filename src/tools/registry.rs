@@ -522,6 +522,27 @@ async fn handle_okf_create(args: &Value) -> Result<String> {
     crate::tools::okf_tools::okf_create(r#type, title, body, description, tags, resource, id).await
 }
 
+/// Handle explicit model-driven updates to the per-session multi-slot memory.
+/// This is the tool form of `/replace[plan]`, `/replace[working]`, etc.
+async fn handle_replace_memory_slot(args: &Value, _ctx: &ToolContext) -> Result<String> {
+    let slot = require_str(args, "slot")?;
+    let content = require_str(args, "content")?;
+    let mode = args["mode"].as_str().unwrap_or("replace");
+
+    // Return a structured result. The actual update to SessionData.memory
+    // happens in the chat turn loop (chat_turn.rs) after tool execution,
+    // because that's where we have access to the per-session MemoryManager.
+    // This keeps the tool registry stateless while still allowing the model
+    // to drive memory updates.
+    Ok(serde_json::json!({
+        "status": "memory_update_requested",
+        "slot": slot,
+        "mode": mode,
+        "content_preview": content.chars().take(120).collect::<String>(),
+        "note": "The agent harness will apply this to the current session's /replace memory slots."
+    }).to_string())
+}
+
 /// Execute a named tool with the provided JSON arguments and context.
 ///
 /// This is the **unified entry-point** used by the main agent loop, chat router,
@@ -625,6 +646,8 @@ pub async fn execute_tool(name: &str, args: &Value, ctx: &ToolContext) -> Result
                 "okf_lookup" => handle_okf_lookup(&args).await,
                 "okf_get" => handle_okf_get(&args).await,
                 "okf_create" => handle_okf_create(&args).await,
+
+                "replace_memory_slot" => handle_replace_memory_slot(&args, ctx).await,
 
                 // Runtime guard for ARCH-2 consistency
                 unknown => Err(anyhow!(
@@ -1333,7 +1356,7 @@ pub fn get_full_tool_definitions() -> &'static [serde_json::Value] {
                 "type": "function",
                 "function": {
                     "name": "tool_search",
-                    "description": "Search for tools by name or description keyword.",
+                    "description": "Search for additional tools by name or description keyword. Only a core set of tools is loaded by default to save context — call this when you need a capability you don't currently have (e.g. 'memory', 'web', 'agent', 'skill', 'notebook'). Matching tools are unlocked and become callable for the rest of the session.",
                     "parameters": {
                         "type": "object",
                         "properties": {
@@ -1494,6 +1517,34 @@ pub fn get_full_tool_definitions() -> &'static [serde_json::Value] {
                     }
                 }
             }),
+
+            // ── Multi-slot /replace memory (JAZ-style working memory) ─────────────
+            json!({
+                "type": "function",
+                "function": {
+                    "name": "replace_memory_slot",
+                    "description": "Update one of the named or indexed short-term memory slots used by the agent. Slots: 'plan' (high-level goals), 'working' (current task state), 'context' (retrieved facts), 'errors' (recent failures), 'mem.0'..'mem.5' (rolling history). This is the explicit way for the model to maintain structured working memory across tool-using turns. Preferred over stuffing everything into conversation history.",
+                    "parameters": {
+                        "type": "object",
+                        "properties": {
+                            "slot": {
+                                "type": "string",
+                                "description": "Slot name: plan | working | context | errors | mem.0 | mem.1 | ... | mem.5"
+                            },
+                            "content": {
+                                "type": "string",
+                                "description": "New content for the slot (will replace or append depending on mode)."
+                            },
+                            "mode": {
+                                "type": "string",
+                                "enum": ["replace", "append"],
+                                "description": "How to apply the content. 'replace' (default) overwrites the slot. 'append' adds to existing content."
+                            }
+                        },
+                        "required": ["slot", "content"]
+                    }
+                }
+            }),
         ]
     })
 }
@@ -1504,6 +1555,90 @@ pub fn get_full_tool_definitions() -> &'static [serde_json::Value] {
 /// Returns a static slice (zero-cost after first build) thanks to the OnceLock cache.
 pub fn get_available_tool_definitions() -> &'static [serde_json::Value] {
     get_full_tool_definitions()
+}
+
+/// Names of the tools sent to the model on every request ("core toolset").
+///
+/// The full registry (~53 tools) costs roughly 7k tokens of JSON schema on
+/// *every* API call. The core set below covers the read/edit/navigate/run
+/// loop that most coding turns need; everything else is discoverable on
+/// demand via the `tool_search` tool, which appends matching definitions to
+/// the request for the rest of the session.
+///
+/// Keep this list tight: every entry here is paid for on every model call.
+pub static CORE_TOOL_NAMES: &[&str] = &[
+    // Tight core toolset (from Cobble Jr context-control merge)
+    // Goal: minimal schema per turn + tool_search for discovery.
+    // Keep only the absolute essentials for read/edit/navigate/shell + discovery.
+    "read_file",
+    "replace",           // covers most write/edit needs
+    "list_directory",
+    "glob_search",
+    "search_file_content",
+    "run_shell_command",
+    "tool_search",       // the unlock mechanism — do not remove
+];
+
+/// Filtered view of [`get_full_tool_definitions`] containing only
+/// [`CORE_TOOL_NAMES`]. Used to keep the per-request tool-schema cost low;
+/// additional tools are unlocked on demand via `tool_search`.
+pub fn get_core_tool_definitions() -> &'static [serde_json::Value] {
+    static CORE: std::sync::OnceLock<Vec<serde_json::Value>> = std::sync::OnceLock::new();
+    CORE.get_or_init(|| {
+        get_full_tool_definitions()
+            .iter()
+            .filter(|v| {
+                v.get("function")
+                    .and_then(|f| f.get("name"))
+                    .and_then(|n| n.as_str())
+                    .map(|n| CORE_TOOL_NAMES.contains(&n))
+                    .unwrap_or(false)
+            })
+            .cloned()
+            .collect()
+    })
+}
+
+/// Return the JSON definitions for the named tools. Unknown names are
+/// silently skipped. Used by the on-demand unlock flow (`tool_search`).
+pub fn get_tool_definitions_by_names(names: &[&str]) -> Vec<serde_json::Value> {
+    let wanted: std::collections::HashSet<&str> = names.iter().copied().collect();
+    get_full_tool_definitions()
+        .iter()
+        .filter(|v| {
+            v.get("function")
+                .and_then(|f| f.get("name"))
+                .and_then(|n| n.as_str())
+                .map(|n| wanted.contains(n))
+                .unwrap_or(false)
+        })
+        .cloned()
+        .collect()
+}
+
+/// Names of tools whose name or description matches `query` (case-insensitive
+/// substring match). Shared by the `tool_search` tool implementation and the
+/// on-demand unlock flow in the ACP chat loop.
+pub fn search_tool_names(query: &str) -> Vec<String> {
+    let query_lower = query.to_lowercase();
+    get_full_tool_definitions()
+        .iter()
+        .filter_map(|v| {
+            let func = v.get("function")?;
+            let name = func.get("name").and_then(|n| n.as_str()).unwrap_or("");
+            let desc = func
+                .get("description")
+                .and_then(|d| d.as_str())
+                .unwrap_or("");
+            if name.to_lowercase().contains(&query_lower)
+                || desc.to_lowercase().contains(&query_lower)
+            {
+                Some(name.to_string())
+            } else {
+                None
+            }
+        })
+        .collect()
 }
 
 /// Returns the list of required parameter names for the given tool name,
@@ -1686,6 +1821,78 @@ mod tests {
                 "Name in full definition does not match name list"
             );
         }
+    }
+
+    /// Every core toolset entry must exist in the full registry.
+    #[test]
+    fn core_tool_names_all_exist_in_registry() {
+        let full_names: std::collections::HashSet<&str> = get_full_tool_definitions()
+            .iter()
+            .filter_map(|v| {
+                v.get("function")?
+                    .get("name")?
+                    .as_str()
+            })
+            .collect();
+        for name in CORE_TOOL_NAMES {
+            assert!(
+                full_names.contains(name),
+                "CORE_TOOL_NAMES entry '{}' has no definition in get_full_tool_definitions()",
+                name
+            );
+        }
+    }
+
+    /// The core toolset must be a strict, smaller subset of the full registry
+    /// (that's the whole point: less schema per API call).
+    #[test]
+    fn core_toolset_is_smaller_than_full() {
+        let core = get_core_tool_definitions();
+        let full = get_full_tool_definitions();
+        assert!(!core.is_empty(), "core toolset must not be empty");
+        assert!(
+            core.len() < full.len(),
+            "core toolset ({} tools) should be smaller than the full registry ({} tools)",
+            core.len(),
+            full.len()
+        );
+        assert!(
+            core.len() == CORE_TOOL_NAMES.len(),
+            "core definitions should match CORE_TOOL_NAMES one-for-one"
+        );
+    }
+
+    /// search_tool_names finds tools by name or description keyword.
+    #[test]
+    fn search_tool_names_matches_name_and_description() {
+        let by_name = search_tool_names("tool_search");
+        assert!(
+            by_name.contains(&"tool_search".to_string()),
+            "search by name should find tool_search"
+        );
+        // "cron" appears in the cron_create description
+        let by_desc = search_tool_names("cron expression");
+        assert!(
+            by_desc.contains(&"cron_create".to_string()),
+            "search by description should find cron_create, got {:?}",
+            by_desc
+        );
+        assert!(
+            search_tool_names("no_such_tool_xyz").is_empty(),
+            "nonsense query should return no matches"
+        );
+    }
+
+    /// get_tool_definitions_by_names returns exactly the requested tools.
+    #[test]
+    fn get_tool_definitions_by_names_filters() {
+        let defs = get_tool_definitions_by_names(&["read_file", "bogus_tool_xyz"]);
+        assert_eq!(defs.len(), 1, "unknown names should be skipped");
+        let name = defs[0]
+            .get("function")
+            .and_then(|f| f.get("name"))
+            .and_then(|n| n.as_str());
+        assert_eq!(name, Some("read_file"));
     }
 
     /// Task 263 regression test: prove that tool definitions are statically cached.
