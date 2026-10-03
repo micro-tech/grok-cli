@@ -165,16 +165,30 @@ impl ChatTurn {
 
             // === Cobble Jr context-control: build_prompt_with_delta + pruning + compression ===
             // Optimizer is now wired into the hot path.
-            let mut tools_for_call = self.tool_defs.clone();
+            // NOTE: `build_prompt_with_delta` treats its last argument as an
+            // allow-list and DROPS every named tool not in it. An empty list
+            // therefore removed all tools (the ACP "announces but never calls"
+            // bug). Pass the names of the tools we actually want to keep.
+            let keep_names: Vec<String> = self
+                .tool_defs
+                .iter()
+                .filter_map(|t| {
+                    t.get("function")
+                        .and_then(|f| f.get("name"))
+                        .and_then(|n| n.as_str())
+                        .map(str::to_string)
+                })
+                .collect();
+            let keep_refs: Vec<&str> = keep_names.iter().map(String::as_str).collect();
 
             let (delta, optimized_tools) = build_prompt_with_delta(
                 None,
                 "",
                 false,
-                tools_for_call,
-                &[],
+                self.tool_defs.clone(),
+                &keep_refs,
             );
-            tools_for_call = optimized_tools;
+            let mut tools_for_call = optimized_tools;
 
             for schema in &mut tools_for_call {
                 let _ = compress_schema(schema);
