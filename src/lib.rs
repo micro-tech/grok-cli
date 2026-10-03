@@ -71,7 +71,7 @@ pub use grok_api::{
 };
 
 // Re-export the extended GrokClient and types
-pub use grok_client_ext::{GrokClient, MessageWithFinishReason};
+pub use grok_client_ext::{GrokClient, MessageWithFinishReason, process_prompt_cache_key};
 
 /// Helper function to extract text content from String
 /// Kept for backwards compatibility with refactored code

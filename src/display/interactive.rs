@@ -206,7 +206,16 @@ pub async fn start_interactive_mode(
     // rather than loading all skills at startup
 
     let mut session = InteractiveSession::new(model.to_string(), project_context);
-    let client = AppRouter::new(api_key, 30)?;
+    let mut client = AppRouter::new(api_key, 30)?;
+    // Prompt-cache affinity: key the xAI prefix cache to this interactive
+    // session so follow-up turns hit the cache instead of rebilling the
+    // full prompt (sent as the `x-grok-conv-id` header).
+    if config.network.prompt_cache_enabled {
+        client = client.with_prompt_cache_key(format!(
+            "grok-cli-interactive-{}",
+            session.session_id
+        ));
+    }
 
     // Display startup elements
     if interactive_config.show_banner {

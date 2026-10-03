@@ -17,6 +17,22 @@ use crate::utils::rate_limiter::UsageStats;
 pub struct GrokClient {
     inner: grok_api::GrokClient,
     rate_limit_config: Option<RateLimitConfig>,
+    /// Stable per-conversation key sent as the `x-grok-conv-id` header.
+    /// xAI caches prompt prefixes server-side per machine; without a stable
+    /// key a conversation's turns land on random servers and the prefix cache
+    /// never hits, so every turn re-bills the full prompt at full price.
+    prompt_cache_key: Option<String>,
+}
+
+/// Process-wide fallback prompt-cache key, generated once.
+///
+/// Used by entry points that don't have a finer-grained session identifier.
+/// One process generally serves one conversation (ACP stdio agent, single CLI
+/// invocation), so a process-stable key gives correct cache affinity there.
+pub fn process_prompt_cache_key() -> String {
+    static KEY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    KEY.get_or_init(|| format!("grok-cli-{}", uuid::Uuid::new_v4()))
+        .clone()
 }
 
 impl GrokClient {
@@ -26,6 +42,7 @@ impl GrokClient {
         Ok(Self {
             inner,
             rate_limit_config: None,
+            prompt_cache_key: None,
         })
     }
 
@@ -46,6 +63,7 @@ impl GrokClient {
         Ok(Self {
             inner,
             rate_limit_config: None,
+            prompt_cache_key: None,
         })
     }
 
@@ -54,6 +72,18 @@ impl GrokClient {
     /// using the UsageStats token-bucket style limiter before sending requests.
     pub fn with_rate_limits(mut self, config: RateLimitConfig) -> Self {
         self.rate_limit_config = Some(config);
+        self
+    }
+
+    /// Set the stable per-conversation prompt-cache key.
+    ///
+    /// Sent as the `x-grok-conv-id` header on every request made through this
+    /// client, giving xAI's automatic server-side prefix cache a stable
+    /// routing target so repeated turns hit the cache instead of recomputing
+    /// (and rebilling) the full prompt. The key should be stable for the
+    /// lifetime of one conversation — e.g. a session UUID.
+    pub fn with_prompt_cache_key(mut self, key: impl Into<String>) -> Self {
+        self.prompt_cache_key = Some(key.into());
         self
     }
 
@@ -200,6 +230,12 @@ impl GrokClient {
             request = request.reasoning_effort(effort);
         }
 
+        // Prompt-cache affinity: route this conversation's requests to the
+        // same xAI server so the automatic prefix cache hits across turns.
+        if let Some(key) = &self.prompt_cache_key {
+            request = request.prompt_cache_key(key.clone());
+        }
+
         let response = request.send().await?;
 
         // Convert the response to the Message format with finish_reason
@@ -291,5 +327,27 @@ mod tests {
         let client_with_limits = client.with_rate_limits(rate_config);
 
         assert!(client_with_limits.rate_limit_config.is_some());
+    }
+
+    #[test]
+    fn test_prompt_cache_key_defaults_to_none() {
+        let client = GrokClient::new("test-key").unwrap();
+        assert!(client.prompt_cache_key.is_none());
+    }
+
+    #[test]
+    fn test_with_prompt_cache_key_sets_key() {
+        let client = GrokClient::new("test-key")
+            .unwrap()
+            .with_prompt_cache_key("conv-42");
+        assert_eq!(client.prompt_cache_key.as_deref(), Some("conv-42"));
+    }
+
+    #[test]
+    fn test_process_prompt_cache_key_is_stable() {
+        // Same process must see the same key on every call so all of its
+        // requests share one xAI cache affinity target.
+        assert_eq!(process_prompt_cache_key(), process_prompt_cache_key());
+        assert!(process_prompt_cache_key().starts_with("grok-cli-"));
     }
 }

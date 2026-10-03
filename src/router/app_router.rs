@@ -61,6 +61,10 @@ use crate::router::{CpuRouter, RouterError, RouterRequest, RouterResponse};
 pub struct AppRouter {
     inner: Arc<CpuRouter>,
     rate_limit_config: Option<crate::config::RateLimitConfig>,
+    /// Stable per-conversation prompt-cache key, attached to every
+    /// [`RouterRequest`] built here and forwarded to the backend as the
+    /// `x-grok-conv-id` header for xAI prefix-cache affinity.
+    prompt_cache_key: Option<String>,
 }
 
 impl AppRouter {
@@ -78,6 +82,7 @@ impl AppRouter {
         Ok(Self {
             inner: Arc::new(CpuRouter::new(vec![Box::new(backend)])),
             rate_limit_config: None,
+            prompt_cache_key: None,
         })
     }
 
@@ -86,6 +91,18 @@ impl AppRouter {
     /// `max_requests_per_minute` and `max_tokens_per_minute` before every LLM call.
     pub fn with_rate_limits(mut self, config: crate::config::RateLimitConfig) -> Self {
         self.rate_limit_config = Some(config);
+        self
+    }
+
+    /// Attach a stable per-conversation prompt-cache key.
+    ///
+    /// Every [`RouterRequest`] built by [`Self::chat_completion_with_history`]
+    /// carries this key to the backend, which sends it as the `x-grok-conv-id`
+    /// header so xAI's automatic prefix cache hits across turns. The key
+    /// should be stable for one conversation (e.g. a session UUID) and
+    /// different across conversations.
+    pub fn with_prompt_cache_key(mut self, key: impl Into<String>) -> Self {
+        self.prompt_cache_key = Some(key.into());
         self
     }
 
@@ -191,6 +208,11 @@ impl AppRouter {
             req = req.with_reasoning_effort(effort);
         }
 
+        // Prompt-cache affinity for this conversation (x-grok-conv-id header).
+        if let Some(key) = &self.prompt_cache_key {
+            req = req.with_prompt_cache_key(key.clone());
+        }
+
         let resp = self
             .inner
             .route(&req)
@@ -273,5 +295,19 @@ mod tests {
         let clone = router.clone();
         // Both point at the same CpuRouter allocation.
         assert!(Arc::ptr_eq(&router.inner, &clone.inner));
+    }
+
+    #[test]
+    fn prompt_cache_key_defaults_to_none() {
+        let router = AppRouter::new("xai-placeholder-key", 30).unwrap();
+        assert!(router.prompt_cache_key.is_none());
+    }
+
+    #[test]
+    fn with_prompt_cache_key_sets_key() {
+        let router = AppRouter::new("xai-placeholder-key", 30)
+            .unwrap()
+            .with_prompt_cache_key("session-abc");
+        assert_eq!(router.prompt_cache_key.as_deref(), Some("session-abc"));
     }
 }
