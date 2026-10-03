@@ -117,6 +117,7 @@ impl CpuRouter {
                 max_tokens: req.max_tokens,
                 temperature: req.temperature,
                 reasoning_effort: req.reasoning_effort.clone(),
+                prompt_cache_key: req.prompt_cache_key.clone(),
             };
 
             // Call the backend (retries + back-off happen inside `route`).
@@ -282,6 +283,7 @@ impl CpuRouter {
                 max_tokens: req.max_tokens,
                 temperature: req.temperature,
                 reasoning_effort: req.reasoning_effort.clone(),
+                prompt_cache_key: req.prompt_cache_key.clone(),
             };
 
             let resp = self.route(&iter_req).await?;
