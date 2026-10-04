@@ -9,7 +9,7 @@
 //! - Easier to test individual phases
 
 use crate::acp::context_trim::{
-    estimate_tokens, model_context_budget, trim_to_token_budget, truncate_tool_results,
+    estimate_tokens, model_context_budget, trim_to_token_budget,
 };
 use crate::acp::protocol::{SessionUpdate, ToolCall as ProtocolToolCall, ToolCallStatus, ToolCallUpdate};
 use crate::acp::{PermissionBridge, GrokAcpAgent};
@@ -82,11 +82,8 @@ impl ChatTurn {
 
     /// Re-apply trimming guards before an API call.
     pub fn reapply_trims(&mut self, config: &crate::config::Config) {
-        let max_tc = config.acp.max_tool_result_chars;
-        if max_tc > 0 {
-            truncate_tool_results(&mut self.messages, max_tc);
-        }
-
+        // Task 465: tool results are truncated at the single append point
+        // (utils::messages::tool_result_capped), so no per-loop sweep here.
         let max_hist = config.acp.max_history_messages;
         if self.messages.len() > max_hist {
             let drop = self.messages.len() - max_hist;
@@ -267,6 +264,19 @@ impl ChatTurn {
             // Use extracted retrying API caller (Task 280.2)
             let response_with_finish =
                 perform_api_call_with_retries(agent, self).await?;
+
+            // Task 463: feed the *real* API-reported token counts into the
+            // per-session ContextBudget (delta-prompting thresholds and spend
+            // tracking now run on real numbers, not the 4-chars-per-token
+            // estimate).  Best-effort: never fail the turn on a budget error.
+            if let Some(usage) = &response_with_finish.usage {
+                let mut sessions = agent.sessions.write().await;
+                if let Some(session) = sessions.get_mut(&session_id.0) {
+                    let _ = session
+                        .token_budget
+                        .record_usage(usage.prompt_tokens, usage.completion_tokens);
+                }
+            }
 
             let api_duration = std::time::Instant::now() - loop_start;
             info!("✅ Grok API responded in {:?}", api_duration);
@@ -643,6 +653,9 @@ pub async fn process_tool_calls(
     permission_bridge: Option<&Arc<PermissionBridge>>,
     local_always_allow: &std::collections::HashSet<String>,
 ) -> Result<()> {
+    // Task 465: tool results are truncated at the single append point
+    // (tool_result_capped) using the configured cap.
+    let max_tool_chars = agent.config.acp.max_tool_result_chars;
     for (idx, tool_call) in tool_calls.iter().enumerate() {
         let tool_start = std::time::Instant::now();
         let function_name = &tool_call.function.name;
@@ -669,11 +682,11 @@ pub async fn process_tool_calls(
         {
             let hooks = agent.get_hook_manager().read().await;
             if !hooks.execute_before_tool(function_name, &args)? {
-                turn.messages.push(json!({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": "Tool execution blocked by hook."
-                }));
+                turn.messages.push(crate::utils::messages::tool_result_capped(
+                    &tool_call.id,
+                    "Tool execution blocked by hook.",
+                    max_tool_chars,
+                ));
                 continue;
             }
         }
@@ -699,11 +712,13 @@ pub async fn process_tool_calls(
                     match tokio::time::timeout(timeout, rx).await {
                         Ok(Ok(outcome)) => {
                             if outcome.is_cancelled() {
-                                turn.messages.push(json!({
-                                    "role": "tool",
-                                    "tool_call_id": tool_call.id,
-                                    "content": "User rejected the tool execution."
-                                }));
+                                turn.messages.push(
+                                    crate::utils::messages::tool_result_capped(
+                                        &tool_call.id,
+                                        "User rejected the tool execution.",
+                                        max_tool_chars,
+                                    ),
+                                );
                                 continue;
                             }
                             if outcome.is_always_allow() {
@@ -822,11 +837,11 @@ pub async fn process_tool_calls(
             content.clone()
         };
 
-        turn.messages.push(json!({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": final_tool_content
-        }));
+        turn.messages.push(crate::utils::messages::tool_result_capped(
+            &tool_call.id,
+            final_tool_content,
+            max_tool_chars,
+        ));
 
         // === Task 454: Auto-update multi-slot /replace memory from tool results ===
         // This implements the JAZ-style "LLM acts → sees result → memory updated → next turn"

@@ -3,6 +3,7 @@
 use std::sync::atomic::{AtomicU32, Ordering};
 
 /// Simple atomic token counter.
+#[derive(Debug)]
 pub struct TokenCounter {
     input: AtomicU32,
     output: AtomicU32,
@@ -32,6 +33,16 @@ impl TokenCounter {
 
     pub fn total(&self) -> u32 {
         self.input.load(Ordering::Relaxed) + self.output.load(Ordering::Relaxed)
+    }
+
+    /// Snapshot of input tokens recorded so far.
+    pub fn input_tokens(&self) -> u32 {
+        self.input.load(Ordering::Relaxed)
+    }
+
+    /// Snapshot of output tokens recorded so far.
+    pub fn output_tokens(&self) -> u32 {
+        self.output.load(Ordering::Relaxed)
     }
 
     pub fn reset(&self) {

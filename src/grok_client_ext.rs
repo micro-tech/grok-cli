@@ -275,6 +275,10 @@ pub struct MessageWithFinishReason {
     /// Chain-of-thought reasoning produced by the model when `reasoning_effort`
     /// was set.  `None` for models / modes that do not return a reasoning trace.
     pub thinking_content: Option<String>,
+    /// Real token counts reported by the API for this response.
+    /// (Full path: `crate::utils::rate_limiter::UsageStats` is a *different*
+    /// struct already imported above.)
+    pub usage: Option<crate::router::response::UsageStats>,
 }
 
 /// Convert ChatResponse to Message format with finish_reason
@@ -285,10 +289,20 @@ fn convert_response_to_message_with_finish_reason(
     if let Some(choice) = response.choices.first() {
         // Extract the reasoning / thinking content if the model produced one.
         let thinking_content = choice.message.reasoning_content.clone();
+        // Keep the real token counts the API reported — callers feed these
+        // into ContextBudget / spend tracking instead of the 4-chars-per-token
+        // estimate (Task 463).
+        let u = &response.usage;
+        let usage = crate::router::response::UsageStats {
+            prompt_tokens: u.prompt_tokens,
+            completion_tokens: u.completion_tokens,
+            total_tokens: u.total_tokens,
+        };
         Ok(MessageWithFinishReason {
             message: choice.message.clone(),
             finish_reason: choice.finish_reason.clone(),
             thinking_content,
+            usage: Some(usage),
         })
     } else {
         // Fallback if no choices
@@ -303,6 +317,7 @@ fn convert_response_to_message_with_finish_reason(
             },
             finish_reason: Some("stop".to_string()),
             thinking_content: None,
+            usage: None,
         })
     }
 }
@@ -349,5 +364,60 @@ mod tests {
         // requests share one xAI cache affinity target.
         assert_eq!(process_prompt_cache_key(), process_prompt_cache_key());
         assert!(process_prompt_cache_key().starts_with("grok-cli-"));
+    }
+
+    #[test]
+    fn test_convert_response_carries_real_usage() {
+        // Task 463: the real API-reported token counts must survive the
+        // conversion so ContextBudget / spend tracking run on real numbers.
+        use grok_api::{Choice, Usage};
+        let response = GrokApiChatResponse {
+            id: "chatcmpl-1".to_string(),
+            object: "chat.completion".to_string(),
+            created: 1_700_000_000,
+            model: "grok-4".to_string(),
+            choices: vec![Choice {
+                index: 0,
+                message: Message {
+                    role: "assistant".to_string(),
+                    content: Some(MessageContent::Text("hi".to_string())),
+                    tool_calls: None,
+                    reasoning_content: None,
+                },
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage: Usage {
+                prompt_tokens: 1234,
+                completion_tokens: 56,
+                total_tokens: 1290,
+                cached_prompt_tokens: None,
+                reasoning_tokens: None,
+            },
+        };
+        let mwfr = convert_response_to_message_with_finish_reason(response).unwrap();
+        let usage = mwfr.usage.expect("usage must be populated from the API response");
+        assert_eq!(usage.prompt_tokens, 1234);
+        assert_eq!(usage.completion_tokens, 56);
+        assert_eq!(usage.total_tokens, 1290);
+    }
+
+    #[test]
+    fn test_convert_response_without_choices_has_no_usage() {
+        let response = GrokApiChatResponse {
+            id: "chatcmpl-2".to_string(),
+            object: "chat.completion".to_string(),
+            created: 1_700_000_000,
+            model: "grok-4".to_string(),
+            choices: vec![],
+            usage: grok_api::Usage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+                cached_prompt_tokens: None,
+                reasoning_tokens: None,
+            },
+        };
+        let mwfr = convert_response_to_message_with_finish_reason(response).unwrap();
+        assert!(mwfr.usage.is_none());
     }
 }

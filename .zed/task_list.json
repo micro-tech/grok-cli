@@ -1,180 +1,540 @@
 {
-  "tasks": [
+ "tasks": [
+  {
+   "id": 426,
+   "title": "Discover Recurring Code Abstractions and Patterns",
+   "description": "Automatically surface useful abstractions, naming patterns, and architectural idioms from the codebase and recent changes.",
+   "status": "pending",
+   "dependencies": [
+    361
+   ],
+   "priority": "medium",
+   "details": "Lightweight concept mining for code.\n- Scan recent patches, files, and task outcomes for repeated structures.\n- Propose named abstractions or conventions when they appear multiple times.\n- Store them in a simple, queryable form (OKF or local index).\n- Use discovered patterns to improve future code generation suggestions.\n- Keep scope to this project \u2014 no wild cross-domain claims.\n\n[Surveyor-1 audit 2026-10-04] Audit 2026-10-04: still open. No code-abstraction/concept-mining module found (no mining modules under src/; HOH skill evolution is about agent skills, not code abstractions).",
+   "testStrategy": "1. The system identifies at least 2-3 meaningful recurring patterns per significant batch of changes.\n2. Discovered abstractions are human-readable and actionable.\n3. Using the discovered patterns measurably improves suggestion quality in later tasks.",
+   "subtasks": []
+  },
+  {
+   "id": 427,
+   "title": "Mine Common Improvement Patterns from Task History",
+   "description": "Extract recurring successful (and unsuccessful) approaches from past tasks, patches, and reviews.",
+   "status": "pending",
+   "dependencies": [
+    361
+   ],
+   "priority": "high",
+   "details": "Practical pattern mining for a coding agent.\n- Focus on code changes, debugging steps, refactor types, and testing approaches.\n- Cluster similar successful tactics.\n- Represent patterns simply (e.g. 'when you see X, try Y').\n- Make patterns available during planning and code generation.\n- Track which patterns correlate with better outcomes.\n\n[Surveyor-1 audit 2026-10-04] Audit 2026-10-04: still open. No task-history pattern-mining implementation found.",
+   "testStrategy": "1. System can surface 5-10 high-frequency patterns from history.\n2. Patterns are specific enough to be applied by the agent.\n3. Using mined patterns improves task success rate or reduces iterations in experiments.",
+   "subtasks": []
+  },
+  {
+   "id": 428,
+   "title": "Apply Mined Patterns During Code Changes",
+   "description": "Use discovered patterns to guide or validate code generation and refactoring.",
+   "status": "pending",
+   "dependencies": [
+    361,
+    427
+   ],
+   "priority": "high",
+   "details": "Pattern application layer.\n- Before making changes, check against known good patterns.\n- Suggest applying relevant patterns when appropriate.\n- After changes, check whether known patterns were followed or violated.\n- Allow easy override and learning from exceptions.\n- Start with read-only suggestions before any automatic application.\n\n[Surveyor-1 audit 2026-10-04] Audit 2026-10-04: still open. No pattern-application layer for code changes found.",
+   "testStrategy": "1. Relevant patterns are surfaced during realistic coding tasks.\n2. Pattern suggestions are accepted at a reasonable rate.\n3. Following patterns correlates with fewer review comments or faster task completion.",
+   "subtasks": []
+  },
+  {
+   "id": 433,
+   "title": "Analyze Tool Usage and Suggest Improvements",
+   "description": "Review how tools are actually used and propose practical improvements to tool design or prompts.",
+   "status": "pending",
+   "dependencies": [
+    361
+   ],
+   "priority": "medium",
+   "details": "Grounded tool evolution.\n- Collect telemetry on tool calls, success/failure rates, and common errors.\n- Identify frequently misused, underused, or painful tools.\n- Generate concrete suggestions (better descriptions, parameter changes, new helper tools, prompt adjustments).\n- Keep all suggestions human-reviewable.\n- Do not allow fully autonomous tool creation or deletion yet.\n\n[Surveyor-1 audit 2026-10-04] Audit 2026-10-04: still open. No tool-call telemetry collection or improvement-proposal implementation found.",
+   "testStrategy": "1. Usage data is collected automatically.\n2. The system produces at least a few actionable tool improvement proposals from real usage.\n3. Implemented suggestions reduce tool-related failures or friction.",
+   "subtasks": []
+  },
+  {
+   "id": 434,
+   "title": "Implement Task 411: Evaluation-Driven Self-Improvement Loop",
+   "description": "Grounded self-improvement: Turn evaluation results, improvement_suggestions, and task outcomes into concrete, reviewable proposals for prompts, heuristics, and agent behavior. Start simple and human-review gated.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Completed: Added SelfImprovementProposal type, generate_self_improvement_proposals() in new self_improvement.rs module. Wired generation into outer_loop after evaluation. Proposals are logged, stored in HOHPlan, and are concrete/reviewable (prompt tweaks, heuristic changes, test_strategy enforcement, patch quality). All changes human-gated. Updated state + planner fallbacks.",
+   "testStrategy": "After running a HOH iteration, the system should surface at least 2-3 concrete self-improvement proposals in logs or state. Proposals should be specific and actionable.",
+   "subtasks": []
+  },
+  {
+   "id": 450,
+   "title": "Design multi-slot /replace memory specification",
+   "description": "Define the structure, naming rules, and indexing format for multi-slot /replace memory blocks.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Core structures fully implemented and tested (451-453). Design embodied in MemorySlot, SlotType, MemoryManager, and compaction. All relevant tests pass.",
+   "testStrategy": "Verify the spec is complete, unambiguous, and covers naming, indexing, limits, and promotion rules. Validate with example memory blocks.",
+   "subtasks": []
+  },
+  {
+   "id": 451,
+   "title": "Implement Rust MemorySlot struct",
+   "description": "Create the Rust struct representing a single /replace memory slot.",
+   "status": "done",
+   "dependencies": [
+    450
+   ],
+   "priority": "high",
+   "details": "Fully implemented in src/memory/replace_slot.rs with MemorySlot + SlotType, update/append, token_count, compact, summarize, promote_to_okf, and tests.",
+   "testStrategy": "Unit test struct creation, updating, token counting, and summarization. Ensure max_tokens enforcement works.",
+   "subtasks": []
+  },
+  {
+   "id": 452,
+   "title": "Implement MemoryManager for multi-slot system",
+   "description": "Create a manager that handles multiple named and indexed /replace memory slots.",
+   "status": "done",
+   "dependencies": [
+    451
+   ],
+   "priority": "high",
+   "details": "Fully implemented in src/memory/memory_manager.rs: named slots (plan/working/context/errors), indexed mem.N slots, update_slot, get_slot, compact_all (priority order), evict_oldest, serialize_for_prompt, promote_all stub, auto-compaction, and unit tests.",
+   "testStrategy": "Test adding, updating, compacting, and promoting slots. Validate serialization output matches prompt builder requirements.",
+   "subtasks": []
+  },
+  {
+   "id": 453,
+   "title": "Implement context compaction algorithm",
+   "description": "Create the algorithm that summarizes older memory blocks and reduces token usage.",
+   "status": "done",
+   "dependencies": [
+    452
+   ],
+   "priority": "high",
+   "details": "Full deterministic compaction implemented in src/memory/compaction.rs with 8-step pipeline, slot-specific rules, integrated into MemorySlot and MemoryManager. All tests pass.",
+   "testStrategy": "Feed large memory sets and verify compaction reduces tokens by 50\u201380% while preserving meaning. Validate deterministic output.",
+   "subtasks": []
+  },
+  {
+   "id": 454,
+   "title": "Integrate MemoryManager into agent loop",
+   "description": "Modify the Rust agent loop to use multi-slot /replace memory.",
+   "status": "done",
+   "dependencies": [
+    452,
+    453
+   ],
+   "priority": "high",
+   "details": "MemoryManager and slots exist but not yet integrated into the main agent loop, prompt builder, or recursive invoke paths.\n\n[Surveyor-1 audit 2026-10-04] Verified DONE. MemoryManager is a session field (src/acp/mod.rs:194), instantiated with config (src/acp/mod.rs:684-688, 2472-2476); per-turn slot updates + compaction in src/acp/chat_turn.rs:819-885; memory injected into prompt at src/acp/chat_turn.rs:210.",
+   "testStrategy": "Run simulated agent loops and verify memory updates, compaction, and prompt injection work correctly. Validate no runaway context growth.",
+   "subtasks": []
+  },
+  {
+   "id": 455,
+   "title": "Update prompt builder to include named memory slots",
+   "description": "Modify prompt builder to inject multi-slot /replace blocks into the LLM prompt.",
+   "status": "done",
+   "dependencies": [
+    454
+   ],
+   "priority": "medium",
+   "details": "Update prompt builder:\n- Add sections for each slot: plan, working, context, errors\n- Add indexed blocks: mem.0, mem.1, mem.2\n- Ensure consistent formatting\n- Ensure LLM instructions explain how to use slots\n- Add token budgeting logic\n\n[Surveyor-1 audit 2026-10-04] Verified DONE. MemoryManager::serialize_for_prompt (src/memory/memory_manager.rs:380) injects labeled named slots (plan/working/context/errors) + indexed mem.N as a dedicated system block in src/acp/chat_turn.rs:200-215; token budgets via MemoryConfig; unit test serialize_for_prompt_produces_labeled_sections (memory_manager.rs:534).",
+   "testStrategy": "Verify prompt output includes all slots in correct order. Validate formatting and token budgeting.",
+   "subtasks": []
+  },
+  {
+   "id": 456,
+   "title": "Implement OKF promotion pipeline",
+   "description": "Add logic to promote important memory facts into OKF bundles.",
+   "status": "done",
+   "dependencies": [
+    453
+   ],
+   "priority": "medium",
+   "details": "Implement promotion rules:\n- Detect stable facts\n- Detect repeated patterns\n- Detect long-term relevance\n- Write promoted facts into OKF bundles via Helix\n- Remove promoted content from short-term memory\n\n[Surveyor-1 audit 2026-10-04] Verified DONE. MemoryManager::promote_all (src/memory/memory_manager.rs:243-326) promotes stable slot content to OKF, marks promoted slots, and logs; /memory promote wired (memory_manager.rs:474); unit test promote_all_collects_candidates (memory_manager.rs:562).",
+   "testStrategy": "Test promotion with simulated memory. Verify OKF bundles update correctly and memory shrinks.",
+   "subtasks": []
+  },
+  {
+   "id": 457,
+   "title": "Add LLM instructions for multi-slot memory",
+   "description": "Update system prompt to teach the LLM how to use named and indexed memory slots.",
+   "status": "done",
+   "dependencies": [
+    455
+   ],
+   "priority": "medium",
+   "details": "Add instructions:\n- Explain each slot: plan, working, context, errors\n- Explain indexed slots: mem.0, mem.1, mem.2\n- Explain update rules\n- Explain compaction behavior\n- Explain OKF promotion\n- Provide usage examples\n\n[Surveyor-1 audit 2026-10-04] Verified DONE. LLM slot instructions (slot list, update rules, compaction behavior, examples) injected in src/acp/chat_turn.rs:231-246.",
+   "testStrategy": "Run LLM tests verifying correct usage of memory slots. Validate no hallucinated slot names.",
+   "subtasks": []
+  },
+  {
+   "id": 458,
+   "title": "End-to-end integration test",
+   "description": "Test the full multi-slot memory system inside the coding agent.",
+   "status": "pending",
+   "dependencies": [
+    454,
+    455,
+    456,
+    457
+   ],
+   "priority": "high",
+   "details": "Perform full integration test:\n- Run agent through multi-step coding task\n- Verify memory updates\n- Verify compaction\n- Verify OKF promotion\n- Verify prompt injection\n- Verify cost reduction\n- Verify stability across recursive invoke() calls\n\n[Surveyor-1 audit 2026-10-04] Audit 2026-10-04: still open. No end-to-end test found exercising the full multi-slot loop (multi-step task + memory updates + compaction + OKF promotion + prompt injection). Unit tests exist per component (memory_manager.rs:502, replace_slot.rs:192, compaction.rs:343) but no e2e harness in tests/.",
+   "testStrategy": "Run long-horizon coding tasks and confirm stable behavior, reduced context size, and correct memory usage.",
+   "subtasks": []
+  },
+  {
+   "id": 459,
+   "title": "Document multi-slot memory system",
+   "description": "Write full documentation for the new memory system.",
+   "status": "done",
+   "dependencies": [
+    458
+   ],
+   "priority": "low",
+   "details": "Document:\n- MemorySlot struct\n- MemoryManager\n- Compaction algorithm\n- OKF promotion\n- Prompt builder integration\n- LLM usage rules\n- Examples and diagrams\n\n[Surveyor-1 audit 2026-10-04] Verified DONE. docs/multi_slot_replace_memory_spec.md covers MemorySlot, MemoryManager, compaction, OKF promotion, prompt injection format, config, and JSON schema.",
+   "testStrategy": "Verify documentation is complete, accurate, and matches implementation.",
+   "subtasks": []
+  },
+  {
+   "id": 462,
+   "title": "Complete /handoffs Slash Command Wiring and Handoff Logging Integration (Code Review Follow-up)",
+   "description": "Finish the integration of the /handoffs feature (Tasks 418/419) so the command is advertised, dispatched, auto-logs on every planner step, appears in status bar, and exposes analysis programmatically for HOH.",
+   "status": "pending",
+   "dependencies": [
+    418,
+    419
+   ],
+   "priority": "high",
+   "details": "Code review (post-418/419) identified critical gaps:\n- /handoffs not present in get_available_commands() (invisible in Zed picker)\n- BuiltinResult::ShowHandoffs never handled in handle_builtin_result (acp.rs + chat.rs)\n- Exhaustiveness test in slash_commands.rs is missing the variant (repeat of ReplaceMemory bug)\n- log_role_handoff() and log_handoff() have almost zero callers\n- No status bar integration\n\nConfirmed decisions from review:\n- Command variant: BuiltinResult::ShowHandoffs\n- Persistence: session snapshot only (no extra OKF/persistence for now)\n- Auto-log aggressiveness: log a handoff on every planner step + role switches + agent spawns/delegates\n- Programmatic access: expose structured analysis (not just string) for HOH consumption\n- UI: show a short handoff summary in the status bar when events exist\n\nScope of work:\n1. Add \"handoffs\" entry to get_available_commands() (with good description).\n2. Implement handling for BuiltinResult::ShowHandoffs in acp.rs handle_builtin_result (call get_handoff_log).\n3. Wire the same in CLI interactive chat slash handler.\n4. Fix the builtin_result_is_exhaustive test (and any other match sites).\n5. Call log_role_handoff from actual role switch paths.\n6. Add auto-log calls on planner steps (and key spawn/delegate points).\n7. Add programmatic API (e.g. get_handoff_analysis or expose HandoffAnalysis) for HOH.\n8. Surface short summary in status bar (emit_context_and_status / status_bar paths).\n9. Add/update tests (unit for analysis, integration for full command flow).\n10. Update task 418/419 descriptions to note wiring completed in 462.\n\nKeep the design lightweight and session-scoped as originally implemented in handoff.rs.\n\n[Surveyor-1 audit 2026-10-04] Audit 2026-10-04: partially done, still open. Wired: /handoffs in get_available_commands (slash_commands.rs:488), ShowHandoffs dispatched (slash_commands.rs:885) and handled in acp.rs:1199 + chat.rs:745, exhaustiveness test covers the variant (slash_commands.rs:1827), markdown output with totals/warnings (mod.rs:1644-1683), role-switch auto-logging (acp.rs:1175,1191). Missing: auto-log on planner steps and agent spawns/delegates, status-bar handoff summary (no handoff refs in status_bar.rs), HOH programmatic consumption of HandoffAnalysis.",
+   "testStrategy": "1. /handoffs appears in ACP available commands, /help, and Zed slash picker.\n2. /handoffs in both ACP and CLI returns useful markdown including total, empty-context warnings, role switches, and most-common pair.\n3. Role switches automatically produce HandoffEvent entries.\n4. Planner steps (and at least one spawn/delegate) automatically log handoffs.\n5. Exhaustiveness test compiles cleanly and covers ShowHandoffs.\n6. HOH code can call a new get_handoff_analysis() (or equivalent) and receive structured data (not just string).\n7. Status bar shows a short handoff indicator/summary when events exist.\n8. Session save/load round-trips the handoffs vec correctly.\n9. No regression in other slash commands (full test suite for slash_commands + handle_builtin_result).\n10. cargo test + cargo check clean.",
+   "subtasks": []
+  },
+  {
+   "id": 463,
+   "title": "Plumb real xAI token usage into ContextBudget",
+   "description": "The xAI API returns real token counts but they are discarded (usage never read, router hardcodes None), so ContextBudget, delta-prompting thresholds, and spend tracking all run on the 4-chars-per-token estimate.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "1) Add `usage` field to MessageWithFinishReason in src/grok_client_ext.rs. 2) Plumb it through RouterResponse in src/router/backends/grok.rs, replacing the hardcoded `usage: None`. 3) Record real per-turn counts into ContextBudget. 4) Verify delta-prompting thresholds, budget trims, and spend tracking use the real numbers.",
+   "testStrategy": "cargo test; run a chat turn and confirm ContextBudget reflects API-reported usage instead of estimates.",
+   "subtasks": [
     {
-      "id": 426,
-      "title": "Discover Recurring Code Abstractions and Patterns",
-      "description": "Automatically surface useful abstractions, naming patterns, and architectural idioms from the codebase and recent changes.",
-      "status": "pending",
-      "dependencies": [361],
-      "priority": "medium",
-      "details": "Lightweight concept mining for code.\n- Scan recent patches, files, and task outcomes for repeated structures.\n- Propose named abstractions or conventions when they appear multiple times.\n- Store them in a simple, queryable form (OKF or local index).\n- Use discovered patterns to improve future code generation suggestions.\n- Keep scope to this project — no wild cross-domain claims.",
-      "testStrategy": "1. The system identifies at least 2-3 meaningful recurring patterns per significant batch of changes.\n2. Discovered abstractions are human-readable and actionable.\n3. Using the discovered patterns measurably improves suggestion quality in later tasks.",
-      "subtasks": []
+     "id": "463.1",
+     "status": "done",
+     "title": "Add usage field to MessageWithFinishReason"
     },
     {
-      "id": 427,
-      "title": "Mine Common Improvement Patterns from Task History",
-      "description": "Extract recurring successful (and unsuccessful) approaches from past tasks, patches, and reviews.",
-      "status": "pending",
-      "dependencies": [361],
-      "priority": "high",
-      "details": "Practical pattern mining for a coding agent.\n- Focus on code changes, debugging steps, refactor types, and testing approaches.\n- Cluster similar successful tactics.\n- Represent patterns simply (e.g. 'when you see X, try Y').\n- Make patterns available during planning and code generation.\n- Track which patterns correlate with better outcomes.",
-      "testStrategy": "1. System can surface 5-10 high-frequency patterns from history.\n2. Patterns are specific enough to be applied by the agent.\n3. Using mined patterns improves task success rate or reduces iterations in experiments.",
-      "subtasks": []
+     "id": "463.2",
+     "status": "done",
+     "title": "Plumb usage through RouterResponse"
     },
     {
-      "id": 428,
-      "title": "Apply Mined Patterns During Code Changes",
-      "description": "Use discovered patterns to guide or validate code generation and refactoring.",
-      "status": "pending",
-      "dependencies": [361, 427],
-      "priority": "high",
-      "details": "Pattern application layer.\n- Before making changes, check against known good patterns.\n- Suggest applying relevant patterns when appropriate.\n- After changes, check whether known patterns were followed or violated.\n- Allow easy override and learning from exceptions.\n- Start with read-only suggestions before any automatic application.",
-      "testStrategy": "1. Relevant patterns are surfaced during realistic coding tasks.\n2. Pattern suggestions are accepted at a reasonable rate.\n3. Following patterns correlates with fewer review comments or faster task completion.",
-      "subtasks": []
+     "id": "463.3",
+     "status": "done",
+     "title": "Record real counts into ContextBudget per turn"
     },
     {
-      "id": 433,
-      "title": "Analyze Tool Usage and Suggest Improvements",
-      "description": "Review how tools are actually used and propose practical improvements to tool design or prompts.",
-      "status": "pending",
-      "dependencies": [361],
-      "priority": "medium",
-      "details": "Grounded tool evolution.\n- Collect telemetry on tool calls, success/failure rates, and common errors.\n- Identify frequently misused, underused, or painful tools.\n- Generate concrete suggestions (better descriptions, parameter changes, new helper tools, prompt adjustments).\n- Keep all suggestions human-reviewable.\n- Do not allow fully autonomous tool creation or deletion yet.",
-      "testStrategy": "1. Usage data is collected automatically.\n2. The system produces at least a few actionable tool improvement proposals from real usage.\n3. Implemented suggestions reduce tool-related failures or friction.",
-      "subtasks": []
-    },
-    {
-      "id": 434,
-      "title": "Implement Task 411: Evaluation-Driven Self-Improvement Loop",
-      "description": "Grounded self-improvement: Turn evaluation results, improvement_suggestions, and task outcomes into concrete, reviewable proposals for prompts, heuristics, and agent behavior. Start simple and human-review gated.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Completed: Added SelfImprovementProposal type, generate_self_improvement_proposals() in new self_improvement.rs module. Wired generation into outer_loop after evaluation. Proposals are logged, stored in HOHPlan, and are concrete/reviewable (prompt tweaks, heuristic changes, test_strategy enforcement, patch quality). All changes human-gated. Updated state + planner fallbacks.",
-      "testStrategy": "After running a HOH iteration, the system should surface at least 2-3 concrete self-improvement proposals in logs or state. Proposals should be specific and actionable.",
-      "subtasks": []
-    },
-    {
-      "id": 450,
-      "title": "Design multi-slot /replace memory specification",
-      "description": "Define the structure, naming rules, and indexing format for multi-slot /replace memory blocks.",
-      "status": "done",
-      "dependencies": [],
-      "priority": "high",
-      "details": "Core structures fully implemented and tested (451-453). Design embodied in MemorySlot, SlotType, MemoryManager, and compaction. All relevant tests pass.",
-      "testStrategy": "Verify the spec is complete, unambiguous, and covers naming, indexing, limits, and promotion rules. Validate with example memory blocks.",
-      "subtasks": []
-    },
-    {
-      "id": 451,
-      "title": "Implement Rust MemorySlot struct",
-      "description": "Create the Rust struct representing a single /replace memory slot.",
-      "status": "done",
-      "dependencies": [450],
-      "priority": "high",
-      "details": "Fully implemented in src/memory/replace_slot.rs with MemorySlot + SlotType, update/append, token_count, compact, summarize, promote_to_okf, and tests.",
-      "testStrategy": "Unit test struct creation, updating, token counting, and summarization. Ensure max_tokens enforcement works.",
-      "subtasks": []
-    },
-    {
-      "id": 452,
-      "title": "Implement MemoryManager for multi-slot system",
-      "description": "Create a manager that handles multiple named and indexed /replace memory slots.",
-      "status": "done",
-      "dependencies": [451],
-      "priority": "high",
-      "details": "Fully implemented in src/memory/memory_manager.rs: named slots (plan/working/context/errors), indexed mem.N slots, update_slot, get_slot, compact_all (priority order), evict_oldest, serialize_for_prompt, promote_all stub, auto-compaction, and unit tests.",
-      "testStrategy": "Test adding, updating, compacting, and promoting slots. Validate serialization output matches prompt builder requirements.",
-      "subtasks": []
-    },
-    {
-      "id": 453,
-      "title": "Implement context compaction algorithm",
-      "description": "Create the algorithm that summarizes older memory blocks and reduces token usage.",
-      "status": "done",
-      "dependencies": [452],
-      "priority": "high",
-      "details": "Full deterministic compaction implemented in src/memory/compaction.rs with 8-step pipeline, slot-specific rules, integrated into MemorySlot and MemoryManager. All tests pass.",
-      "testStrategy": "Feed large memory sets and verify compaction reduces tokens by 50–80% while preserving meaning. Validate deterministic output.",
-      "subtasks": []
-    },
-    {
-      "id": 454,
-      "title": "Integrate MemoryManager into agent loop",
-      "description": "Modify the Rust agent loop to use multi-slot /replace memory.",
-      "status": "pending",
-      "dependencies": [452, 453],
-      "priority": "high",
-      "details": "MemoryManager and slots exist but not yet integrated into the main agent loop, prompt builder, or recursive invoke paths.",
-      "testStrategy": "Run simulated agent loops and verify memory updates, compaction, and prompt injection work correctly. Validate no runaway context growth.",
-      "subtasks": []
-    },
-    {
-      "id": 455,
-      "title": "Update prompt builder to include named memory slots",
-      "description": "Modify prompt builder to inject multi-slot /replace blocks into the LLM prompt.",
-      "status": "pending",
-      "dependencies": [454],
-      "priority": "medium",
-      "details": "Update prompt builder:\n- Add sections for each slot: plan, working, context, errors\n- Add indexed blocks: mem.0, mem.1, mem.2\n- Ensure consistent formatting\n- Ensure LLM instructions explain how to use slots\n- Add token budgeting logic",
-      "testStrategy": "Verify prompt output includes all slots in correct order. Validate formatting and token budgeting.",
-      "subtasks": []
-    },
-    {
-      "id": 456,
-      "title": "Implement OKF promotion pipeline",
-      "description": "Add logic to promote important memory facts into OKF bundles.",
-      "status": "pending",
-      "dependencies": [453],
-      "priority": "medium",
-      "details": "Implement promotion rules:\n- Detect stable facts\n- Detect repeated patterns\n- Detect long-term relevance\n- Write promoted facts into OKF bundles via Helix\n- Remove promoted content from short-term memory",
-      "testStrategy": "Test promotion with simulated memory. Verify OKF bundles update correctly and memory shrinks.",
-      "subtasks": []
-    },
-    {
-      "id": 457,
-      "title": "Add LLM instructions for multi-slot memory",
-      "description": "Update system prompt to teach the LLM how to use named and indexed memory slots.",
-      "status": "pending",
-      "dependencies": [455],
-      "priority": "medium",
-      "details": "Add instructions:\n- Explain each slot: plan, working, context, errors\n- Explain indexed slots: mem.0, mem.1, mem.2\n- Explain update rules\n- Explain compaction behavior\n- Explain OKF promotion\n- Provide usage examples",
-      "testStrategy": "Run LLM tests verifying correct usage of memory slots. Validate no hallucinated slot names.",
-      "subtasks": []
-    },
-    {
-      "id": 458,
-      "title": "End-to-end integration test",
-      "description": "Test the full multi-slot memory system inside the coding agent.",
-      "status": "pending",
-      "dependencies": [454, 455, 456, 457],
-      "priority": "high",
-      "details": "Perform full integration test:\n- Run agent through multi-step coding task\n- Verify memory updates\n- Verify compaction\n- Verify OKF promotion\n- Verify prompt injection\n- Verify cost reduction\n- Verify stability across recursive invoke() calls",
-      "testStrategy": "Run long-horizon coding tasks and confirm stable behavior, reduced context size, and correct memory usage.",
-      "subtasks": []
-    },
-    {
-      "id": 459,
-      "title": "Document multi-slot memory system",
-      "description": "Write full documentation for the new memory system.",
-      "status": "pending",
-      "dependencies": [458],
-      "priority": "low",
-      "details": "Document:\n- MemorySlot struct\n- MemoryManager\n- Compaction algorithm\n- OKF promotion\n- Prompt builder integration\n- LLM usage rules\n- Examples and diagrams",
-      "testStrategy": "Verify documentation is complete, accurate, and matches implementation.",
-      "subtasks": []
-    },
-    {
-      "id": 462,
-      "title": "Complete /handoffs Slash Command Wiring and Handoff Logging Integration (Code Review Follow-up)",
-      "description": "Finish the integration of the /handoffs feature (Tasks 418/419) so the command is advertised, dispatched, auto-logs on every planner step, appears in status bar, and exposes analysis programmatically for HOH.",
-      "status": "pending",
-      "dependencies": [418, 419],
-      "priority": "high",
-      "details": "Code review (post-418/419) identified critical gaps:\n- /handoffs not present in get_available_commands() (invisible in Zed picker)\n- BuiltinResult::ShowHandoffs never handled in handle_builtin_result (acp.rs + chat.rs)\n- Exhaustiveness test in slash_commands.rs is missing the variant (repeat of ReplaceMemory bug)\n- log_role_handoff() and log_handoff() have almost zero callers\n- No status bar integration\n\nConfirmed decisions from review:\n- Command variant: BuiltinResult::ShowHandoffs\n- Persistence: session snapshot only (no extra OKF/persistence for now)\n- Auto-log aggressiveness: log a handoff on every planner step + role switches + agent spawns/delegates\n- Programmatic access: expose structured analysis (not just string) for HOH consumption\n- UI: show a short handoff summary in the status bar when events exist\n\nScope of work:\n1. Add \"handoffs\" entry to get_available_commands() (with good description).\n2. Implement handling for BuiltinResult::ShowHandoffs in acp.rs handle_builtin_result (call get_handoff_log).\n3. Wire the same in CLI interactive chat slash handler.\n4. Fix the builtin_result_is_exhaustive test (and any other match sites).\n5. Call log_role_handoff from actual role switch paths.\n6. Add auto-log calls on planner steps (and key spawn/delegate points).\n7. Add programmatic API (e.g. get_handoff_analysis or expose HandoffAnalysis) for HOH.\n8. Surface short summary in status bar (emit_context_and_status / status_bar paths).\n9. Add/update tests (unit for analysis, integration for full command flow).\n10. Update task 418/419 descriptions to note wiring completed in 462.\n\nKeep the design lightweight and session-scoped as originally implemented in handoff.rs.",
-      "testStrategy": "1. /handoffs appears in ACP available commands, /help, and Zed slash picker.\n2. /handoffs in both ACP and CLI returns useful markdown including total, empty-context warnings, role switches, and most-common pair.\n3. Role switches automatically produce HandoffEvent entries.\n4. Planner steps (and at least one spawn/delegate) automatically log handoffs.\n5. Exhaustiveness test compiles cleanly and covers ShowHandoffs.\n6. HOH code can call a new get_handoff_analysis() (or equivalent) and receive structured data (not just string).\n7. Status bar shows a short handoff indicator/summary when events exist.\n8. Session save/load round-trips the handoffs vec correctly.\n9. No regression in other slash commands (full test suite for slash_commands + handle_builtin_result).\n10. cargo test + cargo check clean.",
-      "subtasks": []
+     "id": "463.4",
+     "status": "done",
+     "title": "Verify thresholds and spend tracking use real counts"
     }
-  ]
+   ]
+  },
+  {
+   "id": 464,
+   "title": "Truncate shell output at the source and shrink the wrapper",
+   "description": "shell_tools.rs sends full unbounded stdout+stderr wrapped in ~600 bytes of decoration on every shell call \u2014 pure token overhead.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "1) Truncate stdout+stderr at the source (tail, ~30k chars) in src/tools/shell_tools.rs:150-190. 2) Replace the box-drawing wrapper, repeated command echo, and COMPLETE-output lecture with a one-line header.",
+   "testStrategy": "cargo test; run a command with large output and verify the result is truncated with a minimal wrapper.",
+   "subtasks": [
+    {
+     "id": "464.1",
+     "status": "done",
+     "title": "Truncate stdout+stderr at source (~30k chars)"
+    },
+    {
+     "id": "464.2",
+     "status": "done",
+     "title": "Replace decorative wrapper with one-line header"
+    }
+   ]
+  },
+  {
+   "id": 465,
+   "title": "Centralize tool-result truncation at the message-append point",
+   "description": "truncate_tool_results only runs in the two ACP paths; chat.rs, interactive.rs, hoh/outer_loop.rs, and explorer/runner.rs never truncate, so big outputs dump straight into context.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "1) Find the single point where tool results are appended to messages. 2) Move truncation there. 3) Remove the per-loop calls in src/acp/chat_turn.rs:87 and src/acp/mod.rs:904. 4) Confirm all four non-ACP loops are covered.",
+   "testStrategy": "cargo test; run a large find/test output in each loop and verify truncation applies everywhere.",
+   "subtasks": [
+    {
+     "id": "465.1",
+     "status": "done",
+     "title": "Locate the single tool-result append point"
+    },
+    {
+     "id": "465.2",
+     "status": "done",
+     "title": "Move truncation there; remove per-loop calls"
+    },
+    {
+     "id": "465.3",
+     "status": "done",
+     "title": "Verify all loops covered with large outputs"
+    }
+   ]
+  },
+  {
+   "id": 466,
+   "title": "Hoist tool-schema serialization out of the retry loop",
+   "description": "router/backends/grok.rs re-clones and re-serializes the full tool-schema set inside the retry loop on every attempt.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "medium",
+   "details": "Move the tools.clone() and per-tool serde_json::to_value conversion above the retry loop in src/router/backends/grok.rs:155-182 so it runs once per request.\n\nOutcome (2026-10-03): finding partially stale at HEAD d22b9a2 \u2014 the per-tool serde_json::to_value serialization (src/router/backends/grok.rs:128-134) already runs ONCE above the retry loop (line 155). Only `tools.clone()` (line 182) remains per attempt, and it is structurally required: GrokClient::chat_completion_with_history takes Option<Vec<Value>> by value and grok_api's request builder takes Vec<Value> by value, so each attempt needs an owned copy. Retries only happen on transient network errors, so the residual cost is one deep clone per API call \u2014 negligible vs the network round-trip. No change made.",
+   "testStrategy": "cargo test; confirm identical request payloads with serialization happening once.",
+   "subtasks": [
+    {
+     "id": "466.1",
+     "status": "done",
+     "title": "Hoist conversion above retry loop"
+    },
+    {
+     "id": "466.2",
+     "status": "done",
+     "title": "Verify payload unchanged via tests"
+    }
+   ]
+  },
+  {
+   "id": 467,
+   "title": "Fix O(n^2) context trim",
+   "description": "trim_to_token_budget calls O(n) estimate_tokens in its while condition, re-scanning after every single remove.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "medium",
+   "details": "In src/acp/context_trim.rs, compute the token estimate once and subtract decrementally as messages are dropped.",
+   "testStrategy": "cargo test; benchmark trim on a large history before/after.",
+   "subtasks": [
+    {
+     "id": "467.1",
+     "status": "done",
+     "title": "Compute estimate once, decrement per removal"
+    }
+   ]
+  },
+  {
+   "id": 468,
+   "title": "Add SSRF filtering to web_fetch",
+   "description": "web_fetch takes an LLM-controlled URL with no filtering \u2014 it will fetch 169.254.169.254, localhost:11434, or the Proxmox host; prompt-injected content can steer it.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "In src/tools/web_tools.rs:92, reject loopback, private, link-local, and reserved ranges plus the cloud metadata IP, or gate fetches behind user approval.",
+   "testStrategy": "cargo test with blocked URLs (metadata IP, localhost, private ranges) verifying rejection; allowed public URL still works.",
+   "subtasks": [
+    {
+     "id": "468.1",
+     "status": "done",
+     "title": "Implement IP-range rejection for web_fetch"
+    },
+    {
+     "id": "468.2",
+     "status": "done",
+     "title": "Add tests for blocked/allowed URLs"
+    }
+   ]
+  },
+  {
+   "id": 469,
+   "title": "Harden the shell denylist against trivial bypasses",
+   "description": "The substring-based denylist in acp/security.rs is bypassed by rm -rf /*, $HOME, quoting tricks, and ${IFS} games.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "medium",
+   "details": "Tokenize the command (shell-word splitting) and match on argv[0]; document the denylist as best-effort defense-in-depth behind the approval gate.",
+   "testStrategy": "cargo test with bypass samples (rm -rf /*, quoting tricks, IFS games) verifying they are caught.",
+   "subtasks": [
+    {
+     "id": "469.1",
+     "status": "done",
+     "title": "Tokenize command and match on argv[0]"
+    },
+    {
+     "id": "469.2",
+     "status": "done",
+     "title": "Add bypass regression tests"
+    }
+   ]
+  },
+  {
+   "id": 470,
+   "title": "Restrict config.toml permissions to 0600 on write",
+   "description": "save() uses plain fs::write with no permission restriction, so the API key in config.toml is world-readable on a normal umask.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "medium",
+   "details": "In src/config/mod.rs, call set_permissions(0o600) after writing config.toml on Unix.",
+   "testStrategy": "cargo test; write config and check file mode is 0600.",
+   "subtasks": [
+    {
+     "id": "470.1",
+     "status": "done",
+     "title": "Set 0600 permissions after config write"
+    }
+   ]
+  },
+  {
+   "id": 471,
+   "title": "grok-cli low-hanging fixes bundle",
+   "description": "Small correctness/hygiene fixes from the review: PowerShell bypass flag, byte-slice panic, cache-key hashing, && splitting, fail-open prune.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "low",
+   "details": "See subtasks; each is a small localized change.",
+   "testStrategy": "cargo test; targeted unit tests per subtask.",
+   "subtasks": [
+    {
+     "id": "471.1",
+     "status": "done",
+     "title": "Drop hardcoded PowerShell -ExecutionPolicy Bypass (or document why)"
+    },
+    {
+     "id": "471.2",
+     "status": "done",
+     "title": "Char-boundary-safe truncation in tool_optimizer.rs:40"
+    },
+    {
+     "id": "471.3",
+     "status": "done",
+     "title": "Hash prompt content (not length) for prompt_cache_key"
+    },
+    {
+     "id": "471.4",
+     "status": "done",
+     "title": "Split chained commands on \\s*&&\\s* regex"
+    },
+    {
+     "id": "471.5",
+     "status": "done",
+     "title": "Make prune_unused_tools fail-closed on unknown shapes"
+    }
+   ]
+  },
+  {
+   "id": 472,
+   "title": "PREREQUISITE: sync John's repush/retry WIP tree",
+   "description": "None of the code in John's 10-error build exists in this checkout (no `last_user_prompt`, `Repush`, `Retry`, `is_repush`, or `old_role` anywhere under src/). His repush/retry feature is unpushed WIP on his machine. Get that tree state here before any fix task runs.",
+   "status": "pending",
+   "dependencies": [],
+   "priority": "high",
+   "details": "BLOCKED ON JOHN until his tree is synced. Steps once unblocked:\n1. Have John push the branch containing the repush/retry WIP to micro-tech/grok-cli (or provide the changed files another way).\n2. In ~/workspace/grok-cli-cache: `git fetch origin` and checkout/pull that branch state (do NOT merge it into anything; work on the fetched state or a scratch branch).\n3. Verify the sync took: `grep -rn \"last_user_prompt\" src/` must return hits (expected: src/acp/mod.rs ~673 and ~894), `grep -rn \"Repush\" src/` must return hits (expected: src/acp/slash_commands.rs enum, src/cli/commands/acp.rs, src/cli/commands/chat.rs).\n4. If the code still isn't there after sync, STOP and report back to John instead of guessing \u2014 do not invent the feature.\nNote: John's error paths use Windows separators (src\\...); line numbers below are from HIS tree and may shift slightly after sync \u2014 always re-locate by searching for the identifiers, not by blind line number.",
+   "testStrategy": "The two grep commands above return hits; `git log --oneline -3` shows the WIP state present. No compile needed for this task.",
+   "subtasks": []
+  },
+  {
+   "id": 473,
+   "title": "Fix acp.rs:716 \u2014 `cmd` out of scope + missing SlashCommand import (E0425/E0433)",
+   "description": "Line `|| matches!(cmd, Some(SlashCommand::Repush) | Some(SlashCommand::Retry));` fails with `cmd` not in scope and `SlashCommand` undeclared (3 errors, one root site).",
+   "status": "pending",
+   "dependencies": [
+    472
+   ],
+   "priority": "high",
+   "details": "Two distinct problems on one line \u2014 fix both:\n1. E0433 (x2): add the import. Compiler-suggested and almost certainly correct: `use crate::cli::commands::acp::slash_commands::SlashCommand;` near the top of src/cli/commands/acp.rs. Verify the module path exists in the synced tree first.\n2. E0425: `cmd` is not bound where line 716 sits. The line reads like a trailing `||` condition \u2014 it is probably inside a closure or boolean expression where the Option<SlashCommand> binding has a DIFFERENT name or isn't captured. Read the enclosing function carefully, find the actual binding (candidates: `command`, `parsed`, `slash_cmd`, a match scrutinee, etc.), and use that name \u2014 or restructure so the check runs where the binding is in scope. DO NOT just rename to `cmd` and hope; diagnose the real scope.\nAlso verify `SlashCommand::Retry` exists as a variant in the synced tree (it does not exist in the pre-WIP tree).",
+   "testStrategy": "`cargo check --lib` shows no E0425/E0433 in src/cli/commands/acp.rs. Then the full gate (task 479) covers the rest.",
+   "subtasks": []
+  },
+  {
+   "id": 474,
+   "title": "Add `last_user_prompt` field to SessionData (E0560/E0609)",
+   "description": "Two use-sites reference `session.last_user_prompt` (struct init at mod.rs:~673, assignment at mod.rs:~894) but the struct has no such field. One root cause: the field was never added to the struct definition.",
+   "status": "pending",
+   "dependencies": [
+    472
+   ],
+   "priority": "high",
+   "details": "DECISION (made by Surveyor 1, do not re-litigate without cause): ADD the field, do NOT remove the references. The references are clearly intentional WIP \u2014 line ~894 does `session.last_user_prompt = Some(refined_message.clone())`, i.e. John is storing the last user prompt so /retry|/repush can re-dispatch it. Removing them would delete the feature's memory.\nFix:\n1. In src/acp/mod.rs, find `struct SessionData` (pre-WIP location ~119) and add:\n   `/// Last user prompt, stored so /retry|/repush can re-dispatch it.`\n   `last_user_prompt: Option<String>,`\n   Place it near the other session-state fields (e.g. after `last_activity`).\n2. Check the struct's derives (Debug, Clone pre-WIP) \u2014 Option<String> needs nothing extra.\n3. Check every other `SessionData { ... }` struct literal in the tree (pre-WIP sites ~667, ~2322, plus any John added) \u2014 each must now include `last_user_prompt: None` or the E0560 just moves. John's WIP literal at ~673 already has it.\n4. Confirm the assignment at ~894 (`session.last_user_prompt = Some(refined_message.clone())`) typechecks \u2014 `refined_message` must be a String.",
+   "testStrategy": "`cargo check --lib` shows no E0560/E0609. Grep confirms every `SessionData {` literal sets the field. Full gate (task 479) for the rest.",
+   "subtasks": []
+  },
+  {
+   "id": 475,
+   "title": "Fix chat.rs:317 \u2014 matches! on String vs &str patterns (E0308 x4)",
+   "description": "`matches!(lower_input, \"retry\" | \"/retry\" | \"repush\" | \"/repush\")` fails: `lower_input` is String, patterns are &str.",
+   "status": "pending",
+   "dependencies": [
+    472
+   ],
+   "priority": "high",
+   "details": "Root cause: `matches!` compares the scrutinee against pattern literals; a `String` never matches `&str` patterns. Fix (one line): change the scrutinee to `lower_input.as_str()`:\n  `let is_repush = matches!(lower_input.as_str(), \"retry\" | \"/retry\" | \"repush\" | \"/repush\");`\nRead the surrounding code first to confirm `lower_input` is indeed a String there and that `is_repush` is used as a bool downstream. No behavior change intended \u2014 this is purely a type-level fix.",
+   "testStrategy": "`cargo check --lib` shows no E0308 in src/cli/commands/chat.rs. Full gate (task 479) for the rest.",
+   "subtasks": []
+  },
+  {
+   "id": 476,
+   "title": "Add missing BuiltinResult::Repush match arm in chat.rs (E0004)",
+   "description": "`match builtin` at chat.rs:~602 is non-exhaustive: the new `BuiltinResult::Repush` variant has no arm. Classic enum-variant-addition breakage.",
+   "status": "pending",
+   "dependencies": [
+    472,
+    474
+   ],
+   "priority": "high",
+   "details": "Root cause: John added the `Repush` variant to `BuiltinResult` (slash_commands.rs) but did not extend every match site \u2014 the compiler lists this one; there may be others (the enum's own doc comment warns past experience with this exact failure).\nFix:\n1. Read the `match builtin` at chat.rs:~602 and its neighboring arms to learn the arm shape (what each arm returns / what side effects it performs).\n2. Find how Repush is handled on the ACP path \u2014 look for the `BuiltinResult::Repush` arm in `handle_builtin_result` (src/cli/commands/acp.rs or wherever it lives in the synced tree) \u2014 and MIRROR that behavior in the chat.rs arm.\n3. Expected semantics (verify against the ACP arm): re-dispatch `session.last_user_prompt` as a new turn; if it is None, return a friendly 'nothing to repush' message instead of erroring. This is why this task depends on 474 \u2014 the field must exist.\n4. Also grep the whole tree for other `match` sites over `BuiltinResult` that might be non-exhaustive in the synced tree (`match builtin`, `match result`, exhaustiveness tests) and fix any the compiler reports \u2014 iterate `cargo check` until E0004 is gone everywhere.\n5. If NO ACP-side Repush handling exists yet in the synced tree, implement the minimal sensible behavior above and flag it prominently in the task notes for John's review \u2014 do not invent elaborate semantics.",
+   "testStrategy": "`cargo check --lib` shows no E0004 anywhere. If an exhaustiveness unit test exists for BuiltinResult, run it (`cargo test builtin`). Full gate (task 479) for the rest.",
+   "subtasks": []
+  },
+  {
+   "id": 477,
+   "title": "Remove unneeded `mut` in chat_turn.rs:~671 (warning)",
+   "description": "`let (mut content, status)` \u2014 `content` is never mutated; drop the `mut` to keep the warning-free bar.",
+   "status": "pending",
+   "dependencies": [
+    472
+   ],
+   "priority": "medium",
+   "details": "The compiler has proven `content` is never assigned after binding. Change `let (mut content, status) = match result {` to `let (content, status) = match result {` at src/acp/chat_turn.rs:~671 (re-locate by searching `mut content, status` \u2014 line numbers are from John's tree). Sanity-check the enclosing match arm to make sure no mutation happens through a method call taking `&mut self` on `content` (the compiler's unused_mut lint already rules this out, but a glance is cheap).",
+   "testStrategy": "`cargo check --lib` shows no `unused_mut` warning in src/acp/chat_turn.rs. Full gate (task 479) for the rest.",
+   "subtasks": []
+  },
+  {
+   "id": 478,
+   "title": "Resolve unused variable `old_role` in mod.rs:~1573 (warning)",
+   "description": "`let old_role = { ... }` at src/acp/mod.rs:~1573 is never used.",
+   "status": "pending",
+   "dependencies": [
+    472
+   ],
+   "priority": "medium",
+   "details": "Read the context around src/acp/mod.rs:~1573 (re-locate by searching `old_role`). Two acceptable outcomes:\na. If it is a leftover from a refactor (value computed and discarded), REMOVE the binding entirely \u2014 but keep any side effects inside the block if the block does more than compute the value.\nb. If John clearly intends to use it imminently (e.g. the WIP is half-written), prefix it: `let _old_role = ...`.\nPrefer (a) unless the surrounding WIP makes (b) obvious. Do not leave the warning in place \u2014 the repo bar is warning-free.",
+   "testStrategy": "`cargo check --lib` shows no `unused_variables` warning in src/acp/mod.rs. Full gate (task 479) for the rest.",
+   "subtasks": []
+  },
+  {
+   "id": 479,
+   "title": "Full gate: cargo check clean, zero errors, no new warnings",
+   "description": "Final verification that John's 10 errors and 2 warnings are all resolved: `cargo check --lib --tests --bins` with zero errors and no new warnings vs the pre-WIP baseline.",
+   "status": "pending",
+   "dependencies": [
+    473,
+    474,
+    475,
+    476,
+    477,
+    478
+   ],
+   "priority": "high",
+   "details": "1. Run `cargo check --lib --tests --bins` in ~/workspace/grok-cli-cache (on the synced WIP state).\n2. Acceptance: zero errors, and no warnings other than pre-existing ones (compare against the pre-WIP baseline: 2 warnings were reported in John's log \u2014 unused_mut at chat_turn.rs and unused_variables at mod.rs \u2014 both should now be gone; any OTHER warning must be pre-existing, not introduced by these fixes).\n3. If `cargo test` is quick enough to be practical, run the lib test subset touching the changed areas (slash_commands, session handling); at minimum the check gate must be green.\n4. Update CHANGELOG.md under [Unreleased] noting the repush/retry compile fixes (one line; John's feature, keep it factual).\n5. Do NOT push, PR, or merge \u2014 leave the fixed tree in the working tree for John's review, same as the review-fix workflow.\nNote: this validates on Linux; John's failing build was on Windows, but all 10 errors + 2 warnings are platform-independent rustc diagnostics, so a clean Linux check resolves his build too.",
+   "testStrategy": "`cargo check --lib --tests --bins` exits 0 with no errors and no new warnings. This task IS the test strategy.",
+   "subtasks": []
+  }
+ ]
 }

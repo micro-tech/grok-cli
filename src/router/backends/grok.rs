@@ -207,13 +207,16 @@ impl Backend for GrokBackend {
 
                     let tool_calls = mwfr.message.tool_calls.unwrap_or_default();
                     let thinking_content = mwfr.thinking_content;
+                    // Real API-reported token counts (Task 463) — clone before
+                    // the partial moves above consume `mwfr`.
+                    let usage = mwfr.usage.clone();
 
                     return Ok(RouterResponse {
                         text,
                         tool_calls,
                         raw,
                         model: req.model.clone(),
-                        usage: None,
+                        usage,
                         thinking_content,
                     });
                 }

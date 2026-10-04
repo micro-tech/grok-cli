@@ -197,7 +197,11 @@ impl CpuRouter {
                     }
                 };
 
-                messages_json.push(crate::utils::messages::tool_result(&tool_call.id, result));
+                messages_json.push(crate::utils::messages::tool_result_capped(
+                    &tool_call.id,
+                    result,
+                    crate::constants::MAX_TOOL_RESULT_CHARS,
+                ));
             }
 
             tracing::debug!(
@@ -345,7 +349,11 @@ impl CpuRouter {
                     success,
                 });
 
-                messages_json.push(crate::utils::messages::tool_result(&tool_call.id, output));
+                messages_json.push(crate::utils::messages::tool_result_capped(
+                    &tool_call.id,
+                    output,
+                    crate::constants::MAX_TOOL_RESULT_CHARS,
+                ));
             }
         }
 

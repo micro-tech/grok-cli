@@ -202,9 +202,6 @@ pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Res
         return Err(e);
     }
 
-    // Use the centralized shared HTTP client (Task 281)
-    let client = crate::utils::http::get_http_client();
-
     // ── method validation ─────────────────────────────────────────────────────
     // Reject unknown methods immediately, before spending any network budget.
     let method_upper = method.to_ascii_uppercase();
@@ -224,6 +221,12 @@ pub async fn remote_trigger(endpoint: &str, payload: Value, method: &str) -> Res
             return Err(e);
         }
     }
+
+    // Task 468: same SSRF guard as web_fetch — the endpoint is model-controlled.
+    crate::tools::web_tools::check_fetch_url_allowed(endpoint).await?;
+
+    // Use the centralized shared HTTP client (Task 281)
+    let client = crate::utils::http::get_http_client();
 
     // ── retry loop ────────────────────────────────────────────────────────────
     // Up to MAX_RETRIES extra attempts on network drops; non-network errors and
@@ -401,6 +404,24 @@ mod tests {
         let r = cron_create("test_daily", "0 9 * * *", "grok chat 'daily report'");
         assert!(r.is_ok(), "{:?}", r);
         assert!(r.unwrap().contains("test_daily"));
+    }
+
+    #[tokio::test]
+    async fn remote_trigger_rejects_ssrf_targets() {
+        // Task 468: the endpoint is model-controlled — same SSRF guard as web_fetch.
+        for url in [
+            "http://169.254.169.254/latest/meta-data/",
+            "http://127.0.0.1:11434/api/tags",
+            "http://10.1.2.3/",
+        ] {
+            let r = remote_trigger(url, json!({}), "POST").await;
+            assert!(r.is_err(), "{} must be rejected", url);
+            assert!(
+                r.unwrap_err().to_string().contains("SSRF"),
+                "{} must fail at the SSRF guard",
+                url
+            );
+        }
     }
 
     #[tokio::test]

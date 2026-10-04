@@ -7,9 +7,24 @@ use crate::context::error::{ContextError, ContextResult};
 use crate::context::token_counter::TokenCounter;
 
 /// Simple budget manager.
+#[derive(Debug)]
 pub struct ContextBudget {
     max_tokens: u32,
     counter: TokenCounter,
+}
+
+/// Cloning snapshots the current counts (Task 463: `SessionData` needs a
+/// cloneable budget for session forking).
+impl Clone for ContextBudget {
+    fn clone(&self) -> Self {
+        let counter = TokenCounter::new();
+        counter.add_input(self.counter.input_tokens());
+        counter.add_output(self.counter.output_tokens());
+        Self {
+            max_tokens: self.max_tokens,
+            counter,
+        }
+    }
 }
 
 impl ContextBudget {

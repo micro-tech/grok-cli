@@ -15,6 +15,10 @@ pub fn schema_hash(schema: &Value) -> u64 {
 }
 
 /// Prune tools that are not in the allowed list.
+///
+/// Fail-closed (Task 471.5): tools with a missing or unparseable name are
+/// *dropped*, not kept — an unknown shape can't be usefully sent to the API
+/// and keeping it would silently widen the tool surface.
 pub fn prune_unused_tools(tools: Vec<Value>, keep: &[&str]) -> Vec<Value> {
     tools
         .into_iter()
@@ -23,7 +27,7 @@ pub fn prune_unused_tools(tools: Vec<Value>, keep: &[&str]) -> Vec<Value> {
                 .and_then(|f| f.get("name"))
                 .and_then(|n| n.as_str())
                 .map(|name| keep.contains(&name))
-                .unwrap_or(true)
+                .unwrap_or(false)
         })
         .collect()
 }
@@ -37,7 +41,13 @@ pub fn compress_schema(schema: &mut Value) -> ContextResult<()> {
         if s.len() > 200_000 {
             return Err(ContextError::PromptTooLarge);
         }
-        *desc = Value::String(format!("{}\u{2026}", &s[..117]));
+        // Task 471.2: char-boundary-safe truncation — `&s[..117]` would panic
+        // if byte 117 lands inside a multi-byte UTF-8 sequence.
+        let mut end = 117.min(s.len());
+        while !s.is_char_boundary(end) {
+            end -= 1;
+        }
+        *desc = Value::String(format!("{}\u{2026}", &s[..end]));
     }
     Ok(())
 }
@@ -76,5 +86,30 @@ mod tests {
     fn test_compress_schema_too_large() {
         let mut schema = json!({"description": "x".repeat(300_000)});
         assert!(compress_schema(&mut schema).is_err());
+    }
+
+    #[test]
+    fn test_compress_schema_multibyte_boundary_no_panic() {
+        // Task 471.2: byte 117 must not split a multi-byte char.
+        // 116 ASCII chars + a 2-byte 'é' straddling the cut point.
+        let mut schema = json!({"description": format!("{}é{}", "a".repeat(116), "b".repeat(100))});
+        compress_schema(&mut schema).unwrap();
+        let desc = schema["description"].as_str().unwrap();
+        assert!(desc.ends_with('…'));
+        assert!(desc.is_char_boundary(desc.len()));
+    }
+
+    #[test]
+    fn test_prune_unused_drops_unknown_shapes() {
+        // Task 471.5: fail-closed — tools with missing/unparseable names are dropped.
+        let tools = vec![
+            json!({"function": {"name": "read_file"}}),
+            json!({"function": {}}),
+            json!({"no_function": true}),
+            json!({"function": "not-an-object"}),
+        ];
+        let pruned = prune_unused_tools(tools, &["read_file"]);
+        assert_eq!(pruned.len(), 1);
+        assert_eq!(pruned[0]["function"]["name"], "read_file");
     }
 }

@@ -31,6 +31,181 @@ fn is_windows_drive_absolute(path: &Path) -> bool {
     bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':'
 }
 
+/// Minimal POSIX-ish shell word splitter (Task 469).
+///
+/// Handles single quotes, double quotes, and backslash escapes — enough to
+/// collapse quoting tricks (`r''m` → `rm`, `"rm"` → `rm`) for denylist
+/// analysis.  This is *not* a full shell parser: no brace expansion, no
+/// command substitution unpacking.
+fn shell_word_split(command: &str) -> Vec<String> {
+    // `${IFS}` / `$IFS` expand to whitespace in a real shell; normalise them
+    // to spaces *before* tokenizing so `rm${IFS}-rf${IFS}/` splits into
+    // `rm`, `-rf`, `/` like the shell would.
+    let mut normalized = command.replace("${IFS}", " ");
+    let mut fixed = String::with_capacity(normalized.len());
+    let mut rest = normalized.as_str();
+    while let Some(pos) = rest.find("$IFS") {
+        fixed.push_str(&rest[..pos]);
+        fixed.push(' ');
+        rest = &rest[pos + 4..];
+    }
+    fixed.push_str(rest);
+    normalized = fixed;
+
+    let mut words = Vec::new();
+    let mut current = String::new();
+    let mut in_word = false;
+    let mut chars = normalized.chars().peekable();
+    while let Some(c) = chars.next() {
+        match c {
+            '\'' => {
+                // Single-quoted: literal until closing quote.
+                in_word = true;
+                for qc in chars.by_ref() {
+                    if qc == '\'' {
+                        break;
+                    }
+                    current.push(qc);
+                }
+            }
+            '"' => {
+                // Double-quoted: backslash escapes one char, rest literal.
+                in_word = true;
+                while let Some(qc) = chars.next() {
+                    if qc == '"' {
+                        break;
+                    }
+                    if qc == '\\' {
+                        if let Some(esc) = chars.next() {
+                            current.push(esc);
+                        }
+                    } else {
+                        current.push(qc);
+                    }
+                }
+            }
+            '\\' => {
+                in_word = true;
+                if let Some(esc) = chars.next() {
+                    current.push(esc);
+                }
+            }
+            c if c.is_whitespace() => {
+                if in_word {
+                    words.push(std::mem::take(&mut current));
+                    in_word = false;
+                }
+            }
+            c => {
+                in_word = true;
+                current.push(c);
+            }
+        }
+    }
+    if in_word {
+        words.push(current);
+    }
+    words
+}
+
+/// `argv[0]`-based dangerous-command analysis (Task 469).
+///
+/// Returns `Err(reason)` when the tokenized command is recognisably
+/// dangerous: recursive `rm` at filesystem-sensitive targets, `dd` to block
+/// devices, `mkfs*`, and privilege-wrapping (`sudo`/`env`) of the same.
+/// Quoting tricks are already collapsed by [`shell_word_split`].
+fn check_shell_argv0(command: &str) -> Result<(), String> {
+    let words = shell_word_split(command);
+    if words.is_empty() {
+        return Ok(());
+    }
+
+    // Skip privilege wrappers to find the real program: `sudo rm -rf /`.
+    let mut idx = 0;
+    while idx < words.len() && matches!(words[idx].as_str(), "sudo" | "doas" | "env" | "runas") {
+        idx += 1;
+    }
+    // `env VAR=val cmd …` — skip VAR=val assignments too.
+    while idx < words.len() {
+        let w = &words[idx];
+        let is_assignment = !w.starts_with('-')
+            && w.split_once('=').is_some_and(|(k, _)| {
+                !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+            });
+        if is_assignment {
+            idx += 1;
+        } else {
+            break;
+        }
+    }
+    let Some(argv0) = words.get(idx) else {
+        return Ok(());
+    };
+    // Basename: `/bin/rm` → `rm`.  Lowercase for `RM` parity.
+    let prog = argv0
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(argv0)
+        .to_lowercase();
+    let args: &[String] = if idx + 1 < words.len() {
+        &words[idx + 1..]
+    } else {
+        &[]
+    };
+
+    // Recursive rm at filesystem- or home-sensitive targets.
+    if prog == "rm" {
+        let recursive = args.iter().any(|a| {
+            a == "--recursive"
+                || (a.starts_with('-')
+                    && !a.starts_with("--")
+                    && a.get(1..).is_some_and(|flags| {
+                        flags.chars().any(|c| c == 'r' || c == 'R')
+                    }))
+        });
+        if recursive {
+            for target in args.iter().filter(|a| !a.starts_with('-')) {
+                let t = target.as_str();
+                if t == "/"
+                    || t == "/*"
+                    || t == "~"
+                    || t == "$HOME"
+                    || t == "${HOME}"
+                    || t.starts_with("~/")
+                    || t.starts_with('$')
+                {
+                    return Err(format!(
+                        "recursive rm targeting '{}' (filesystem/home destructive)",
+                        target
+                    ));
+                }
+            }
+        }
+    }
+
+    // dd writing to a block device, e.g. `dd of=/dev/nvme0n1`.
+    if prog == "dd" && args.iter().any(|a| a.starts_with("of=/dev/")) {
+        return Err("dd writing directly to a block device".to_string());
+    }
+
+    // Filesystem formatting.
+    if prog == "mkfs" || prog.starts_with("mkfs.") {
+        return Err("filesystem formatting command".to_string());
+    }
+
+    // PowerShell encoded-command obfuscation via argv (substring layer also covers this).
+    if (prog == "powershell" || prog == "pwsh")
+        && args.iter().any(|a| {
+            let l = a.to_lowercase();
+            l == "-enc" || l == "-encodedcommand" || l == "-e"
+        })
+    {
+        return Err("PowerShell encoded command (obfuscation)".to_string());
+    }
+
+    Ok(())
+}
+
 impl SecurityPolicy {
     pub fn new() -> Self {
         let working_directory = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
@@ -371,9 +546,42 @@ impl SecurityPolicy {
     /// | PowerShell download + execute | `IEX`, `Invoke-Expression`, `iwr \| iex` |
     /// | Fork bombs | `:(){ :\|:& };:` |
     /// | Disk formatting | `mkfs`, `Format-Volume` |
+    ///
+    /// # How it works
+    ///
+    /// Two layers, both best-effort **defense-in-depth behind the user-approval
+    /// gate** — never the sole protection:
+    ///
+    /// 1. **`argv[0]` analysis** (Task 469) — the command is shell-word split
+    ///    (quotes/backslashes honoured, `${IFS}`/`$IFS` normalised to spaces)
+    ///    and the real program name is matched: `r''m -rf /`, `"rm" -rf /`,
+    ///    `sudo rm -rf /`, `rm${IFS}-rf${IFS}/`, and `rm -rf $HOME` are all
+    ///    caught even though the substrings differ.
+    /// 2. **Substring denylist** — catches known-dangerous patterns anywhere
+    ///    in the command (pipe-to-shell, reverse shells, fork bombs, …).
+    ///
+    /// Known limits: unexpanded variables other than `IFS` are not resolved,
+    /// and `sh -c '<payload>'` style indirection is not unpacked — the
+    /// approval gate remains the real control.
     pub fn validate_shell_command(&self, command: &str) -> Result<()> {
         if command.trim().is_empty() {
             return Err(anyhow!("Command cannot be empty"));
+        }
+
+        // ── argv[0] layer (Task 469) ─────────────────────────────────────────
+        // Tokenize first: quoting tricks like `r''m` or `"rm"` collapse to the
+        // real program name, and `${IFS}` games become plain whitespace.
+        if let Err(reason) = check_shell_argv0(command) {
+            warn!(
+                command = %command,
+                reason = %reason,
+                "Shell command blocked by security denylist (argv[0] analysis)"
+            );
+            return Err(anyhow!(
+                "Command blocked for security reasons: {}.\n\
+                 If this is a legitimate operation, run it directly in your terminal.",
+                reason
+            ));
         }
 
         // Normalise: lowercase for case-insensitive matching, collapse whitespace
@@ -762,5 +970,54 @@ mod tests {
         let outside_path = "/etc/passwd";
 
         assert!(manager.check_path_access(outside_path).is_err());
+    }
+
+    // ── Task 469: argv[0] denylist bypass regressions ─────────────────────────
+    #[test]
+    fn test_argv0_blocks_recursive_rm_variants() {
+        let policy = SecurityPolicy::new();
+        // Classic cases (also caught by the substring layer).
+        assert!(policy.validate_shell_command("rm -rf /").is_err());
+        // Bypass variants the substring layer missed (Task 469).
+        assert!(policy.validate_shell_command("rm -rf /*").is_err());
+        assert!(policy.validate_shell_command("rm -rf $HOME").is_err());
+        assert!(policy.validate_shell_command("rm -rf ${HOME}").is_err());
+        assert!(policy.validate_shell_command("rm -rf ~").is_err());
+        assert!(policy.validate_shell_command("r''m -rf /").is_err());
+        assert!(policy.validate_shell_command("\"rm\" -rf /").is_err());
+        assert!(policy.validate_shell_command("rm${IFS}-rf${IFS}/").is_err());
+        assert!(policy.validate_shell_command("sudo rm -rf /").is_err());
+        assert!(policy.validate_shell_command("/bin/rm -rf /").is_err());
+        assert!(policy.validate_shell_command("rm -rfv /").is_err());
+    }
+
+    #[test]
+    fn test_argv0_blocks_dd_and_mkfs_variants() {
+        let policy = SecurityPolicy::new();
+        assert!(policy.validate_shell_command("dd if=/dev/zero of=/dev/sda").is_err());
+        // Generalized block-device target (substring layer only knew sda/sdb/nvme).
+        assert!(policy.validate_shell_command("dd if=/dev/zero of=/dev/nvme0n1").is_err());
+        assert!(policy.validate_shell_command("mkfs.ext4 /dev/sda1").is_err());
+    }
+
+    #[test]
+    fn test_argv0_allows_benign_commands() {
+        let policy = SecurityPolicy::new();
+        assert!(policy.validate_shell_command("echo hello").is_ok());
+        assert!(policy.validate_shell_command("ls /").is_ok());
+        assert!(policy.validate_shell_command("rm -rf ./target/tmp").is_ok());
+        assert!(policy.validate_shell_command("rm /tmp/file.txt").is_ok());
+        assert!(policy.validate_shell_command("cargo test -- --nocapture").is_ok());
+    }
+
+    #[test]
+    fn test_shell_word_split_quoting() {
+        assert_eq!(shell_word_split("r''m -rf /"), vec!["rm", "-rf", "/"]);
+        assert_eq!(shell_word_split("\"rm\" -rf /"), vec!["rm", "-rf", "/"]);
+        assert_eq!(
+            shell_word_split("rm${IFS}-rf${IFS}/"),
+            vec!["rm", "-rf", "/"]
+        );
+        assert_eq!(shell_word_split("echo 'a b' c"), vec!["echo", "a b", "c"]);
     }
 }

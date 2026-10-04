@@ -35,7 +35,7 @@ use crate::utils::session::{list_sessions, load_session, save_session};
 use crate::utils::shell_permissions::{ApprovalMode, ShellPermissions};
 use serde::{Deserialize, Serialize};
 // Use cheap message builders (Task 267)
-use crate::utils::messages::{assistant, system, tool_result, user};
+use crate::utils::messages::{assistant, system, tool_result_capped, user};
 
 /// Interactive session state
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -1440,7 +1440,11 @@ async fn send_to_grok(
                 for tool_call in &tool_calls {
                     let output = execute_tool_call_interactive(tool_call, &security).await
                         .unwrap_or_else(|e| format!("Error dispatching tool: {}", e));
-                    messages.push(tool_result(&tool_call.id, output));
+                    messages.push(tool_result_capped(
+                        &tool_call.id,
+                        output,
+                        crate::constants::MAX_TOOL_RESULT_CHARS,
+                    ));
                 }
 
                 println!();

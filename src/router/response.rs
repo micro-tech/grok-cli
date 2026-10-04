@@ -105,6 +105,38 @@ impl RouterResponse {
                 Some("stop".to_string())
             },
             thinking_content: self.thinking_content,
+            // Keep the real API-reported token counts so downstream consumers
+            // (ContextBudget, spend tracking) see real numbers (Task 463).
+            usage: self.usage,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_into_message_with_finish_reason_preserves_usage() {
+        // Task 463: real API-reported counts must survive the
+        // RouterResponse -> MessageWithFinishReason conversion used by the
+        // ACP loop and cpu_router tool loops.
+        let resp = RouterResponse {
+            text: Some("done".to_string()),
+            tool_calls: Vec::new(),
+            raw: serde_json::Value::Null,
+            model: "grok-4".to_string(),
+            usage: Some(UsageStats {
+                prompt_tokens: 999,
+                completion_tokens: 11,
+                total_tokens: 1010,
+            }),
+            thinking_content: None,
+        };
+        let mwfr = resp.into_message_with_finish_reason();
+        let usage = mwfr.usage.expect("usage must survive the conversion");
+        assert_eq!(usage.prompt_tokens, 999);
+        assert_eq!(usage.completion_tokens, 11);
+        assert_eq!(usage.total_tokens, 1010);
     }
 }
