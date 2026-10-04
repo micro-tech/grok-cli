@@ -639,6 +639,21 @@ fn send_session_notif(
     }
 }
 
+/// Heuristic to decide whether an error during an AI call looks like a
+/// transient network / timeout problem that the user can recover from with
+/// `/repush` or `/retry`.
+fn is_transient_network_error(lower: &str) -> bool {
+    lower.contains("timeout")
+        || lower.contains("network")
+        || lower.contains("connection")
+        || lower.contains("error sending")
+        || lower.contains("broken pipe")
+        || lower.contains("reset by peer")
+        || lower.contains("unreachable")
+        || (lower.contains("http") && (lower.contains("5") || lower.contains("429")))
+        || lower.contains("request failed")
+}
+
 // ---------------------------------------------------------------------------
 // 111.3 handler: session/prompt — runs in cx.spawn() for non-blocking I/O.
 // ---------------------------------------------------------------------------
@@ -694,6 +709,12 @@ async fn handle_session_prompt_v2(
         return Ok(());
     }
 
+    // ── Bad-internet repush detection (raw text or slash) ─────────────────────
+    // Supports both "repush", "retry", "/repush", "/retry" (raw or via slash command).
+    let lower = message_text.trim().to_lowercase();
+    let is_repush = matches!(lower.as_str(), "retry" | "/retry" | "repush" | "/repush")
+        || matches!(cmd, Some(SlashCommand::Repush) | Some(SlashCommand::Retry));
+
     // ── Slash-command dispatch ────────────────────────────────────────────────
     if let Some(cmd) = parse_slash_command(&message_text) {
         info!(
@@ -703,8 +724,44 @@ async fn handle_session_prompt_v2(
 
         if let Some(builtin) = handle_builtin(&cmd) {
             info!("Handling built-in slash command: {:?}", cmd);
-            // Re-use the same dispatch logic as the old handler but without a
-            // raw writer — we call the helper that produces the response text.
+
+            // ── Explicit /repush (and /retry) wiring (Task for bad-internet recovery) ──
+            if matches!(builtin, BuiltinResult::Repush) {
+                // Treat exactly like the raw-text "repush" detection.
+                // We pass repush=true so handle_chat_completion skips re-adding the user turn.
+                let _ = chat_logger::log_user(&message_text);
+                let text = match run_ai_and_collect(&agent, &session_id, &message_text, &cx, true).await {
+                    Ok(t) => t,
+                    Err(e) => {
+                        let err_text = format!("❌ Repush failed: {}", e);
+                        let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                            ContentBlock::Text(TextContent::new(&err_text)),
+                        ));
+                        send_session_notif(&SessionNotification::new(session_id.clone(), update), &cx);
+                        let r = responder
+                            .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                                agent_client_protocol::schema::v1::StopReason::EndTurn,
+                            ))
+                            .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+                        return r;
+                    }
+                };
+                let _ = chat_logger::log_assistant(&text);
+                let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
+                    TextContent::new(&text),
+                )));
+                let notif = SessionNotification::new(session_id.clone(), update);
+                send_session_notif(&notif, &cx);
+                let r = responder
+                    .respond(agent_client_protocol::schema::v1::PromptResponse::new(
+                        agent_client_protocol::schema::v1::StopReason::EndTurn,
+                    ))
+                    .map_err(|e| agent_client_protocol::Error::new(-32603, e.to_string()));
+                agent.save_session_to_disk(&session_id).await.ok();
+                return r;
+            }
+
+            // Normal builtin handling
             let text = handle_builtin_result(builtin, &agent, &session_id).await;
             // Send text as a session/update AgentMessageChunk notification
             let update = SessionUpdate::AgentMessageChunk(ContentChunk::new(ContentBlock::Text(
@@ -741,7 +798,7 @@ async fn handle_session_prompt_v2(
                 ai_prompt.len()
             );
             let _ = chat_logger::log_user(&message_text);
-            let text = match run_ai_and_collect(&agent, &session_id, &ai_prompt, &cx).await {
+            let text = match run_ai_and_collect(&agent, &session_id, &ai_prompt, &cx, false).await {
                 Ok(t) => t,
                 Err(e) => {
                     // Deliver the error as a visible message so Zed stays
@@ -751,6 +808,17 @@ async fn handle_session_prompt_v2(
                         ContentBlock::Text(TextContent::new(&err_text)),
                     ));
                     send_session_notif(&SessionNotification::new(session_id.clone(), update), &cx);
+
+                    // ── Network drop hint (bad-internet recovery) ─────────────────────────
+                    let err_lower = e.to_string().to_lowercase();
+                    if is_transient_network_error(&err_lower) {
+                        let hint = "⚠️ **Network drop / timeout detected.**  Type `repush`, `retry`, `/repush` or `/retry` to re-send your last turn.";
+                        let hint_chunk = SessionUpdate::AgentMessageChunk(ContentChunk::new(
+                            ContentBlock::Text(TextContent::new(hint)),
+                        ));
+                        send_session_notif(&SessionNotification::new(session_id.clone(), hint_chunk), &cx);
+                    }
+
                     let r = responder
                         .respond(agent_client_protocol::schema::v1::PromptResponse::new(
                             agent_client_protocol::schema::v1::StopReason::EndTurn,
@@ -832,7 +900,7 @@ async fn handle_session_prompt_v2(
 
     // ── Normal AI chat ──────────────────────────────────────────────────────────
     let _ = chat_logger::log_user(&message_text);
-    let text = match run_ai_and_collect(&agent, &session_id, &message_text, &cx).await {
+    let text = match run_ai_and_collect(&agent, &session_id, &message_text, &cx, is_repush).await {
         Ok(t) => t,
         Err(e) => {
             // Return the error as a visible message rather than a hard
@@ -883,13 +951,16 @@ async fn run_ai_and_collect(
     session_id: &SessionId,
     message: &str,
     cx: &agent_client_protocol::ConnectionTo<agent_client_protocol::Client>,
+    repush: bool,
 ) -> Result<String> {
     let (perm_bridge, mut perm_rx) = PermissionBridge::new();
     let perm_bridge_arc = Arc::new(perm_bridge);
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
 
+    // When repush=true the caller (handle_session_prompt_v2) already decided
+    // not to duplicate the user turn. We simply forward the flag.
     let chat_fut =
-        agent.handle_chat_completion(session_id, message, None, Some(tx), Some(perm_bridge_arc));
+        agent.handle_chat_completion(session_id, message, None, Some(tx), Some(perm_bridge_arc), repush);
     tokio::pin!(chat_fut);
 
     let response_text;
@@ -1200,6 +1271,12 @@ async fn handle_builtin_result(
             Ok(log) => log,
             Err(e) => format!("❌ Could not retrieve handoff log: {e}"),
         },
+
+        // Repush / retry for bad internet (handled specially in prompt path for repush flag)
+        BuiltinResult::Repush => {
+            "🔄 **Repush requested.** Re-sending last user turn using existing history (no duplication)."
+                .to_string()
+        }
     }
 }
 

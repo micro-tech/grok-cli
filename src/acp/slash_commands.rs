@@ -173,6 +173,13 @@ pub enum SlashCommand {
 
     /// `/handoffs` — show the collaboration / handoff log for this session (Task 419).
     Handoffs,
+
+    /// `/repush` (or `/retry`) — re-execute the last user turn after a network drop / timeout.
+    /// Does **not** duplicate the user message in history. Used for bad-internet recovery in ACP/CLI.
+    Repush,
+
+    /// Alias for `/repush`. Both are recognized.
+    Retry,
 }
 
 // ---------------------------------------------------------------------------
@@ -348,6 +355,7 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
             Some(SlashCommand::Role { name })
         }
 
+        "/repush" | "/retry" => Some(SlashCommand::Repush),
         _ => None, // unknown command -- let the AI handle the raw text
     }
 }
@@ -488,6 +496,16 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "handoffs",
             "Show collaboration / handoff log for this session (role switches, agent spawns, delegations)"
         ),
+
+        // Bad-internet recovery (Task for repush/retry)
+        AvailableCommand::new(
+            "repush",
+            "Re-send the last user message after a network drop/timeout without duplicating it (bad-internet recovery)"
+        ),
+        AvailableCommand::new(
+            "retry",
+            "Alias for /repush — re-execute the previous turn after a transient network error"
+        ),
     ];
 
     // Ensure alphabetical order by command name
@@ -539,7 +557,9 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::ReplaceMemory { .. }
         | SlashCommand::Memory { .. }
         | SlashCommand::Role { .. }
-        | SlashCommand::Handoffs => None,
+        | SlashCommand::Handoffs
+        | SlashCommand::Repush
+        | SlashCommand::Retry => None,
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
             let topic = if query.is_empty() {
@@ -808,10 +828,10 @@ pub enum BuiltinResult {
 
     /// /handoffs — show the collaboration / handoff log for this session (Task 419).
     ShowHandoffs,
-    // NOTE: Do NOT add internal-only "*Result" variants here.
-    // All variants must be handled in every match site (handle_builtin_result in acp.rs,
-    // the CLI chat handler, and the exhaustiveness test below).
-    // Past experience with ReplaceMemoryResult showed this causes repeated E0599 errors.
+
+    /// Special result: the user asked for /repush or /retry.
+    /// The ACP/CLI handler will re-execute using the previous user turn (no duplication).
+    Repush,
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -883,6 +903,7 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
             }
         }
         SlashCommand::Handoffs => Some(BuiltinResult::ShowHandoffs),
+        SlashCommand::Repush | SlashCommand::Retry => Some(BuiltinResult::Repush),
         _ => None, // AI-assisted command
     }
 }

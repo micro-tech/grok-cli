@@ -21,7 +21,7 @@ use crate::acp::security::SecurityPolicy;
 use crate::acp::slash_commands;
 use crate::acp::tools;
 use crate::agent::router::{Router, RouterAction};
-use crate::cli::{create_spinner, format_error, format_grok_response, format_info, format_success};
+use crate::cli::{create_spinner, format_error, format_grok_response, format_info, format_success, format_warning};
 use crate::config::{BayesianConfig, RateLimitConfig, ThinkingMode};
 use crate::router::AppRouter;
 use crate::tools::registry as tool_registry;
@@ -158,10 +158,23 @@ async fn handle_single_chat(
             }
         }
         Err(e) => {
-            println!(
-                "{}",
-                format_error(&format!("Failed to get response: {}", e))
-            );
+            let err_str = e.to_string().to_lowercase();
+            let is_network = err_str.contains("network") || err_str.contains("timeout") || err_str.contains("sending request") || crate::utils::network::detect_network_drop(&e);
+
+            if is_network {
+                println!(
+                    "{}",
+                    format_error(
+                        "⚠ Network drop. Message not sent.\n\
+                         (In interactive mode you can type 'retry' / 'repush' to try again later.)"
+                    )
+                );
+            } else {
+                println!(
+                    "{}",
+                    format_error(&format!("Failed to get response: {}", e))
+                );
+            }
             return Err(e);
         }
     }
@@ -220,6 +233,10 @@ async fn handle_interactive_chat(
         "Type 'exit', 'quit', or press Ctrl+C to end the session".dimmed()
     );
     println!("{}", "Type 'help' for available commands".dimmed());
+    println!(
+        "{}",
+        "Bad internet? Type 'retry' / '/retry' / 'repush' / '/repush' after a drop to re-send the last request (history is kept).".dimmed()
+    );
     println!();
 
     let mut conversation_history: Vec<serde_json::Value> = Vec::new();
@@ -297,48 +314,66 @@ async fn handle_interactive_chat(
                 }
 
                 let mut actual_input = input.to_string();
+                let is_repush = matches!(lower_input, "retry" | "/retry" | "repush" | "/repush");
 
-                if enable_bayesian_router {
-                    let action = router.route(&actual_input).await;
-                    match action {
-                        RouterAction::AskClarification(msg) => {
-                            println!("{} {}", "🤖 Grok Router:".cyan().bold(), msg.yellow());
-                            if show_belief_graph {
-                                println!("\n{}", router.visualize_beliefs());
-                            }
+                if is_repush {
+                    // Repush / retry the last dropped user message without duplicating it.
+                    // This is the key feature for bad/unstable internet.
+                    if let Some(last) = conversation_history.last() {
+                        if last.get("role").and_then(|r| r.as_str()) == Some("user") {
+                            println!("{}", format_info("Repushing last dropped request (using full history)..."));
+                        } else {
+                            println!("{}", format_warning("Nothing pending to repush — last turn completed."));
                             continue;
                         }
-                        RouterAction::UseSkill(skill) => {
-                            actual_input = format!(
-                                "{}\n[System: High probability of needing skill '{}'. Please use it if appropriate.]",
-                                actual_input, skill
-                            );
+                    } else {
+                        println!("{}", format_warning("No messages in history to repush."));
+                        continue;
+                    }
+                    // Do NOT push again — the last user message is the one we want to retry.
+                } else {
+                    if enable_bayesian_router {
+                        let action = router.route(&actual_input).await;
+                        match action {
+                            RouterAction::AskClarification(msg) => {
+                                println!("{} {}", "🤖 Grok Router:".cyan().bold(), msg.yellow());
+                                if show_belief_graph {
+                                    println!("\n{}", router.visualize_beliefs());
+                                }
+                                continue;
+                            }
+                            RouterAction::UseSkill(skill) => {
+                                actual_input = format!(
+                                    "{}\n[System: High probability of needing skill '{}'. Please use it if appropriate.]",
+                                    actual_input, skill
+                                );
+                            }
+                            RouterAction::UseTool(tool) => {
+                                actual_input = format!(
+                                    "{}\n[System: High probability of needing tool '{}'. Please use it if appropriate.]",
+                                    actual_input, tool
+                                );
+                            }
+                            RouterAction::NormalChat => {}
                         }
-                        RouterAction::UseTool(tool) => {
-                            actual_input = format!(
-                                "{}\n[System: High probability of needing tool '{}'. Please use it if appropriate.]",
-                                actual_input, tool
-                            );
+
+                        if show_belief_graph {
+                            println!("\n{}", router.visualize_beliefs());
                         }
-                        RouterAction::NormalChat => {}
+
+                        if router.is_low_confidence() {
+                            actual_input = format!(
+                                "{}\n[System Alert: The intent probability is below threshold (low_confidence). Do NOT call any tools yet. Output a brief 3-step Markdown plan and ask the user if it looks correct before proceeding.]",
+                                actual_input
+                            );
+                        } else if let Some(persona) = router.get_adaptive_system_prompt() {
+                            actual_input = format!("{}\n[{}]", actual_input, persona);
+                        }
                     }
 
-                    if show_belief_graph {
-                        println!("\n{}", router.visualize_beliefs());
-                    }
-
-                    if router.is_low_confidence() {
-                        actual_input = format!(
-                            "{}\n[System Alert: The intent probability is below threshold (low_confidence). Do NOT call any tools yet. Output a brief 3-step Markdown plan and ask the user if it looks correct before proceeding.]",
-                            actual_input
-                        );
-                    } else if let Some(persona) = router.get_adaptive_system_prompt() {
-                        actual_input = format!("{}\n[{}]", actual_input, persona);
-                    }
+                    // Add user message to history (cheap builder, Task 267)
+                    conversation_history.push(user(actual_input));
                 }
-
-                // Add user message to history (cheap builder, Task 267)
-                conversation_history.push(user(actual_input));
 
                 // Show spinner while waiting for response + timing (Task 266)
                 let turn_start = crate::utils::perf::start_turn();
@@ -352,7 +387,11 @@ async fn handle_interactive_chat(
                     tools.iter().map(|t| serde_json::json!(t)).collect()
                 };
 
-                let response_with_finish = client
+                // --- Bad internet resilience: repush support + graceful drop handling ---
+                // On transient network failure we keep the last user message in history
+                // so the user can simply type "retry", "/retry", "repush" or "/repush"
+                // to re-send the exact same request + full conversation context.
+                let response_with_finish = match client
                     .chat_completion_with_history(
                         &conversation_history,
                         temperature,
@@ -361,7 +400,33 @@ async fn handle_interactive_chat(
                         Some(active_tools),
                         thinking_mode.as_api_str(),
                     )
-                    .await?;
+                    .await
+                {
+                    Ok(r) => r,
+                    Err(e) => {
+                        let err_str = e.to_string().to_lowercase();
+                        let is_network_drop = err_str.contains("network")
+                            || err_str.contains("timeout")
+                            || err_str.contains("sending request")
+                            || err_str.contains("connection")
+                            || crate::utils::network::detect_network_drop(&e);
+
+                        if is_network_drop {
+                            println!(
+                                "{}",
+                                format_error(
+                                    "⚠ Network drop detected. Your last message is still in history.\n\
+                                     Type 'retry', '/retry', 'repush' or '/repush' to re-send it and pick up where it left off."
+                                )
+                            );
+                        } else {
+                            println!("{}", format_error(&format!("Failed to get response: {}", e)));
+                        }
+                        // Keep the conversation alive and the pending user message
+                        spinner.finish_and_clear();
+                        continue;
+                    }
+                };
 
                 // === STRICT CoT / THINKING TRACE POLICY (radioactive isotope rule) ===
                 // Chain-of-thought / reasoning_content / thinking_content is NEVER stored,

@@ -668,6 +668,9 @@ impl GrokAcpAgent {
 
             // Task 419: lightweight handoff tracking
             handoffs: Vec::new(),
+
+            // Bad-internet repush support (for ACP + unstable connections)
+            last_user_prompt: None,
         };
 
         // --- Task 102: Knowledge Pack Loader ---
@@ -841,6 +844,10 @@ impl GrokAcpAgent {
     }
 
     /// Handle a chat completion request
+    ///
+    /// When `repush` is true we re-execute using the current history without
+    /// pushing the `message` again. This is used for the "retry / repush" feature
+    /// on bad/unstable internet so the user can recover the last dropped turn.
     pub async fn handle_chat_completion(
         &self,
         session_id: &SessionId,
@@ -850,6 +857,7 @@ impl GrokAcpAgent {
             tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
         >,
         permission_bridge: Option<Arc<PermissionBridge>>,
+        repush: bool,
     ) -> Result<String> {
         let start_time = std::time::Instant::now();
         info!("🚀 Starting chat completion for session: {}", session_id.0);
@@ -881,11 +889,21 @@ impl GrokAcpAgent {
 
             let refined_message = session.refine_prompt(message);
 
-            // Add user message to history
-            session.messages.push(json!({
-                "role": "user",
-                "content": refined_message
-            }));
+            // Store the last user prompt for repush/retry support on bad internet.
+            if !repush {
+                session.last_user_prompt = Some(refined_message.clone());
+            }
+
+            // Add user message to history **only if this is not a repush**.
+            // Repush re-uses the previous user turn that was already stored.
+            if !repush {
+                session.messages.push(json!({
+                    "role": "user",
+                    "content": refined_message
+                }));
+            } else {
+                info!("Repush requested for session {} — re-using last user message from history", session_id.0);
+            }
 
             info!("📚 Session history: {} messages", session.messages.len());
 
@@ -2455,6 +2473,9 @@ mod tests {
 
             // Task 419: lightweight handoff tracking
             handoffs: Vec::new(),
+
+            // Bad-internet repush support (for ACP + unstable connections)
+            last_user_prompt: None,
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);

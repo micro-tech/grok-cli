@@ -124,14 +124,21 @@ src/bin/home_server.md
 Doc/docs
 Doc/ai-generated-summaries
 nul
-.grok/
+
+# .grok/ directory:
+# - Project rules, context, and skills catalog are now tracked in git
+# - Sensitive / machine-specific items are still ignored
 .grok/config.toml
 .grok/agents/
+.grok/**/*.log
 
 # Legacy root-level Session DNA (SEC-5)
-# All project DNA must live under .grok/ to stay out of VCS
 session_dna.json
 # Legacy global config (pre 0.2.5)
 _back/
 
 *.rs_bak
+# google drive uploads
+.tmp.driveupload
+# google drive downloads
+.tmp.drivedownload
