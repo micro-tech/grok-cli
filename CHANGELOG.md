@@ -11,6 +11,69 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Code-reviewer follow-up fixes (2026-10-04)
+
+**Security**
+- **SSRF redirect bypass closed**: `web_fetch` no longer uses the shared
+  redirect-following client — it uses a dedicated no-redirect client and
+  follows up to 5 redirects manually, re-running the SSRF guard on every
+  hop (a 302 to `http://169.254.169.254/` is now refused).
+- **Config file 0600 from birth**: `Config::save()` creates the file with
+  `OpenOptions::mode(0o600)` instead of write-then-chmod, closing the
+  window where the API key was world-readable.
+
+**Logging**
+- Four `web_fetch` warnings mislabeled `"SSRF guard:"` (non-2xx, body-read
+  failure, network error, retries exhausted) are labeled `"web_fetch:"`
+  again — the guard label is reserved for actual guard refusals.
+
+### Code-review fixes batch — perf + security (Tasks 463–471, 2026-10-03)
+
+**Performance**
+- **Real xAI token usage plumbed through (463)**: `MessageWithFinishReason` and
+  `RouterResponse` now carry the API-reported `usage` (was discarded /
+  hardcoded `None`); each ACP turn records real prompt/completion counts into a
+  new per-session `ContextBudget`, so delta-prompting thresholds and spend
+  tracking run on real numbers instead of the 4-chars-per-token estimate.
+- **Shell output truncated at the source (464)**: `run_shell_command` caps each
+  stream at 15k chars (tail — errors live at the end) and the ~600-byte
+  box-drawing wrapper is replaced with a one-line `$ cmd [exit N]` header.
+- **Tool-result truncation centralized (465)**: new
+  `utils::messages::tool_result_capped()` is the single append point for tool
+  results in every loop (ACP, CLI, interactive, HOH/explorer via cpu_router);
+  the per-loop `truncate_tool_results` sweeps were removed. Shared
+  tail-truncation helper `acp::context_trim::truncate_tool_content`.
+- **O(n²) context trim fixed (467)**: `trim_to_token_budget` computes the
+  estimate once and subtracts per dropped message instead of re-scanning after
+  every removal. `estimate_tokens` refactored over a per-message char counter
+  (identical arithmetic).
+- **Tool-schema serialization (466)**: verified already hoisted above the retry
+  loop at HEAD; the residual per-attempt `tools.clone()` is structurally
+  required (callee takes ownership) — no change.
+
+**Security**
+- **SSRF filtering for `web_fetch` (468)**: rejects non-http(s) schemes,
+  credentialed URLs, `localhost`, and any target resolving to loopback /
+  private / link-local (incl. `169.254.169.254` metadata) / CGNAT / multicast /
+  reserved ranges, for IPv4, IPv6, and IPv4-mapped IPv6. Hostnames are resolved
+  and every address checked. Documented as best-effort (DNS-rebinding TOCTOU
+  not covered).
+- **Shell denylist hardened (469)**: new `argv[0]` analysis layer on top of the
+  substring denylist — shell-word tokenizing (quote collapsing, `${IFS}`
+  normalisation) catches `rm -rf /*`, `rm -rf $HOME`, `r''m`, `"rm"`,
+  `rm${IFS}-rf${IFS}/`, `sudo rm -rf /`, `dd of=/dev/nvme0n1`. Documented as
+  best-effort defense-in-depth behind the approval gate.
+- **config.toml permissions (470)**: `Config::save()` now sets `0600` on Unix
+  after writing, so the API key isn't world-readable under a normal umask.
+
+**Correctness / hygiene (471 bundle)**
+- Dropped hardcoded PowerShell `-ExecutionPolicy Bypass` (unnecessary for
+  `-Command` strings; documented why).
+- `compress_schema`: char-boundary-safe truncation (was `&s[..117]` panic risk).
+- `prompt_cache_key`: hashes prompt content instead of `prompt.len()`.
+- Windows `&&` chaining splits on `\s*&&\s*` (was exact `" && "`).
+- `prune_unused_tools` is now fail-closed (drops tools with missing/unparseable names).
+
 ### Harness-of-Harnesses (HOH) — Advanced Autonomy (Tasks 297 + 361 batch)
 
 Major new autonomous outer-loop system for long-running, self-directed development.
