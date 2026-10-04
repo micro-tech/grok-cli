@@ -314,7 +314,7 @@ async fn handle_interactive_chat(
                 }
 
                 let mut actual_input = input.to_string();
-                let is_repush = matches!(lower_input, "retry" | "/retry" | "repush" | "/repush");
+                let is_repush = matches!(lower_input.as_str(), "retry" | "/retry" | "repush" | "/repush");
 
                 if is_repush {
                     // Repush / retry the last dropped user message without duplicating it.
@@ -756,6 +756,12 @@ fn handle_interactive_command(
                         // Task 419: handoff log (CLI stub)
                         slash_commands::BuiltinResult::ShowHandoffs => {
                             println!("📋 Handoff log is only available in full ACP sessions. Start an ACP session to track role/agent handoffs.");
+                        }
+
+                        // /repush / /retry — CLI has no persistent last-prompt store,
+                        // so we just inform the user.
+                        slash_commands::BuiltinResult::Repush => {
+                            println!("⚠️  /repush is only supported inside an ACP session. In CLI mode, simply re-enter your previous message.");
                         }
                     }
                     return Ok(Some(CommandResult::Continue));

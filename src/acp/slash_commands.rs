@@ -1847,6 +1847,7 @@ mod tests {
             BuiltinResult::ClearRole => {}
             BuiltinResult::ShowHandoffs => {}
             BuiltinResult::ShowMemory { .. } => {}
+            BuiltinResult::Repush => {}
             // Intentionally no wildcard. Add new arms above when extending the enum.
         };
 

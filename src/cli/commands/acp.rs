@@ -712,8 +712,7 @@ async fn handle_session_prompt_v2(
     // ── Bad-internet repush detection (raw text or slash) ─────────────────────
     // Supports both "repush", "retry", "/repush", "/retry" (raw or via slash command).
     let lower = message_text.trim().to_lowercase();
-    let is_repush = matches!(lower.as_str(), "retry" | "/retry" | "repush" | "/repush")
-        || matches!(cmd, Some(SlashCommand::Repush) | Some(SlashCommand::Retry));
+    let is_repush = matches!(lower.as_str(), "retry" | "/retry" | "repush" | "/repush");
 
     // ── Slash-command dispatch ────────────────────────────────────────────────
     if let Some(cmd) = parse_slash_command(&message_text) {

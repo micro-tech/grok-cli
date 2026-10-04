@@ -197,6 +197,7 @@ pub async fn mcp_call_connected(
 mod tests {
     use super::*;
     use crate::acp::security::SecurityPolicy;
+    use assert_cmd::cargo::cargo_bin;
 
     #[tokio::test]
     async fn empty_server_command_returns_error() {
@@ -242,34 +243,18 @@ mod tests {
     /// - call_tool works via _meta (the echo tool returns what we sent)
     #[tokio::test]
     async fn stateless_mcp_echo_works_with_real_process() {
-        // Build the test server binary if needed (cargo test will handle this for us in most cases).
-        // We just invoke the binary that cargo builds for src/bin/mcp_test_echo.rs.
-        let exe = if cfg!(windows) {
-            "target/debug/mcp_test_echo.exe"
-        } else {
-            "target/debug/mcp_test_echo"
-        };
-
-        // If the binary doesn't exist yet, try to build it quickly.
-        if !std::path::Path::new(exe).exists() {
-            let build_status = std::process::Command::new("cargo")
-                .args(["build", "--bin", "mcp_test_echo"])
-                .status()
-                .expect("failed to run cargo build for test server");
-
-            if !build_status.success() {
-                panic!(
-                    "Could not build mcp_test_echo test server. Run `cargo build --bin mcp_test_echo` manually."
-                );
-            }
-        }
+        // Use assert_cmd's cargo_bin — this reliably finds (and triggers build of)
+        // the binary declared in [[bin]] in Cargo.toml. Handles debug/release,
+        // Windows .exe suffix, CARGO_TARGET_DIR, etc.
+        let exe_path = cargo_bin("mcp_test_echo");
+        let exe = exe_path.to_string_lossy().to_string();
 
         let policy = SecurityPolicy::new();
 
-        // Use the raw mcp_call path but point it at our echo server.
-        // Because we set the default to stateless now, this will go through the _meta path.
+        // Use the raw mcp_call path (stateless by default: use_legacy_handshake=false).
+        // This exercises the _meta client-info path against the real echo server.
         let result = mcp_call(
-            exe,
+            &exe,
             "echo",
             serde_json::json!({ "message": "hello stateless world" }),
             &policy,
@@ -283,7 +268,8 @@ mod tests {
         );
 
         let output = result.unwrap();
-        // The echo server returns something like: ECHO: {"message":"hello stateless world"}
+        // The echo server returns something like:
+        // { "content": [ { "type": "text", "text": "ECHO: {\"message\":\"...\"}" } ] }
         assert!(
             output.contains("ECHO") && output.contains("hello stateless world"),
             "unexpected echo output: {}",

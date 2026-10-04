@@ -194,6 +194,10 @@ struct SessionData {
     /// Named slots: plan, working, context, errors + indexed mem.0, mem.1...
     /// Injected into prompts + auto-compacted to control context cost.
     pub memory: crate::memory::memory_manager::MemoryManager,
+
+    /// The last user prompt sent (before repush). Used by `/repush` / `/retry`
+    /// to re-execute the previous turn without duplicating history.
+    last_user_prompt: Option<String>,
 }
 
 impl SessionData {
@@ -1570,7 +1574,7 @@ impl GrokAcpAgent {
 
     /// Set the active role for a session (used by the `/role <name>` slash command).
     pub async fn set_session_role(&self, session_id: &SessionId, role: String) -> Result<String> {
-        let old_role = {
+        let _old_role = {
             let sessions = self.sessions.read().await;
             sessions.get(&session_id.0).and_then(|s| s.current_role.clone())
         };
@@ -2333,6 +2337,9 @@ impl GrokAcpAgent {
 
                 // Task 419: lightweight handoff tracking
                 handoffs: source.handoffs.clone(),
+
+                // Repush context is not carried across a fork; the forked session starts fresh.
+                last_user_prompt: None,
             }
         };
         let mut sessions = self.sessions.write().await;

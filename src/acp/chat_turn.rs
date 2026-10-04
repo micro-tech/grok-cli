@@ -668,7 +668,15 @@ pub async fn process_tool_calls(
 
         let result = tools::execute_tool(function_name, &augmented, &ctx).await;
 
-        let (mut content, status) = match result {
+        // Wire up tool_search unlock (was dead code after extraction).
+        // The tool itself returns a human-readable list; this side-effect
+        // appends the actual tool definitions to turn.tool_defs for the
+        // remainder of the turn (and future turns in the session).
+        if function_name == "tool_search" {
+            let _added = unlock_tools_from_search(&args, turn);
+        }
+
+        let (content, status) = match result {
             Ok(s) => {
                 info!("Tool {} completed in {:?}", function_name, tool_start.elapsed());
                 {
