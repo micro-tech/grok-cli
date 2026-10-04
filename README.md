@@ -191,6 +191,7 @@ All detailed guides live in the `Doc/` folder:
 - [Doc/SECURITY.md](Doc/SECURITY.md) — Security model & external access
 - [Doc/HOOKS_AND_EXTENSIONS.md](Doc/HOOKS_AND_EXTENSIONS.md) — Extension system
 - [Doc/SUBAGENTS.md](Doc/SUBAGENTS.md) — Multi-agent orchestration reference
+- [Doc/MCP.md](Doc/MCP.md) — Model Context Protocol (MCP) support for external tool servers
 - Full changelog history: [Doc/CHANGELOG_FULL.md](Doc/CHANGELOG_FULL.md)
 
 ## 🤝 Contributing
