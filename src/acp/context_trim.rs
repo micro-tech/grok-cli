@@ -14,35 +14,39 @@ use serde_json::{json, Value};
 /// Estimate token count for a list of messages.
 /// Very rough approximation: ~4 chars per token.
 pub fn estimate_tokens(messages: &[Value]) -> usize {
+    (messages.iter().map(message_char_count).sum::<usize>() / 4) + (messages.len() * 2)
+}
+
+/// Char count backing [`estimate_tokens`] for a single message, factored out
+/// so [`trim_to_token_budget`] can account removals incrementally instead of
+/// re-scanning the whole history after every drop (Task 467).
+fn message_char_count(m: &Value) -> usize {
     let mut total = 0usize;
-    for m in messages {
-        if let Some(content) = m.get("content") {
-            if let Some(s) = content.as_str() {
-                total += s.len();
-            } else if let Some(arr) = content.as_array() {
-                for item in arr {
-                    if let Some(s) = item.get("text").and_then(|t| t.as_str()) {
-                        total += s.len();
-                    }
-                }
-            }
-        }
-        // Also count tool call / function call payloads
-        if let Some(tool_calls) = m.get("tool_calls").and_then(|t| t.as_array()) {
-            for tc in tool_calls {
-                if let Some(func) = tc.get("function") {
-                    if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
-                        total += args.len();
-                    }
-                    if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
-                        total += name.len();
-                    }
+    if let Some(content) = m.get("content") {
+        if let Some(s) = content.as_str() {
+            total += s.len();
+        } else if let Some(arr) = content.as_array() {
+            for item in arr {
+                if let Some(s) = item.get("text").and_then(|t| t.as_str()) {
+                    total += s.len();
                 }
             }
         }
     }
-    // 4 chars ≈ 1 token, plus a small overhead per message
-    (total / 4) + (messages.len() * 2)
+    // Also count tool call / function call payloads
+    if let Some(tool_calls) = m.get("tool_calls").and_then(|t| t.as_array()) {
+        for tc in tool_calls {
+            if let Some(func) = tc.get("function") {
+                if let Some(args) = func.get("arguments").and_then(|a| a.as_str()) {
+                    total += args.len();
+                }
+                if let Some(name) = func.get("name").and_then(|n| n.as_str()) {
+                    total += name.len();
+                }
+            }
+        }
+    }
+    total
 }
 
 /// Model context window information.
@@ -105,27 +109,64 @@ pub fn model_default_max_tokens(model: &str) -> u32 {
 
 /// Trim messages until estimated tokens fit inside the budget.
 /// Always keeps at least the system message (if present) + the last user message.
+///
+/// Task 467: the token estimate is computed once and decremented as messages
+/// drop, instead of re-scanning all messages after every single removal
+/// (which was O(n²)).  The arithmetic is identical to [`estimate_tokens`].
 pub fn trim_to_token_budget(messages: &mut Vec<Value>, budget: usize) {
-    while messages.len() > 1 && estimate_tokens(messages) > budget {
+    let mut total_chars: usize = messages.iter().map(message_char_count).sum();
+    while messages.len() > 1 && total_chars / 4 + messages.len() * 2 > budget {
         // Never drop the very first message if it's a system prompt
-        if messages.first().and_then(|m| m.get("role")).and_then(|r| r.as_str()) == Some("system")
-            && messages.len() > 2
-        {
-            messages.remove(1);
-        } else {
-            messages.remove(0);
-        }
+        let drop_idx =
+            if messages.first().and_then(|m| m.get("role")).and_then(|r| r.as_str()) == Some("system")
+                && messages.len() > 2
+            {
+                1
+            } else {
+                0
+            };
+        total_chars = total_chars.saturating_sub(message_char_count(&messages[drop_idx]));
+        messages.remove(drop_idx);
     }
+}
+
+/// Tail-truncate a string to `max_chars` (char-boundary safe), keeping the
+/// END of the string.  Returns the input unchanged when it already fits.
+/// When truncation happens a marker records how much was cut so the model
+/// knows it is seeing a tail, not the complete output.
+///
+/// Shared by [`truncate_tool_results`] (message sweep) and the shell tool's
+/// source-level truncation (Task 464).
+///
+/// IMPORTANT for harness / cargo / build tools:
+/// We keep the **tail** (end) of the output rather than the head.
+/// Compiler errors, test failures, and the final status lines almost always appear
+/// at the end of stderr/stdout. Keeping the head would hide the actual problem
+/// from the LLM, leading to "tool call returned blank / no output" complaints.
+pub fn truncate_tool_content(s: &str, max_chars: usize) -> String {
+    if s.len() <= max_chars {
+        return s.to_string();
+    }
+    let suffix_overhead = 45; // a bit more room for the tail marker
+    let target = max_chars.saturating_sub(suffix_overhead);
+
+    // Keep the LAST `target` characters (tail) so errors at the end are visible.
+    let mut start = s.len().saturating_sub(target);
+    while start < s.len() && !s.is_char_boundary(start) {
+        start += 1;
+    }
+
+    let truncated = &s[start..];
+    format!(
+        "… [earlier output truncated, showing last {} of {} chars]\n{}",
+        truncated.len(),
+        s.len(),
+        truncated
+    )
 }
 
 /// Truncate the content of tool-result messages that are too long.
 /// This is a cheap first-line defense against giant file reads / long command output.
-///
-/// IMPORTANT for harness / cargo / build tools:
-/// We now keep the **tail** (end) of the output rather than the head.
-/// Compiler errors, test failures, and the final status lines almost always appear
-/// at the end of stderr/stdout. Keeping the head would hide the actual problem
-/// from the LLM, leading to "tool call returned blank / no output" complaints.
 pub fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
     for msg in messages.iter_mut() {
         if msg.get("role").and_then(|r| r.as_str()) != Some("tool") {
@@ -135,44 +176,26 @@ pub fn truncate_tool_results(messages: &mut [Value], max_chars: usize) {
         if let Some(content) = msg.get_mut("content") {
             if let Some(s) = content.as_str() {
                 if s.len() > max_chars {
-                    let suffix_overhead = 45; // a bit more room for the tail marker
-                    let target = max_chars.saturating_sub(suffix_overhead);
-
-                    // Keep the LAST `target` characters (tail) so errors at the end are visible.
-                    let start = s.len().saturating_sub(target);
-                    let mut start = start;
-                    while start < s.len() && !s.is_char_boundary(start) {
-                        start += 1;
-                    }
-
-                    let truncated = &s[start..];
-                    *content = json!(format!(
-                        "… [earlier output truncated, showing last {} of {} chars]\n{}",
-                        truncated.len(),
-                        s.len(),
-                        truncated
-                    ));
+                    *content = json!(truncate_tool_content(s, max_chars));
                 }
             } else if let Some(arr) = content.as_array_mut() {
                 for item in arr.iter_mut() {
-                    if let Some(text) = item.get_mut("text").and_then(|t| t.as_str())
-                        && text.len() > max_chars {
-                            let suffix_overhead = 45;
-                            let target = max_chars.saturating_sub(suffix_overhead);
-
-                            let start = text.len().saturating_sub(target);
-                            let mut start = start;
-                            while start < text.len() && !text.is_char_boundary(start) {
-                                start += 1;
-                            }
-                            let truncated = &text[start..];
-                            *item.get_mut("text").unwrap() = json!(format!(
-                                "… [earlier output truncated, showing last {} of {} chars]\n{}",
-                                truncated.len(),
-                                text.len(),
-                                truncated
-                            ));
+                    let over = item
+                        .get("text")
+                        .and_then(|t| t.as_str())
+                        .map(|t| t.len() > max_chars)
+                        .unwrap_or(false);
+                    if over {
+                        let s = item
+                            .get("text")
+                            .and_then(|t| t.as_str())
+                            .unwrap_or_default()
+                            .to_string();
+                        let truncated = truncate_tool_content(&s, max_chars);
+                        if let Some(slot) = item.get_mut("text") {
+                            *slot = json!(truncated);
                         }
+                    }
                 }
             }
         }
@@ -299,5 +322,52 @@ mod tests {
         assert!(text.contains("truncated"), "should indicate truncation");
         assert!(text.contains("B"), "tail must be preserved");
         assert!(text.len() <= 30050);
+    }
+}
+#[cfg(test)]
+mod trim_tests_467 {
+    use super::*;
+    use serde_json::json;
+
+    fn msg(role: &str, body_len: usize) -> Value {
+        json!({"role": role, "content": "x".repeat(body_len)})
+    }
+
+    #[test]
+    fn test_trim_to_token_budget_matches_estimate_arithmetic() {
+        // Task 467: incremental accounting must agree with estimate_tokens.
+        let mut messages = vec![
+            msg("system", 100),
+            msg("user", 4000),
+            msg("assistant", 4000),
+            msg("user", 4000),
+        ];
+        let before = estimate_tokens(&messages);
+        assert!(before > 3000);
+        trim_to_token_budget(&mut messages, 3000);
+        let after = estimate_tokens(&messages);
+        assert!(after <= 3000, "after trim: {} > 3000", after);
+        // System message pinned, last user message kept.
+        assert_eq!(messages.first().unwrap()["role"], "system");
+        assert_eq!(messages.last().unwrap()["role"], "user");
+        assert!(messages.len() >= 2);
+    }
+
+    #[test]
+    fn test_trim_noop_when_under_budget() {
+        let mut messages = vec![msg("system", 50), msg("user", 50)];
+        let len = messages.len();
+        trim_to_token_budget(&mut messages, 100_000);
+        assert_eq!(messages.len(), len);
+    }
+
+    #[test]
+    fn test_estimate_tokens_refactor_parity() {
+        // estimate_tokens must equal the old formula: total_chars/4 + 2 per message.
+        let messages = vec![
+            json!({"role": "user", "content": "abcdefgh"}), // 8 chars
+            json!({"role": "assistant", "content": [{"type": "text", "text": "ijklmnop"}]}), // 8 chars
+        ];
+        assert_eq!(estimate_tokens(&messages), 16 / 4 + 2 * 2);
     }
 }
