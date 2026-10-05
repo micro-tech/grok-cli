@@ -11,6 +11,21 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### OKF v1 protocol alignment (task 480, 2026-10-05)
+
+- Trace forwarder retargeted to the v1 canonical path `POST /okf/traces`
+  (bot-repo `PROTOCOL.md` is the single contract). A configured legacy
+  `/api/traces` is translated internally by
+  `OkfConfig::trace_endpoint_path()` with a one-line deprecation warn.
+- Concept push retargeted to `POST /okf/bundles/{bundle}/concepts`.
+- `okf_lookup` gains remote bundle fetch: `GET {remote_url}/okf/manifest.json`
+  (ETag/`If-None-Match`, 304 served from cache) plus per-entry
+  `GET /okf/knowledge/{kid}`, mapped into `OkfBundle`/`OkfConcept`. Remote is
+  fetched first; local `knowledge_bundles` dirs always load as the offline
+  fallback. Thread-spawn-with-runtime pattern (lookup path is sync).
+- Tests: 11 new mockito contract tests (v1 paths, Bearer <redacted> ETag
+  round-trip, offline fallback); full suite 1112 passed, 0 failed.
+
 ### Code-reviewer follow-up fixes (2026-10-04)
 
 **Security**
