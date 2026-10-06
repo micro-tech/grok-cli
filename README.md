@@ -7,6 +7,23 @@
 A powerful command-line interface for interacting with Grok AI via X API, featuring a beautiful interactive experience inspired by Gemini CLI.
 
 > **Latest improvements**:
+> - **OKF v1 protocol alignment** (Task 480, merged via PR #6, 2026-10-06) —
+>   grok-cli now speaks the unified OKF v1 contract (`PROTOCOL.md` in the
+>   Helix repo is the single source of truth):
+>   - Trace forwarder `POST`s `/okf/traces`; a legacy `/api/traces` config
+>     value is translated internally with a deprecation warning.
+>   - `okf_create` pushes new concepts to `POST /okf/bundles/{bundle}/concepts`
+>     (falls back to creating locally in the first knowledge bundle).
+>   - `okf_lookup` fetches remote bundles first: `GET {remote_url}/okf/manifest.json`
+>     with ETag/`If-None-Match` (304 served from cache), then per-entry
+>     `GET /okf/knowledge/{kid}`. Local `knowledge_bundles` dirs always load
+>     too — the offline fallback when the remote is unreachable.
+>   - 11 new mockito contract tests; full suite 1112 lib / 143 integration /
+>     26 doctests, 0 failures.
+> - **Roadmap — shared OKF backend**: grok-cli will retarget `[okf] remote_url`
+>   at the Dell's shared OKF server (`/v1/*` API) so all of John's agents
+>   share one knowledge backend. Local bundle dirs stay as the offline
+>   fallback. See the OKF unification plan in the workspace.
 > - **Harness-of-Harnesses (HOH) Autonomous Outer Loop** — **Completed** (Tasks 297 + 327 + 361 + 401–410):
 >   - Full autonomous multi-day development system is now production-ready.
 > - **grillme skill** — Critical plan review ("grilling") for the planner agent.

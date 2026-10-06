@@ -33,7 +33,13 @@
 - **LSP Integration** — lsp_query (diagnostics, hover, definitions)
 - **System Utilities** — sleep, synthetic_output, generate_commit_message
 - **Vision / Image** — vision tools
-- **Notebook / OKF** — notebook_tools, okf_tools
+- **Notebook / OKF** — notebook_tools, okf_tools (`src/tools/okf_tools.rs`, task 480: v1 protocol)
+  - `okf_lookup(query, max_results)` — search across loaded bundles; remote first
+  - `okf_get(id)` — fetch one concept by id
+  - `okf_create(...)` — new concept; pushes `POST /okf/bundles/{bundle}/concepts` when a remote is configured, else creates locally in the first knowledge bundle
+  - Remote fetch: `GET {remote_url}/okf/manifest.json` (ETag/`If-None-Match`, 304 from cache) + per-entry `GET /okf/knowledge/{kid}`
+  - Trace forwarder (`src/workflow/okf.rs`): `POST /okf/traces`; legacy `/api/traces` config translated with deprecation warn; local buffer when the server is unreachable
+  - Local `knowledge_bundles` dirs always load — offline fallback; roadmap: retarget `[okf] remote_url` at the Dell shared backend (`/v1/*`)
 
 ## Security & Control
 - ToolPolicy (read/write/execute permissions)

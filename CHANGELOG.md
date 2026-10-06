@@ -25,6 +25,10 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   fallback. Thread-spawn-with-runtime pattern (lookup path is sync).
 - Tests: 11 new mockito contract tests (v1 paths, Bearer <redacted> ETag
   round-trip, offline fallback); full suite 1112 passed, 0 failed.
+- Merged to `PreRelese` via PR #6, 2026-10-06.
+- Roadmap: `[okf] remote_url` will retarget at the Dell's shared OKF backend
+  (`/v1/*` API, unification plan Phase 3); local `knowledge_bundles` dirs
+  remain the offline fallback.
 
 ### Code-reviewer follow-up fixes (2026-10-04)
 
