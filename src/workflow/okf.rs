@@ -90,7 +90,13 @@ pub async fn forward_workflow_trace(trace: &WorkflowTrace, cfg: &OkfConfig) -> R
 async fn send_trace_once(trace: &WorkflowTrace, cfg: &OkfConfig) -> bool {
     let scheme = if cfg.use_https { "https" } else { "http" };
     let host = cfg.server.trim_end_matches('/');
-    let url = format!("{}://{}:{}{}", scheme, host, cfg.port, cfg.endpoint);
+    let url = format!(
+        "{}://{}:{}{}",
+        scheme,
+        host,
+        cfg.port,
+        cfg.trace_endpoint_path()
+    );
 
     let client = match crate::utils::http::http_client_builder()
         .timeout(Duration::from_secs(cfg.timeout_secs.max(1)))
@@ -227,5 +233,74 @@ mod tests {
 
         let res = forward_workflow_trace(&trace, &cfg).await;
         assert!(res.is_ok());
+    }
+
+    // ── 480.1 contract: trace forwarder targets the v1 path ──────────────
+
+    #[test]
+    fn default_endpoint_is_v1_traces() {
+        let cfg = OkfConfig::default();
+        assert_eq!(cfg.trace_endpoint_path(), "/okf/traces");
+    }
+
+    #[test]
+    fn legacy_endpoint_translated_to_v1() {
+        let mut cfg = OkfConfig::default();
+        cfg.endpoint = "/api/traces".to_string();
+        assert_eq!(cfg.trace_endpoint_path(), "/okf/traces");
+    }
+
+    #[test]
+    fn custom_endpoint_passes_through() {
+        let mut cfg = OkfConfig::default();
+        cfg.endpoint = "/custom/traces".to_string();
+        assert_eq!(cfg.trace_endpoint_path(), "/custom/traces");
+    }
+
+    /// Split a mockito server.url() ("http://127.0.0.1:PORT") into (host, port).
+    fn mock_host_port(server: &mockito::Server) -> (String, u16) {
+        let url = server.url();
+        let url = url.trim_start_matches("http://").trim_start_matches("https://");
+        let (host, port) = url.rsplit_once(':').expect("mockito url has a port");
+        (host.to_string(), port.parse().expect("mockito port parses"))
+    }
+
+    #[tokio::test]
+    async fn trace_posts_to_okf_traces_path() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/okf/traces")
+            .with_status(202)
+            .create_async()
+            .await;
+
+        let (host, port) = mock_host_port(&server);
+        let mut cfg = OkfConfig::default();
+        cfg.enabled = true;
+        cfg.server = host;
+        cfg.port = port;
+
+        assert!(send_trace_once(&sample_trace(), &cfg).await);
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn legacy_config_still_posts_to_v1_path() {
+        let mut server = mockito::Server::new_async().await;
+        let mock = server
+            .mock("POST", "/okf/traces")
+            .with_status(202)
+            .create_async()
+            .await;
+
+        let (host, port) = mock_host_port(&server);
+        let mut cfg = OkfConfig::default();
+        cfg.enabled = true;
+        cfg.server = host;
+        cfg.port = port;
+        cfg.endpoint = "/api/traces".to_string(); // legacy config value
+
+        assert!(send_trace_once(&sample_trace(), &cfg).await);
+        mock.assert_async().await;
     }
 }
