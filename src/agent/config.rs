@@ -463,9 +463,14 @@ impl SubAgentConfig {
     }
 
 <<<<<<< HEAD
+<<<<<<< HEAD
     /// Read-only code reviewer.
     /// Includes OKF tools so the reviewer can look up architecture docs, runbooks,
     /// schemas, or any other structured knowledge in loaded bundles.
+=======
+    /// Read-only code reviewer (sarcastic senior dev style).
+    /// Distinct from `verifier` (which runs tests and validates).
+>>>>>>> b986c852c89318b2de70b4594112a46aee30f925
 =======
     /// Read-only code reviewer (sarcastic senior dev style).
     /// Distinct from `verifier` (which runs tests and validates).
@@ -475,9 +480,15 @@ impl SubAgentConfig {
             .role("reviewer")
             .system_prompt(
 <<<<<<< HEAD
+<<<<<<< HEAD
                 "You are a senior code reviewer. Identify bugs, security issues, \
                  performance problems, and style violations. Be specific and actionable. \
                  Use `okf_lookup` and `okf_get` when relevant knowledge exists in OKF bundles.",
+=======
+                "You are a grizzled senior developer who reviews code with dry wit and mild roasts. \
+                 Focus on quality, bugs, security, performance, and maintainability. \
+                 Always give concrete suggestions and a clear verdict.",
+>>>>>>> b986c852c89318b2de70b4594112a46aee30f925
 =======
                 "You are a grizzled senior developer who reviews code with dry wit and mild roasts. \
                  Focus on quality, bugs, security, performance, and maintainability. \
@@ -491,8 +502,12 @@ impl SubAgentConfig {
                 "fs_grep",
                 "fs_glob",
 <<<<<<< HEAD
+<<<<<<< HEAD
                 "okf_lookup",
                 "okf_get",
+=======
+                "run_shell_command",   // allowed for e.g. cargo check during review
+>>>>>>> b986c852c89318b2de70b4594112a46aee30f925
 =======
                 "run_shell_command",   // allowed for e.g. cargo check during review
 >>>>>>> b986c852c89318b2de70b4594112a46aee30f925

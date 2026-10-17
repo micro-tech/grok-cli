@@ -57,7 +57,11 @@ clap = { version = "4.6.7", features = ["derive", "env"] }
 # Error handling
 anyhow = "1.0"
 <<<<<<< HEAD
+<<<<<<< HEAD
 thiserror = "2.0.21"
+=======
+thiserror = "2.0"
+>>>>>>> b986c852c89318b2de70b4594112a46aee30f925
 =======
 thiserror = "2.0"
 >>>>>>> b986c852c89318b2de70b4594112a46aee30f925
