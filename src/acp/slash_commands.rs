@@ -148,6 +148,31 @@ pub enum SlashCommand {
     /// `/compress` — Force an immediate context compression + archive pass (for testing).
     /// This bypasses the normal threshold and compresses the oldest messages right now.
     Compress,
+
+    /// `/cot [on|off]` — control whether Chain-of-Thought / reasoning traces are shown in the UI (Zed).
+    /// `/cot on`  — show thinking blocks
+    /// `/cot off` — hide thinking blocks (default behavior can be set in config)
+    /// `/cot`     — show current setting for this session
+    Cot { enabled: Option<bool> },
+
+    /// `/replace[slot] <content>` or `/replace slot <content>`
+    /// Explicitly update one of the agent's short-term memory slots.
+    /// Slots: plan, working, context, errors, mem.0 ... mem.5
+    /// This is the user-facing way to drive the JAZ-style /replace memory.
+    ReplaceMemory { slot: String, content: String },
+
+    /// `/memory` — Show current contents and stats of all short-term /replace memory slots.
+    /// `/memory promote` — Attempt to promote stable facts from memory into long-term OKF storage.
+    Memory { subcommand: String },
+
+    /// `/role [planner|implementer|debugger|reviewer|show|clear]` — Switch the active agent role/persona.
+    /// Roles give the agent specialized system instructions for common tasks.
+    /// `/role` or `/role show` — show current role.
+    /// `/role clear` — return to general agent.
+    Role { name: String },
+
+    /// `/handoffs` — show the collaboration / handoff log for this session (Task 419).
+    Handoffs,
 }
 
 // ---------------------------------------------------------------------------
@@ -209,8 +234,9 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         }
         "/visualize" => Some(SlashCommand::Visualize),
         "/think" => {
-            if args.is_empty() {
-                // `/think` with no arg — show current mode
+            let lower = args.to_ascii_lowercase();
+            if args.is_empty() || lower == "show" {
+                // `/think` or `/think show` — show current mode
                 Some(SlashCommand::Think { mode: None })
             } else {
                 // `/think off|low|high` — None for unknown args (AI responds)
@@ -270,6 +296,57 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         "/okf" => Some(SlashCommand::Okf { query: args }),
 
         "/compress" | "/force_compress" => Some(SlashCommand::Compress),
+
+        "/cot" => {
+            let lower = args.to_ascii_lowercase();
+            if args.is_empty() || lower == "show" {
+                Some(SlashCommand::Cot { enabled: None })
+            } else if lower == "on" || lower == "true" || lower == "yes" {
+                Some(SlashCommand::Cot { enabled: Some(true) })
+            } else if lower == "off" || lower == "false" || lower == "no" {
+                Some(SlashCommand::Cot { enabled: Some(false) })
+            } else {
+                None
+            }
+        }
+
+        // /replace[slot] content  or  /replace slot content
+        // This is the explicit user command to drive the agent's short-term memory slots.
+        "/replace" => {
+            let (slot, content) = if args.starts_with('[') {
+                if let Some(end) = args.find(']') {
+                    let slot = args[1..end].trim().to_string();
+                    let content = args[end + 1..].trim().to_string();
+                    (slot, content)
+                } else {
+                    return None;
+                }
+            } else {
+                let parts: Vec<&str> = args.splitn(2, ' ').collect();
+                if parts.len() == 2 {
+                    (parts[0].to_string(), parts[1].to_string())
+                } else {
+                    return None;
+                }
+            };
+            if slot.is_empty() || content.is_empty() {
+                None
+            } else {
+                Some(SlashCommand::ReplaceMemory { slot, content })
+            }
+        }
+
+        // /memory [promote]
+        "/memory" => {
+            let sub = args.trim().to_lowercase();
+            Some(SlashCommand::Memory { subcommand: sub })
+        }
+
+        // /role [planner|implementer|debugger|reviewer|show|clear]
+        "/role" => {
+            let name = args.trim().to_lowercase();
+            Some(SlashCommand::Role { name })
+        }
 
         _ => None, // unknown command -- let the AI handle the raw text
     }
@@ -383,6 +460,34 @@ pub fn get_available_commands() -> Vec<AvailableCommand> {
             "compress",
             "Force an immediate context compression + archive (great for testing the compressor)"
         ),
+        AvailableCommand::new(
+            "cot",
+            "Control display of Chain-of-Thought / reasoning traces in the UI (Zed etc.)"
+        )
+        .input(input("on | off — omit to show current setting for this session")),
+
+        AvailableCommand::new(
+            "replace",
+            "Explicitly update one of the agent's short-term memory slots (plan, working, context, errors, mem.0–5). This is the JAZ-style /replace working memory."
+        )
+        .input(input("[slot] <content>  or  slot <content>   e.g. /replace[plan] implement auth with JWT")),
+
+        AvailableCommand::new(
+            "memory",
+            "Inspect short-term /replace memory slots or promote stable facts to long-term OKF storage"
+        )
+        .input(input("promote — omit to show current slots + usage")),
+
+        AvailableCommand::new(
+            "role",
+            "Switch agent role/persona for this session (planner, implementer, debugger, reviewer, etc.)"
+        )
+        .input(input("planner | implementer | debugger | reviewer | show | clear — omit to show current role")),
+
+        AvailableCommand::new(
+            "handoffs",
+            "Show collaboration / handoff log for this session (role switches, agent spawns, delegations)"
+        ),
     ];
 
     // Ensure alphabetical order by command name
@@ -429,8 +534,12 @@ pub fn command_to_prompt(cmd: &SlashCommand) -> Option<String> {
         | SlashCommand::Init
         | SlashCommand::Trace { .. }
         | SlashCommand::Okf { .. }
-        | SlashCommand::Compress => None,
-
+        | SlashCommand::Compress
+        | SlashCommand::Cot { .. }
+        | SlashCommand::ReplaceMemory { .. }
+        | SlashCommand::Memory { .. }
+        | SlashCommand::Role { .. }
+        | SlashCommand::Handoffs => None,
         // --- AI-assisted commands ---
         SlashCommand::Web { query } => {
             let topic = if query.is_empty() {
@@ -678,6 +787,31 @@ pub enum BuiltinResult {
 
     /// Force an immediate context compression (for testing `/compress`).
     ForceCompress,
+
+    /// Set or query per-session display of Chain-of-Thought / thinking traces.
+    SetShowThinking(Option<bool>),
+
+    /// Update a short-term /replace memory slot (plan, working, context, errors, mem.N).
+    /// This is the explicit slash-command form of the memory tool.
+    ReplaceMemory { slot: String, content: String },
+
+    /// Show current /replace memory slots (or promote them).
+    ShowMemory { promote: bool },
+
+    /// Set or show the active agent role for this session.
+    /// "clear" → reset to general.
+    SetRole(String),
+    /// Show the current role.
+    ShowRole,
+    /// Clear / reset to the general agent.
+    ClearRole,
+
+    /// /handoffs — show the collaboration / handoff log for this session (Task 419).
+    ShowHandoffs,
+    // NOTE: Do NOT add internal-only "*Result" variants here.
+    // All variants must be handled in every match site (handle_builtin_result in acp.rs,
+    // the CLI chat handler, and the exhaustiveness test below).
+    // Past experience with ReplaceMemoryResult showed this causes repeated E0599 errors.
 }
 
 /// Handle a built-in slash command, returning `Some(BuiltinResult)` if the
@@ -730,6 +864,25 @@ pub fn handle_builtin(cmd: &SlashCommand) -> Option<BuiltinResult> {
         SlashCommand::Trace { subcommand } => Some(BuiltinResult::ShowTrace(subcommand.clone())),
         SlashCommand::Okf { query } => Some(BuiltinResult::ShowOkf(query.clone())),
         SlashCommand::Compress => Some(BuiltinResult::ForceCompress),
+        SlashCommand::Cot { enabled } => Some(BuiltinResult::SetShowThinking(*enabled)),
+        SlashCommand::ReplaceMemory { slot, content } => {
+            Some(BuiltinResult::ReplaceMemory { slot: slot.clone(), content: content.clone() })
+        }
+        SlashCommand::Memory { subcommand } => {
+            let promote = subcommand == "promote";
+            Some(BuiltinResult::ShowMemory { promote })
+        }
+        SlashCommand::Role { name } => {
+            let n = name.trim().to_lowercase();
+            if n.is_empty() || n == "show" {
+                Some(BuiltinResult::ShowRole)
+            } else if n == "clear" {
+                Some(BuiltinResult::ClearRole)
+            } else {
+                Some(BuiltinResult::SetRole(n))
+            }
+        }
+        SlashCommand::Handoffs => Some(BuiltinResult::ShowHandoffs),
         _ => None, // AI-assisted command
     }
 }
@@ -1627,5 +1780,58 @@ mod tests {
         let json = serde_json::to_value(&cmd).expect("serialization failed");
         assert_eq!(json["name"], "web");
         assert_eq!(json["input"]["hint"], "query");
+    }
+
+    // ── Exhaustiveness guard for BuiltinResult (prevents future /replace-style bugs) ──
+
+    #[test]
+    fn builtin_result_is_exhaustive() {
+        // This test will fail to compile if a new variant is added to BuiltinResult
+        // without being handled in the main dispatch sites
+        // (acp.rs handle_builtin_result and chat.rs).
+        // It forces maintainers to audit all match sites when extending slash commands.
+        let replace_mem = BuiltinResult::ReplaceMemory {
+            slot: "working".into(),
+            content: "test content".into(),
+        };
+        let show_mem = BuiltinResult::ShowMemory { promote: false };
+
+        let _ = match replace_mem {
+            BuiltinResult::Text(_) => {}
+            BuiltinResult::ClearHistory => {}
+            BuiltinResult::SwitchModel(_) => {}
+            BuiltinResult::ShowCurrentModel => {}
+            BuiltinResult::ShowContext => {}
+            BuiltinResult::RecallArchive(_) => {}
+            BuiltinResult::ShowBayes => {}
+            BuiltinResult::ResetBayes => {}
+            BuiltinResult::ExplainBayes => {}
+            BuiltinResult::SetGoal(_) => {}
+            BuiltinResult::ClearGoal => {}
+            BuiltinResult::ShowGoal => {}
+            BuiltinResult::ShowVisualizer => {}
+            BuiltinResult::SetThinkingMode(_) => {}
+            BuiltinResult::ShowDiagnostics => {}
+            BuiltinResult::AddRule(_) => {}
+            BuiltinResult::RemoveRule(_) => {}
+            BuiltinResult::ListRules => {}
+            BuiltinResult::ClearRules => {}
+            BuiltinResult::ShowTrace(_) => {}
+            BuiltinResult::ShowOkf(_) => {}
+            BuiltinResult::ForceCompress => {}
+            BuiltinResult::SetShowThinking(_) => {}
+            BuiltinResult::ReplaceMemory { .. } => {}
+            BuiltinResult::SetRole(_) => {}
+            BuiltinResult::ShowRole => {}
+            BuiltinResult::ClearRole => {}
+            BuiltinResult::ShowHandoffs => {}
+            BuiltinResult::ShowMemory { .. } => {}
+            // Intentionally no wildcard. Add new arms above when extending the enum.
+        };
+
+        let _ = match show_mem {
+            BuiltinResult::ShowMemory { promote: _ } => {}
+            _ => {}
+        };
     }
 }

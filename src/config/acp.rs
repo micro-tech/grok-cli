@@ -132,6 +132,22 @@ pub struct AcpConfig {
     /// Example: "Use Conventional Commits with scope and breaking-change footer."
     #[serde(default)]
     pub commit_message_instructions: String,
+
+    /// Send only the core toolset to the model on each request, unlocking
+    /// additional tools on demand via `tool_search`.
+    ///
+    /// The full 53-tool schema costs ~7k tokens per API call; the core set
+    /// (~10 tools) costs a fraction of that. When the model needs a tool
+    /// outside the core set it calls `tool_search`, and matching definitions
+    /// are appended for the rest of the session.
+    /// Set to `false` to restore the old behavior (all tools, every call).
+    /// Default: true
+    #[serde(default = "default_core_toolset_only")]
+    pub core_toolset_only: bool,
+}
+
+fn default_core_toolset_only() -> bool {
+    true
 }
 
 fn default_true() -> bool {
@@ -202,6 +218,7 @@ impl Default for AcpConfig {
             show_context_usage: true,
             stream_thinking: true,
             commit_message_instructions: String::new(),
+            core_toolset_only: true,
         }
     }
 }

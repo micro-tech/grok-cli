@@ -589,6 +589,23 @@ End-user guides, quick-starts, and command references.
 
 ## 6. Architecture Layers
 
+### Harness-of-Harnesses (HOH) Overview
+
+HOH is the **outer autonomous development loop** (see `src/hoh/`). It functions as a true **"Harness of Harnesses"**:
+
+- **Outer HOH Loop** (`outer_loop.rs`, `planner.rs`): Plans, executes, evaluates, and improves across many days.
+- **Inner Agent Harnesses** (`multi_agent_orchestrator.rs` + specialized profiles): Coordinates many inner specialized agent harnesses with simulation-first behavior.
+- **Cross-cutting layers**: Governance (407), Ethics (408), Long-term Strategy (361.9), Agent Lifecycle (403-405), Creativity (401/402), Cross-Project (361.11), Multi-Project (361.0101).
+
+Key HOH directories/modules:
+- `src/hoh/` — 40+ modules implementing the full 327 + 361.x + 401–410 stack
+- `.grok/hoh/` — runtime state, iterations, and artifacts
+- `.zed/task_list.json` — the source of truth that HOH reads and evolves
+
+The rest of the architecture layers below describe the **inner harness** (the main Grok CLI application) that HOH orchestrates and improves.
+
+---
+
 The following diagram shows the module dependency stack from user input to API output.
 Arrows indicate the direction of function calls and data flow.
 

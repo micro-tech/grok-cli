@@ -75,7 +75,16 @@ function Set-CargoVersion
     param([string]$NewVersion)
 
     $cargoToml = Get-Content "Cargo.toml" -Raw
-    $cargoToml = $cargoToml -replace 'version\s*=\s*"[^"]+"', "version = `"$NewVersion`""
+
+    # CRITICAL FIX: Only update the *package* version.
+    # The old broad regex `version\s*=\s*"[^"]+"` matched *every* dependency
+    # version line in the file (reqwest, tokio, serde, etc.) and replaced them
+    # all with the project version (e.g. "0.3.1"). This is what caused the
+    # massive Cargo.toml corruption.
+    #
+    # We now target ONLY the version inside the [package] section.
+    $cargoToml = $cargoToml -replace '(?s)(\[package\].*?^\s*version\s*=\s*")([^"]+)(")', "`$1$NewVersion`$3"
+
     Set-Content "Cargo.toml" -Value $cargoToml -NoNewline
 }
 

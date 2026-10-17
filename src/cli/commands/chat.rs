@@ -11,7 +11,7 @@ use anyhow::Result;
 use colored::*;
 use serde_json::Value;
 // Cheap message builders to reduce allocations (Task 267)
-use crate::utils::messages::{assistant, assistant_with_tool_calls, system, user};
+use crate::utils::messages::{assistant, assistant_with_tool_calls, system, tool_result, user};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -48,7 +48,17 @@ pub struct ChatOptions<'a> {
 }
 
 pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
-    let client = initialize_router(options.api_key, options.timeout_secs)?;
+    let client = if options.rate_limit_config.max_requests_per_minute > 0
+        || options.rate_limit_config.max_tokens_per_minute > 0
+    {
+        crate::utils::client::initialize_router_with_limits(
+            options.api_key,
+            options.timeout_secs,
+            options.rate_limit_config.clone(),
+        )?
+    } else {
+        initialize_router(options.api_key, options.timeout_secs)?
+    };
 
     if options.interactive {
         handle_interactive_chat(
@@ -162,7 +172,10 @@ async fn handle_single_chat(
 /// Execute a tool call from the AI using the full tool registry (all 31 tools).
 /// Previously only ~9 tools were handled here; now every tool defined in
 /// `tools::registry::get_tool_definitions` is dispatched correctly.
-async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<()> {
+///
+/// Returns the tool output string (or an error message string) so the caller
+/// can feed it back to the model as a `role: "tool"` message.
+async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> Result<String> {
     let name = &tool_call.function.name;
     let args: Value = serde_json::from_str(&tool_call.function.arguments)?;
     let ctx = ToolContext::new(security.clone());
@@ -178,15 +191,15 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
             if lines.len() > 20 {
                 println!("    {} ({} more lines)", "...".dimmed(), lines.len() - 20);
             }
+            Ok(output)
         }
         Err(e) => {
-            println!(
-                "{}",
-                format_error(&format!("Tool '{}' failed: {}", name, e))
-            );
+            let msg = format!("Error executing {}: {}", name, e);
+            println!("{}", format_error(&msg));
+            // Return the error as the tool result so the model knows what happened
+            Ok(msg)
         }
     }
-    Ok(())
 }
 
 async fn handle_interactive_chat(
@@ -319,7 +332,8 @@ async fn handle_interactive_chat(
 
                     if router.is_low_confidence() {
                         actual_input = format!(
-                            "{}\n[System Alert: The intent probability is below threshold (low_confidence). Do NOT call any tools yet. Output a brief 3-step Markdown plan and ask the user if it looks correct before proceeding.]",
+                            "{}
+[System Advisory: Intent confidence is below threshold. If the request is ambiguous, briefly confirm the goal with the user before taking irreversible actions. You may still use tools when the intent is clear enough.]",
                             actual_input
                         );
                     } else if let Some(persona) = router.get_adaptive_system_prompt() {
@@ -348,55 +362,113 @@ async fn handle_interactive_chat(
                         temperature,
                         max_tokens,
                         model,
-                        Some(active_tools),
+                        Some(active_tools.clone()),
                         thinking_mode.as_api_str(),
                     )
                     .await?;
 
-                let response_msg = response_with_finish.message;
+                // === STRICT CoT / THINKING TRACE POLICY (radioactive isotope rule) ===
+                // Chain-of-thought / reasoning_content / thinking_content is NEVER stored,
+                // NEVER fed back to the LLM, NEVER included in conversation_history.
+                // Only for one-shot display, then dropped.
+                let _thinking_content = response_with_finish.thinking_content; // deliberately discarded for money savings
+
+                use crate::cot_guard::clean_and_assert_no_cot;
+
+                // Clean the raw response message (removes any CoT)
+                let clean_response_msg = clean_and_assert_no_cot(
+                    serde_json::to_value(&response_with_finish.message)?
+                );
+
+                // Re-parse a clean version for tool-call handling (no CoT possible after clean)
+                let mut current_response: grok_api::Message = serde_json::from_value(clean_response_msg)
+                    .unwrap_or(response_with_finish.message.clone());
 
                 spinner.finish_and_clear();
 
                 // Task 266: report per-turn timing (CLI interactive) — gated by GROK_PERF
                 crate::utils::perf::report_turn("cli-interactive turn", turn_start);
 
-                // Handle tool calls if present
-                if let Some(tool_calls) = &response_msg.tool_calls
-                    && !tool_calls.is_empty()
-                {
+                // ── Agentic tool loop ──────────────────────────────────────────────────────
+                // If the model requested tool calls, execute them, feed the results back,
+                // and call the model again — repeating until it produces a plain text reply
+                // or we hit the safety cap (MAX_TOOL_LOOP_ITERATIONS).
+                let mut tool_loop_count: u32 = 0;
+                const MAX_CLI_TOOL_LOOPS: u32 = crate::constants::MAX_TOOL_LOOP_ITERATIONS;
+
+                loop {
+                    let tool_calls = match &current_response.tool_calls {
+                        Some(tc) if !tc.is_empty() => tc.clone(),
+                        _ => break, // No tool calls — display final response
+                    };
+
+                    if tool_loop_count >= MAX_CLI_TOOL_LOOPS {
+                        println!(
+                            "{}",
+                            format_error(&format!(
+                                "Reached max tool loop iterations ({}). Stopping.",
+                                MAX_CLI_TOOL_LOOPS
+                            ))
+                        );
+                        break;
+                    }
+                    tool_loop_count += 1;
+
                     println!("{}", "Grok is executing operations...".blue().dimmed());
 
-                    for tool_call in tool_calls {
-                        if let Err(e) = execute_tool_call(tool_call, &security).await {
-                            println!("{}", format_error(&format!("Tool execution failed: {}", e)));
-                        } else {
-                            if enable_bayesian_router {
-                                router.learn_from_tool(&tool_call.function.name);
-                            }
-                        }
-                    }
-
-                    // Add assistant's tool call response to history (Task 267)
-                    let content_str = content_to_string(response_msg.content.as_ref());
+                    // 1. Add the assistant's tool-call request to history FIRST
+                    let content_str = content_to_string(current_response.content.as_ref());
                     let tool_calls_json: Vec<serde_json::Value> = tool_calls
                         .iter()
-                        .map(|tc| {
-                            serde_json::to_value(tc).unwrap_or_else(|_| serde_json::json!({}))
-                        })
+                        .map(|tc| serde_json::to_value(tc).unwrap_or_else(|_| serde_json::json!({})))
                         .collect();
                     conversation_history.push(assistant_with_tool_calls(
-                        if content_str.is_empty() {
-                            None
-                        } else {
-                            Some(content_str)
-                        },
+                        if content_str.is_empty() { None } else { Some(content_str) },
                         tool_calls_json,
                     ));
 
-                    continue;
-                }
+                    // 2. Execute each tool and add its result to history
+                    for tool_call in &tool_calls {
+                        let output = execute_tool_call(tool_call, &security).await
+                            .unwrap_or_else(|e| format!("Error dispatching tool: {}", e));
+                        if enable_bayesian_router {
+                            router.learn_from_tool(&tool_call.function.name);
+                        }
+                        // Feed the result back as a tool message so the model can see it
+                        conversation_history.push(tool_result(&tool_call.id, output));
+                    }
 
-                let response = content_to_string(response_msg.content.as_ref());
+                    // 3. Call the model again with the tool results
+                    let follow_spinner = create_spinner("Grok is processing results...");
+                    let follow_up = match client
+                        .chat_completion_with_history(
+                            &conversation_history,
+                            temperature,
+                            max_tokens,
+                            model,
+                            Some(active_tools.clone()),
+                            thinking_mode.as_api_str(),
+                        )
+                        .await
+                    {
+                        Ok(r) => r,
+                        Err(e) => {
+                            follow_spinner.finish_and_clear();
+                            println!("{}", format_error(&format!("Follow-up call failed: {}", e)));
+                            break;
+                        }
+                    };
+                    follow_spinner.finish_and_clear();
+
+                    let clean_follow = clean_and_assert_no_cot(
+                        serde_json::to_value(&follow_up.message)?
+                    );
+                    current_response = serde_json::from_value(clean_follow)
+                        .unwrap_or(follow_up.message);
+                }
+                // ── End agentic tool loop ──────────────────────────────────────────────────
+
+                let response = content_to_string(current_response.content.as_ref());
 
                 // Add assistant response to history (cheap builder)
                 conversation_history.push(assistant(response.clone()));
@@ -627,6 +699,45 @@ fn handle_interactive_command(
                             println!(
                                 "   Start an ACP session or use a long conversation + the auto-compress path instead."
                             );
+                        }
+                        slash_commands::BuiltinResult::SetShowThinking(opt_enabled) => {
+                            match opt_enabled {
+                                Some(true) => println!("🧠 Chain-of-Thought display **enabled** for this CLI session."),
+                                Some(false) => println!("🔇 Chain-of-Thought display **disabled** for this CLI session."),
+                                None => println!("🧠 CoT display: use `/cot on` or `/cot off` (CLI session override not fully wired; falls back to global)."),
+                            }
+                        }
+                        slash_commands::BuiltinResult::ReplaceMemory { slot, content } => {
+                            println!(
+                                "📝 Memory slot update requested (CLI): `{}`\n{}",
+                                slot, content
+                            );
+                            println!(
+                                "(Full effect only in ACP sessions. In CLI this is noted for the current turn.)"
+                            );
+                        }
+                        slash_commands::BuiltinResult::ShowMemory { promote } => {
+                            if promote {
+                                println!("📝 Memory promotion requested (CLI). Full promotion only works inside an ACP session with a live MemoryManager.");
+                            } else {
+                                println!("📋 /memory (CLI): memory inspection is best viewed inside an ACP session. Use `/replace` to update slots.");
+                            }
+                        }
+
+                        // Task 418: agent role specialization (CLI stubs)
+                        slash_commands::BuiltinResult::SetRole(role) => {
+                            println!("🎭 Role set to `{role}` (CLI session — role injection active for this conversation).");
+                        }
+                        slash_commands::BuiltinResult::ShowRole => {
+                            println!("🎭 Role: use `/role <name>` to specialise this CLI session (planner, implementer, debugger, reviewer).");
+                        }
+                        slash_commands::BuiltinResult::ClearRole => {
+                            println!("🎭 Role cleared — back to general agent mode (CLI session).");
+                        }
+
+                        // Task 419: handoff log (CLI stub)
+                        slash_commands::BuiltinResult::ShowHandoffs => {
+                            println!("📋 Handoff log is only available in full ACP sessions. Start an ACP session to track role/agent handoffs.");
                         }
                     }
                     return Ok(Some(CommandResult::Continue));

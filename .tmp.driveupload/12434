@@ -1,0 +1,327 @@
+//! Grok CLI Library
+//!
+//! This library provides the core functionality for the Grok CLI,
+//! including API integration, configuration management, and display utilities.
+//!
+//! # Architecture Notes
+//!
+//! ## Library vs Binary Separation
+//!
+//! This crate contains both library and binary code. According to Rust best practices,
+//! libraries should NOT contain:
+//! - Terminal I/O operations (println!, eprintln!, print!, etc.)
+//! - Progress bars (indicatif)
+//! - Terminal UI (ratatui, crossterm)
+//! - Direct runtime dependencies (#[tokio::main])
+//! - Code that exits the process
+//!
+//! ## Current State
+//!
+//! The following modules currently violate library/binary separation:
+//! - `cli::mod` - Contains I/O helper functions (marked deprecated)
+//! - `cli::commands::*` - Command handlers print directly to stdout/stderr
+//! - `display` - Some functions perform direct I/O
+//!
+//! ## Migration Path
+//!
+//! 1. ✅ Created `src/terminal/` module for binary-only I/O (not exposed in lib.rs)
+//! 2. ⏳ TODO: Refactor command handlers to return Result<DisplayData> instead of printing
+//! 3. ⏳ TODO: Move `cli::app` and command dispatch to binary crate
+//! 4. ⏳ TODO: Make all `display` functions pure (return String, no I/O)
+//!
+//! For now, I/O functions are marked with `#[deprecated]` to indicate they should
+//! be moved to the binary crate in a future refactor.
+
+use clap::Subcommand;
+
+pub mod acp;
+pub mod agent;
+pub mod bayes;
+pub mod cli;
+pub mod config;
+pub mod constants;
+pub mod context;
+pub mod display;
+pub mod engine;
+pub mod grok_client_ext;
+pub mod hooks;
+pub mod knowledge;
+pub mod mcp;
+pub mod memory;
+pub mod optimizer;
+pub mod router;
+pub mod rpl;
+pub mod safety;
+pub mod security;
+pub mod session;
+pub mod skills;
+pub mod task_graph;
+pub mod tools;
+pub mod utils;
+pub use utils::cot_guard; // CoT guard (radioactive isotope policy)
+pub mod visualizer;
+pub mod workflow;
+pub mod hoh;
+
+#[cfg(feature = "tgs-rag")]
+pub mod rag;
+pub use grok_api::{
+    ChatResponse, Choice, Error as GrokApiError, FunctionCall, Message, MessageContent, ToolCall,
+    Usage,
+};
+
+// Re-export the extended GrokClient and types
+pub use grok_client_ext::{GrokClient, MessageWithFinishReason};
+
+/// Helper function to extract text content from String
+/// Kept for backwards compatibility with refactored code
+pub fn extract_text_content(content: &MessageContent) -> String {
+    match content {
+        MessageContent::Text(s) => s.clone(),
+        _ => String::new(),
+    }
+}
+
+/// Helper function to convert Option<String> to String
+/// Kept for backwards compatibility with refactored code
+pub fn content_to_string(content: Option<&MessageContent>) -> String {
+    content.map(extract_text_content).unwrap_or_default()
+}
+
+/// Helper function to create text content
+/// Kept for backwards compatibility with refactored code
+pub fn text_content(text: impl Into<String>) -> MessageContent {
+    MessageContent::Text(text.into())
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum CodeAction {
+    /// Explain code functionality
+    Explain {
+        /// File path or code snippet
+        input: String,
+        /// Input is a file path (default: auto-detect)
+        #[arg(short, long)]
+        file: bool,
+    },
+    /// Review code for improvements
+    Review {
+        /// File path or code snippet
+        input: String,
+        /// Input is a file path (default: auto-detect)
+        #[arg(short, long)]
+        file: bool,
+        /// Focus on specific aspects (security, performance, style, etc.)
+        #[arg(long)]
+        focus: Option<String>,
+    },
+    /// Generate code from description
+    Generate {
+        /// Description of what to generate
+        description: Vec<String>,
+        /// Programming language
+        #[arg(short, long)]
+        language: Option<String>,
+        /// Output file path
+        #[arg(short, long)]
+        output: Option<String>,
+    },
+    /// Fix code issues
+    Fix {
+        /// File path containing code to fix
+        file: String,
+        /// Description of the issue to fix
+        issue: Vec<String>,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum AcpAction {
+    /// Start ACP server for Zed integration
+    Server {
+        /// Port to bind to (default: auto-assign)
+        #[arg(short, long)]
+        port: Option<u16>,
+        /// Host to bind to
+        #[arg(short = 'H', long, default_value = "127.0.0.1")]
+        host: String,
+    },
+    /// Start ACP in stdio mode (default for Zed)
+    Stdio {
+        /// Model to use (overrides default)
+        #[arg(long)]
+        model: Option<String>,
+        /// Explicitly set the workspace/project root directory to trust.
+        /// Use this when Zed does not send workspaceRoot automatically.
+        /// In Zed agent settings you can pass: --workspace ${workspaceFolder}
+        #[arg(long, value_name = "PATH")]
+        workspace: Option<String>,
+    },
+    /// Test ACP connection
+    Test {
+        /// ACP server address
+        #[arg(short, long)]
+        address: String,
+    },
+    /// Show ACP capabilities
+    Capabilities,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum ConfigAction {
+    /// Show current configuration
+    Show,
+    /// Set configuration value
+    Set {
+        /// Configuration key
+        key: String,
+        /// Configuration value
+        value: String,
+    },
+    /// Get configuration value
+    Get {
+        /// Configuration key
+        key: String,
+    },
+    /// Initialize configuration with defaults
+    Init {
+        /// Force overwrite existing config
+        #[arg(long)]
+        force: bool,
+    },
+    /// Validate configuration
+    Validate,
+    /// Validate external access configuration
+    ValidateExternalAccess,
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum SettingsAction {
+    /// Show interactive settings browser
+    Show,
+    /// Edit settings interactively
+    Edit,
+    /// Reset settings to defaults
+    Reset {
+        /// Category to reset (optional, resets all if not specified)
+        #[arg(short, long)]
+        category: Option<String>,
+    },
+    /// Export settings to file
+    Export {
+        /// Export file path
+        #[arg(short, long)]
+        path: Option<String>,
+    },
+    /// Import settings from file
+    Import {
+        /// Import file path
+        #[arg(short, long)]
+        path: String,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum HistoryAction {
+    /// List all chat sessions
+    List,
+    /// View a specific chat session
+    View {
+        /// Session ID to view
+        session_id: String,
+    },
+    /// Search through chat sessions
+    Search {
+        /// Search query
+        query: String,
+    },
+    /// Clear chat history
+    Clear {
+        /// Confirm deletion
+        #[arg(long)]
+        confirm: bool,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum AuditAction {
+    /// Show external access audit summary
+    ExternalAccess {
+        /// Show detailed statistics
+        #[arg(long)]
+        summary: bool,
+
+        /// Number of recent entries to show
+        #[arg(short, long, default_value = "20")]
+        count: usize,
+
+        /// Filter by date range (YYYY-MM-DD)
+        #[arg(long)]
+        from: Option<String>,
+
+        /// Filter by date range (YYYY-MM-DD)
+        #[arg(long)]
+        to: Option<String>,
+
+        /// Filter by specific path
+        #[arg(long)]
+        path: Option<String>,
+
+        /// Export to CSV file
+        #[arg(long)]
+        export: Option<String>,
+    },
+    /// Clear all audit logs
+    Clear {
+        /// Confirm deletion
+        #[arg(long)]
+        confirm: bool,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum ToolsAction {
+    /// List all available tools with their names and descriptions
+    List,
+    /// Show full details of a specific tool's schema
+    Describe {
+        /// Name of the tool to describe
+        name: String,
+    },
+    /// Show usage examples for a specific tool
+    Examples {
+        /// Name of the tool to show examples for
+        name: String,
+    },
+}
+
+#[derive(Subcommand, Clone, Debug)]
+pub enum BayesAction {
+    /// Show current Bayesian belief state
+    Show,
+    /// Reset Bayesian beliefs to defaults
+    Reset,
+    /// Explain the current belief reasoning
+    Explain,
+}
+
+/// Actions for the `grok sandbox` command (reserved for future subcommands).
+#[derive(Subcommand, Clone, Debug)]
+pub enum SandboxAction {
+    /// List the files pre-populated in a new sandbox workspace.
+    List,
+}
+pub use config::{Config, ConfigSource, RateLimitConfig};
+#[expect(
+    deprecated,
+    reason = "deprecated I/O functions re-exported for backward compatibility until binary-crate migration is complete"
+)]
+pub use display::{
+    ascii_art::print_grok_logo,
+    banner::{print_banner, print_welcome_banner},
+};
+pub use display::{
+    ascii_art::{format_grok_logo, get_logo_for_width},
+    banner::{BannerConfig, BannerType, format_banner, format_welcome_banner},
+    get_terminal_size,
+};

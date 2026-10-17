@@ -1,0 +1,532 @@
+use anyhow::Result;
+use clap::{Parser, Subcommand};
+use std::path::PathBuf;
+use tracing::{error, info};
+
+
+
+use crate::config::{Config, ConfigSource, ThinkingMode};
+use crate::display::banner::{BannerConfig, format_welcome_banner};
+use crate::display::interactive::{InteractiveConfig, PromptStyle, start_interactive_mode};
+use crate::utils::auth::{require_api_key, resolve_api_key};
+use crate::utils::network::test_connectivity;
+
+/// Grok CLI - Command-line interface for Grok AI
+#[derive(Parser, Debug)]
+#[command(author, version, about, long_about = None)]
+pub struct Cli {
+    /// API key for authentication
+    #[arg(short, long, env = "GROK_API_KEY")]
+    pub api_key: Option<String>,
+
+    /// Config file path
+    #[arg(short, long)]
+    pub config: Option<PathBuf>,
+
+    /// Hide banner
+    #[arg(long)]
+    pub hide_banner: bool,
+
+    /// Model to use
+    #[arg(short, long)]
+    pub model: Option<String>,
+
+    #[command(subcommand)]
+    pub command: Option<Commands>,
+}
+
+#[derive(Subcommand, Debug)]
+pub enum Commands {
+    /// Chat with Grok AI
+    Chat {
+        /// The message to send
+        #[arg(required = true)]
+        message: Vec<String>,
+
+        /// Start an interactive chat session
+        #[arg(short, long)]
+        interactive: bool,
+
+        /// System prompt to use
+        #[arg(short, long)]
+        system: Option<String>,
+
+        /// Temperature for response generation (0.0 to 2.0)
+        #[arg(short, long, default_value = "0.7")]
+        temperature: f32,
+
+        /// Maximum tokens in response
+        #[arg(long, default_value = "4096")]
+        max_tokens: u32,
+
+        /// Reasoning / thinking mode for grok-4 / grok-4.x (off, low, high).
+        /// \"high\" gives the most thorough answers at higher cost.
+        #[arg(long, value_name = "MODE")]
+        thinking: Option<String>,
+
+        /// Explorer mode — run a repository exploration query and return compact JSON evidence.
+        #[arg(long, value_name = "QUERY")]
+        explore: Option<String>,
+    },
+
+    /// Code-related operations
+    Code {
+        #[command(subcommand)]
+        action: crate::CodeAction,
+    },
+
+    /// ACP (Agent Client Protocol) operations for Zed integration
+    Acp {
+        #[command(subcommand)]
+        action: crate::AcpAction,
+    },
+
+    /// Interactive chat mode
+    Interactive,
+
+    /// Send a single query
+    Query {
+        /// The question or prompt to send
+        #[arg(required = true)]
+        prompt: Vec<String>,
+    },
+
+    /// Test network connectivity
+    TestNetwork {
+        /// Timeout in seconds
+        #[arg(short, long, default_value = "10")]
+        timeout: u64,
+    },
+
+    /// Configuration management
+    Config {
+        #[command(subcommand)]
+        action: crate::ConfigAction,
+    },
+
+    /// Settings management and configuration
+    Settings {
+        #[command(subcommand)]
+        action: crate::SettingsAction,
+    },
+
+    /// Chat history management
+    History {
+        #[command(subcommand)]
+        action: crate::HistoryAction,
+    },
+
+    /// Audit log management and review
+    Audit {
+        #[command(subcommand)]
+        action: crate::AuditAction,
+    },
+
+    /// Health check and diagnostics
+    Health {
+        /// Check API connectivity
+        #[arg(long)]
+        api: bool,
+
+        /// Check configuration
+        #[arg(long)]
+        config: bool,
+
+        /// Check all systems
+        #[arg(long)]
+        all: bool,
+    },
+
+    /// Manage agent skills
+    Skills {
+        #[command(subcommand)]
+        action: crate::cli::commands::skills::SkillsCommand,
+    },
+
+    /// Manage tool introspection
+    Tools {
+        #[command(subcommand)]
+        action: crate::ToolsAction,
+    },
+
+    /// Interactive setup wizard — enter your xAI API key and save it.
+    ///
+    /// This is the Terminal Auth entry point declared in the ACP `initialize`
+    /// response (`authMethods[].type = "terminal"`, `args = ["setup"]`).
+    /// ACP clients such as Zed launch `grok setup` when the user has not yet
+    /// configured an API key, presenting this interactive wizard inside their
+    /// built-in terminal.
+    Setup,
+
+    /// Inspect or manage the Bayesian belief-state engine.
+    ///
+    /// Sub-commands mirror the `/bayes` ACP slash command:
+    ///   grok bayes show     — ASCII bar-chart of current belief state
+    ///   grok bayes reset    — reset priors back to compiled-in defaults
+    ///   grok bayes explain  — plain-English explanation of current state
+    Bayes {
+        #[command(subcommand)]
+        action: crate::BayesAction,
+    },
+
+    /// Export the Grok-CLI routing pipeline as a DOT/Graphviz graph.
+    ///
+    /// Prints DOT to stdout by default. Pipe to Graphviz to render:
+    ///   grok visualize | dot -Tsvg -o pipeline.svg
+    Visualize {
+        /// Save DOT output to a file instead of printing to stdout.
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+    },
+
+    /// Start a safe isolated playground workspace.
+    ///
+    /// Creates a temporary directory pre-populated with sample Rust files and
+    /// starts an interactive session scoped exclusively to that directory.
+    /// All file-tool operations are restricted to the sandbox — nothing outside
+    /// it can be read or modified.
+    ///
+    /// Examples:
+    ///   grok sandbox                  # temp dir, deleted on exit
+    ///   grok sandbox --keep           # temp dir, kept after exit
+    ///   grok sandbox --dir ./myplay   # use/create a specific directory
+    Sandbox {
+        /// Keep the sandbox directory after the session ends (prints path).
+        #[arg(long)]
+        keep: bool,
+
+        /// Use a specific directory instead of a system temp dir.
+        /// The directory is created with sample files if it does not exist.
+        #[arg(long, value_name = "PATH")]
+        dir: Option<PathBuf>,
+
+        /// Show a DRY-RUN note in the banner (full wiring: task 219.2).
+        #[arg(long)]
+        dry_run: bool,
+    },
+
+    /// Initialize a new Grok project in the current directory.
+    ///
+    /// Creates a `.grok/` folder (with config, agents, skills, etc.)
+    /// and adds `.grok/` to `.gitignore`.
+    ///
+    /// Use `--force` to overwrite an existing `.grok/` directory.
+    Init {
+        /// Overwrite existing `.grok/` directory if present.
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Check for and apply updates to grok-cli itself.
+    ///
+    /// This uses the built-in `self-updater` skill and GitHub releases.
+    /// By default it performs a version check.
+    ///
+    /// Examples:
+    ///   grok update           # check for updates
+    ///   grok update --check   # same as above
+    ///   grok update --force   # ignore disable_auto_update setting
+    Update {
+        /// Only check for updates, do not suggest installation.
+        #[arg(long)]
+        check: bool,
+
+        /// Force the update check even if auto-updates are disabled in config.
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Harness-of-Harnesses (HOH) autonomous outer loop commands.
+    ///
+    /// Use the full binary name when invoking:
+    ///   grok-cli hoh start
+    ///   grok-cli hoh status
+    ///   grok-cli hoh last
+    ///   grok-cli hoh history
+    ///   grok-cli hoh apply --dry-run
+    ///   grok-cli hoh simulate
+    Hoh {
+        /// HOH subcommand and arguments (passed through to HOH CLI)
+        #[arg(trailing_var_arg = true, allow_hyphen_values = true)]
+        args: Vec<String>,
+    },
+}
+
+/// Main application entry point
+pub async fn run() -> Result<()> {
+    let cli = Cli::parse();
+    let config = if let Some(config_path) = &cli.config {
+        // Use explicit config path if provided
+        let path_str = config_path
+            .to_str()
+            .ok_or_else(|| anyhow::anyhow!("Invalid config path: contains non-UTF8 characters"))?;
+        Config::load(Some(path_str)).await?
+    } else {
+        // Use hierarchical loading: project → system → defaults
+        match Config::load_hierarchical().await {
+            Ok(cfg) => {
+                info!("✓ Configuration loaded successfully");
+                cfg
+            }
+            Err(e) => {
+                error!("Failed to load hierarchical configuration: {}", e);
+                error!("Falling back to default configuration");
+                Config {
+                    config_source: Some(ConfigSource::Default),
+                    ..Config::default()
+                }
+            }
+        }
+    };
+
+    // Initialize telemetry
+    crate::utils::telemetry::init(config.telemetry.enabled, config.telemetry.log_file.clone());
+
+    // Resolve API key once
+    let api_key = resolve_api_key(cli.api_key.clone(), &config);
+
+    // Resolve model: CLI argument overrides config
+    let model = cli.model.as_deref().unwrap_or(&config.default_model);
+
+    // Show banner function
+    let show_banner_fn = || {
+        let banner_config = BannerConfig {
+            show_banner: true,
+            show_tips: true,
+            show_updates: true,
+            width: None,
+        };
+        println!("{}", format_welcome_banner(&banner_config));
+    };
+
+    match &cli.command {
+        Some(Commands::Chat {
+            message,
+            interactive,
+            system,
+            temperature,
+            max_tokens,
+            thinking,
+            explore,
+        }) => {
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
+            let thinking_mode = thinking
+                .as_deref()
+                .and_then(ThinkingMode::from_str_ci)
+                .unwrap_or(ThinkingMode::Off);
+            crate::cli::commands::chat::handle_chat(crate::cli::commands::chat::ChatOptions {
+                message: message.clone(),
+                interactive: *interactive,
+                system_prompt: system.clone(),
+                temperature: *temperature,
+                max_tokens: *max_tokens,
+                api_key: &api_key,
+                model,
+                timeout_secs: config.timeout_secs,
+                max_retries: config.max_retries,
+                rate_limit_config: config.rate_limits,
+                bayesian: config.bayesian.clone(),
+                thinking_mode,
+                explore: explore.clone(),
+            })
+            .await?;
+        }
+        Some(Commands::Code { action }) => {
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
+            crate::cli::commands::code::handle_code_action(
+                action.clone(),
+                &api_key,
+                model,
+                config.timeout_secs,
+                config.max_retries,
+                config.rate_limits,
+            )
+            .await?;
+        }
+        Some(Commands::Acp { action }) => {
+            crate::cli::commands::acp::handle_acp_action(action.clone(), &config).await?;
+        }
+        Some(Commands::Interactive) => {
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
+            let interactive_config = InteractiveConfig {
+                show_banner: !cli.hide_banner,
+                show_tips: true,
+                show_status: true,
+                auto_save_session: false,
+                prompt_style: PromptStyle::Rich,
+                check_directory: true,
+            };
+            start_interactive_mode(&api_key, model, &config, interactive_config).await?;
+        }
+        Some(Commands::Query { prompt }) => {
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
+            let query = prompt.join(" ");
+
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+
+            info!("Sending query: {}", query);
+            crate::cli::commands::chat::handle_chat(crate::cli::commands::chat::ChatOptions {
+                message: vec![query],
+                interactive: false,
+                system_prompt: None,
+                temperature: 0.7,
+                max_tokens: 4096,
+                api_key: &api_key,
+                model,
+                timeout_secs: config.timeout_secs,
+                max_retries: config.max_retries,
+                rate_limit_config: config.rate_limits,
+                bayesian: config.bayesian.clone(),
+                thinking_mode: ThinkingMode::Off,
+                explore: None,
+            })
+            .await?;
+        }
+        Some(Commands::TestNetwork { timeout }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            let timeout_duration = std::time::Duration::from_secs(*timeout);
+            match test_connectivity(timeout_duration).await {
+                Ok(duration) => {
+                    println!("✓ Network connectivity test passed in {:?}", duration);
+                }
+                Err(e) => {
+                    error!("Network connectivity test failed: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+        Some(Commands::Config { action }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::config::handle_config_action(action.clone(), &config).await?;
+        }
+        Some(Commands::Settings { action }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::settings::handle_settings_action(action.clone(), &config).await?;
+        }
+        Some(Commands::History { action }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::history::handle_history_action(action.clone()).await?;
+        }
+        Some(Commands::Audit { action }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::audit::handle_audit_action(action.clone()).await?;
+        }
+        Some(Commands::Health {
+            api,
+            config: check_config,
+            all,
+        }) => {
+            let check_api = *api || *all;
+            let check_cfg = *check_config || *all;
+            crate::cli::commands::health::handle_health_check(
+                check_api,
+                check_cfg,
+                api_key.as_deref(),
+                &config,
+                model,
+                config.timeout_secs,
+            )
+            .await?;
+        }
+        Some(Commands::Skills { action }) => {
+            crate::cli::commands::skills::handle_skills_command(action.clone()).await?;
+        }
+        Some(Commands::Tools { action }) => {
+            crate::cli::commands::tools::handle_tools_command(action.clone()).await?;
+        }
+        Some(Commands::Setup) => {
+            crate::cli::commands::setup::handle_setup().await?;
+        }
+        Some(Commands::Bayes { action }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::bayes::handle_bayes_command(match action {
+                crate::BayesAction::Show => crate::cli::commands::bayes::BayesCommand::Show,
+                crate::BayesAction::Reset => crate::cli::commands::bayes::BayesCommand::Reset,
+                crate::BayesAction::Explain => crate::cli::commands::bayes::BayesCommand::Explain,
+            })
+            .await?;
+        }
+        Some(Commands::Sandbox { keep, dir, dry_run }) => {
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
+            crate::cli::commands::sandbox::handle_sandbox(
+                *keep,
+                dir.clone(),
+                *dry_run,
+                &api_key,
+                model,
+                &config,
+            )
+            .await?;
+        }
+        Some(Commands::Visualize { output }) => {
+            // Load live Bayesian priors and ACP settings from config.
+            let dot = crate::visualizer::generate_pipeline_dot(Some(&config));
+            match output {
+                Some(path) => {
+                    std::fs::write(path, &dot).map_err(|e| {
+                        anyhow::anyhow!("Failed to write DOT file to {}: {}", path.display(), e)
+                    })?;
+                    println!("✅ Pipeline graph saved to: {}", path.display());
+                    println!(
+                        "   Render with: dot -Tsvg {} -o pipeline.svg",
+                        path.display()
+                    );
+                }
+                None => {
+                    print!("{}", dot);
+                }
+            }
+        }
+        Some(Commands::Init { force }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::init::handle_init(*force).await?;
+        }
+        Some(Commands::Update { check, force }) => {
+            if !cli.hide_banner {
+                show_banner_fn();
+            }
+            crate::cli::commands::update::handle_update_command(*check, *force, &config).await?;
+        }
+        Some(Commands::Hoh { args }) => {
+            // HOH outer loop commands (no API key required for local autonomous loop)
+            let sub = if args.is_empty() {
+                "status".to_string()
+            } else {
+                args.join(" ")
+            };
+            // simulation flag can be inferred or passed via env later; default to false for real runs
+            crate::hoh::cli::handle_hoh_command(&sub, false).await;
+        }
+        None => {
+            // Default to interactive mode
+            let api_key = require_api_key(api_key, cli.hide_banner, show_banner_fn)?;
+            let interactive_config = InteractiveConfig {
+                show_banner: !cli.hide_banner,
+                show_tips: true,
+                show_status: true,
+                auto_save_session: false,
+                prompt_style: PromptStyle::Rich,
+                check_directory: true,
+            };
+            start_interactive_mode(&api_key, model, &config, interactive_config).await?;
+        }
+    }
+
+    Ok(())
+}

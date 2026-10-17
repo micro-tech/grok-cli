@@ -1479,7 +1479,11 @@ dependencies = [
  "syn 3.0.6",
  "tempfile",
  "terminal_size",
+<<<<<<< HEAD
  "thiserror 2.0.21",
+=======
+ "thiserror 2.0.20",
+>>>>>>> b986c852c89318b2de70b4594112a46aee30f925
  "tokio",
  "tokio-test",
  "tokio-util",
