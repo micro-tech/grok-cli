@@ -535,6 +535,34 @@
    "details": "1. Run `cargo check --lib --tests --bins` in ~/workspace/grok-cli-cache (on the synced WIP state).\n2. Acceptance: zero errors, and no warnings other than pre-existing ones (compare against the pre-WIP baseline: 2 warnings were reported in John's log \u2014 unused_mut at chat_turn.rs and unused_variables at mod.rs \u2014 both should now be gone; any OTHER warning must be pre-existing, not introduced by these fixes).\n3. If `cargo test` is quick enough to be practical, run the lib test subset touching the changed areas (slash_commands, session handling); at minimum the check gate must be green.\n4. Update CHANGELOG.md under [Unreleased] noting the repush/retry compile fixes (one line; John's feature, keep it factual).\n5. Do NOT push, PR, or merge \u2014 leave the fixed tree in the working tree for John's review, same as the review-fix workflow.\nNote: this validates on Linux; John's failing build was on Windows, but all 10 errors + 2 warnings are platform-independent rustc diagnostics, so a clean Linux check resolves his build too.",
    "testStrategy": "`cargo check --lib --tests --bins` exits 0 with no errors and no new warnings. This task IS the test strategy.",
    "subtasks": []
+  },
+  {
+   "id": 480,
+   "title": "OKF v1 protocol: retarget trace forwarder + concept push, add remote bundle fetch",
+   "description": "Align grok-cli with the unified OKF protocol v1 (bot-repo PROTOCOL.md, tasks 207-208): trace forwarder posts to POST /okf/traces (legacy /api/traces translated with deprecation log), concept push posts to POST /okf/bundles/{b}/concepts, and okf_lookup gains remote bundle fetch (GET {remote_url}/okf/manifest.json + ETag, GET /okf/knowledge/{kid}) with local dirs as offline fallback.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "480.1: trace forwarder (src/workflow/okf.rs) targets /okf/traces; OkfConfig::trace_endpoint_path() translates a configured legacy /api/traces with a deprecation warn. 480.2: push_concept_to_remote (src/tools/okf_tools.rs) targets /okf/bundles/{bundle}/concepts. 480.3: load_okf_from_config fetches the remote v1 manifest (ETag/304 cached) and per-entry knowledge docs, mapping them into OkfBundle/OkfConcept; any failure falls back to local knowledge_bundles dirs. Same thread-spawn-with-runtime pattern as get_okf_bundles since okf_lookup is sync. No second contract invented \u2014 bot-repo PROTOCOL.md is the single source of truth.",
+   "testStrategy": "mockito contract tests: (1) trace posts hit POST /okf/traces on a mock server, both with default config and with legacy /api/traces configured (translation verified); (2) concept push hits POST /okf/bundles/{b}/concepts with Bearer <redacted> (3) remote fetch returns manifest knowledge incl. inline content and per-doc GET /okf/knowledge/{kid} fallback; (4) ETag round-trip: 200+ETag then 304 serves the cached manifest; (5) unreachable remote_url yields None so local dirs load. Full lib suite stays green.",
+   "subtasks": [
+    {
+     "id": 480.1,
+     "title": "Retarget trace forwarder to /okf/traces with legacy translation",
+     "status": "done"
+    },
+    {
+     "id": 480.2,
+     "title": "Retarget concept push to /okf/bundles/{b}/concepts",
+     "status": "done"
+    },
+    {
+     "id": 480.3,
+     "title": "Remote bundle fetch in okf_lookup with local-dir fallback",
+     "status": "done"
+    }
+   ],
+   "results": "grok-cli retargeted to OKF v1 (bot-repo PROTOCOL.md is the single contract, nothing invented). 480.1: trace forwarder default endpoint now /okf/traces; OkfConfig::trace_endpoint_path() translates a configured legacy /api/traces with a deprecation warn. 480.2: push_concept_to_remote posts to /okf/bundles/{bundle}/concepts. 480.3: load_okf_from_config fetches remote v1 manifest (GET {remote_url}/okf/manifest.json, ETag/304 cached) + per-entry GET /okf/knowledge/{kid}, mapped into OkfBundle/OkfConcept; any failure falls back to local knowledge_bundles dirs (remote first, local always loaded as offline fallback). Thread-spawn-with-runtime pattern used (okf_lookup is sync). Tests: 11 new mockito contract tests green; full lib suite 1112 passed, 0 failed; zero new warnings. Cross-repo grep: no remaining /api/traces targets (only legacy-translation code + deprecation docs) and no unprefixed /bundles/ POSTs in either repo."
   }
  ]
 }
