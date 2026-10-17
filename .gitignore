@@ -135,3 +135,4 @@ session_dna.json
 _back/
 
 *.rs_bak
+*.tmp.*
