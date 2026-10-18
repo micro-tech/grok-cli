@@ -193,6 +193,9 @@ struct SessionData {
     /// Injected into prompts + auto-compacted to control context cost.
     pub memory: crate::memory::memory_manager::MemoryManager,
 
+    /// The last user prompt sent (before repush). Used by `/repush` / `/retry`
+    /// to re-execute the previous turn without duplicating history.
+    last_user_prompt: Option<String>,
     /// Per-session token budget fed with *real* API-reported usage each turn
     /// (Task 463).  Drives delta-prompting thresholds and spend tracking off
     /// real counts instead of the 4-chars-per-token estimate.
@@ -692,6 +695,8 @@ impl GrokAcpAgent {
             // Task 419: lightweight handoff tracking
             handoffs: Vec::new(),
 
+            // Bad-internet repush support (for ACP + unstable connections)
+            last_user_prompt: None,
             // Task 463: per-session token budget, fed with real API-reported
             // usage each turn.  Uses the captured model name (session_config
             // was moved above).
@@ -869,6 +874,10 @@ impl GrokAcpAgent {
     }
 
     /// Handle a chat completion request
+    ///
+    /// When `repush` is true we re-execute using the current history without
+    /// pushing the `message` again. This is used for the "retry / repush" feature
+    /// on bad/unstable internet so the user can recover the last dropped turn.
     pub async fn handle_chat_completion(
         &self,
         session_id: &SessionId,
@@ -878,6 +887,7 @@ impl GrokAcpAgent {
             tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
         >,
         permission_bridge: Option<Arc<PermissionBridge>>,
+        repush: bool,
     ) -> Result<String> {
         let start_time = std::time::Instant::now();
         info!("🚀 Starting chat completion for session: {}", session_id.0);
@@ -909,11 +919,21 @@ impl GrokAcpAgent {
 
             let refined_message = session.refine_prompt(message);
 
-            // Add user message to history
-            session.messages.push(json!({
-                "role": "user",
-                "content": refined_message
-            }));
+            // Store the last user prompt for repush/retry support on bad internet.
+            if !repush {
+                session.last_user_prompt = Some(refined_message.clone());
+            }
+
+            // Add user message to history **only if this is not a repush**.
+            // Repush re-uses the previous user turn that was already stored.
+            if !repush {
+                session.messages.push(json!({
+                    "role": "user",
+                    "content": refined_message
+                }));
+            } else {
+                info!("Repush requested for session {} — re-using last user message from history", session_id.0);
+            }
 
             info!("📚 Session history: {} messages", session.messages.len());
 
@@ -1577,6 +1597,10 @@ impl GrokAcpAgent {
 
     /// Set the active role for a session (used by the `/role <name>` slash command).
     pub async fn set_session_role(&self, session_id: &SessionId, role: String) -> Result<String> {
+        let _old_role = {
+            let sessions = self.sessions.read().await;
+            sessions.get(&session_id.0).and_then(|s| s.current_role.clone())
+        };
         let mut sessions = self.sessions.write().await;
         match sessions.get_mut(&session_id.0) {
             None => Ok("Session not found — role not set.".to_string()),
@@ -2337,6 +2361,8 @@ impl GrokAcpAgent {
                 // Task 419: lightweight handoff tracking
                 handoffs: source.handoffs.clone(),
 
+                // Repush context is not carried across a fork; the forked session starts fresh.
+                last_user_prompt: None,
                 // Task 463: fresh budget for the forked session (same model).
                 token_budget: session_token_budget(&source.config.model, &self.config.acp),
             }
@@ -2480,6 +2506,8 @@ mod tests {
             // Task 419: lightweight handoff tracking
             handoffs: Vec::new(),
 
+            // Bad-internet repush support (for ACP + unstable connections)
+            last_user_prompt: None,
             // Task 463: per-session token budget (test helper defaults).
             token_budget: session_token_budget(
                 &SessionConfig::default().model,
