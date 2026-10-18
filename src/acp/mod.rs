@@ -179,6 +179,7 @@ struct SessionData {
     /// `None` means "use the global setting".
     /// Controlled by the `/cot on|off` slash command.
     show_thinking: Option<bool>,
+
     /// Last workflow trace recorded for this session (Task 232).
     /// Populated when using `route_with_workflow_trace` (e.g. in sub-agents)
     /// or when a full tool-using code workflow completes.
@@ -1597,6 +1598,7 @@ impl GrokAcpAgent {
 
     /// Set the active role for a session (used by the `/role <name>` slash command).
     pub async fn set_session_role(&self, session_id: &SessionId, role: String) -> Result<String> {
+        let old_role = {
         let _old_role = {
             let sessions = self.sessions.read().await;
             sessions.get(&session_id.0).and_then(|s| s.current_role.clone())
