@@ -141,4 +141,6 @@ _back/
 # google drive uploads
 .tmp.driveupload
 # google drive downloads
+*.tmp.*
+.tmp.driveupload
 .tmp.drivedownload

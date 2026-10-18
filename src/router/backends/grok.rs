@@ -179,8 +179,15 @@ impl Backend for GrokBackend {
 
             debug!(attempt, model = %req.model, "Grok backend: sending request");
 
-            let result = self
-                .client
+            // Prompt-cache affinity: clone the client and attach this
+            // request's conversation key (if any) so xAI routes the turn to
+            // the server holding the conversation's prefix cache.
+            let mut client = self.client.clone();
+            if let Some(key) = req.prompt_cache_key.clone() {
+                client = client.with_prompt_cache_key(key);
+            }
+
+            let result = client
                 .chat_completion_with_history(
                     messages,
                     temperature,
@@ -214,13 +221,16 @@ impl Backend for GrokBackend {
 
                     let tool_calls = mwfr.message.tool_calls.unwrap_or_default();
                     let thinking_content = mwfr.thinking_content;
+                    // Real API-reported token counts (Task 463) — clone before
+                    // the partial moves above consume `mwfr`.
+                    let usage = mwfr.usage.clone();
 
                     return Ok(RouterResponse {
                         text,
                         tool_calls,
                         raw,
                         model: req.model.clone(),
-                        usage: None,
+                        usage,
                         thinking_content,
                     });
                 }

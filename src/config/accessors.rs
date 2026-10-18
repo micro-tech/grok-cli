@@ -208,6 +208,7 @@ impl Config {
             "network.health_monitoring" => Ok(self.network.health_monitoring.to_string()),
             "network.connect_timeout" => Ok(self.network.connect_timeout.to_string()),
             "network.read_timeout" => Ok(self.network.read_timeout.to_string()),
+            "network.prompt_cache_enabled" => Ok(self.network.prompt_cache_enabled.to_string()),
 
             // Logging settings
             "logging.level" => Ok(self.logging.level.clone()),
@@ -800,6 +801,11 @@ impl Config {
                 self.network.read_timeout = value
                     .parse()
                     .map_err(|_| anyhow!("Invalid number: {}", value))?;
+            }
+            "network.prompt_cache_enabled" => {
+                self.network.prompt_cache_enabled = value
+                    .parse()
+                    .map_err(|_| anyhow!("Invalid boolean: {}", value))?;
             }
 
             // Logging settings
