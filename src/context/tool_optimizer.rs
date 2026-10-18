@@ -16,10 +16,15 @@ pub fn schema_hash(schema: &Value) -> u64 {
 
 /// Prune tools that are not in the allowed list.
 ///
+/// An empty `keep` list means "no filtering" and returns every tool. Treating
+/// it as "drop everything" would send requests with no tools at all.
 /// Fail-closed (Task 471.5): tools with a missing or unparseable name are
 /// *dropped*, not kept — an unknown shape can't be usefully sent to the API
 /// and keeping it would silently widen the tool surface.
 pub fn prune_unused_tools(tools: Vec<Value>, keep: &[&str]) -> Vec<Value> {
+    if keep.is_empty() {
+        return tools;
+    }
     tools
         .into_iter()
         .filter(|t| {
@@ -65,6 +70,16 @@ mod tests {
         ];
         let pruned = prune_unused_tools(tools, &["read_file"]);
         assert_eq!(pruned.len(), 1);
+    }
+
+    #[test]
+    fn test_prune_empty_keep_list_keeps_all() {
+        let tools = vec![
+            json!({"function": {"name": "read_file"}}),
+            json!({"function": {"name": "write_file"}}),
+        ];
+        let pruned = prune_unused_tools(tools, &[]);
+        assert_eq!(pruned.len(), 2);
     }
 
     #[test]
