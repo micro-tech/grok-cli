@@ -51,6 +51,10 @@ pub struct RouterRequest {
     /// Reasoning effort for thinking-capable models (`"low"` / `"high"`).
     /// `None` means no extended reasoning (standard response).
     pub reasoning_effort: Option<String>,
+    /// Stable per-conversation prompt-cache key, forwarded to the backend as
+    /// the `x-grok-conv-id` header so xAI's automatic prefix cache hits
+    /// across turns. `None` disables the affinity header for this request.
+    pub prompt_cache_key: Option<String>,
 }
 
 impl RouterRequest {
@@ -63,6 +67,7 @@ impl RouterRequest {
             max_tokens: None,
             temperature: None,
             reasoning_effort: None,
+            prompt_cache_key: None,
         }
     }
 
@@ -91,6 +96,17 @@ impl RouterRequest {
         self
     }
 
+    /// Set the stable per-conversation prompt-cache key.
+    ///
+    /// The backend sends this as the `x-grok-conv-id` header, giving xAI's
+    /// automatic server-side prefix cache a stable routing target so turns
+    /// within one conversation hit the cache instead of rebilling the full
+    /// prompt. Use one key per conversation (e.g. a session UUID).
+    pub fn with_prompt_cache_key(mut self, key: impl Into<String>) -> Self {
+        self.prompt_cache_key = Some(key.into());
+        self
+    }
+
     /// Accept raw JSON tool definitions (the format returned by
     /// [`crate::acp::tools::get_available_tool_definitions`]) and convert
     /// them to typed [`ToolDefinition`] values.
@@ -103,5 +119,22 @@ impl RouterRequest {
             .filter_map(|v| serde_json::from_value(v).ok())
             .collect();
         self
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn prompt_cache_key_defaults_to_none() {
+        let req = RouterRequest::new("grok-4", vec![]);
+        assert!(req.prompt_cache_key.is_none());
+    }
+
+    #[test]
+    fn with_prompt_cache_key_sets_key() {
+        let req = RouterRequest::new("grok-4", vec![]).with_prompt_cache_key("session-123");
+        assert_eq!(req.prompt_cache_key.as_deref(), Some("session-123"));
     }
 }

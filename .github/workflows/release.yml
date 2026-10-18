@@ -22,7 +22,7 @@ jobs:
             artifact_name: grok-cli-linux-x86_64
             binary_name: grok-cli
 
-          - os: macos-14 # ARM runner
+          - os: macos-15 # ARM runner (macos-14 retired 2026-11-02; macos-15 same size class, minimal jump vs macos-latest=macos-26)
             target: aarch64-apple-darwin
             artifact_name: grok-cli-macos-aarch64
             binary_name: grok-cli

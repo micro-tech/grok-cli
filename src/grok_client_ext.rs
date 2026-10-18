@@ -17,6 +17,22 @@ use crate::utils::rate_limiter::UsageStats;
 pub struct GrokClient {
     inner: grok_api::GrokClient,
     rate_limit_config: Option<RateLimitConfig>,
+    /// Stable per-conversation key sent as the `x-grok-conv-id` header.
+    /// xAI caches prompt prefixes server-side per machine; without a stable
+    /// key a conversation's turns land on random servers and the prefix cache
+    /// never hits, so every turn re-bills the full prompt at full price.
+    prompt_cache_key: Option<String>,
+}
+
+/// Process-wide fallback prompt-cache key, generated once.
+///
+/// Used by entry points that don't have a finer-grained session identifier.
+/// One process generally serves one conversation (ACP stdio agent, single CLI
+/// invocation), so a process-stable key gives correct cache affinity there.
+pub fn process_prompt_cache_key() -> String {
+    static KEY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    KEY.get_or_init(|| format!("grok-cli-{}", uuid::Uuid::new_v4()))
+        .clone()
 }
 
 impl GrokClient {
@@ -26,6 +42,7 @@ impl GrokClient {
         Ok(Self {
             inner,
             rate_limit_config: None,
+            prompt_cache_key: None,
         })
     }
 
@@ -46,6 +63,7 @@ impl GrokClient {
         Ok(Self {
             inner,
             rate_limit_config: None,
+            prompt_cache_key: None,
         })
     }
 
@@ -54,6 +72,18 @@ impl GrokClient {
     /// using the UsageStats token-bucket style limiter before sending requests.
     pub fn with_rate_limits(mut self, config: RateLimitConfig) -> Self {
         self.rate_limit_config = Some(config);
+        self
+    }
+
+    /// Set the stable per-conversation prompt-cache key.
+    ///
+    /// Sent as the `x-grok-conv-id` header on every request made through this
+    /// client, giving xAI's automatic server-side prefix cache a stable
+    /// routing target so repeated turns hit the cache instead of recomputing
+    /// (and rebilling) the full prompt. The key should be stable for the
+    /// lifetime of one conversation — e.g. a session UUID.
+    pub fn with_prompt_cache_key(mut self, key: impl Into<String>) -> Self {
+        self.prompt_cache_key = Some(key.into());
         self
     }
 
@@ -200,6 +230,12 @@ impl GrokClient {
             request = request.reasoning_effort(effort);
         }
 
+        // Prompt-cache affinity: route this conversation's requests to the
+        // same xAI server so the automatic prefix cache hits across turns.
+        if let Some(key) = &self.prompt_cache_key {
+            request = request.prompt_cache_key(key.clone());
+        }
+
         let response = request.send().await?;
 
         // Convert the response to the Message format with finish_reason
@@ -239,6 +275,10 @@ pub struct MessageWithFinishReason {
     /// Chain-of-thought reasoning produced by the model when `reasoning_effort`
     /// was set.  `None` for models / modes that do not return a reasoning trace.
     pub thinking_content: Option<String>,
+    /// Real token counts reported by the API for this response.
+    /// (Full path: `crate::utils::rate_limiter::UsageStats` is a *different*
+    /// struct already imported above.)
+    pub usage: Option<crate::router::response::UsageStats>,
 }
 
 /// Convert ChatResponse to Message format with finish_reason
@@ -249,10 +289,20 @@ fn convert_response_to_message_with_finish_reason(
     if let Some(choice) = response.choices.first() {
         // Extract the reasoning / thinking content if the model produced one.
         let thinking_content = choice.message.reasoning_content.clone();
+        // Keep the real token counts the API reported — callers feed these
+        // into ContextBudget / spend tracking instead of the 4-chars-per-token
+        // estimate (Task 463).
+        let u = &response.usage;
+        let usage = crate::router::response::UsageStats {
+            prompt_tokens: u.prompt_tokens,
+            completion_tokens: u.completion_tokens,
+            total_tokens: u.total_tokens,
+        };
         Ok(MessageWithFinishReason {
             message: choice.message.clone(),
             finish_reason: choice.finish_reason.clone(),
             thinking_content,
+            usage: Some(usage),
         })
     } else {
         // Fallback if no choices
@@ -267,6 +317,7 @@ fn convert_response_to_message_with_finish_reason(
             },
             finish_reason: Some("stop".to_string()),
             thinking_content: None,
+            usage: None,
         })
     }
 }
@@ -291,5 +342,82 @@ mod tests {
         let client_with_limits = client.with_rate_limits(rate_config);
 
         assert!(client_with_limits.rate_limit_config.is_some());
+    }
+
+    #[test]
+    fn test_prompt_cache_key_defaults_to_none() {
+        let client = GrokClient::new("test-key").unwrap();
+        assert!(client.prompt_cache_key.is_none());
+    }
+
+    #[test]
+    fn test_with_prompt_cache_key_sets_key() {
+        let client = GrokClient::new("test-key")
+            .unwrap()
+            .with_prompt_cache_key("conv-42");
+        assert_eq!(client.prompt_cache_key.as_deref(), Some("conv-42"));
+    }
+
+    #[test]
+    fn test_process_prompt_cache_key_is_stable() {
+        // Same process must see the same key on every call so all of its
+        // requests share one xAI cache affinity target.
+        assert_eq!(process_prompt_cache_key(), process_prompt_cache_key());
+        assert!(process_prompt_cache_key().starts_with("grok-cli-"));
+    }
+
+    #[test]
+    fn test_convert_response_carries_real_usage() {
+        // Task 463: the real API-reported token counts must survive the
+        // conversion so ContextBudget / spend tracking run on real numbers.
+        use grok_api::{Choice, Usage};
+        let response = GrokApiChatResponse {
+            id: "chatcmpl-1".to_string(),
+            object: "chat.completion".to_string(),
+            created: 1_700_000_000,
+            model: "grok-4".to_string(),
+            choices: vec![Choice {
+                index: 0,
+                message: Message {
+                    role: "assistant".to_string(),
+                    content: Some(MessageContent::Text("hi".to_string())),
+                    tool_calls: None,
+                    reasoning_content: None,
+                },
+                finish_reason: Some("stop".to_string()),
+            }],
+            usage: Usage {
+                prompt_tokens: 1234,
+                completion_tokens: 56,
+                total_tokens: 1290,
+                cached_prompt_tokens: None,
+                reasoning_tokens: None,
+            },
+        };
+        let mwfr = convert_response_to_message_with_finish_reason(response).unwrap();
+        let usage = mwfr.usage.expect("usage must be populated from the API response");
+        assert_eq!(usage.prompt_tokens, 1234);
+        assert_eq!(usage.completion_tokens, 56);
+        assert_eq!(usage.total_tokens, 1290);
+    }
+
+    #[test]
+    fn test_convert_response_without_choices_has_no_usage() {
+        let response = GrokApiChatResponse {
+            id: "chatcmpl-2".to_string(),
+            object: "chat.completion".to_string(),
+            created: 1_700_000_000,
+            model: "grok-4".to_string(),
+            choices: vec![],
+            usage: grok_api::Usage {
+                prompt_tokens: 10,
+                completion_tokens: 5,
+                total_tokens: 15,
+                cached_prompt_tokens: None,
+                reasoning_tokens: None,
+            },
+        };
+        let mwfr = convert_response_to_message_with_finish_reason(response).unwrap();
+        assert!(mwfr.usage.is_none());
     }
 }

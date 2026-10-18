@@ -9,14 +9,14 @@
 //! - Easier to test individual phases
 
 use crate::acp::context_trim::{
-    estimate_tokens, model_context_budget, trim_to_token_budget, truncate_tool_results,
+    estimate_tokens, model_context_budget, trim_to_token_budget,
 };
 use crate::acp::protocol::{SessionUpdate, ToolCall as ProtocolToolCall, ToolCallStatus, ToolCallUpdate};
 use crate::acp::{PermissionBridge, GrokAcpAgent};
 use crate::acp::status_bar::StatusBarState;
 use crate::content_to_string;
 use crate::context::prompt_builder::build_prompt_with_delta;
-use crate::context::tool_optimizer::{compress_schema, prune_unused_tools};
+use crate::context::tool_optimizer::compress_schema;
 use crate::tools;
 use anyhow::{Result, anyhow};
 use serde_json::{json, Value};
@@ -82,11 +82,8 @@ impl ChatTurn {
 
     /// Re-apply trimming guards before an API call.
     pub fn reapply_trims(&mut self, config: &crate::config::Config) {
-        let max_tc = config.acp.max_tool_result_chars;
-        if max_tc > 0 {
-            truncate_tool_results(&mut self.messages, max_tc);
-        }
-
+        // Task 465: tool results are truncated at the single append point
+        // (utils::messages::tool_result_capped), so no per-loop sweep here.
         let max_hist = config.acp.max_history_messages;
         if self.messages.len() > max_hist {
             let drop = self.messages.len() - max_hist;
@@ -281,6 +278,19 @@ impl ChatTurn {
             // Use extracted retrying API caller (Task 280.2)
             let response_with_finish =
                 perform_api_call_with_retries(agent, self).await?;
+
+            // Task 463: feed the *real* API-reported token counts into the
+            // per-session ContextBudget (delta-prompting thresholds and spend
+            // tracking now run on real numbers, not the 4-chars-per-token
+            // estimate).  Best-effort: never fail the turn on a budget error.
+            if let Some(usage) = &response_with_finish.usage {
+                let mut sessions = agent.sessions.write().await;
+                if let Some(session) = sessions.get_mut(&session_id.0) {
+                    let _ = session
+                        .token_budget
+                        .record_usage(usage.prompt_tokens, usage.completion_tokens);
+                }
+            }
 
             let api_duration = std::time::Instant::now() - loop_start;
             info!("✅ Grok API responded in {:?}", api_duration);
@@ -626,6 +636,28 @@ fn unlock_tools_from_search(args: &Value, turn: &mut ChatTurn) -> usize {
     added
 }
 
+/// Apply the on-demand unlock after a tool executes.
+///
+/// In core-toolset mode the model is promised that `tool_search` results
+/// become callable for the rest of the session. This appends the matching
+/// definitions to the turn's `tool_defs` and returns a confirmation note to
+/// include in the tool result (empty string when nothing was unlocked or the
+/// executed tool wasn't `tool_search`).
+fn apply_search_unlock(function_name: &str, args: &Value, turn: &mut ChatTurn) -> String {
+    if function_name != "tool_search" {
+        return String::new();
+    }
+    let added = unlock_tools_from_search(args, turn);
+    if added > 0 {
+        format!(
+            "\n\n[{} tool(s) unlocked — you can call them for the rest of this session.]",
+            added
+        )
+    } else {
+        String::new()
+    }
+}
+
 pub async fn process_tool_calls(
     agent: &GrokAcpAgent,
     session_id: &crate::acp::protocol::SessionId,
@@ -635,6 +667,9 @@ pub async fn process_tool_calls(
     permission_bridge: Option<&Arc<PermissionBridge>>,
     local_always_allow: &std::collections::HashSet<String>,
 ) -> Result<()> {
+    // Task 465: tool results are truncated at the single append point
+    // (tool_result_capped) using the configured cap.
+    let max_tool_chars = agent.config.acp.max_tool_result_chars;
     for (idx, tool_call) in tool_calls.iter().enumerate() {
         let tool_start = std::time::Instant::now();
         let function_name = &tool_call.function.name;
@@ -661,11 +696,11 @@ pub async fn process_tool_calls(
         {
             let hooks = agent.get_hook_manager().read().await;
             if !hooks.execute_before_tool(function_name, &args)? {
-                turn.messages.push(json!({
-                    "role": "tool",
-                    "tool_call_id": tool_call.id,
-                    "content": "Tool execution blocked by hook."
-                }));
+                turn.messages.push(crate::utils::messages::tool_result_capped(
+                    &tool_call.id,
+                    "Tool execution blocked by hook.",
+                    max_tool_chars,
+                ));
                 continue;
             }
         }
@@ -691,11 +726,13 @@ pub async fn process_tool_calls(
                     match tokio::time::timeout(timeout, rx).await {
                         Ok(Ok(outcome)) => {
                             if outcome.is_cancelled() {
-                                turn.messages.push(json!({
-                                    "role": "tool",
-                                    "tool_call_id": tool_call.id,
-                                    "content": "User rejected the tool execution."
-                                }));
+                                turn.messages.push(
+                                    crate::utils::messages::tool_result_capped(
+                                        &tool_call.id,
+                                        "User rejected the tool execution.",
+                                        max_tool_chars,
+                                    ),
+                                );
                                 continue;
                             }
                             if outcome.is_always_allow() {
@@ -726,6 +763,12 @@ pub async fn process_tool_calls(
 
         let result = tools::execute_tool(function_name, &augmented, &ctx).await;
 
+        // === ON-DEMAND UNLOCK (core-toolset mode) ===
+        // Without this, `tool_search` results are never appended to
+        // `turn.tool_defs`, so the model can discover tools it can never
+        // actually invoke.
+        let unlock_note = apply_search_unlock(function_name, &args, turn);
+
         let (content, status) = match result {
             Ok(s) => {
                 info!("Tool {} completed in {:?}", function_name, tool_start.elapsed());
@@ -735,7 +778,7 @@ pub async fn process_tool_calls(
                         s.dna.update_from_tool_result(true, function_name);
                     }
                 }
-                (s, ToolCallStatus::Completed)
+                (format!("{}{}", s, unlock_note), ToolCallStatus::Completed)
             }
             Err(e) => {
                 warn!("Tool {} failed: {}", function_name, e);
@@ -808,11 +851,11 @@ pub async fn process_tool_calls(
             content.clone()
         };
 
-        turn.messages.push(json!({
-            "role": "tool",
-            "tool_call_id": tool_call.id,
-            "content": final_tool_content
-        }));
+        turn.messages.push(crate::utils::messages::tool_result_capped(
+            &tool_call.id,
+            final_tool_content,
+            max_tool_chars,
+        ));
 
         // === Task 454: Auto-update multi-slot /replace memory from tool results ===
         // This implements the JAZ-style "LLM acts → sees result → memory updated → next turn"
@@ -1093,5 +1136,39 @@ mod tests {
             0
         );
         assert_eq!(turn.tool_defs.len(), before, "no tools should be added");
+    }
+
+    #[test]
+    fn apply_search_unlock_wires_tool_search_into_tool_defs() {
+        // Regression test: `unlock_tools_from_search` existed but was never
+        // called from the live tool loop, so discovered tools stayed
+        // uncallable. `apply_search_unlock` is the wiring — it must grow
+        // `tool_defs` for tool_search calls and stay a no-op otherwise.
+        let mut turn = test_turn();
+        let before = turn.tool_defs.len();
+        let note = apply_search_unlock("tool_search", &json!({"query": "cron"}), &mut turn);
+        assert!(
+            turn.tool_defs.len() > before,
+            "tool_search must append unlocked definitions to tool_defs"
+        );
+        assert!(
+            !note.is_empty(),
+            "tool result should confirm the unlock to the model"
+        );
+        let names: Vec<&str> = turn.tool_defs.iter().map(tool_name).collect();
+        assert!(names.contains(&"cron_create"), "got {:?}", names);
+    }
+
+    #[test]
+    fn apply_search_unlock_ignores_other_tools() {
+        let mut turn = test_turn();
+        let before = turn.tool_defs.len();
+        let note = apply_search_unlock(
+            "read_file",
+            &json!({"query": "cron"}),
+            &mut turn,
+        );
+        assert_eq!(turn.tool_defs.len(), before, "non-search tools must not unlock");
+        assert!(note.is_empty(), "no confirmation note for non-search tools");
     }
 }

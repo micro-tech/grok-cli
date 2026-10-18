@@ -38,7 +38,6 @@ use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams};
 use crate::acp::chat_turn::ChatTurn;
 use crate::acp::context_trim::{
     build_archive_notice, estimate_tokens, model_context_budget, trim_to_token_budget,
-    truncate_tool_results,
 };
 
 // Re-export key public helpers so existing call sites (status bar, tests, etc.) continue to work.
@@ -180,7 +179,6 @@ struct SessionData {
     /// `None` means "use the global setting".
     /// Controlled by the `/cot on|off` slash command.
     show_thinking: Option<bool>,
-
     /// Last workflow trace recorded for this session (Task 232).
     /// Populated when using `route_with_workflow_trace` (e.g. in sub-agents)
     /// or when a full tool-using code workflow completes.
@@ -194,6 +192,24 @@ struct SessionData {
     /// Named slots: plan, working, context, errors + indexed mem.0, mem.1...
     /// Injected into prompts + auto-compacted to control context cost.
     pub memory: crate::memory::memory_manager::MemoryManager,
+
+    /// Per-session token budget fed with *real* API-reported usage each turn
+    /// (Task 463).  Drives delta-prompting thresholds and spend tracking off
+    /// real counts instead of the 4-chars-per-token estimate.
+    pub token_budget: crate::context::context_budget::ContextBudget,
+}
+
+/// Build the per-session token budget from the model-aware context budget
+/// (Task 463).  Falls back to a safe default if the computed budget is 0.
+fn session_token_budget(
+    model: &str,
+    acp: &crate::config::AcpConfig,
+) -> crate::context::context_budget::ContextBudget {
+    let max =
+        model_context_budget(model, acp.max_context_tokens, acp.grok4_max_context_tokens) as u32;
+    crate::context::context_budget::ContextBudget::new(max).unwrap_or_else(|_| {
+        crate::context::context_budget::ContextBudget::new(8192).expect("8192 is a valid budget")
+    })
 }
 
 impl SessionData {
@@ -485,6 +501,13 @@ impl GrokAcpAgent {
             let mut router = AppRouter::new(api_key, self.config.timeout_secs)?;
             // Attach rate limiting so enforcement happens on every chat_completion_with_history
             router = router.with_rate_limits(self.config.rate_limits.clone());
+            // Prompt-cache affinity: one ACP process serves one session, so a
+            // process-stable key routes the session's turns to the same xAI
+            // server and the automatic prefix cache hits across turns.
+            if self.config.network.prompt_cache_enabled {
+                router =
+                    router.with_prompt_cache_key(crate::process_prompt_cache_key());
+            }
             let _ = self.router.set(router);
         }
 
@@ -668,6 +691,11 @@ impl GrokAcpAgent {
 
             // Task 419: lightweight handoff tracking
             handoffs: Vec::new(),
+
+            // Task 463: per-session token budget, fed with real API-reported
+            // usage each turn.  Uses the captured model name (session_config
+            // was moved above).
+            token_budget: session_token_budget(&init_model, &self.config.acp),
         };
 
         // --- Task 102: Knowledge Pack Loader ---
@@ -890,12 +918,9 @@ impl GrokAcpAgent {
             info!("📚 Session history: {} messages", session.messages.len());
 
             // ── 1. Per-message truncation ────────────────────────────────────────
-            // Cap individual tool-result messages so a single large file read
-            // cannot consume the whole context window.
-            let max_tool_chars = self.config.acp.max_tool_result_chars;
-            if max_tool_chars > 0 {
-                truncate_tool_results(&mut session.messages, max_tool_chars);
-            }
+            // Task 465: tool results are truncated at the single append point
+            // (utils::messages::tool_result_capped) when they are created, so
+            // no per-message sweep is needed here.
 
             // ── 2. Count-based trim ──────────────────────────────────────────────
             // Keep the most recent max_history_messages entries so the model always
@@ -1552,10 +1577,6 @@ impl GrokAcpAgent {
 
     /// Set the active role for a session (used by the `/role <name>` slash command).
     pub async fn set_session_role(&self, session_id: &SessionId, role: String) -> Result<String> {
-        let old_role = {
-            let sessions = self.sessions.read().await;
-            sessions.get(&session_id.0).and_then(|s| s.current_role.clone())
-        };
         let mut sessions = self.sessions.write().await;
         match sessions.get_mut(&session_id.0) {
             None => Ok("Session not found — role not set.".to_string()),
@@ -2315,6 +2336,9 @@ impl GrokAcpAgent {
 
                 // Task 419: lightweight handoff tracking
                 handoffs: source.handoffs.clone(),
+
+                // Task 463: fresh budget for the forked session (same model).
+                token_budget: session_token_budget(&source.config.model, &self.config.acp),
             }
         };
         let mut sessions = self.sessions.write().await;
@@ -2455,6 +2479,12 @@ mod tests {
 
             // Task 419: lightweight handoff tracking
             handoffs: Vec::new(),
+
+            // Task 463: per-session token budget (test helper defaults).
+            token_budget: session_token_budget(
+                &SessionConfig::default().model,
+                &crate::config::Config::default().acp,
+            ),
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);

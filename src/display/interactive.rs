@@ -35,7 +35,7 @@ use crate::utils::session::{list_sessions, load_session, save_session};
 use crate::utils::shell_permissions::{ApprovalMode, ShellPermissions};
 use serde::{Deserialize, Serialize};
 // Use cheap message builders (Task 267)
-use crate::utils::messages::{assistant, system, tool_result, user};
+use crate::utils::messages::{assistant, system, tool_result_capped, user};
 
 /// Interactive session state
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -206,7 +206,16 @@ pub async fn start_interactive_mode(
     // rather than loading all skills at startup
 
     let mut session = InteractiveSession::new(model.to_string(), project_context);
-    let client = AppRouter::new(api_key, 30)?;
+    let mut client = AppRouter::new(api_key, 30)?;
+    // Prompt-cache affinity: key the xAI prefix cache to this interactive
+    // session so follow-up turns hit the cache instead of rebilling the
+    // full prompt (sent as the `x-grok-conv-id` header).
+    if config.network.prompt_cache_enabled {
+        client = client.with_prompt_cache_key(format!(
+            "grok-cli-interactive-{}",
+            session.session_id
+        ));
+    }
 
     // Display startup elements
     if interactive_config.show_banner {
@@ -1431,7 +1440,11 @@ async fn send_to_grok(
                 for tool_call in &tool_calls {
                     let output = execute_tool_call_interactive(tool_call, &security).await
                         .unwrap_or_else(|e| format!("Error dispatching tool: {}", e));
-                    messages.push(tool_result(&tool_call.id, output));
+                    messages.push(tool_result_capped(
+                        &tool_call.id,
+                        output,
+                        crate::constants::MAX_TOOL_RESULT_CHARS,
+                    ));
                 }
 
                 println!();

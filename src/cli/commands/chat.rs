@@ -11,7 +11,7 @@ use anyhow::Result;
 use colored::*;
 use serde_json::Value;
 // Cheap message builders to reduce allocations (Task 267)
-use crate::utils::messages::{assistant, assistant_with_tool_calls, system, tool_result, user};
+use crate::utils::messages::{assistant, assistant_with_tool_calls, system, tool_result_capped, user};
 use std::env;
 use std::fs;
 use std::io::{self, Write};
@@ -434,8 +434,14 @@ async fn handle_interactive_chat(
                         if enable_bayesian_router {
                             router.learn_from_tool(&tool_call.function.name);
                         }
-                        // Feed the result back as a tool message so the model can see it
-                        conversation_history.push(tool_result(&tool_call.id, output));
+                        // Feed the result back as a tool message so the model can see it.
+                        // Truncated at the append point (Task 465) so large outputs
+                        // never dump unbounded text into context.
+                        conversation_history.push(tool_result_capped(
+                            &tool_call.id,
+                            output,
+                            crate::constants::MAX_TOOL_RESULT_CHARS,
+                        ));
                     }
 
                     // 3. Call the model again with the tool results

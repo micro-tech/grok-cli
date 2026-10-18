@@ -136,3 +136,5 @@ _back/
 
 *.rs_bak
 *.tmp.*
+.tmp.driveupload
+.tmp.drivedownload

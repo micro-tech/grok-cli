@@ -117,6 +117,7 @@ impl CpuRouter {
                 max_tokens: req.max_tokens,
                 temperature: req.temperature,
                 reasoning_effort: req.reasoning_effort.clone(),
+                prompt_cache_key: req.prompt_cache_key.clone(),
             };
 
             // Call the backend (retries + back-off happen inside `route`).
@@ -196,7 +197,11 @@ impl CpuRouter {
                     }
                 };
 
-                messages_json.push(crate::utils::messages::tool_result(&tool_call.id, result));
+                messages_json.push(crate::utils::messages::tool_result_capped(
+                    &tool_call.id,
+                    result,
+                    crate::constants::MAX_TOOL_RESULT_CHARS,
+                ));
             }
 
             tracing::debug!(
@@ -282,6 +287,7 @@ impl CpuRouter {
                 max_tokens: req.max_tokens,
                 temperature: req.temperature,
                 reasoning_effort: req.reasoning_effort.clone(),
+                prompt_cache_key: req.prompt_cache_key.clone(),
             };
 
             let resp = self.route(&iter_req).await?;
@@ -343,7 +349,11 @@ impl CpuRouter {
                     success,
                 });
 
-                messages_json.push(crate::utils::messages::tool_result(&tool_call.id, output));
+                messages_json.push(crate::utils::messages::tool_result_capped(
+                    &tool_call.id,
+                    output,
+                    crate::constants::MAX_TOOL_RESULT_CHARS,
+                ));
             }
         }
 
