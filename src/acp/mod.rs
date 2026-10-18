@@ -38,7 +38,6 @@ use crate::acp::protocol::{PermissionOutcome, RequestPermissionParams};
 use crate::acp::chat_turn::ChatTurn;
 use crate::acp::context_trim::{
     build_archive_notice, estimate_tokens, model_context_budget, trim_to_token_budget,
-    truncate_tool_results,
 };
 
 // Re-export key public helpers so existing call sites (status bar, tests, etc.) continue to work.
@@ -194,6 +193,27 @@ struct SessionData {
     /// Named slots: plan, working, context, errors + indexed mem.0, mem.1...
     /// Injected into prompts + auto-compacted to control context cost.
     pub memory: crate::memory::memory_manager::MemoryManager,
+
+    /// The last user prompt sent (before repush). Used by `/repush` / `/retry`
+    /// to re-execute the previous turn without duplicating history.
+    last_user_prompt: Option<String>,
+    /// Per-session token budget fed with *real* API-reported usage each turn
+    /// (Task 463).  Drives delta-prompting thresholds and spend tracking off
+    /// real counts instead of the 4-chars-per-token estimate.
+    pub token_budget: crate::context::context_budget::ContextBudget,
+}
+
+/// Build the per-session token budget from the model-aware context budget
+/// (Task 463).  Falls back to a safe default if the computed budget is 0.
+fn session_token_budget(
+    model: &str,
+    acp: &crate::config::AcpConfig,
+) -> crate::context::context_budget::ContextBudget {
+    let max =
+        model_context_budget(model, acp.max_context_tokens, acp.grok4_max_context_tokens) as u32;
+    crate::context::context_budget::ContextBudget::new(max).unwrap_or_else(|_| {
+        crate::context::context_budget::ContextBudget::new(8192).expect("8192 is a valid budget")
+    })
 }
 
 impl SessionData {
@@ -675,6 +695,13 @@ impl GrokAcpAgent {
 
             // Task 419: lightweight handoff tracking
             handoffs: Vec::new(),
+
+            // Bad-internet repush support (for ACP + unstable connections)
+            last_user_prompt: None,
+            // Task 463: per-session token budget, fed with real API-reported
+            // usage each turn.  Uses the captured model name (session_config
+            // was moved above).
+            token_budget: session_token_budget(&init_model, &self.config.acp),
         };
 
         // --- Task 102: Knowledge Pack Loader ---
@@ -848,6 +875,10 @@ impl GrokAcpAgent {
     }
 
     /// Handle a chat completion request
+    ///
+    /// When `repush` is true we re-execute using the current history without
+    /// pushing the `message` again. This is used for the "retry / repush" feature
+    /// on bad/unstable internet so the user can recover the last dropped turn.
     pub async fn handle_chat_completion(
         &self,
         session_id: &SessionId,
@@ -857,6 +888,7 @@ impl GrokAcpAgent {
             tokio::sync::mpsc::UnboundedSender<crate::acp::protocol::SessionUpdate>,
         >,
         permission_bridge: Option<Arc<PermissionBridge>>,
+        repush: bool,
     ) -> Result<String> {
         let start_time = std::time::Instant::now();
         info!("🚀 Starting chat completion for session: {}", session_id.0);
@@ -888,21 +920,28 @@ impl GrokAcpAgent {
 
             let refined_message = session.refine_prompt(message);
 
-            // Add user message to history
-            session.messages.push(json!({
-                "role": "user",
-                "content": refined_message
-            }));
+            // Store the last user prompt for repush/retry support on bad internet.
+            if !repush {
+                session.last_user_prompt = Some(refined_message.clone());
+            }
+
+            // Add user message to history **only if this is not a repush**.
+            // Repush re-uses the previous user turn that was already stored.
+            if !repush {
+                session.messages.push(json!({
+                    "role": "user",
+                    "content": refined_message
+                }));
+            } else {
+                info!("Repush requested for session {} — re-using last user message from history", session_id.0);
+            }
 
             info!("📚 Session history: {} messages", session.messages.len());
 
             // ── 1. Per-message truncation ────────────────────────────────────────
-            // Cap individual tool-result messages so a single large file read
-            // cannot consume the whole context window.
-            let max_tool_chars = self.config.acp.max_tool_result_chars;
-            if max_tool_chars > 0 {
-                truncate_tool_results(&mut session.messages, max_tool_chars);
-            }
+            // Task 465: tool results are truncated at the single append point
+            // (utils::messages::tool_result_capped) when they are created, so
+            // no per-message sweep is needed here.
 
             // ── 2. Count-based trim ──────────────────────────────────────────────
             // Keep the most recent max_history_messages entries so the model always
@@ -1560,6 +1599,7 @@ impl GrokAcpAgent {
     /// Set the active role for a session (used by the `/role <name>` slash command).
     pub async fn set_session_role(&self, session_id: &SessionId, role: String) -> Result<String> {
         let old_role = {
+        let _old_role = {
             let sessions = self.sessions.read().await;
             sessions.get(&session_id.0).and_then(|s| s.current_role.clone())
         };
@@ -2322,6 +2362,11 @@ impl GrokAcpAgent {
 
                 // Task 419: lightweight handoff tracking
                 handoffs: source.handoffs.clone(),
+
+                // Repush context is not carried across a fork; the forked session starts fresh.
+                last_user_prompt: None,
+                // Task 463: fresh budget for the forked session (same model).
+                token_budget: session_token_budget(&source.config.model, &self.config.acp),
             }
         };
         let mut sessions = self.sessions.write().await;
@@ -2462,6 +2507,14 @@ mod tests {
 
             // Task 419: lightweight handoff tracking
             handoffs: Vec::new(),
+
+            // Bad-internet repush support (for ACP + unstable connections)
+            last_user_prompt: None,
+            // Task 463: per-session token budget (test helper defaults).
+            token_budget: session_token_budget(
+                &SessionConfig::default().model,
+                &crate::config::Config::default().acp,
+            ),
         };
         let mut map: HashMap<String, SessionData> = HashMap::new();
         map.insert(session_id.0.clone(), session_data);

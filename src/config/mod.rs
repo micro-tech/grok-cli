@@ -27,6 +27,7 @@ mod env;
 pub mod experimental;
 pub mod general;
 pub mod logging;
+pub mod memory;
 pub mod model;
 pub mod network;
 pub mod okf;
@@ -157,6 +158,11 @@ pub struct Config {
     /// Rate limiting configuration
     #[serde(default)]
     pub rate_limits: RateLimitConfig,
+
+    /// Multi-slot /replace short-term memory configuration (JAZ-style working memory).
+    /// Controls plan, working, context, errors, mem.N slots.
+    #[serde(default)]
+    pub memory: crate::config::memory::MemoryConfig,
 }
 
 impl Default for Config {
@@ -185,6 +191,7 @@ impl Default for Config {
             telemetry: TelemetryConfig::default(),
             okf: OkfConfig::default(),
             rate_limits: RateLimitConfig::default(),
+            memory: crate::config::memory::MemoryConfig::default(),
         }
     }
 }
@@ -708,8 +715,30 @@ impl Config {
         let contents = toml::to_string_pretty(self)
             .map_err(|e| anyhow!("Failed to serialize config: {}", e))?;
 
-        fs::write(&config_file_path, contents)
-            .map_err(|e| anyhow!("Failed to write config file: {}", e))?;
+        // Task 470 / review fix: the config file holds the API key — create it
+        // owner-only from birth. Writing first and chmod'ing after leaves a
+        // window where the key is world-readable (or permanently, if the
+        // process dies between the two syscalls).
+        #[cfg(unix)]
+        {
+            use std::io::Write;
+            use std::os::unix::fs::OpenOptionsExt;
+            let mut f = fs::OpenOptions::new()
+                .write(true)
+                .create(true)
+                .truncate(true)
+                .mode(0o600)
+                .open(&config_file_path)
+                .map_err(|e| anyhow!("Failed to write config file: {}", e))?;
+            f.write_all(contents.as_bytes())
+                .map_err(|e| anyhow!("Failed to write config file: {}", e))?;
+        }
+        // Non-Unix: no mode bits to set at creation; plain write.
+        #[cfg(not(unix))]
+        {
+            fs::write(&config_file_path, contents)
+                .map_err(|e| anyhow!("Failed to write config file: {}", e))?;
+        }
 
         info!("Configuration saved to: {}", config_file_path.display());
         Ok(())
@@ -904,6 +933,34 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(loaded_config.default_model, "test-model");
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn test_config_save_restricts_permissions_to_0600() {
+        // Task 470: the saved config holds the API key — it must not be
+        // world-readable.
+        use std::os::unix::fs::PermissionsExt;
+
+        let temp_dir = tempdir().unwrap();
+        let config_path = temp_dir.path().join("config.toml");
+
+        let config = Config {
+            default_model: "test-model".to_string(),
+            ..Default::default()
+        };
+        config
+            .save(Some(config_path.to_str().unwrap()))
+            .await
+            .unwrap();
+
+        let mode = std::fs::metadata(&config_path).unwrap().permissions().mode();
+        assert_eq!(
+            mode & 0o777,
+            0o600,
+            "config.toml must be owner-only, got mode {:o}",
+            mode & 0o777
+        );
     }
 
     #[test]

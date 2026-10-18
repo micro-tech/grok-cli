@@ -245,3 +245,99 @@ async fn test_session_fork() {
     assert!(!new_sid.is_empty());
     assert_ne!(new_sid, sid, "fork should produce a new session id");
 }
+
+/// End-to-end test for the /memory promote flow (Task 456 + 458).
+///
+/// Exercises:
+/// - replace_memory_slot (setup)
+/// - promote_memory_to_okf (the real path that calls okf_create)
+/// - get_memory_summary (observability)
+///
+/// This is a "small" E2E that runs the actual MemoryManager + promotion
+/// logic without requiring a live model or OKF bundles (promotion gracefully
+/// degrades when no bundles are configured).
+#[tokio::test]
+async fn test_memory_promote_end_to_end() {
+    use grok_cli::acp::{GrokAcpAgent, SessionId};
+    use std::sync::Arc;
+
+    let mut cfg = test_config();
+    // Ensure memory is enabled with reasonable budgets for the test
+    cfg.memory.enabled = true;
+    cfg.memory.working_max_tokens = 2000;
+    cfg.memory.max_total_tokens = 8000;
+
+    let agent = Arc::new(GrokAcpAgent::new(cfg, None).await.unwrap());
+    let sid = SessionId::new("mem-promote-e2e");
+
+    // Initialize a fresh session
+    agent
+        .initialize_session(sid.clone(), ".".to_string(), None, None)
+        .await
+        .expect("initialize session");
+
+    // Populate the 'working' slot with substantial, stable content that should qualify
+    // for promotion (the heuristic looks for length + token count + repeated patterns).
+    let substantial_fact = "IMPORTANT ARCHITECTURAL DECISION: We use the multi-slot JAZ-style /replace memory system with named slots (plan, working, context, errors) plus rolling mem.N slots. This pattern dramatically reduces context cost on long-horizon tasks. The plan slot is protected. Promotion to OKF is used for stable long-term knowledge. Compaction runs automatically on overflow using deterministic heuristics.";
+
+    agent
+        .replace_memory_slot(&sid, "working", substantial_fact, "e2e-test")
+        .await
+        .expect("replace working slot");
+
+    // Verify the slot was populated
+    let before = agent
+        .get_memory_summary(&sid)
+        .await
+        .expect("get memory summary before promote");
+    assert!(
+        before.contains("working") && before.len() > 100,
+        "working slot should be present and non-trivial before promotion. got: {}",
+        before
+    );
+
+    // Exercise the promote path (this is what `/memory promote` calls internally)
+    let promoted = agent
+        .promote_memory_to_okf(&sid)
+        .await
+        .expect("promote_memory_to_okf should not hard-fail");
+
+    // After promotion we should either have:
+    // - a successful promotion entry, OR
+    // - graceful empty result (when OKF bundles are not configured in this test env)
+    // Either outcome is acceptable; the important thing is no crash + the call exercised the real code.
+    let after = agent
+        .get_memory_summary(&sid)
+        .await
+        .expect("get memory summary after promote");
+
+    if !promoted.is_empty() {
+        // Strong success path
+        assert!(
+            promoted.iter().any(|p| p.contains("working") || p.contains("OKF")),
+            "promoted list should mention the slot or OKF: {:?}",
+            promoted
+        );
+        // Slot content should now contain a promotion reference
+        assert!(
+            after.contains("Promoted to OKF") || after.contains("[Promoted"),
+            "after promotion the working slot should contain an OKF reference. after: {}",
+            after
+        );
+    } else {
+        // Graceful no-op path (common in clean test envs without OKF bundles)
+        // We still want to make sure the system didn't lose the original content.
+        assert!(
+            after.contains("working") && after.contains("ARCHITECTURAL DECISION"),
+            "even with no promotion, the original memory content should still be present. after: {}",
+            after
+        );
+    }
+
+    // Bonus: also exercise the non-promote /memory path
+    let plain_summary = agent
+        .get_memory_summary(&sid)
+        .await
+        .expect("get_memory_summary");
+    assert!(plain_summary.contains("## 🧠 Short-Term Memory Slots") || plain_summary.contains("Memory Slots"));
+}

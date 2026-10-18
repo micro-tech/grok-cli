@@ -34,9 +34,12 @@ fn effective_timeout(security: &SecurityPolicy) -> u64 {
 /// while bash `&&` short-circuits on failure.
 #[cfg(target_os = "windows")]
 fn translate_powershell_and_chain(cmd: &str) -> String {
-    // Split on the exact " && " sequence the original code used.
-    // This keeps the translation simple and predictable.
-    let parts: Vec<&str> = cmd.split(" && ").collect();
+    // Task 471.4: split on `\s*&&\s*` — the old exact-" && " split missed
+    // `cmd1 &&cmd2`, `cmd1&& cmd2`, and extra-whitespace variants, leaving
+    // them untranslated on Windows.
+    static RE_AND_CHAIN: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"\s*&&\s*").expect("valid regex"));
+    let parts: Vec<&str> = RE_AND_CHAIN.split(cmd).collect();
     if parts.len() <= 1 {
         return cmd.to_string();
     }
@@ -99,8 +102,11 @@ pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Resu
                 .args([
                     "-NonInteractive",
                     "-NoProfile",
-                    "-ExecutionPolicy",
-                    "Bypass",
+                    // NOTE (Task 471.1): no `-ExecutionPolicy Bypass` here.
+                    // Execution policy governs .ps1 script files, not `-Command`
+                    // strings, so bypassing it was unnecessary — and silently
+                    // lowering the user's script-execution posture is not
+                    // something an agent tool should do.
                     "-Command",
                     &ps_command,
                 ])
@@ -143,24 +149,46 @@ pub async fn run_shell_command(command: &str, security: &SecurityPolicy) -> Resu
 
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
+    let exit_code = output.status.code().unwrap_or(-1);
+
+    // Task 464: truncate at the SOURCE (tail — compiler/test errors live at
+    // the END of output) instead of dumping unbounded stdout+stderr into
+    // context.  Each stream is capped; the wrapper is a one-line header.
+    // The result is still never blank: empty streams get an explicit marker
+    // so the model doesn't report "no output" / "blank".
+    const MAX_SHELL_STREAM_CHARS: usize = 15_000;
+    let stdout_part = {
+        let t = stdout.trim_end_matches('\n').trim_end_matches('\r');
+        if t.is_empty() {
+            "(empty)".to_string()
+        } else {
+            crate::acp::context_trim::truncate_tool_content(t, MAX_SHELL_STREAM_CHARS)
+        }
+    };
+    let stderr_part = {
+        let t = stderr.trim_end_matches('\n').trim_end_matches('\r');
+        if t.is_empty() {
+            "(empty)".to_string()
+        } else {
+            crate::acp::context_trim::truncate_tool_content(t, MAX_SHELL_STREAM_CHARS)
+        }
+    };
+
+    let result = format!(
+        "$ {command} [exit {exit_code}]\nstdout:\n{stdout_part}\nstderr:\n{stderr_part}"
+    );
 
     if !output.status.success() {
         tracing::warn!(
-            exit_code = output.status.code().unwrap_or(-1),
-            command = command,
-            "shell_tools: command exited with non-zero status"
+            exit_code = exit_code,
+            command = %command,
+            "shell_tools: non-zero exit — returning as error so callers can distinguish failure (COR-10)"
         );
-        // COR-10: Return Err on non-zero exit so callers (workflows, agents, tests)
-        // can distinguish success from failure and propagate errors properly.
-        return Err(anyhow!(
-            "Command failed with code {}:\nStdout: {}\nStderr: {}",
-            output.status,
-            stdout,
-            stderr
-        ));
+        // Return rich error so the model still sees the (truncated) STDOUT/STDERR + context.
+        return Err(anyhow!("{}", result));
     }
 
-    Ok(format!("Stdout: {}\nStderr: {}", stdout, stderr))
+    Ok(result)
 }
 
 #[cfg(test)]
@@ -191,15 +219,17 @@ mod tests {
         let cmd = "false";
 
         let result = run_shell_command(cmd, &policy).await;
+        // COR-10: return Err on non-zero exit so callers (including sub-agents, verifiers) can distinguish failure.
+        // The error still contains the rich labeled output (STDOUT/STDERR + exit code) for the model.
         assert!(result.is_err(), "non-zero exit must return Err (COR-10)");
         let err = result.unwrap_err().to_string();
         assert!(
-            err.to_lowercase().contains("failed with code")
-                || err.contains("exit")
-                || err.contains("1"),
-            "error message should indicate failure, got: {}",
+            err.contains("[exit") && (err.contains("-1") || err.contains("1") || err.contains("exit")),
+            "error must contain '[exit N]' and indication of failure, got: {}",
             err
         );
+        // Still rich: model/harness sees labeled output even in the error case.
+        assert!(err.contains("stdout:") || err.contains("stderr:"));
     }
 
     #[tokio::test]
@@ -217,26 +247,60 @@ mod tests {
     // The naive `replace(" && ", "; ")` would have let the second command run
     // unconditionally.
 
+    #[tokio::test]
+    async fn large_output_is_truncated_at_source() {
+        // Task 464: unbounded shell output must be truncated at the source
+        // (tail) with a minimal one-line header — not dumped whole into context.
+        let policy = SecurityPolicy::new();
+        let result = run_shell_command("seq 1 20000", &policy).await;
+        assert!(result.is_ok(), "seq should succeed: {:?}", result);
+        let out = result.unwrap();
+        // One-line header, no box-drawing decoration.
+        assert!(out.starts_with("$ seq 1 20000 [exit 0]"), "one-line header, got: {}", &out[..80.min(out.len())]);
+        assert!(!out.contains('═'), "decorative wrapper must be gone");
+        // Tail kept: the last numbers are visible, the head is cut with a marker.
+        assert!(out.contains("20000"), "tail of output must be visible");
+        assert!(
+            out.contains("earlier output truncated"),
+            "truncation marker must be present, len={}",
+            out.len()
+        );
+        assert!(out.len() < 40_000, "output must be bounded, len={}", out.len());
+    }
+
     #[cfg(target_os = "windows")]
     #[tokio::test]
     async fn windows_and_chain_stops_on_failure() {
         let policy = SecurityPolicy::new();
         // First part fails (exit 1), second part must NOT execute.
-        // COR-10: non-zero exit now returns Err (with the failure message inside).
+        // Per COR-10, run_shell_command returns Err on non-zero exit — the rich labeled
+        // output is embedded in the error message so the model / harness can still read it.
+        // The PowerShell && translation (using $LASTEXITCODE) ensures the echo never runs.
+        // We detect the short-circuit by absence of the marker in the output section.
         let result =
             run_shell_command("cmd /c exit 1 && echo SHOULD_NOT_APPEAR_IN_OUTPUT", &policy).await;
 
-        assert!(result.is_err(), "failing command must return Err (COR-10)");
-        let err = result.unwrap_err().to_string();
+        assert!(result.is_err(), "non-zero exit must return Err (COR-10)");
+        let out = result.unwrap_err().to_string();
+
+        // The header always repeats the original command (so it legitimately contains the marker text).
+        // We must verify the *executed payload* (everything after "[exit") does NOT contain it.
+        // This proves the PowerShell `if ($LASTEXITCODE -eq 0)` guard prevented the echo from running.
+        let after_exit = out
+            .split_once("[exit")
+            .map(|(_, rest)| rest)
+            .unwrap_or(&out);
+
         assert!(
-            !err.contains("SHOULD_NOT_APPEAR_IN_OUTPUT"),
-            "second command after && must not run when first fails. Got error: {}",
-            err
+            !after_exit.contains("SHOULD_NOT_APPEAR_IN_OUTPUT"),
+            "second command after && must not run when first fails (PowerShell $LASTEXITCODE guard). Full result:\n{}",
+            out
         );
+
         assert!(
-            err.contains("failed with code") || err.contains("exit 1"),
-            "error should mention failure code, got: {}",
-            err
+            out.contains("[exit") && (out.contains("-1") || out.contains("1") || out.contains("exit")),
+            "output should mention [exit N] and failure, got: {}",
+            out
         );
     }
 
@@ -253,5 +317,28 @@ mod tests {
             "second command should have run. Got: {}",
             out
         );
+    }
+
+    // Task 471.4: `&&` splitting must handle missing/extra whitespace variants.
+    #[cfg(target_os = "windows")]
+    #[test]
+    fn windows_and_chain_split_handles_whitespace_variants() {
+        for cmd in [
+            "a &&b",
+            "a&& b",
+            "a&&b",
+            "a  &&  b",
+            "a\t&&\tb",
+        ] {
+            let t = translate_powershell_and_chain(cmd);
+            assert!(
+                t.contains("if ($LASTEXITCODE -eq 0)"),
+                "variant must be translated: {} -> {}",
+                cmd,
+                t
+            );
+        }
+        // No chain → unchanged.
+        assert_eq!(translate_powershell_and_chain("cargo check"), "cargo check");
     }
 }

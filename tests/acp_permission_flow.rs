@@ -90,7 +90,7 @@ async fn test_permission_proceed_once() -> Result<()> {
     });
 
     let response = agent
-        .handle_chat_completion(&session_id, "list files", None, None, Some(bridge_arc))
+        .handle_chat_completion(&session_id, "list files", None, None, Some(bridge_arc), false)
         .await?;
 
     assert_eq!(response, "Here is the directory listing.");
@@ -167,6 +167,7 @@ async fn test_permission_cancel() -> Result<()> {
             None,
             None,
             Some(bridge_arc),
+            false,
         )
         .await?;
 
@@ -233,7 +234,7 @@ async fn test_permission_always_allow_persists() -> Result<()> {
     });
 
     agent
-        .handle_chat_completion(&session_id, "list files", None, None, Some(bridge_arc))
+        .handle_chat_completion(&session_id, "list files", None, None, Some(bridge_arc), false)
         .await?;
     assert!(agent.is_always_allowed(&session_id, "list_directory").await);
 
@@ -244,6 +245,7 @@ async fn test_permission_always_allow_persists() -> Result<()> {
             None,
             None,
             Some(bridge_clone),
+            false,
         )
         .await?;
 
@@ -290,7 +292,7 @@ async fn test_permission_timeout() -> Result<()> {
     let bridge_arc = Arc::new(bridge);
 
     let result = agent
-        .handle_chat_completion(&session_id, "list files", None, None, Some(bridge_arc))
+        .handle_chat_completion(&session_id, "list files", None, None, Some(bridge_arc), false)
         .await;
 
     assert!(result.is_err());
@@ -342,7 +344,7 @@ async fn test_permission_gate_disabled() -> Result<()> {
         .await;
 
     let response = agent
-        .handle_chat_completion(&session_id, "list files", None, None, None)
+        .handle_chat_completion(&session_id, "list files", None, None, None, false)
         .await?;
 
     assert_eq!(response, "Done.");

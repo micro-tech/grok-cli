@@ -1,0 +1,12 @@
+{
+  "name": "self-updater",
+  "description": "Self-update grok-cli using GitHub releases. Checks for new versions, compares semver, plans the update, downloads the correct platform binary, verifies, and performs safe replacement with user confirmation.",
+  "version": "1.0.0",
+  "author": "grok-cli core",
+  "license": "MIT",
+  "tags": ["core", "maintenance", "self-hosting", "update"],
+  "min_grok_version": "0.2.8",
+  "arbitration_score": 85,
+  "dependencies": [],
+  "compatibility": ["all"]
+}

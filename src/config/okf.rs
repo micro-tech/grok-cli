@@ -31,7 +31,9 @@ pub struct OkfConfig {
     #[serde(default)]
     pub api_key: Option<String>,
 
-    /// Ingestion endpoint path for traces
+    /// Ingestion endpoint path for traces. Canonical v1 path is "/okf/traces"
+    /// (PROTOCOL.md); a configured "/api/traces" is translated internally
+    /// with a deprecation log (task 480).
     #[serde(default = "default_okf_endpoint")]
     pub endpoint: String,
 
@@ -93,8 +95,12 @@ fn default_okf_port() -> u16 {
 }
 
 fn default_okf_endpoint() -> String {
-    "/api/traces".to_string()
+    "/okf/traces".to_string()
 }
+
+/// Legacy endpoint path from before the v1 protocol (task 466).
+/// Recognized so old configs keep working, translated to v1.
+const LEGACY_TRACES_ENDPOINT: &str = "/api/traces";
 
 fn default_okf_timeout() -> u64 {
     10
@@ -106,6 +112,23 @@ fn default_okf_buffer_size() -> usize {
 
 fn default_true() -> bool {
     true
+}
+
+impl OkfConfig {
+    /// Effective trace-ingest path for the OKF v1 protocol.
+    ///
+    /// A configured legacy "/api/traces" is translated to "/okf/traces" and a
+    /// one-line deprecation note is logged; everything else passes through.
+    pub fn trace_endpoint_path(&self) -> &str {
+        if self.endpoint == LEGACY_TRACES_ENDPOINT {
+            tracing::warn!(
+                "OKF trace endpoint '/api/traces' is deprecated; use '/okf/traces' (v1)"
+            );
+            "/okf/traces"
+        } else {
+            &self.endpoint
+        }
+    }
 }
 
 impl Default for OkfConfig {

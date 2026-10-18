@@ -1,0 +1,81 @@
+# Markmap Documentation Rules (Global Default)
+
+## Purpose
+The `.doc/markmap/` directory contains architecture diagrams in `.mmd` (Markmap) format.
+These are the **source of truth** for the project's mental model.
+
+This file lives in the **global** rules directory (`~/.grok-cli/agents/rules/`) and serves as the system-wide default. Project-specific overrides can be placed in `<project>/.agents/rules/`.
+
+## When to Update .mmd Files
+Update the relevant `.mmd` file whenever you:
+- Add, remove, or rename major modules/components
+- Change the high-level architecture or data flow
+- Introduce new subsystems (e.g. `router/`, `memory/`, `mcp/`, `skills/`, `hooks/`)
+- Modify key file paths that appear in the diagrams
+
+## Required Structure for Every .mmd File
+Every `.mmd` file **must** start with this navigation block:
+
+```markdown
+## Navigation
+- [Overview](00-overview.html)
+- [CLI](01-cli.html)
+- [Agent](02-agent.html)
+- [RAG](03-rag.html)
+- [Memory](04-memory.html)
+- [Tools](05-tools.html)
+- [Engine](06-engine.html)
+- [Router](07-router.html)
+- [Config & Context](08-config-context.html)
+- [MCP & ACP](09-mcp-acp.html)
+- [Safety & Security](10-safety-security.html)
+- [Utils & Display](11-utils-display.html)
+```
+
+## Editing Rules
+1. Keep the **Navigation** section as the first heading after the title.
+2. Use relative `.html` links only (never link to `.mmd` files).
+3. Keep content concise — focus on file paths and responsibilities.
+4. After editing any `.mmd`, run the following so the diagrams stay in sync:
+
+   ```powershell
+   .\scripts\build-markmaps.ps1
+   ```
+
+   > `cargo build` will also trigger this automatically via `build.rs`.
+
+## Build Integration
+- `build.rs` runs on every `cargo build` / `cargo check`.
+- It detects when `.mmd` files are newer than their `.html` counterparts.
+- It then delegates to `scripts/build-markmaps.ps1`, which prefers a globally installed `markmap` / `markmap-cli` and falls back to `npx`.
+
+## File Naming Convention
+- `00-overview.mmd` → `00-overview.html`
+- `01-cli.mmd` → `01-cli.html`
+- etc.
+
+## Global vs Project Rules
+- **Global** (this file): `~/.grok-cli/agents/rules/markmap-docs.md`
+- **Project**: `<project>/.agents/rules/markmap-docs.md`
+
+Global rules apply to all projects unless overridden locally.
+
+## Agent Rules Loading (New)
+grok-cli now automatically loads plain-text rules from both:
+- Global: `~/.grok-cli/agents/rules/`
+- Project: `<project>/.agents/rules/`
+
+**Merge logic:**
+- Global rules loaded first
+- Project rules loaded second
+- Same filename → **project wins** (override)
+- No duplicate content is sent to the model
+
+Loaded via `ContextEngine::load_agent_rules()` and exposed through `skills::load_all_rules()`.
+
+## Do Not
+- Remove the Navigation section
+- Link to `.mmd` files from inside the mindmaps
+- Put implementation details deeper than 2–3 levels unless necessary
+
+This keeps the architecture diagrams always in sync with the codebase.
