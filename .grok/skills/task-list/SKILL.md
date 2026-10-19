@@ -12,7 +12,13 @@ metadata:
 
 ## Overview
 
-This skill provides expert guidance for creating, managing, and executing tasks using the task management system. Tasks are stored in the `task_list.json` file located in the `.zed` folder and follow a structured format with dependencies, priorities, and detailed implementation instructions.
+This skill provides expert guidance for creating, managing, and executing tasks using the task management system. Tasks are stored in `.zed/task_list.json`.
+
+**Preferred way to manage tasks (when available):** Use the application tools `task_create`, `task_update`, and `task_get`.
+
+These tools are the official way to create, read, and modify tasks. They handle validation, ID assignment, backups, and persistence correctly.
+
+When the `task_*` tools are not directly available in the current environment, fall back to reading `.zed/task_list.json` and carefully editing it.
 
 ## Core Principles
 

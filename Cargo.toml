@@ -31,6 +31,10 @@ path = "src/main.rs"
 name = "github_mcp"
 path = "src/bin/github_mcp.rs"
 
+[[bin]]
+name = "mcp_test_echo"
+path = "src/bin/mcp_test_echo.rs"
+
 [[bench]]
 name = "perf_bench"
 harness = false
@@ -123,6 +127,8 @@ tempfile = "3.27.0"
 mockito = "1.7"
 tokio-test = "0.4"
 serial_test = "4.0.1"
+# For running / locating binaries built by this crate in tests
+assert_cmd = "2.0"
 # For Task 266 benchmarks (optional but recommended for perf work)
 criterion = { version = "0.8.2", features = ["html_reports"] }
 

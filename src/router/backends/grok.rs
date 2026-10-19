@@ -74,6 +74,11 @@ impl GrokBackend {
     }
 
     /// Classify an `anyhow::Error` from the Grok client into a [`RouterError`].
+    ///
+    /// Uses the canonical network drop detector so that transient send failures
+    /// (e.g. "error sending request for url") are treated as retriable Network
+    /// errors instead of fatal BackendError. This fixes the symptom where a
+    /// connectivity hiccup was reported as "Backend error: Network error: ...".
     fn classify_error(err: &anyhow::Error) -> RouterError {
         let msg = err.to_string().to_lowercase();
 
@@ -83,11 +88,20 @@ impl GrokBackend {
         if msg.contains("429") || msg.contains("rate limit") || msg.contains("too many requests") {
             return RouterError::RateLimit;
         }
+
+        // Delegate to the Starlink-aware detector first (covers "error sending request",
+        // connection reset, Cloudflare 52x, satellite handovers, etc.).
+        if detect_network_drop(err) {
+            return RouterError::Network(err.to_string());
+        }
+
+        // Fallback heuristics for anything that looks network-related.
         if msg.contains("timeout")
             || msg.contains("timed out")
             || msg.contains("connection")
             || msg.contains("reset")
             || msg.contains("eof")
+            || msg.contains("error sending request")
         {
             return RouterError::Network(err.to_string());
         }
