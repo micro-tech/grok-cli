@@ -375,19 +375,10 @@ async fn handle_interactive_chat(
                     }
 
                     // Add user message to history (cheap builder, Task 267)
-                    conversation_history.push(user(actual_input));
+                    // Borrow here to avoid moving `actual_input` (fixes E0382 borrow of moved value).
+                    conversation_history.push(user(&actual_input));
                     if show_belief_graph {
                         println!("\n{}", router.visualize_beliefs());
-                    }
-
-                    if router.is_low_confidence() {
-                        actual_input = format!(
-                            "{}
-[System Advisory: Intent confidence is below threshold. If the request is ambiguous, briefly confirm the goal with the user before taking irreversible actions. You may still use tools when the intent is clear enough.]",
-                            actual_input
-                        );
-                    } else if let Some(persona) = router.get_adaptive_system_prompt() {
-                        actual_input = format!("{}\n[{}]", actual_input, persona);
                     }
                 }
 
