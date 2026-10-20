@@ -28,6 +28,14 @@ Skills appear in descending arbitration priority (highest influence first).
 - Match the description and triggers above.
 - Call with `execute_skill "skill-builder" "user input here"` or activate via `/activate skill-builder`.
 
+### diagram-design
+**Description:** Draw publication-quality diagrams (architecture, data flow, flowcharts, sequence, state machine, ER/data model, timeline, swimlane, quadrant, Sankey, dependency graph, UML class, deployment, Gantt, and 38 more types) as self-contained HTML files with inline SVG in an editorial style. Use when the user asks for a diagram to explain, map, or publish a system, codebase, or data flow.
+**Arbitration Score:** 40 (higher = appears earlier / stronger influence)
+**Tags:** diagrams, visualization, architecture, documentation
+**When to prefer / activate this skill:**
+- Match the description and triggers above.
+- Call with `execute_skill "diagram-design" "user input here"` or activate via `/activate diagram-design`.
+
 <!-- SKILLS CATALOG END -->
 
 ---
