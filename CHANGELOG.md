@@ -11,6 +11,22 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Triple-review fixes, batch 2: HOH apply-path safety (H6 + H9, 2026-11-09)
+
+- **H6 — `content_for` never returns `diff_summary` as file content.**
+  `PatchSet::content_for` no longer falls back to `diff_summary` (prose)
+  when `intended_content` is absent — it returns `None`, so `apply_patch`
+  skips the file with an error instead of writing a human-readable summary
+  into it. `content_to_apply` (preview-only helper) likewise returns an
+  empty string instead of `diff_summary` when there is no intended content.
+- **H9 — HOH writes are jailed under `.grok/hoh/`.** `ApplyConfig` gains a
+  `jail` path (the HOH manager sets it to `<project_root>/.grok/hoh`, its
+  data dir). `apply_patch` refuses any target outside the jail — absolute
+  paths, relative paths, and `..` escapes (lexically normalized before the
+  check) — before creating directories or writing, and out-of-jail files are
+  not even backed up. A patch may still *name* a real src/ path as an
+  "intended target", but the applier will not write it.
+
 ### HOH patch-apply safety & correctness fixes (code review follow-up, 2026-11-09)
 
 - Fix critical multi-file patch bug in `hoh::patch_applier::apply_patch`: it

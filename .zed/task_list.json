@@ -563,6 +563,32 @@
     }
    ],
    "results": "grok-cli retargeted to OKF v1 (bot-repo PROTOCOL.md is the single contract, nothing invented). 480.1: trace forwarder default endpoint now /okf/traces; OkfConfig::trace_endpoint_path() translates a configured legacy /api/traces with a deprecation warn. 480.2: push_concept_to_remote posts to /okf/bundles/{bundle}/concepts. 480.3: load_okf_from_config fetches remote v1 manifest (GET {remote_url}/okf/manifest.json, ETag/304 cached) + per-entry GET /okf/knowledge/{kid}, mapped into OkfBundle/OkfConcept; any failure falls back to local knowledge_bundles dirs (remote first, local always loaded as offline fallback). Thread-spawn-with-runtime pattern used (okf_lookup is sync). Tests: 11 new mockito contract tests green; full lib suite 1112 passed, 0 failed; zero new warnings. Cross-repo grep: no remaining /api/traces targets (only legacy-translation code + deprecation docs) and no unprefixed /bundles/ POSTs in either repo."
+  },
+  {
+   "id": 486,
+   "title": "content_for must never return diff_summary as file content (review H6)",
+   "description": "PatchSet::content_for in src/hoh/state.rs:157-166 falls back to returning diff_summary (prose) as file content when intended_content is None. Latent file corruption; both producers are dead code today, so one wiring change arms it.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Return None when intended_content is None (let apply_patch skip with an error, as it already does for multi-file patches). Add a regression test: a PatchSet with only diff_summary set returns None from content_for.",
+   "testStrategy": "cargo test --lib hoh::patch_applier:: hoh::state:: — content_for returns None when intended_content is None even if diff_summary is set; existing multi-file tests still pass.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. content_for returns None when intended_content is None (diff_summary fallback removed); content_to_apply returns empty string instead of diff_summary. Regression test content_for_never_returns_diff_summary added. Tests: hoh::patch_applier 6 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings; cargo check --bins exit 0 (4 pre-existing installer warnings, untouched)."
+  },
+  {
+   "id": 487,
+   "title": "Route HOH writes through SecurityPolicy / jail under .grok/hoh/ (review H9)",
+   "description": "HOH writes bypass SecurityPolicy entirely. apply_patch uses raw fs::write and never calls SecurityPolicy::validate_path_access. Defense in depth matters most in the autonomous path.",
+   "status": "done",
+   "dependencies": [
+    486
+   ],
+   "priority": "high",
+   "details": "Route all HOH writes through SecurityPolicy, or jail them under <project_root>/.grok/hoh/. Enforce at the apply_patch entry point so every autonomous write is validated. Add tests: a write outside the jail is rejected; a write inside .grok/hoh/ succeeds.",
+   "testStrategy": "cargo test --lib hoh::patch_applier:: — writes outside the allowed jail are rejected; writes under .grok/hoh/ succeed; existing patch_applier tests still pass.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. ApplyConfig gains a jail path; HOHManager sets it to <project_root>/.grok/hoh (data_dir). apply_patch refuses any target outside the jail (absolute, relative, or .. escape, lexically normalized) before mkdir/write, and skips backing up out-of-jail files. Regression tests write_outside_jail_is_rejected + dotdot_escape_out_of_jail_is_rejected added; real_config now jails to the test temp dir. Tests: hoh::patch_applier 6 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings (one needless-borrow warning fixed); cargo check --bins exit 0."
   }
  ]
 }

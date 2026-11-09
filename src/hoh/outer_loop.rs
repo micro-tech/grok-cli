@@ -413,6 +413,11 @@ impl HOHManager {
             create_backups: true,
             backup_root: self.data_dir.join("backups"),
             max_files_per_patch: 20,
+            // H9: jail all real writes under the HOH data dir
+            // (<project_root>/.grok/hoh). A patch naming a file outside it
+            // (e.g. a real src/ path carried as an "intended target") is
+            // refused by the applier instead of being written.
+            jail: self.data_dir.clone(),
         }
     }
 
