@@ -92,6 +92,11 @@ stable; 1.100.0 due 2026-11-12).
   check) — before creating directories or writing, and out-of-jail files are
   not even backed up. A patch may still *name* a real src/ path as an
   "intended target", but the applier will not write it.
+### Triple-review fixes, batch 3: HOH evaluation consolidation (H11/H10, 2026-11-09)
+
+- **H11 — One canonical meta-score function.** The outcome-based scoring from batch 2 (H7) now lives in a single function, `hoh::state::compute_meta_score`, with named constants (`META_SCORE_BASE` 0.50, `META_SCORE_TEST_PASS_BONUS` 0.10, `META_SCORE_IMPROVEMENT_BONUS` 0.15, `META_SCORE_TEST_FAIL_PENALTY` 0.10, `META_SCORE_APPLY_GATE` 0.70). The inline `outcome_meta_score` in `outer_loop.rs` is gone, and the duplicate `ArchitectureEvolutionEngine::compute_meta_improvement_score` (a proposal-count/success-rate composite, no callers) is deleted. The apply gate uses the named `META_SCORE_APPLY_GATE` constant instead of a hardcoded 0.70.
+- **H10 — FullAuto nudge decoupled from the apply gate.** The self-refinement proposal that suggested raising autonomy toward FullAuto when "consistently > 0.7" is deleted — its trigger was the same 0.70 threshold as the apply gate, so the system could talk itself into unguarded auto-apply. The replacement is the `should_suggest_full_auto` gate: it requires N>=3 consecutive verified improvements, no rollbacks, AND an explicit human approval flag (never set by the HOH itself). The meta score is deliberately not an input. No caller wires the streak + approval through the gate yet, so no FullAuto suggestion is generated until that wiring lands.
+- **H8 refinements (from the rebase).** The hardcoded `helix_score: Some(0.78)` in `evaluate_phase` is gone (the merge fills the score from the patch-shape evaluation). The patch-shape base is a neutral 0.50. Doc/HOH.md no longer claims a Helix cross-check anywhere, including the prioritization line.
 
 ### OKF v1 protocol alignment (task 480, 2026-10-05)
 

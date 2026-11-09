@@ -568,13 +568,14 @@
    "id": 481,
    "title": "Repair benches/perf_bench.rs: inherent impl Router on foreign type (E0116) + private-field access (E0616) break cargo check --all-targets / cargo bench",
    "description": "benches/perf_bench.rs fails to compile: the trailing impl Router { route_sync_for_bench(..) } block is an inherent impl on grok_cli::Router written from outside the crate (E0116 - can never compile), and it reads the private field self.bayes (E0616). The bench was broken by the grok-4.7 model commit e1e2c2b (a master->PreRelese merge already present in 8fb7696) and rotted silently because the nightly only ever ran cargo check --lib --bins --tests, and cargo test never builds bench targets. cargo build and cargo test are unaffected (green), so this did not stop the line, but cargo bench and any --all-targets gate are red.",
-   "status": "pending",
+   "status": "done",
    "dependencies": [],
    "priority": "medium",
    "details": "FILED BY QUARTERMASTER 2026-10-07 ~05:00 EDT. METHOD: cargo check --all-targets on PreRelese tip 0b8b0ac surfaced 4 errors in the perf_bench target. RULED OUT: not caused by the task-480 or docs-refresh merges - git merge-base proves e1e2c2b (grok-4.7 model work) is an ancestor of last night's green baseline 8fb7696, and the -S pickaxe traces both the impl block and pub struct Router to e1e2c2b; the bench has been broken since then. RULED OUT: no effect on cargo build/cargo test (empirically green at 8fb7696 and on tonight's tip) - bench targets are only compiled by cargo bench / --benches / --all-targets. SUGGESTED START: either delete the foreign impl block and benchmark only public API (Router::new_with_default_priors + public methods), or add a #[doc(hidden)] helper method inside src/ next to Router's own impl (optionally #[cfg(any(test, bench))]-gated) that the bench can call; keep the bayes field private. The 18 criterion::black_box deprecation warnings (use std::hint::black_box instead) can ride along as cleanup.\nRE-VERIFIED 2026-11-16 (Quartermaster, PreRelese 39bc650): cargo check --all-targets still fails with the same 4 errors (E0116/E0599/E0616) + 18 criterion black_box warnings; cargo check/build/test unaffected (green).",
    "testStrategy": "cargo check --all-targets and cargo bench --no-run both exit 0 with zero errors; cargo test still green (lib ~1112/0).",
    "subtasks": [],
-   "results": ""
+   "results": "",
+   "results": "Done 2026-11-17. The perf_bench breakage (inherent impl Router on foreign type + private-field access) was fixed by PR #18 (h1h5, H1-H5 batch), now merged into PreRelese. Verified: cargo check --all-targets exits 0 on the rebased branch (the 4 bench errors are gone). Marked done as part of the PR #20 rebase."
   },
   {
    "id": 482,
@@ -654,28 +655,24 @@
    "id": 488,
    "title": "content_for must never return diff_summary as file content (review H6)",
    "description": "PatchSet::content_for in src/hoh/state.rs:157-166 falls back to returning diff_summary (prose) as file content when intended_content is None. Latent file corruption; both producers are dead code today, so one wiring change arms it.",
-   "status": "done",
-   "dependencies": [],
+   "status": "done",   "dependencies": [],
    "priority": "high",
    "details": "Return None when intended_content is None (let apply_patch skip with an error, as it already does for multi-file patches). Add a regression test: a PatchSet with only diff_summary set returns None from content_for.",
    "testStrategy": "cargo test --lib hoh::patch_applier:: hoh::state:: — content_for returns None when intended_content is None even if diff_summary is set; existing multi-file tests still pass.",
    "subtasks": [],
-   "results": "Done 2026-11-09. content_for returns None when intended_content is None (diff_summary fallback removed); content_to_apply returns empty string instead of diff_summary. Regression test content_for_never_returns_diff_summary added. Tests: hoh::patch_applier 6 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings; cargo check --bins exit 0 (4 pre-existing installer warnings, untouched)."
-  },
+   "results": "Done 2026-11-09. content_for returns None when intended_content is None (diff_summary fallback removed); content_to_apply returns empty string instead of diff_summary. Regression test content_for_never_returns_diff_summary added. Tests: hoh::patch_applier 6 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings; cargo check --bins exit 0 (4 pre-existing installer warnings, untouched)."  },
   {
    "id": 489,
    "title": "Route HOH writes through SecurityPolicy / jail under .grok/hoh/ (review H9)",
    "description": "HOH writes bypass SecurityPolicy entirely. apply_patch uses raw fs::write and never calls SecurityPolicy::validate_path_access. Defense in depth matters most in the autonomous path.",
-   "status": "done",
-   "dependencies": [
+   "status": "done",   "dependencies": [
     488
    ],
    "priority": "high",
    "details": "Route all HOH writes through SecurityPolicy, or jail them under <project_root>/.grok/hoh/. Enforce at the apply_patch entry point so every autonomous write is validated. Add tests: a write outside the jail is rejected; a write inside .grok/hoh/ succeeds.",
    "testStrategy": "cargo test --lib hoh::patch_applier:: — writes outside the allowed jail are rejected; writes under .grok/hoh/ succeed; existing patch_applier tests still pass.",
    "subtasks": [],
-   "results": "Done 2026-11-09. ApplyConfig gains a jail path; HOHManager sets it to <project_root>/.grok/hoh (data_dir). apply_patch refuses any target outside the jail (absolute, relative, or .. escape, lexically normalized) before mkdir/write, and skips backing up out-of-jail files. Regression tests write_outside_jail_is_rejected + dotdot_escape_out_of_jail_is_rejected added; real_config now jails to the test temp dir. Tests: hoh::patch_applier 6 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings (one needless-borrow warning fixed); cargo check --bins exit 0."
-  },
+   "results": "Done 2026-11-09. ApplyConfig gains a jail path; HOHManager sets it to <project_root>/.grok/hoh (data_dir). apply_patch refuses any target outside the jail (absolute, relative, or .. escape, lexically normalized) before mkdir/write, and skips backing up out-of-jail files. Regression tests write_outside_jail_is_rejected + dotdot_escape_out_of_jail_is_rejected added; real_config now jails to the test temp dir. Tests: hoh::patch_applier 6 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings (one needless-borrow warning fixed); cargo check --bins exit 0."  },
   {
    "id": 490,
    "title": "Meta score must measure outcomes, not activity (review H7)",
@@ -686,8 +683,7 @@
    "details": "src/hoh/outer_loop.rs:708-774 evaluate_phase; gate at :355. Start at a neutral base well below the threshold (e.g. 0.50), require evidence of improvement to cross it (a previously-failing test now passes, clippy warning count went down, a real bug from the task list was closed), and do not award points for merely producing artifacts. Prefer a small set of explicit, auditable pass/fail criteria over the hand-tuned additive formula.",
    "testStrategy": "cargo test --lib hoh:: — an iteration that only produces scratch artifacts scores below the apply gate; an iteration with a real improvement (failing test now passes) scores above it. Verify the gate does not open on activity alone.",
    "subtasks": [],
-   "results": "Done 2026-11-17. evaluate_phase rewritten to outcome-based scoring via new pure function outcome_meta_score: neutral base 0.50 (was 0.68); explicit criteria only - tests pass +0.10, regression fixed (previously-failing tests now pass) +0.15, tests fail -0.10; no points for activity (materialized tasks, patch stubs, routes, actions) or patch shape/volume. Gate (0.70) opens only at 0.75 (tests pass + regression fixed). 5 new unit tests. Full suite 1309 passed / 0 failed (lib 1133, integration 150, doctests 26); cargo check --all-targets clean."
-  },
+   "results": "Done 2026-11-17 (rebase consolidation). The meta score is outcome-based via the single canonical scorer hoh::state::compute_meta_score: neutral base 0.50 (was 0.68); explicit criteria only - tests pass +0.10, regression fixed (previously-failing tests now pass) +0.15, tests fail -0.10; no points for activity or patch shape/volume. Gate (0.70, named META_SCORE_APPLY_GATE) opens only at 0.75 (tests pass + regression fixed). The inline outcome_meta_score is removed (H11 consolidation). 5 unit tests in state.rs. Full suite green; cargo check --all-targets clean."  },
   {
    "id": 491,
    "title": "evaluate_with_helix must actually call Helix or be renamed (review H8)",
@@ -698,33 +694,30 @@
    "details": "Either actually call Helix (or a configured reviewer model) to judge the patches and use that judgment, or rename the function and fix Doc/HOH.md:102 to say what it is — a local patch-shape heuristic — and stop presenting it as an independent evaluation. Do not leave a function named evaluate_with_helix that does not evaluate with Helix. Remove the patch-volume reward either way. Note: actually calling Helix requires a live Helix/LLM backend, which is not available in the sandbox; the honest fix here is to rename it to a local heuristic, fix the doc, and remove the volume reward. Wiring a real Helix call is a follow-up for John.",
    "testStrategy": "cargo test --lib hoh:: — no function named evaluate_with_helix remains and Doc/HOH.md no longer claims a Helix cross-check. Verify the volume bonus (+0.05 per patch count) is gone. Grep: no remaining 'evaluate_with_helix' or 'Helix evaluation' claims.",
    "subtasks": [],
-   "results": "Done 2026-11-17. Renamed evaluate_with_helix to evaluate_patch_shape (local patch-shape heuristic); removed the patch-volume reward (+0.05 for any patches, +0.05 for >=3); fixed Doc/HOH.md (no longer claims a Helix evaluation or independent scoring); updated the call site and log message to 'local patch-shape evaluation'. Wiring a real Helix call is a follow-up for John. 2 new tests (volume not rewarded, focused diffs beat sprawling ones). Full suite 1309 passed / 0 failed."
-  },
+   "results": "Done 2026-11-17 (rebase consolidation). Renamed evaluate_with_helix to evaluate_patch_shape (local patch-shape heuristic, neutral base 0.50, no volume reward, focus/diversity only); removed the patch-volume reward (+0.05 for any patches, +0.05 for >=3); removed the hardcoded helix_score: Some(0.78) from evaluate_phase; fixed Doc/HOH.md (no longer claims a Helix evaluation or independent scoring, including :102/:119/:162); updated the call site and log message to local patch-shape evaluation. Wiring a real Helix call is a follow-up for John. 2 new tests (volume not rewarded, focused diffs beat sprawling ones). Full suite green."  },
   {
    "id": 492,
    "title": "One canonical meta-score function (review H11)",
    "description": "Two different meta-score computations exist: inline in evaluate_phase (src/hoh/outer_loop.rs:708-774) vs compute_meta_improvement_score (src/hoh/architecture_evolution.rs:308). Unclear which governs.",
-   "status": "pending",
-   "dependencies": [
+   "status": "done",   "dependencies": [
     490
    ],
    "priority": "high",
    "details": "Have one canonical meta-score function, called from one place, with its formula and inputs documented. Delete or delegate the duplicate. Do this after H7 (task 490) reworks the scoring so the canonical function is the new outcome-based one.",
    "testStrategy": "cargo test --lib hoh:: — exactly one meta-score computation exists (grep for the formula in one place); both call sites use it; scores agree between the evaluate path and the architecture-evolution path.",
-   "subtasks": []
-  },
+   "subtasks": [],
+   "results": "Done 2026-11-09, consolidated 2026-11-17. Single canonical compute_meta_score in state.rs (called by evaluate_phase), implementing the outcome-based H7 scoring (base 0.50, pass +0.10, improvement +0.15, fail -0.10) with named constants; the duplicate compute_meta_improvement_score deleted (it had no callers); the inline outcome_meta_score removed; apply gate uses named META_SCORE_APPLY_GATE. Grep confirms exactly one scorer. Tests: hoh::state 5 passed."  },
   {
    "id": 493,
    "title": "Decouple the FullAuto nudge threshold from the apply gate (review H10)",
    "description": "The FullAuto suggestion fires when the score is consistently > 0.7 (src/hoh/architecture_evolution.rs:288) — the same 0.70 threshold as the apply gate (src/hoh/outer_loop.rs:355). The system can talk itself into unguarded auto-apply.",
-   "status": "pending",
-   "dependencies": [
+   "status": "done",   "dependencies": [
     490
    ],
    "priority": "high",
    "details": "The FullAuto suggestion should require a different, stronger signal than the apply gate (e.g. N consecutive iterations in which a real, independently-verified improvement landed, with no rollbacks), and it should require an explicit human approval — never an automatic consequence of the same score that gates the apply.",
    "testStrategy": "cargo test --lib hoh:: — a score above the apply gate alone does not trigger a FullAuto suggestion; the suggestion requires N consecutive verified improvements plus an explicit human approval flag.",
-   "subtasks": []
-  }
+   "subtasks": [],
+   "results": "Done 2026-11-09. The FullAuto self-refinement proposal (same 0.70 threshold as the apply gate) is deleted. Replacement: should_suggest_full_auto gate — streak >= 3 consecutive verified improvements AND no rollback AND explicit human approval; the meta score is not an input. Tests: hoh::architecture_evolution 3 passed (incl. new gate test covering all four combinations); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings. No caller wires the streak + approval through the gate yet, so no FullAuto suggestion is generated until that wiring lands."  }
  ]
 }

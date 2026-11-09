@@ -352,10 +352,13 @@ impl HOHManager {
 
         // === Phase 6: Apply (real patch application - 297.5 + 361.5) ===
         // Only apply when tests passed and we have decent signals.
-        // Gated by autonomy + simulation mode.
-        let should_apply = test_passed.unwrap_or(false)
-            && state.patches.len() > 0
-            && final_eval.meta_improvement_score.unwrap_or(0.0) > 0.70;
+        // Gated by autonomy + simulation mode. The meta-score threshold is
+        // the named META_SCORE_APPLY_GATE (H7/H10) — the score only crosses
+        // it on a demonstrated improvement, never on activity alone.
+        let should_apply = test_result.passed
+            && !state.patches.is_empty()
+            && final_eval.meta_improvement_score.unwrap_or(0.0)
+                > crate::hoh::state::META_SCORE_APPLY_GATE;
 
         if should_apply {
             let apply_cfg = self.build_apply_config();
@@ -440,9 +443,9 @@ impl HOHManager {
             }
         }
 
-        // 327.9: Feed the most recent Helix evaluation score from the previous iteration
-        // into the planner so TaskEvolutionEngine can adjust priorities (low helix → remediation boost,
-        // high helix → promote well-defined tasks).
+        // 327.9: Feed the most recent patch-shape score from the previous iteration
+        // into the planner so TaskEvolutionEngine can adjust priorities (low score → remediation boost,
+        // high score → promote well-defined tasks). (H8: local patch-shape score, not a Helix evaluation.)
         let recent_helix_score = self.current_iteration
             .as_ref()
             .and_then(|s| s.evaluations.last())
@@ -712,18 +715,18 @@ impl HOHManager {
         test_summary: String,
         test_output: Option<String>,
     ) -> Result<EvaluationReport, HOHError> {
-        // 297.7 + 361 meta evaluation.
-        //
-        // H7 (task 490): the meta score measures OUTCOMES, not activity.
-        // It starts at a neutral 0.50 — well below the 0.70 apply gate —
+        // 297.7 + 361 meta evaluation — outcome-based (H7/H11).
+        // The meta score measures OUTCOMES, not activity. It comes from
+        // the single canonical scorer (`hoh::state::compute_meta_score`):
+        // it starts at a neutral 0.50 — well below the 0.70 apply gate —
         // and only crosses the gate on explicit evidence of improvement
-        // (see `outcome_meta_score`). Producing artifacts (materialized
-        // tasks, patch stubs, routed actions, refactoring actions) earns
-        // no points, and neither does patch shape or volume: a patch is
-        // an artifact, not an outcome.
+        // (a previously-failing test now passing). Producing artifacts
+        // (materialized tasks, patch stubs, routed actions, refactoring
+        // actions) earns no points, and neither does patch shape or
+        // volume: a patch is an artifact, not an outcome.
         let mut notes = vec!["327 tasklist + 361 closed loop active".to_string()];
 
-        // Previous cycle's test outcome, for the "regression fixed"
+        // Previous iteration's test outcome, for the "regression fixed"
         // criterion: the previous iteration's state is still in
         // `self.current_iteration` here (it is replaced at the end of
         // `run_iteration`, after evaluation).
@@ -732,12 +735,26 @@ impl HOHManager {
             .as_ref()
             .and_then(|s| s.evaluations.last())
             .and_then(|e| e.test_passed);
-        let (meta, mut score_notes) = outcome_meta_score(test_passed, prev_test_passed);
-        notes.append(&mut score_notes);
+        let meta = crate::hoh::state::compute_meta_score(test_passed, prev_test_passed);
 
-        // Patch metrics are still reported (they feed the notes and the
-        // 361.5 feedback loop) but no longer influence the meta score:
-        // producing patches is activity, not improvement.
+        // Traceability notes (no scoring effect): what this iteration produced.
+        if !plan.materialized_task_ids.is_empty() {
+            notes.push(format!("A: {} tasks materialized from refactoring", plan.materialized_task_ids.len()));
+        }
+        if !plan.generated_patch_stubs.is_empty() {
+            notes.push(format!("C: {} patch stubs produced", plan.generated_patch_stubs.len()));
+        }
+        if !plan.specialized_agent_routes.is_empty() {
+            notes.push(format!("D: {} actions routed to specialists", plan.specialized_agent_routes.len()));
+        }
+        if !plan.refactoring_actions.is_empty() {
+            notes.push(format!("361.3: {} refactoring actions generated", plan.refactoring_actions.len()));
+        }
+
+        // === Patch quality metrics (361.5 / 297.5) ===
+        // Recorded for the report only — patch shape does not move the meta
+        // score (H7). The local patch-shape heuristic runs separately
+        // (evaluate_patch_shape) and fills helix_score via the merge.
         let (patch_count, files_changed_count, avg_diff_length) = self.compute_patch_metrics(patches);
         if patch_count > 0 {
             notes.push(format!(
@@ -746,9 +763,26 @@ impl HOHManager {
             ));
         }
 
+        match test_passed {
+            Some(true) if prev_test_passed == Some(false) => {
+                notes.push("Tests: PASSED (previously failing — real improvement)".to_string());
+            }
+            Some(true) => {
+                notes.push("Tests: PASSED".to_string());
+            }
+            Some(false) => {
+                notes.push("Tests: FAILED".to_string());
+            }
+            None => {
+                notes.push("Tests: no result".to_string());
+            }
+        }
+
         Ok(EvaluationReport {
             iteration_id: 1,
-            helix_score: Some(0.78),
+            // No hardcoded score here (H8): the merge fills helix_score from
+            // the local patch-shape evaluation.
+            helix_score: None,
             internal_metrics: Default::default(),
             notes: notes.join(" | "),
             architecture_proposals_evaluated: plan.architecture_proposals.clone(),
@@ -894,96 +928,4 @@ impl HOHManager {
         }
     }
 
-}
-
-/// Outcome-based meta score (H7 / task 490).
-///
-/// The meta score measures OUTCOMES, not activity. It starts at a neutral
-/// base of 0.50 — well below the 0.70 apply gate — and only crosses the
-/// gate on explicit evidence of improvement. Each criterion is an
-/// auditable pass/fail check; the returned notes record which fired.
-///
-/// Criteria:
-/// - Tests pass (`test_passed == Some(true)`): +0.10. The codebase is
-///   green after this cycle's work. Alone this leaves the score at 0.60,
-///   below the gate: passing tests that already passed is status quo,
-///   not improvement.
-/// - Regression fixed (previous cycle's tests failed, this cycle's pass):
-///   +0.15. A previously-failing test now passes — the strongest
-///   improvement signal. Together with "tests pass" the score reaches
-///   0.75 and crosses the 0.70 gate.
-/// - Tests fail (`test_passed == Some(false)`): -0.10. The cycle did
-///   not produce working code.
-/// - No test result (`test_passed == None`): +0.00. No evidence either way.
-///
-/// Producing artifacts (materialized tasks, patch stubs, routed actions,
-/// refactoring actions) and patch shape/volume earn no points.
-fn outcome_meta_score(
-    test_passed: Option<bool>,
-    prev_test_passed: Option<bool>,
-) -> (f32, Vec<String>) {
-    let mut meta = 0.50f32;
-    let mut notes = Vec::new();
-    if let Some(passed) = test_passed {
-        if passed {
-            meta += 0.10;
-            notes.push("Tests: PASSED".to_string());
-            if prev_test_passed == Some(false) {
-                meta += 0.15;
-                notes.push("Regression fixed: previously-failing tests now pass".to_string());
-            }
-        } else {
-            meta -= 0.10;
-            notes.push("Tests: FAILED".to_string());
-        }
-    } else {
-        notes.push("Tests: no result".to_string());
-    }
-    (meta.clamp(0.0, 0.95), notes)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::outcome_meta_score;
-
-    #[test]
-    fn meta_score_tests_pass_alone_stays_below_gate() {
-        // Tests pass, no previous failure: 0.50 + 0.10 = 0.60.
-        // Status quo, not improvement — the gate (0.70) stays closed.
-        let (score, notes) = outcome_meta_score(Some(true), None);
-        assert!((score - 0.60).abs() < 1e-6);
-        assert!(notes.iter().any(|n| n.contains("PASSED")));
-        assert!(score <= 0.70);
-    }
-
-    #[test]
-    fn meta_score_tests_pass_after_previous_pass_stays_below_gate() {
-        // Tests passed last cycle too: still 0.60, no regression-fixed bonus.
-        let (score, _) = outcome_meta_score(Some(true), Some(true));
-        assert!((score - 0.60).abs() < 1e-6);
-    }
-
-    #[test]
-    fn meta_score_regression_fixed_crosses_gate() {
-        // Previously-failing tests now pass: 0.50 + 0.10 + 0.15 = 0.75.
-        let (score, notes) = outcome_meta_score(Some(true), Some(false));
-        assert!((score - 0.75).abs() < 1e-6);
-        assert!(score > 0.70);
-        assert!(notes.iter().any(|n| n.contains("Regression fixed")));
-    }
-
-    #[test]
-    fn meta_score_tests_fail_is_penalized() {
-        // Tests fail: 0.50 - 0.10 = 0.40, well below the gate.
-        let (score, notes) = outcome_meta_score(Some(false), Some(true));
-        assert!((score - 0.40).abs() < 1e-6);
-        assert!(notes.iter().any(|n| n.contains("FAILED")));
-    }
-
-    #[test]
-    fn meta_score_no_test_result_stays_neutral() {
-        // No test signal: 0.50, no evidence either way.
-        let (score, _) = outcome_meta_score(None, None);
-        assert!((score - 0.50).abs() < 1e-6);
-    }
 }
