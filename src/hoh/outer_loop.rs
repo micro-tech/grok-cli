@@ -304,13 +304,15 @@ impl HOHManager {
             plan_mut.self_improvement_proposals = self_improvement_proposals;
         }
 
-        // Run independent Helix evaluation for objective cross-check (297.7)
-        let helix_eval = crate::hoh::helix::evaluate_with_helix(&state.patches).await;
+        // Run the local patch-shape evaluation (H8). This is NOT a Helix
+        // call and NOT an independent evaluation — it scores patch shape
+        // locally. The former `evaluate_with_helix` name claimed otherwise.
+        let helix_eval = crate::hoh::helix::evaluate_patch_shape(&state.patches).await;
         tracing::info!(
             helix_score = ?helix_eval.helix_score,
-            "HOH: Helix independent evaluation"
+            "HOH: local patch-shape evaluation"
         );
-        // Merge: prefer helix_score if stronger signal, keep our meta score
+        // Merge: prefer the patch-shape score if stronger, keep our meta score
         let mut final_eval = eval;
         if let Some(hs) = helix_eval.helix_score {
             if final_eval.helix_score.is_none_or(|s| hs > s) {
@@ -349,10 +351,13 @@ impl HOHManager {
 
         // === Phase 6: Apply (real patch application - 297.5 + 361.5) ===
         // Only apply when tests passed and we have decent signals.
-        // Gated by autonomy + simulation mode.
+        // Gated by autonomy + simulation mode. The meta-score threshold is
+        // the named META_SCORE_APPLY_GATE (H7/H10) — the score only crosses
+        // it on a demonstrated improvement, never on activity alone.
         let should_apply = test_result.passed
             && !state.patches.is_empty()
-            && final_eval.meta_improvement_score.unwrap_or(0.0) > 0.70;
+            && final_eval.meta_improvement_score.unwrap_or(0.0)
+                > crate::hoh::state::META_SCORE_APPLY_GATE;
 
         if should_apply {
             let apply_cfg = self.build_apply_config();
@@ -441,9 +446,9 @@ impl HOHManager {
             }
         }
 
-        // 327.9: Feed the most recent Helix evaluation score from the previous iteration
-        // into the planner so TaskEvolutionEngine can adjust priorities (low helix → remediation boost,
-        // high helix → promote well-defined tasks).
+        // 327.9: Feed the most recent patch-shape score from the previous iteration
+        // into the planner so TaskEvolutionEngine can adjust priorities (low score → remediation boost,
+        // high score → promote well-defined tasks). (H8: local patch-shape score, not a Helix evaluation.)
         let recent_helix_score = self.current_iteration
             .as_ref()
             .and_then(|s| s.evaluations.last())
@@ -713,61 +718,72 @@ impl HOHManager {
         test_summary: String,
         test_output: Option<String>,
     ) -> Result<EvaluationReport, HOHError> {
-        // 297.7 + 361 meta evaluation
+        // 297.7 + 361 meta evaluation — outcome-based (H7/H11).
+        // The meta score comes from the single canonical scorer
+        // (`hoh::state::compute_meta_score`). Activity earns nothing: the
+        // plan's materialized tasks, patch stubs, routes, and refactoring
+        // actions are recorded in the notes for traceability but do not move
+        // the score. Only a demonstrated improvement — a previously-failing
+        // test now passing — can push the score above the apply gate.
         let mut notes = vec!["327 tasklist + 361 closed loop active".to_string()];
 
-        let mut meta = 0.68f32;
+        // Previous iteration's test outcome, for the improvement signal.
+        // `current_iteration` still holds the previous iteration here: it is
+        // only replaced at the end of run_iteration.
+        let prev_test_passed = self
+            .current_iteration
+            .as_ref()
+            .and_then(|s| s.evaluations.last())
+            .and_then(|e| e.test_passed);
 
-        // Boost meta score when we successfully closed the A/B/C/D loop
+        let meta = crate::hoh::state::compute_meta_score(test_passed, prev_test_passed);
+
+        // Traceability notes (no scoring effect): what this iteration produced.
         if !plan.materialized_task_ids.is_empty() {
-            meta += 0.08;
             notes.push(format!("A: {} tasks materialized from refactoring", plan.materialized_task_ids.len()));
         }
         if !plan.generated_patch_stubs.is_empty() {
-            meta += 0.06;
             notes.push(format!("C: {} patch stubs produced", plan.generated_patch_stubs.len()));
         }
         if !plan.specialized_agent_routes.is_empty() {
-            meta += 0.05;
             notes.push(format!("D: {} actions routed to specialists", plan.specialized_agent_routes.len()));
         }
         if !plan.refactoring_actions.is_empty() {
-            meta += 0.04;
             notes.push(format!("361.3: {} refactoring actions generated", plan.refactoring_actions.len()));
         }
 
-        // === New: Patch quality metrics (361.5 / 297.5) ===
+        // === Patch quality metrics (361.5 / 297.5) ===
+        // Recorded for the report only — patch shape does not move the meta
+        // score (H7). The local patch-shape heuristic runs separately
+        // (evaluate_patch_shape) and fills helix_score via the merge.
         let (patch_count, files_changed_count, avg_diff_length) = self.compute_patch_metrics(patches);
         if patch_count > 0 {
             notes.push(format!(
                 "Patches: {} total, {} files touched, avg diff len {:.0}",
                 patch_count, files_changed_count, avg_diff_length
             ));
-
-            // Influence meta score from patch characteristics
-            if avg_diff_length > 0.0 && avg_diff_length < 400.0 {
-                meta += 0.03; // focused, high-quality patches
-            } else if avg_diff_length > 1200.0 {
-                meta -= 0.02; // overly large changes — riskier
-            }
         }
 
-        if let Some(passed) = test_passed {
-            if passed {
-                meta += 0.05;
+        match test_passed {
+            Some(true) if prev_test_passed == Some(false) => {
+                notes.push("Tests: PASSED (previously failing — real improvement)".to_string());
+            }
+            Some(true) => {
                 notes.push("Tests: PASSED".to_string());
-            } else {
-                meta -= 0.04;
+            }
+            Some(false) => {
                 notes.push("Tests: FAILED".to_string());
             }
+            None => {
+                notes.push("Tests: no result".to_string());
+            }
         }
-
-        // Cap at 0.95 for now
-        meta = meta.min(0.95f32);
 
         Ok(EvaluationReport {
             iteration_id: 1,
-            helix_score: Some(0.78),
+            // No hardcoded score here (H8): the merge fills helix_score from
+            // the local patch-shape evaluation.
+            helix_score: None,
             internal_metrics: Default::default(),
             notes: notes.join(" | "),
             architecture_proposals_evaluated: plan.architecture_proposals.clone(),

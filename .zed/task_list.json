@@ -563,6 +563,58 @@
     }
    ],
    "results": "grok-cli retargeted to OKF v1 (bot-repo PROTOCOL.md is the single contract, nothing invented). 480.1: trace forwarder default endpoint now /okf/traces; OkfConfig::trace_endpoint_path() translates a configured legacy /api/traces with a deprecation warn. 480.2: push_concept_to_remote posts to /okf/bundles/{bundle}/concepts. 480.3: load_okf_from_config fetches remote v1 manifest (GET {remote_url}/okf/manifest.json, ETag/304 cached) + per-entry GET /okf/knowledge/{kid}, mapped into OkfBundle/OkfConcept; any failure falls back to local knowledge_bundles dirs (remote first, local always loaded as offline fallback). Thread-spawn-with-runtime pattern used (okf_lookup is sync). Tests: 11 new mockito contract tests green; full lib suite 1112 passed, 0 failed; zero new warnings. Cross-repo grep: no remaining /api/traces targets (only legacy-translation code + deprecation docs) and no unprefixed /bundles/ POSTs in either repo."
+  },
+  {
+   "id": 488,
+   "title": "Meta score must measure outcomes, not activity (review H7)",
+   "description": "The HOH meta score starts at 0.68 with the apply gate at >0.70, so any single activity bonus (+0.04 to +0.08) pushes it over. It counts activity, not improvement — a participation trophy and a rubber-stamp gate.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "src/hoh/outer_loop.rs:708-774 evaluate_phase; gate at :355. Start at a neutral base well below the threshold (e.g. 0.50), require evidence of improvement to cross it (a previously-failing test now passes, clippy warning count went down, a real bug from the task list was closed), and do not award points for merely producing artifacts. Prefer a small set of explicit, auditable pass/fail criteria over the hand-tuned additive formula.",
+   "testStrategy": "cargo test --lib hoh:: — an iteration that only produces scratch artifacts scores below the apply gate; an iteration with a real improvement (failing test now passes) scores above it. Verify the gate does not open on activity alone.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. compute_meta_score in state.rs: base 0.50, +0.05 tests pass, +0.20 previously-failing test now passes (only path above the 0.70 gate, at 0.75), -0.10 tests fail; activity earns nothing. evaluate_phase calls it (prev test result from current_iteration). Tests: hoh::state 3 passed (artifacts-only below gate, improvement crosses gate, maintained-green below gate); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings; cargo check --bins exit 0."
+  },
+  {
+   "id": 489,
+   "title": "evaluate_with_helix must actually call Helix or be renamed (review H8)",
+   "description": "evaluate_with_helix in src/hoh/helix.rs:10-40 never calls Helix. It computes a local heuristic that rewards patch volume (+0.05 for any patches, +0.05 more for >=3), despite the name, the Doc/HOH.md:102 claim, and the 'independent cross-check' log message. There is no independent evaluation.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Either actually call Helix (or a configured reviewer model) to judge the patches and use that judgment, or rename the function and fix Doc/HOH.md:102 to say what it is — a local patch-shape heuristic — and stop presenting it as an independent evaluation. Do not leave a function named evaluate_with_helix that does not evaluate with Helix. Remove the patch-volume reward either way. Note: actually calling Helix requires a live Helix/LLM backend, which is not available in the sandbox; the honest fix here is to rename it to a local heuristic, fix the doc, and remove the volume reward. Wiring a real Helix call is a follow-up for John.",
+   "testStrategy": "cargo test --lib hoh:: — no function named evaluate_with_helix remains and Doc/HOH.md no longer claims a Helix cross-check. Verify the volume bonus (+0.05 per patch count) is gone. Grep: no remaining 'evaluate_with_helix' or 'Helix evaluation' claims.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. Renamed to evaluate_patch_shape (local patch-shape heuristic, base 0.50, no volume reward, focus/diversity only); hardcoded helix_score 0.78 removed from evaluate_phase; Doc/HOH.md:102/119/162 fixed; helix_score field documented as the local patch-shape score; remaining 'Helix evaluation' mentions are only H8-explanation comments. Tests: hoh::helix 2 passed (volume does not change the score; focus beats size); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings. Wiring a real Helix call is a follow-up for John."
+  },
+  {
+   "id": 490,
+   "title": "One canonical meta-score function (review H11)",
+   "description": "Two different meta-score computations exist: inline in evaluate_phase (src/hoh/outer_loop.rs:708-774) vs compute_meta_improvement_score (src/hoh/architecture_evolution.rs:308). Unclear which governs.",
+   "status": "done",
+   "dependencies": [
+    488
+   ],
+   "priority": "high",
+   "details": "Have one canonical meta-score function, called from one place, with its formula and inputs documented. Delete or delegate the duplicate. Do this after H7 (task 488) reworks the scoring so the canonical function is the new outcome-based one.",
+   "testStrategy": "cargo test --lib hoh:: — exactly one meta-score computation exists (grep for the formula in one place); both call sites use it; scores agree between the evaluate path and the architecture-evolution path.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. Single canonical compute_meta_score in state.rs (called by evaluate_phase); the duplicate compute_meta_improvement_score deleted (it had no callers); apply gate uses named META_SCORE_APPLY_GATE. Grep confirms exactly one scorer. Tests: hoh::state 3 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings."
+  },
+  {
+   "id": 491,
+   "title": "Decouple the FullAuto nudge threshold from the apply gate (review H10)",
+   "description": "The FullAuto suggestion fires when the score is consistently > 0.7 (src/hoh/architecture_evolution.rs:288) — the same 0.70 threshold as the apply gate (src/hoh/outer_loop.rs:355). The system can talk itself into unguarded auto-apply.",
+   "status": "done",
+   "dependencies": [
+    488
+   ],
+   "priority": "high",
+   "details": "The FullAuto suggestion should require a different, stronger signal than the apply gate (e.g. N consecutive iterations in which a real, independently-verified improvement landed, with no rollbacks), and it should require an explicit human approval — never an automatic consequence of the same score that gates the apply.",
+   "testStrategy": "cargo test --lib hoh:: — a score above the apply gate alone does not trigger a FullAuto suggestion; the suggestion requires N consecutive verified improvements plus an explicit human approval flag.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. The FullAuto self-refinement proposal (same 0.70 threshold as the apply gate) is deleted. Replacement: should_suggest_full_auto gate — streak >= 3 consecutive verified improvements AND no rollback AND explicit human approval; the meta score is not an input. Tests: hoh::architecture_evolution 3 passed (incl. new gate test covering all four combinations); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings. No caller wires the streak + approval through the gate yet, so no FullAuto suggestion is generated until that wiring lands."
   }
  ]
 }

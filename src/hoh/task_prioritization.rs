@@ -56,7 +56,7 @@ pub struct PrioritizationWeights {
     pub dependency_pressure: f32,
     /// Added per HOH goal keyword found in title + description + details.
     pub goal_alignment: f32,
-    /// Scales how much a recent Helix evaluation score shifts task priorities.
+    /// Scales how much a recent patch-shape score shifts task priorities.
     ///
     /// Positive Helix → boosts tasks aligned with current good work.
     /// Negative Helix → boosts tasks that would fix the failure area.
@@ -188,7 +188,7 @@ impl PrioritySignals {
 pub struct PrioritizationContext {
     /// Current HOH goals (keywords matched against task text for alignment).
     pub goals: Vec<String>,
-    /// Most recent Helix evaluation score (0.0 = poor, 1.0 = excellent).
+    /// Most recent patch-shape score (0.0 = poor, 1.0 = excellent).
     /// `None` means no evaluation data is available.
     pub helix_score: Option<f32>,
     /// OKF concept terms from recent lookups (for relevance scoring).

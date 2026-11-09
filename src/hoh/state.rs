@@ -166,9 +166,77 @@ impl PatchSet {
     }
 }
 
+/// The apply-gate threshold for the meta-improvement score (H7/H10).
+/// An iteration may only apply real patches when its meta score is
+/// strictly above this value. It is a named constant (not a magic number)
+/// so the FullAuto nudge (H10) and any other consumer cannot silently
+/// re-derive it from a different threshold.
+pub const META_SCORE_APPLY_GATE: f32 = 0.70;
+
+/// Neutral base for the meta-improvement score (H7). Deliberately well
+/// below [`META_SCORE_APPLY_GATE`]: an iteration that only produces
+/// artifacts scores here and does not open the apply gate.
+pub const META_SCORE_BASE: f32 = 0.50;
+
+/// Bonus when the iteration's tests pass (green is maintained, not
+/// improved). Small on purpose: passing tests alone must not open the gate.
+pub const META_SCORE_TEST_PASS_BONUS: f32 = 0.05;
+
+/// Bonus when a previously-failing test now passes — the one concrete,
+/// auditable improvement signal wired into the score today (H7). Combined
+/// with the base and the pass bonus it is the only path above the gate:
+/// 0.50 + 0.05 + 0.20 = 0.75 > 0.70.
+pub const META_SCORE_IMPROVEMENT_BONUS: f32 = 0.20;
+
+/// Penalty when the iteration's tests fail.
+pub const META_SCORE_TEST_FAIL_PENALTY: f32 = 0.10;
+
+/// The canonical meta-improvement score (H7/H11).
+///
+/// This is the ONLY meta-score computation in the codebase. `evaluate_phase`
+/// calls it, and the former duplicate
+/// (`ArchitectureEvolutionEngine::compute_meta_improvement_score`, a
+/// proposal-count/success-rate composite) was deleted. If a new outcome
+/// signal is wired in (clippy warning count, a task-list bug closed),
+/// extend THIS function — do not add a second scorer.
+///
+/// Formula (all inputs are test outcomes, the only outcome signal the
+/// evaluator receives today):
+/// - base 0.50 (neutral, below the 0.70 gate)
+/// - tests pass: +0.05
+/// - previously-failing tests now pass: +0.20 (real, verifiable improvement)
+/// - tests fail: -0.10
+/// - no test data: +0.00
+///
+/// Activity is deliberately NOT scored: producing tasks, patch stubs,
+/// routes, or refactoring actions earns nothing. An iteration that only
+/// produces artifacts scores 0.50–0.55 and does not open the apply gate.
+/// Only a demonstrated improvement (a failing test now passing) crosses
+/// it, at 0.75.
+pub fn compute_meta_score(test_passed: Option<bool>, prev_test_passed: Option<bool>) -> f32 {
+    let mut score = META_SCORE_BASE;
+    match test_passed {
+        Some(true) => {
+            score += META_SCORE_TEST_PASS_BONUS;
+            if prev_test_passed == Some(false) {
+                score += META_SCORE_IMPROVEMENT_BONUS;
+            }
+        }
+        Some(false) => {
+            score -= META_SCORE_TEST_FAIL_PENALTY;
+        }
+        None => {}
+    }
+    score.clamp(0.0, 0.95)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct EvaluationReport {
     pub iteration_id: u64,
+    /// Local patch-shape score (0.4–0.92), NOT a Helix judgment. It is
+    /// produced by `hoh::helix::evaluate_patch_shape`, a local heuristic
+    /// over patch count / diff size / file diversity. No live Helix call is
+    /// made (H8). Consumers use it as a weak patch-quality signal only.
     pub helix_score: Option<f32>,
     pub internal_metrics: std::collections::HashMap<String, f32>,
     pub notes: String,
@@ -229,4 +297,42 @@ pub enum HOHError {
     Serde(#[from] serde_json::Error),
     #[error("Other: {0}")]
     Other(String),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn meta_score_artifacts_only_stays_below_gate() {
+        // H7: activity earns nothing. Tests green (maintained, not improved)
+        // and no test data both score below the apply gate.
+        assert!(compute_meta_score(Some(true), Some(true)) < META_SCORE_APPLY_GATE);
+        assert!(compute_meta_score(Some(true), None) < META_SCORE_APPLY_GATE);
+        assert!(compute_meta_score(None, None) < META_SCORE_APPLY_GATE);
+        // Failing tests score below the gate too.
+        assert!(compute_meta_score(Some(false), Some(true)) < META_SCORE_APPLY_GATE);
+    }
+
+    #[test]
+    fn meta_score_real_improvement_crosses_gate() {
+        // H7: the only path above the gate is a demonstrated improvement —
+        // a previously-failing test now passing.
+        let score = compute_meta_score(Some(true), Some(false));
+        assert!(
+            score > META_SCORE_APPLY_GATE,
+            "improvement should cross the gate, got {score}"
+        );
+        // And it is exactly base + pass + improvement (auditable formula).
+        assert!((score - (META_SCORE_BASE + META_SCORE_TEST_PASS_BONUS + META_SCORE_IMPROVEMENT_BONUS)).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn meta_score_maintained_green_does_not_cross_gate() {
+        // Passing tests that were already passing is maintenance, not
+        // improvement — it must not open the apply gate.
+        let score = compute_meta_score(Some(true), Some(true));
+        assert!((score - (META_SCORE_BASE + META_SCORE_TEST_PASS_BONUS)).abs() < f32::EPSILON);
+        assert!(score < META_SCORE_APPLY_GATE);
+    }
 }

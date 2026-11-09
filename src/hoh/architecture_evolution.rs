@@ -279,22 +279,18 @@ impl ArchitectureEvolutionEngine {
             });
         }
 
-        // Self-refinement proposal 5: General autonomy increase (gated, high risk)
-        // Only propose when we have evidence of good recent behavior
-        if high_detail_tasks > 8 && high_prio_without_tests < 3 {
-            proposals.push(ArchitectureProposal {
-                id: format!("selfref-{}", uuid::Uuid::new_v4()),
-                title: "Raise default autonomy_level when recent meta scores are high".to_string(),
-                description: "Track meta_improvement_score across iterations. When consistently > 0.7, suggest moving from ExecuteWithApproval toward FullAuto for 361+ tasks.".to_string(),
-                change_type: ArchitectureChangeType::SelfRefinement,
-                target_modules: vec!["hoh/mod.rs".to_string(), "hoh/outer_loop.rs".to_string()],
-                rationale: "True self-improvement requires HOH to gradually trust its own proposals more. Only when quality signals are strong.".to_string(),
-                estimated_impact: 0.72,
-                risk_level: RiskLevel::High, // safety critical
-                proposed_patches: vec![],
-                new_tasks: vec![3612],
-            });
-        }
+        // H10: the former "raise autonomy toward FullAuto" proposal lived
+        // here and fired on a static task-list shape while its description
+        // cited the same 0.70 threshold as the apply gate — so the system
+        // could talk itself into unguarded auto-apply. It is deleted.
+        // A FullAuto suggestion now requires the separate gate in
+        // `should_suggest_full_auto` (N consecutive verified improvements,
+        // no rollbacks, AND an explicit human approval), which this method
+        // cannot evaluate: it sees only the current task list, not
+        // iteration history. Until a caller wires the streak + approval
+        // flag through that gate, no FullAuto suggestion is generated.
+        //
+        // (The method's other proposals are unchanged.)
 
         if self.simulation_mode && !proposals.is_empty() {
             tracing::info!("SelfRefinement (361.2): generated {} meta-improvement proposals for HOH internals", proposals.len());
@@ -303,13 +299,40 @@ impl ArchitectureEvolutionEngine {
         Ok(proposals)
     }
 
-    /// Compute a lightweight meta-improvement signal from the current state.
-    /// This can be tracked over iterations to decide when to increase autonomy.
-    pub fn compute_meta_improvement_score(&self, recent_proposal_count: usize, recent_success_rate: f32) -> f32 {
-        // Simple composite: more good proposals + higher success = higher meta score
-        let proposal_factor = (recent_proposal_count as f32 / 6.0).min(1.0);
-        let success_factor = recent_success_rate.clamp(0.0, 1.0);
-        (proposal_factor * 0.4 + success_factor * 0.6).clamp(0.0, 1.0)
+    /// Minimum streak of consecutive verified improvements required before
+    /// the HOH may suggest raising autonomy toward FullAuto (H10).
+    pub const FULL_AUTO_MIN_VERIFIED_STREAK: usize = 3;
+
+    /// Whether the HOH may suggest raising autonomy toward FullAuto (H10).
+    ///
+    /// Deliberately decoupled from the apply gate: the meta score is NOT an
+    /// input. A score above the apply gate alone must never trigger this —
+    /// the gate opens on a single demonstrated improvement, while a
+    /// FullAuto suggestion needs a sustained record. The three inputs are:
+    /// - `consecutive_verified_improvements`: how many iterations in a row
+    ///   landed a real, independently-verified improvement (with the
+    ///   outcome-based meta score, that means the iteration's meta score
+    ///   crossed the apply gate, i.e. a previously-failing test now
+    ///   passed). Must reach [`FULL_AUTO_MIN_VERIFIED_STREAK`].
+    /// - `had_rollback`: whether any iteration in the streak regressed
+    ///   (a test that was passing now fails, or a real bug reappeared).
+    ///   Any rollback resets the streak and blocks the suggestion.
+    /// - `human_approved`: an explicit human approval flag. It is never
+    ///   set by the HOH itself — a human sets it after reviewing the
+    ///   streak. Without it, no suggestion is generated.
+    ///
+    /// No caller wires the streak + approval through this gate yet: the
+    /// streak must be tracked across iterations (persisted iteration
+    /// history) and the approval flag exposed to a human. Until that
+    /// wiring lands, no FullAuto suggestion is generated anywhere.
+    pub fn should_suggest_full_auto(
+        consecutive_verified_improvements: usize,
+        had_rollback: bool,
+        human_approved: bool,
+    ) -> bool {
+        consecutive_verified_improvements >= Self::FULL_AUTO_MIN_VERIFIED_STREAK
+            && !had_rollback
+            && human_approved
     }
 
     /// Very lightweight heuristic based on task titles/details mentioning modules.
@@ -545,5 +568,24 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn full_auto_needs_streak_no_rollback_and_human_approval() {
+        // H10: a meta score above the apply gate alone must NOT suggest
+        // FullAuto (the score is not even an input here). The suggestion
+        // needs a streak of verified improvements, no rollback, AND an
+        // explicit human approval.
+        // No streak, even with approval: no suggestion.
+        assert!(!ArchitectureEvolutionEngine::should_suggest_full_auto(0, false, true));
+        assert!(!ArchitectureEvolutionEngine::should_suggest_full_auto(2, false, true));
+        // Full streak but a rollback: no suggestion.
+        assert!(!ArchitectureEvolutionEngine::should_suggest_full_auto(3, true, true));
+        assert!(!ArchitectureEvolutionEngine::should_suggest_full_auto(5, true, true));
+        // Full streak, no rollback, but no human approval: no suggestion.
+        assert!(!ArchitectureEvolutionEngine::should_suggest_full_auto(3, false, false));
+        // All three: suggestion allowed.
+        assert!(ArchitectureEvolutionEngine::should_suggest_full_auto(3, false, true));
+        assert!(ArchitectureEvolutionEngine::should_suggest_full_auto(5, false, true));
     }
 }

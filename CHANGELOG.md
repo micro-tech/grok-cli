@@ -11,6 +11,43 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Triple-review fixes, batch 3: HOH evaluation before trusting FullAuto (H7/H8/H11/H10, 2026-11-09)
+
+- **H7 — Meta score measures outcomes, not activity.** The score no longer
+  starts at 0.68 with bonuses for producing tasks, patch stubs, routes, and
+  refactoring actions. It starts at a neutral 0.50 (well below the 0.70
+  apply gate) and only moves on test outcomes: +0.05 when tests pass,
+  +0.20 when a previously-failing test now passes (the one concrete
+  improvement signal wired in today — the only path above the gate, at
+  0.75), -0.10 when tests fail. An iteration that only produces artifacts
+  scores 0.50–0.55 and does not open the apply gate.
+- **H11 — One canonical meta-score function.** The scoring lives in a
+  single function, `hoh::state::compute_meta_score`, with its formula and
+  inputs documented. The duplicate
+  `ArchitectureEvolutionEngine::compute_meta_improvement_score` (a
+  proposal-count/success-rate composite, no callers) is deleted. The apply
+  gate now uses the named `META_SCORE_APPLY_GATE` constant instead of a
+  hardcoded 0.70.
+- **H8 — `evaluate_with_helix` renamed: it never called Helix.**
+  It is now `evaluate_patch_shape`, a local patch-shape heuristic (diff
+  size, file diversity). The patch-volume reward (+0.05 for any patches,
+  +0.05 more for >=3) is removed, the base is a neutral 0.50, and the
+  hardcoded `helix_score: Some(0.78)` in `evaluate_phase` is gone (the
+  merge fills the score from the patch-shape evaluation). Doc/HOH.md no
+  longer claims a Helix cross-check. The `helix_score` field name is kept
+  for its existing consumers; its doc now says it holds the local
+  patch-shape score. Wiring a real Helix/reviewer call is a follow-up.
+- **H10 — FullAuto nudge decoupled from the apply gate.** The
+  self-refinement proposal that suggested raising autonomy toward FullAuto
+  when "consistently > 0.7" is deleted — its trigger was the same 0.70
+  threshold as the apply gate, so the system could talk itself into
+  unguarded auto-apply. The replacement is the `should_suggest_full_auto`
+  gate: it requires N>=3 consecutive verified improvements, no rollbacks,
+  AND an explicit human approval flag (never set by the HOH itself). The
+  meta score is deliberately not an input. No caller wires the streak +
+  approval through the gate yet, so no FullAuto suggestion is generated
+  until that wiring lands.
+
 ### HOH patch-apply safety & correctness fixes (code review follow-up, 2026-11-09)
 
 - Fix critical multi-file patch bug in `hoh::patch_applier::apply_patch`: it

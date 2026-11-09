@@ -48,8 +48,9 @@ pub struct HOHPlanner {
     /// 327.2 + 327.5 + 327.17: Real selection + prioritization + scheduling engine.
     selection_engine: TaskSelectionEngine,
 
-    /// 327.9: Most recent Helix evaluation score (if any) from prior iteration.
-    /// Used to influence task prioritization and evolution (Sync TaskList with Helix Evaluations).
+    /// 327.9: Most recent patch-shape score (if any) from prior iteration.
+    /// Used to influence task prioritization and evolution (Sync TaskList with patch-shape evaluations).
+    /// (H8: local patch-shape score, not a Helix evaluation.)
     pub recent_helix_score: Option<f32>,
 }
 
