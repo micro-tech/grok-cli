@@ -89,6 +89,18 @@ impl GrokBackend {
             return RouterError::RateLimit;
         }
 
+        // Context-window overflow (H4): HTTP 400 with context_length_exceeded,
+        // or a "maximum context length" / "too many tokens" message. This is a
+        // distinct, recoverable kind — the caller trims history and retries
+        // once, instead of the old fatal BackendError fallthrough.
+        if msg.contains("context_length_exceeded")
+            || msg.contains("maximum context length")
+            || msg.contains("context length")
+            || (msg.contains("400") && msg.contains("too many tokens"))
+        {
+            return RouterError::ContextOverflow(err.to_string());
+        }
+
         // Delegate to the Starlink-aware detector first (covers "error sending request",
         // connection reset, Cloudflare 52x, satellite handovers, etc.).
         if detect_network_drop(err) {
@@ -122,6 +134,64 @@ impl GrokBackend {
         }
         false
     }
+
+    /// Parse a `Retry-After` value (seconds) out of an error string, if present.
+    ///
+    /// Best-effort: grok_api 0.2.4 discards the 429 body, so the value is only
+    /// present once H5's vendored grok_api preserves it (or if the API puts it
+    /// in the error text). Returns `None` when no usable value is found.
+    /// The value is capped at 60s so a bad header cannot stall the CLI.
+    /// Uses the LAST occurrence: the vendored grok_api appends the header's
+    /// `Retry-After` after the body, so the last match is the header value
+    /// (a body's own "retry-after" text must not win).
+    fn parse_retry_after(msg: &str) -> Option<std::time::Duration> {
+        let lower = msg.to_ascii_lowercase();
+        for key in ["retry-after", "retry_after"] {
+            if let Some(idx) = lower.rfind(key) {
+                let rest = &lower[idx + key.len()..];
+                // Skip separators (:, =, spaces) then parse leading digits.
+                let digits: String = rest
+                    .chars()
+                    .skip_while(|c| !c.is_ascii_digit())
+                    .take_while(|c| c.is_ascii_digit())
+                    .collect();
+                if let Ok(secs) = digits.parse::<u64>() {
+                    if secs > 0 {
+                        return Some(std::time::Duration::from_secs(secs.min(60)));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    /// Trim request messages after a context-overflow error, so the retry has
+    /// a real chance of fitting. Drops the oldest half of the messages, then
+    /// enforces the token budget. Never drops the system message (index 0, if
+    /// present) or the last message (the current user turn).
+    fn trim_messages_for_retry(messages: &mut Vec<serde_json::Value>, model: &str) {
+        if messages.len() > 2 {
+            let start = if messages[0]
+                .get("role")
+                .and_then(|r| r.as_str())
+                == Some("system")
+            {
+                1
+            } else {
+                0
+            };
+            // Exclude the system message and the last message from dropping.
+            let droppable = messages.len() - start - 1;
+            if droppable > 0 {
+                let to_drop = (droppable / 2).max(1);
+                let drop_end = (start + to_drop).min(messages.len() - 1);
+                messages.drain(start..drop_end);
+            }
+        }
+        // Then enforce the token budget.
+        let budget = crate::constants::get_context_budget(model);
+        crate::acp::context_trim::trim_to_token_budget(messages, budget);
+    }
 }
 
 #[async_trait]
@@ -136,7 +206,8 @@ impl Backend for GrokBackend {
 
     async fn send(&self, req: &RouterRequest) -> Result<RouterResponse, RouterError> {
         // Messages are already raw serde_json::Value — no conversion needed.
-        let messages = &req.messages;
+        // Owned (not borrowed) so a context-overflow retry can trim them (H4).
+        let mut messages = req.messages.clone();
 
         // ── Convert tool definitions (empty → None, so Grok skips tool plumbing) ──
         let tools: Option<Vec<serde_json::Value>> = if req.tools.is_empty() {
@@ -165,10 +236,18 @@ impl Backend for GrokBackend {
         // ── Retry loop (now uses the unified RetryPolicy from Task 287) ─────────
         let policy = RetryPolicy::default_starlink();
         let mut last_err = RouterError::Unknown;
+        // H4: whether the single trim-and-retry after a context overflow has
+        // already been used, and a Retry-After override for the next attempt.
+        let mut trimmed_once = false;
+        let mut retry_after_override: Option<std::time::Duration> = None;
 
         for attempt in 0..=policy.max_retries {
             if attempt > 0 {
-                let delay = policy.delay_for_attempt(attempt - 1);
+                // Honor a parsed Retry-After instead of the policy delay when
+                // the previous failure carried one (H4).
+                let delay = retry_after_override
+                    .take()
+                    .unwrap_or_else(|| policy.delay_for_attempt(attempt - 1));
                 warn!(
                     attempt,
                     delay_ms = delay.as_millis(),
@@ -189,7 +268,7 @@ impl Backend for GrokBackend {
 
             let result = client
                 .chat_completion_with_history(
-                    messages,
+                    &messages,
                     temperature,
                     max_tokens,
                     &req.model,
@@ -241,6 +320,28 @@ impl Backend for GrokBackend {
                     // Auth errors are fatal — no point retrying.
                     if matches!(classified, RouterError::Auth(_)) {
                         return Err(classified);
+                    }
+
+                    // Context overflow (H4): trim history and retry once.
+                    // Retrying the same oversized request is pointless, so
+                    // this is a single trim-and-retry, not a blind retry.
+                    if matches!(classified, RouterError::ContextOverflow(_)) {
+                        if trimmed_once {
+                            return Err(classified);
+                        }
+                        trimmed_once = true;
+                        Self::trim_messages_for_retry(&mut messages, &req.model);
+                        warn!("Grok backend: context overflow — trimmed history and retrying once");
+                        continue;
+                    }
+
+                    // Rate limit with a Retry-After: honor it on the next
+                    // attempt instead of the policy delay (H4, best-effort
+                    // until H5's vendored grok_api preserves the header).
+                    if matches!(classified, RouterError::RateLimit) {
+                        if let Some(delay) = Self::parse_retry_after(&e.to_string()) {
+                            retry_after_override = Some(delay);
+                        }
                     }
 
                     let retryable = Self::is_retryable(&classified);
@@ -327,6 +428,79 @@ mod tests {
     fn network_and_rate_limit_are_retryable() {
         assert!(GrokBackend::is_retryable(&RouterError::Network("x".into())));
         assert!(GrokBackend::is_retryable(&RouterError::RateLimit));
+    }
+
+    #[test]
+    fn classify_context_overflow_errors() {
+        // The OpenAI-style error code xAI returns on a 400 overflow.
+        let e = anyhow::anyhow!(
+            "HTTP 400 Bad Request: {{\"error\": {{\"code\": \"context_length_exceeded\", \"message\": \"too many tokens\"}}}}"
+        );
+        assert!(matches!(
+            GrokBackend::classify_error(&e),
+            RouterError::ContextOverflow(_)
+        ));
+
+        let e = anyhow::anyhow!("maximum context length exceeded");
+        assert!(matches!(
+            GrokBackend::classify_error(&e),
+            RouterError::ContextOverflow(_)
+        ));
+
+        let e = anyhow::anyhow!("400 Bad Request: too many tokens for this model");
+        assert!(matches!(
+            GrokBackend::classify_error(&e),
+            RouterError::ContextOverflow(_)
+        ));
+    }
+
+    #[test]
+    fn context_overflow_is_not_blindly_retryable() {
+        // Retrying the same oversized request is pointless — the send loop
+        // handles it with a single trim-and-retry instead.
+        assert!(!GrokBackend::is_retryable(&RouterError::ContextOverflow(
+            "x".into()
+        )));
+    }
+
+    #[test]
+    fn parse_retry_after_from_error_text() {
+        assert_eq!(
+            GrokBackend::parse_retry_after("Rate limit exceeded. Retry-After: 7"),
+            Some(std::time::Duration::from_secs(7))
+        );
+        assert_eq!(
+            GrokBackend::parse_retry_after("429 Too Many Requests (retry_after=3)"),
+            Some(std::time::Duration::from_secs(3))
+        );
+        // No value present.
+        assert_eq!(GrokBackend::parse_retry_after("Rate limit exceeded"), None);
+        // Absurd values are capped at 60s.
+        assert_eq!(
+            GrokBackend::parse_retry_after("Retry-After: 3600"),
+            Some(std::time::Duration::from_secs(60))
+        );
+    }
+
+    #[test]
+    fn trim_messages_for_retry_keeps_system_and_last() {
+        use serde_json::json;
+        let mut messages: Vec<serde_json::Value> = vec![
+            json!({"role": "system", "content": "sys"}),
+            json!({"role": "user", "content": "one"}),
+            json!({"role": "assistant", "content": "two"}),
+            json!({"role": "user", "content": "three"}),
+            json!({"role": "assistant", "content": "four"}),
+            json!({"role": "user", "content": "five"}),
+        ];
+        GrokBackend::trim_messages_for_retry(&mut messages, "grok-4.7");
+
+        // System message and the last user turn survive.
+        assert_eq!(messages[0]["role"], "system");
+        assert_eq!(messages.last().unwrap()["content"], "five");
+        // At least the oldest half of the middle messages were dropped.
+        assert!(messages.len() < 6);
+        assert!(messages.len() >= 2);
     }
 
     #[test]

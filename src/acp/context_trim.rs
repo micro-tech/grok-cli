@@ -4,10 +4,13 @@
 //! These functions handle per-message truncation, count-based trimming,
 //! token-budget trimming, and smart compression (summarise + archive).
 
-use crate::constants::{get_default_max_output_tokens, GROK4_CONTEXT_WINDOW, LEGACY_CONTEXT_WINDOW};
+use crate::constants::get_default_max_output_tokens;
 
 #[cfg(test)]
-use crate::constants::{GROK4_CONTEXT_BUDGET, LEGACY_CONTEXT_BUDGET};
+use crate::constants::{
+    GROK4_256K_CONTEXT_BUDGET, GROK4_500K_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET,
+    LEGACY_CONTEXT_BUDGET,
+};
 use crate::memory::context_archive::ContextChunk;
 use serde_json::{json, Value};
 
@@ -56,45 +59,34 @@ pub struct ModelContextInfo {
     pub context_window: usize,
 }
 
-static MODEL_CONTEXT_TABLE: &[(&str, ModelContextInfo)] = &[
-    // Grok-4 family (1M context) - values now also live in crate::constants
-    ("grok-4", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
-    ("grok-4.3", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
-    ("grok-4-latest", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
-    ("grok-4.5", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
-    ("grok-4.6", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
-    ("grok-4.7", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
-    ("grok-4.20", ModelContextInfo { is_grok4_family: true, context_window: GROK4_CONTEXT_WINDOW }),
-    // Legacy / smaller models
-    ("grok-3", ModelContextInfo { is_grok4_family: false, context_window: LEGACY_CONTEXT_WINDOW }),
-    ("grok-3-mini", ModelContextInfo { is_grok4_family: false, context_window: LEGACY_CONTEXT_WINDOW }),
-    ("grok-coder", ModelContextInfo { is_grok4_family: false, context_window: LEGACY_CONTEXT_WINDOW }),
-];
-
 /// Returns context info for a model (model-aware).
+///
+/// Delegates the window to `crate::constants::get_context_window` so there is
+/// a single source of truth for per-model windows (H1 fix — the old
+/// MODEL_CONTEXT_TABLE hard-coded 1M for every grok-4* model).
 pub fn get_model_context_info(model: &str) -> ModelContextInfo {
     let m = model.to_ascii_lowercase();
-    for (prefix, info) in MODEL_CONTEXT_TABLE {
-        if m.starts_with(prefix) {
-            return info.clone();
-        }
-    }
-    // Default to legacy budget for unknown models
     ModelContextInfo {
-        is_grok4_family: false,
-        context_window: LEGACY_CONTEXT_WINDOW,
+        is_grok4_family: m.starts_with("grok-4") || m.starts_with("grok-build"),
+        context_window: crate::constants::get_context_window(model),
     }
 }
 
 /// Returns the appropriate context budget for the model.
-/// grok-4.x family gets the high budget; everything else gets the legacy budget.
+/// grok-4.x family gets the grok4 budget; everything else gets the legacy budget.
+///
+/// The configured budget is a cap the user asked for; it is clamped to the
+/// model's real per-model budget from `crate::constants::get_context_budget`,
+/// so a stale config (e.g. the 950k grok-4 default) can never exceed a
+/// smaller model's actual window (e.g. grok-4.7 at 500k). (H1 fix.)
 pub fn model_context_budget(model: &str, legacy_budget: usize, grok4_budget: usize) -> usize {
     let info = get_model_context_info(model);
-    if info.is_grok4_family {
+    let configured = if info.is_grok4_family {
         grok4_budget
     } else {
         legacy_budget
-    }
+    };
+    configured.min(crate::constants::get_context_budget(model))
 }
 
 /// Public helper for external consumers (status bar, etc.).
@@ -274,12 +266,18 @@ mod tests {
 
     #[test]
     fn test_model_context_budget_grok4_uses_grok4_budget() {
+        // grok-4.3 is a 1M model: the configured grok4 budget applies in full.
         assert_eq!(model_context_budget("grok-4.3", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET), GROK4_CONTEXT_BUDGET);
+        // grok-4-latest tracks the 500k flagship: the configured 950k budget
+        // is clamped to the model's real 450k budget (H1 fix).
         assert_eq!(
             model_context_budget("grok-4-latest", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET),
-            GROK4_CONTEXT_BUDGET
+            GROK4_500K_CONTEXT_BUDGET
         );
-        assert_eq!(model_context_budget("grok-4", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET), GROK4_CONTEXT_BUDGET);
+        // Base grok-4 is a 256k model: clamped to its 200k budget (H1 fix).
+        assert_eq!(model_context_budget("grok-4", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET), GROK4_256K_CONTEXT_BUDGET);
+        // grok-4.7 is a 500k model: clamped to 450k.
+        assert_eq!(model_context_budget("grok-4.7", LEGACY_CONTEXT_BUDGET, GROK4_CONTEXT_BUDGET), GROK4_500K_CONTEXT_BUDGET);
     }
 
     #[test]
