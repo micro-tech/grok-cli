@@ -313,7 +313,7 @@ impl HOHManager {
         // Merge: prefer helix_score if stronger signal, keep our meta score
         let mut final_eval = eval;
         if let Some(hs) = helix_eval.helix_score {
-            if final_eval.helix_score.map_or(true, |s| hs > s) {
+            if final_eval.helix_score.is_none_or(|s| hs > s) {
                 final_eval.helix_score = Some(hs);
             }
         }
@@ -350,8 +350,8 @@ impl HOHManager {
         // === Phase 6: Apply (real patch application - 297.5 + 361.5) ===
         // Only apply when tests passed and we have decent signals.
         // Gated by autonomy + simulation mode.
-        let should_apply = test_passed.unwrap_or(false)
-            && state.patches.len() > 0
+        let should_apply = test_result.passed
+            && !state.patches.is_empty()
             && final_eval.meta_improvement_score.unwrap_or(0.0) > 0.70;
 
         if should_apply {
@@ -398,9 +398,18 @@ impl HOHManager {
     }
 
     fn build_apply_config(&self) -> ApplyConfig {
+        // Safety: only `FullAuto` performs real writes to disk.
+        //
+        // `Observe` and `Propose` are preview-only modes. `ExecuteWithApproval`
+        // must not write without an explicit human approval step, which is not
+        // yet wired into this non-interactive loop — so it is treated as a dry
+        // run until that approval mechanism exists. This keeps the default
+        // autonomy level (`ExecuteWithApproval`) from silently modifying the
+        // project tree, matching what the name promises.
+        let dry_run = !matches!(self.config.autonomy_level, crate::hoh::AutonomyLevel::FullAuto);
         ApplyConfig {
             simulation_mode: self.config.simulation_mode,
-            dry_run: matches!(self.config.autonomy_level, crate::hoh::AutonomyLevel::Observe | crate::hoh::AutonomyLevel::Propose),
+            dry_run,
             create_backups: true,
             backup_root: self.data_dir.join("backups"),
             max_files_per_patch: 20,
@@ -621,10 +630,10 @@ impl HOHManager {
 
         s.push_str("impl TaskProgress {\n");
         s.push_str("    pub fn new(task_id: u64) -> Self {\n");
-        s.push_str(&format!("        Self {{ task_id, completed_in_iteration: true, quality: 0.82 }}\n"));
+        s.push_str("        Self { task_id, completed_in_iteration: true, quality: 0.82 }\n");
         s.push_str("    }\n\n");
         s.push_str("    pub fn report(&self) -> String {\n");
-        s.push_str(&format!("        format!(\"Task {{}} progress recorded by HOH outer loop\", self.task_id)\n"));
+        s.push_str("        format!(\"Task {} progress recorded by HOH outer loop\", self.task_id)\n");
         s.push_str("    }\n");
         s.push_str("}\n\n");
 

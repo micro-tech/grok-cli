@@ -65,7 +65,7 @@ pub fn predict_failures(
 }
 
 /// Sort patches: safest first.
-pub fn order_by_safety(patches: &mut Vec<PatchSet>, history: &[EvaluationReport]) {
+pub fn order_by_safety(patches: &mut [PatchSet], history: &[EvaluationReport]) {
     let predictions = predict_failures(patches, history);
     let prob_map: std::collections::HashMap<String, f32> = predictions.into_iter()
         .map(|p| (p.patch_id, p.failure_probability)).collect();

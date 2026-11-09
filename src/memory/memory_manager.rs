@@ -216,7 +216,7 @@ impl MemoryManager {
         // Phase 1: compact individual slots that are over their own budget
         // (check without holding mutable borrow across total_tokens)
         for name in &names {
-            let is_over = self.slots.get(name).map_or(false, |s| s.is_over_budget());
+            let is_over = self.slots.get(name).is_some_and(|s| s.is_over_budget());
             if is_over {
                 if let Some(slot) = self.slots.get_mut(name) {
                     slot.compact();

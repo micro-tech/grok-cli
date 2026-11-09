@@ -223,7 +223,7 @@ impl AppRouter {
         if self.rate_limit_config.is_some() {
             if let Some(usage) = &resp.usage {
                 let mut stats = crate::utils::rate_limiter::UsageStats::load().unwrap_or_default();
-                stats.record_usage(usage.prompt_tokens as u32, usage.completion_tokens as u32);
+                stats.record_usage(usage.prompt_tokens, usage.completion_tokens);
             }
         }
 

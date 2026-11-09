@@ -66,7 +66,7 @@ pub fn compute_metrics(tasks: &[Task]) -> TaskListMetrics {
 pub async fn emit_telemetry(tasks: &[Task], project_root: &Path) -> std::io::Result<()> {
     let metrics = compute_metrics(tasks);
     let line = serde_json::to_string(&metrics)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+        .map_err(std::io::Error::other)?;
 
     let log_dir = project_root.join(".grok/hoh/logs");
     tokio::fs::create_dir_all(&log_dir).await?;

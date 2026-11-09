@@ -586,7 +586,7 @@ impl TaskListAdapter {
         // 1. Exact or near-duplicate titles
         for (i, a) in pending.iter().enumerate() {
             for b in pending.iter().skip(i + 1) {
-                if a.title.trim().eq_ignore_ascii_case(&b.title.trim()) {
+                if a.title.trim().eq_ignore_ascii_case(b.title.trim()) {
                     conflicts.push(format!(
                         "Duplicate title conflict: #{} and #{} both titled \"{}\"",
                         a.id, b.id, a.title

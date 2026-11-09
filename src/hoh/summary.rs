@@ -55,7 +55,7 @@ pub fn generate_summary(state: &IterationState) -> IterationSummary {
         .evaluations
         .iter()
         .filter_map(|e| e.test_passed)
-        .last();
+        .next_back();
 
     // Derive key decisions from evaluation notes
     let key_decisions: Vec<String> = state

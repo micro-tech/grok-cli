@@ -155,11 +155,10 @@ pub fn load_latest_iteration(base: &Path) -> Result<Option<IterationState>, HOHE
             if state_path.exists() {
                 if let Ok(json) = fs::read_to_string(&state_path) {
                     if let Ok(state) = serde_json::from_str::<IterationState>(&json) {
-                        if state.status == crate::hoh::state::IterationStatus::Completed {
-                            if highest.as_ref().map_or(true, |(h, _)| id > *h) {
+                        if state.status == crate::hoh::state::IterationStatus::Completed
+                            && highest.as_ref().is_none_or(|(h, _)| id > *h) {
                                 highest = Some((id, state));
                             }
-                        }
                     }
                 }
             }

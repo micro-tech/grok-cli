@@ -55,7 +55,7 @@ pub fn consolidate(memory: &mut HOHMemory) -> ConsolidationReport {
         memory.entries.sort_by(|a, b| a.importance.partial_cmp(&b.importance).unwrap_or(std::cmp::Ordering::Equal));
         let mut low_importance: Vec<_> = memory.entries.drain(..cutoff.min(memory.entries.len())).collect();
         let pruned = low_importance.iter().filter(|e| e.importance < 0.3).count();
-        memory.entries.extend(low_importance.drain(..));
+        memory.entries.append(&mut low_importance);
         pruned
     } else { 0 };
 

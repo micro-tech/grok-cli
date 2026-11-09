@@ -8,7 +8,7 @@ use crate::hoh::state::{IterationState, IterationStatus};
 const WIDE: usize = 72;
 
 fn divider(ch: char) -> String {
-    std::iter::repeat(ch).take(WIDE).collect()
+    std::iter::repeat_n(ch, WIDE).collect()
 }
 
 fn status_icon(s: &IterationStatus) -> &'static str {

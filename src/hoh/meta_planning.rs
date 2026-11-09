@@ -30,7 +30,7 @@ impl MetaPlanningEngine {
     ) -> Result<Vec<MetaPlan>, HOHError> {
         let mut plans = vec![];
 
-        if recent_meta_score.map_or(true, |s| s < 0.75) {
+        if recent_meta_score.is_none_or(|s| s < 0.75) {
             plans.push(MetaPlan {
                 target: "planner".to_string(),
                 change: "Increase weight of 405 evolution signals in scoring".to_string(),

@@ -236,7 +236,7 @@ fn deduplicate_code_blocks(text: &str) -> String {
                 i = block_end;
                 continue;
             } else if block.len() > 80 {
-                seen_blocks.insert(key, format!("mem.X")); // placeholder; real manager knows context
+                seen_blocks.insert(key, "mem.X".to_string()); // placeholder; real manager knows context
             }
 
             // Convert the slice of &str to owned Strings
@@ -274,7 +274,7 @@ fn bulletize_paragraphs(text: &str) -> String {
 
         // Split sentences roughly
         let sentences: Vec<&str> = trimmed
-            .split(|c| c == '.' || c == '!' || c == '?')
+            .split(['.', '!', '?'])
             .filter(|s| s.trim().len() > 8)
             .collect();
 

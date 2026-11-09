@@ -137,10 +137,32 @@ pub struct PatchSet {
 
 impl PatchSet {
     /// Helper to get the content that should be written for this patch.
+    ///
+    /// Kept for callers that only preview content length. Prefer
+    /// [`PatchSet::content_for`] when actually writing files, since it is
+    /// correct for multi-file patches.
     pub fn content_to_apply(&self) -> String {
         self.intended_content
             .clone()
             .unwrap_or_else(|| self.diff_summary.clone())
+    }
+
+    /// Resolve the content to write for a specific file in this patch.
+    ///
+    /// A `PatchSet` carries a single `intended_content` blob, which is only
+    /// meaningful when the patch targets exactly one file. Writing that blob to
+    /// every entry of a multi-file `files_changed` would overwrite them all with
+    /// identical content (silent data loss), so this returns `None` for
+    /// multi-file patches until per-file content is modeled.
+    pub fn content_for(&self, _path: &str) -> Option<String> {
+        if self.files_changed.len() != 1 {
+            return None;
+        }
+        match &self.intended_content {
+            Some(content) => Some(content.clone()),
+            None if !self.diff_summary.trim().is_empty() => Some(self.diff_summary.clone()),
+            None => None,
+        }
     }
 }
 

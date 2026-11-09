@@ -321,12 +321,11 @@ pub fn parse_slash_command(message: &str) -> Option<SlashCommand> {
         // This is the explicit user command to drive the agent's short-term memory slots.
         "/replace" => {
             let (slot, content) = if args.starts_with('[') {
-                if let Some(end) = args.find(']') {
+                {
+                    let end = args.find(']')?;
                     let slot = args[1..end].trim().to_string();
                     let content = args[end + 1..].trim().to_string();
                     (slot, content)
-                } else {
-                    return None;
                 }
             } else {
                 let parts: Vec<&str> = args.splitn(2, ' ').collect();

@@ -812,7 +812,7 @@ impl HOHPlanner {
             } else {
                 crate::hoh::specialized_agents::AgentProfile::Researcher
             };
-            orchestrator.bootstrap_agent(&ev.agent_id, profile, &vec![ev.reason.clone()]);
+            orchestrator.bootstrap_agent(&ev.agent_id, profile, std::slice::from_ref(&ev.reason));
         }
 
         // Run real orchestration (simulation-first + delegation + skill evolution) for high-value work
@@ -966,7 +966,7 @@ impl HOHPlanner {
             selected_tasks: selected.iter().map(|t| t.id).collect(),
             experiments: vec!["tasklist_driven".to_string()],
             architecture_proposals: arch_proposals.iter().map(|p| {
-                format!("{} [{}]", p.title, format!("{:?}", p.change_type))
+                format!("{} [{:?}]", p.title, p.change_type)
             }).collect(),
             self_refinement_proposals: self_refinements.iter().map(|p| {
                 format!("{} (impact {:.2})", p.title, p.estimated_impact)
@@ -1256,11 +1256,10 @@ impl HOHPlanner {
                 let mut applied = 0;
 
                 for m in &mutations {
-                    if rules.validate_mutation(m, &list.tasks).is_ok() {
-                        if rules.apply_mutation(m, &mut list.tasks).is_ok() {
+                    if rules.validate_mutation(m, &list.tasks).is_ok()
+                        && rules.apply_mutation(m, &mut list.tasks).is_ok() {
                             applied += 1;
                         }
-                    }
                 }
 
                 if applied > 0 {

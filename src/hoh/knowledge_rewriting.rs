@@ -22,7 +22,7 @@ pub fn rewrite_for_context(bundle: &KnowledgeBundle, context: &str) -> Knowledge
     let rewritten = if filtered.is_empty() {
         format!("[Adapted for {}] {}", context, content.chars().take(200).collect::<String>())
     } else {
-        format!("[{}] {}", context, filtered.join(". ").trim().to_string())
+        format!("[{}] {}", context, filtered.join(". ").trim())
     };
 
     KnowledgeBundle {

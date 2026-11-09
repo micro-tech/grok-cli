@@ -11,9 +11,9 @@
 //!
 //! When adding a new magic number, add it here first, then update call sites.
 
-/// ---------------------------------------------------------------------------
-/// Context windows and token budgets (model-aware)
-/// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Context windows and token budgets (model-aware)
+// ---------------------------------------------------------------------------
 
 /// Full context window for Grok-4 family models.
 pub const GROK4_CONTEXT_WINDOW: usize = 1_048_576;
@@ -29,9 +29,9 @@ pub const LEGACY_CONTEXT_BUDGET: usize = 220_000;
 /// Leaves ~50k headroom for response + tools.
 pub const GROK4_CONTEXT_BUDGET: usize = 950_000;
 
-/// ---------------------------------------------------------------------------
-/// Default maximum output tokens (per model family)
-/// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Default maximum output tokens (per model family)
+// ---------------------------------------------------------------------------
 
 /// Default max output tokens for Grok-4 / Grok-4.x models.
 pub const DEFAULT_MAX_OUTPUT_TOKENS_GROK4: u32 = 16_384;
@@ -42,9 +42,9 @@ pub const DEFAULT_MAX_OUTPUT_TOKENS_STANDARD: u32 = 8_192;
 /// Default max output tokens for "mini" models.
 pub const DEFAULT_MAX_OUTPUT_TOKENS_MINI: u32 = 4_096;
 
-/// ---------------------------------------------------------------------------
-/// Tool result & history truncation
-/// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Tool result & history truncation
+// ---------------------------------------------------------------------------
 
 /// Maximum characters to keep in a tool result before truncation.
 /// Large file reads are the most common cause of context bloat.
@@ -53,9 +53,9 @@ pub const MAX_TOOL_RESULT_CHARS: usize = 30_000;
 /// Maximum number of conversation turns kept in session context before trimming.
 pub const MAX_HISTORY_MESSAGES: usize = 40;
 
-/// ---------------------------------------------------------------------------
-/// Tool output truncation defaults (used by config + file tools)
-/// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Tool output truncation defaults (used by config + file tools)
+// ---------------------------------------------------------------------------
 
 /// Default character threshold before truncating tool output in the UI / logs.
 pub const DEFAULT_TRUNCATE_TOOL_OUTPUT_THRESHOLD: u32 = 10_000;
@@ -63,9 +63,9 @@ pub const DEFAULT_TRUNCATE_TOOL_OUTPUT_THRESHOLD: u32 = 10_000;
 /// Default number of lines to keep when truncating tool output.
 pub const DEFAULT_TRUNCATE_TOOL_OUTPUT_LINES: u32 = 100;
 
-/// ---------------------------------------------------------------------------
-/// Timeouts (in seconds)
-/// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Timeouts (in seconds)
+// ---------------------------------------------------------------------------
 
 /// Default shell command timeout (used by SecurityPolicy and tools).
 /// 300s is enough for `cargo build`, `git` operations, etc.
@@ -83,9 +83,9 @@ pub const MAX_SLEEP_SECS: u64 = 300;
 /// Default overall request timeout used in several places.
 pub const DEFAULT_TIMEOUT_SECS: u64 = 300;
 
-/// ---------------------------------------------------------------------------
-/// Compression & context management thresholds
-/// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Compression & context management thresholds
+// ---------------------------------------------------------------------------
 
 /// Fraction of context budget at which auto-compression is triggered.
 /// (e.g. 0.75 = fire when we reach 75% of the budget)
@@ -95,17 +95,17 @@ pub const COMPRESSION_THRESHOLD: f32 = 0.75;
 /// (e.g. 0.40 = compress the oldest 40%)
 pub const COMPRESSION_CHUNK_RATIO: f32 = 0.40;
 
-/// ---------------------------------------------------------------------------
-/// Tool loop & iteration limits
-/// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Tool loop & iteration limits
+// ---------------------------------------------------------------------------
 
 /// Maximum number of tool-loop iterations before the turn is forcibly stopped.
 pub const MAX_TOOL_LOOP_ITERATIONS: u32 = 25;
 
-/// ---------------------------------------------------------------------------
-/// Model-aware helper functions
-/// (These replace scattered if/else logic in context_trim, acp/mod, etc.)
-/// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Model-aware helper functions
+// (These replace scattered if/else logic in context_trim, acp/mod, etc.)
+// ---------------------------------------------------------------------------
 
 /// Returns the full context window for a model.
 pub fn get_context_window(model: &str) -> usize {
@@ -139,9 +139,9 @@ pub fn get_default_max_output_tokens(model: &str) -> u32 {
     }
 }
 
-/// ---------------------------------------------------------------------------
-/// Other common constants (add more groups as needed)
-/// ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Other common constants (add more groups as needed)
+// ---------------------------------------------------------------------------
 
 /// Default maximum tool loop iterations (exposed for config).
 pub const DEFAULT_MAX_TOOL_LOOP_ITERATIONS: u32 = MAX_TOOL_LOOP_ITERATIONS;

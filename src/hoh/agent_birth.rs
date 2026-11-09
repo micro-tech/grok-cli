@@ -208,7 +208,7 @@ impl AgentBirthSystem {
 
         // From high-priority recent tasks
         for &tid in recent_tasks {
-            if tid >= 400 && tid < 430 {
+            if (400..430).contains(&tid) {
                 skill_gaps.push(format!("task_{}_specialist", tid));
             }
         }

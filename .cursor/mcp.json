@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "blast-radius": {
+      "args": [
+        "--mcp",
+        "${workspaceFolder}"
+      ],
+      "command": "C:\\Users\\johnm\\AppData\\Local\\Temp\\bfdeb1cc-f025-4acc-8ace-5406c3360731_Blast Radius 0.1.1 for Windows (x86_64).zip.731\\blast_radius.exe"
+    }
+  }
+}

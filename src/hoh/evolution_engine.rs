@@ -107,14 +107,13 @@ impl TaskEvolutionEngine {
 
         // 1. Promote high-value pending tasks that have good test strategies
         for task in &list.tasks {
-            if task.status == "pending" && task.priority != "high" {
-                if !task.test_strategy.is_empty() && task.test_strategy.len() > 30 {
+            if task.status == "pending" && task.priority != "high"
+                && !task.test_strategy.is_empty() && task.test_strategy.len() > 30 {
                     proposals.push(TaskMutation::SetPriority {
                         task_id: task.id,
                         new_priority: "high".to_string(),
                     });
                 }
-            }
         }
 
         // 2. Split overly large tasks - 327.10 Auto-Expansion (SKILL.md style)
@@ -581,7 +580,7 @@ fn should_prune(task: &Task, all_pending: &[&Task]) -> bool {
     // Duplicate detection (simple exact title match among other pending tasks)
     let duplicate_count = all_pending
         .iter()
-        .filter(|t| t.id != task.id && t.title.trim().eq_ignore_ascii_case(&task.title.trim()))
+        .filter(|t| t.id != task.id && t.title.trim().eq_ignore_ascii_case(task.title.trim()))
         .count();
 
     if duplicate_count > 0 && low_substance {

@@ -11,6 +11,28 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### HOH patch-apply safety & correctness fixes (code review follow-up, 2026-11-09)
+
+- Fix critical multi-file patch bug in `hoh::patch_applier::apply_patch`: it
+  previously wrote the single `PatchSet::content_to_apply()` blob to _every_
+  file in `files_changed`, silently overwriting all but one with identical
+  content. Content is now resolved per file via the new `PatchSet::content_for`,
+  which only applies a single `intended_content` blob to single-file patches and
+  skips (with a logged error) multi-file patches that lack per-file content.
+- Harden autonomy gating in `HOHManager::build_apply_config`: only `FullAuto`
+  now performs real writes. `ExecuteWithApproval` (the default) and the
+  preview modes are treated as dry runs until a real approval step exists, so
+  the default level no longer modifies the project tree without consent.
+- Add `patch_applier` test coverage (single-file write, multi-file no-fan-out,
+  `content_for` resolution) and derive `Default` for `ApplyResult`; replace an
+  `unwrap()` in `create_backup_dir` with `unwrap_or_default()`.
+- Clean up all `cargo clippy --lib` warnings (69 → 0): idiom fixes across
+  `hoh/`, `constants.rs`, `router/`, `memory/`, and `acp/` (sort_by_key,
+  slice params, `io::Error::other`, removed useless `format!`/`to_string`,
+  decorative doc-comment banners, etc.). No behavioral changes.
+- Added independent reviews: `code_review-claude-5.1.md` and
+  `harness_review_claude-5.1.md`.
+
 ### OKF v1 protocol alignment (task 480, 2026-10-05)
 
 - Trace forwarder retargeted to the v1 canonical path `POST /okf/traces`
@@ -33,6 +55,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ### Code-reviewer follow-up fixes (2026-10-04)
 
 **Security**
+
 - **SSRF redirect bypass closed**: `web_fetch` no longer uses the shared
   redirect-following client — it uses a dedicated no-redirect client and
   follows up to 5 redirects manually, re-running the SSRF guard on every
@@ -42,6 +65,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   window where the API key was world-readable.
 
 **Logging**
+
 - Four `web_fetch` warnings mislabeled `"SSRF guard:"` (non-2xx, body-read
   failure, network error, retries exhausted) are labeled `"web_fetch:"`
   again — the guard label is reserved for actual guard refusals.
@@ -49,6 +73,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 ### Code-review fixes batch — perf + security (Tasks 463–471, 2026-10-03)
 
 **Performance**
+
 - **Real xAI token usage plumbed through (463)**: `MessageWithFinishReason` and
   `RouterResponse` now carry the API-reported `usage` (was discarded /
   hardcoded `None`); each ACP turn records real prompt/completion counts into a
@@ -71,6 +96,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   required (callee takes ownership) — no change.
 
 **Security**
+
 - **SSRF filtering for `web_fetch` (468)**: rejects non-http(s) schemes,
   credentialed URLs, `localhost`, and any target resolving to loopback /
   private / link-local (incl. `169.254.169.254` metadata) / CGNAT / multicast /
@@ -86,6 +112,7 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
   after writing, so the API key isn't world-readable under a normal umask.
 
 **Correctness / hygiene (471 bundle)**
+
 - Dropped hardcoded PowerShell `-ExecutionPolicy Bypass` (unnecessary for
   `-Command` strings; documented why).
 - `compress_schema`: char-boundary-safe truncation (was `&s[..117]` panic risk).
@@ -101,7 +128,7 @@ Major new autonomous outer-loop system for long-running, self-directed developme
 - **Self-Refinement Loop (361.2)**: HOH can now propose improvements to its own internals (planner scoring, heuristics, meta-evaluation).
 - **Autonomous Refactoring Engine (361.3)**: Converts architecture + self-refinement proposals into concrete `RefactoringAction`s. Materializes new tasks (A), generates tiny safe patch stubs (C), and records metadata.
 - **Specialized Agent Profiles + Routing (361.4)**: High-confidence refactoring actions are routed to role-specific sub-agents (e.g. `MetaHookInstaller`, `HeuristicTuner`, `ModuleExtractor`).
-- **Continual Improvement Meta-Loop (361.5)**: Closed feedback system that turns execution outcomes (materialized tasks, patch quality, test results, specialized agent routes) into prioritized suggestions for the *next* planning cycle.
+- **Continual Improvement Meta-Loop (361.5)**: Closed feedback system that turns execution outcomes (materialized tasks, patch quality, test results, specialized agent routes) into prioritized suggestions for the _next_ planning cycle.
 - Real implementations live in `src/hoh/` (planner, architecture_evolution, autonomous_refactoring, specialized_agents, continual_improvement, outer_loop, etc.).
 - New CLI commands: `grok-cli hoh start`, `grok-cli hoh status`, `grok-cli hoh last`, `grok-cli hoh history`, `grok-cli hoh apply --dry-run`, `grok-cli hoh simulate`.
 - Task list is now treated as a living artifact (evolution, mutation, dependency graph, completion tracking).
@@ -160,6 +187,7 @@ A major new system that keeps the model permanently up-to-date with all availabl
 - Unit tests ensure all three sections and purpose markers are always present
 
 **Impact**:
+
 - Newly created skills become visible to the model **immediately** on the next turn
 - The model has accurate, ranked knowledge of every skill’s triggers and purpose
 - Hooks and performance guidance are now first-class, living context
@@ -168,11 +196,13 @@ A major new system that keeps the model permanently up-to-date with all availabl
 This is the foundation that makes dynamic skill creation truly seamless and is a major step toward truly user-extensible AI behavior inside Grok CLI.
 
 **Related commands**:
+
 - `grok skills generate-catalog` — manually refresh the catalog
 - `grok skills new <name>` — creates a skill + auto-refreshes the catalog
 - `grok skills list` — shows available skills (now consistent with what the model sees)
 
 **Files involved**:
+
 - `src/skills/catalog.rs` (generator + loader)
 - `src/cli/commands/skills.rs` (CLI command + auto-regen after `new`)
 - `src/display/interactive.rs` (injection into system prompt)
@@ -261,6 +291,7 @@ This gives users the best of both worlds: project-local chat history when workin
 Grok-CLI now ships with a comprehensive, mandatory safety system that protects against the most common classes of AI-induced file damage.
 
 **Core Safety Modules** (`src/safety/`):
+
 - `pre_write_hook.rs` — `on_before_write_file()` runs before every write/replace/delete. Blocks binary junk, massive overwrites, invalid JSON, and DNA-flagged failure patterns.
 - `dry_run.rs` — `dry_run: bool` parameter on `write_file` and `replace`. Returns a diff without touching disk; LLM must explicitly confirm.
 - `diff_validator.rs` — Rejects full-file rewrites >200 lines or >40% content removal.
@@ -270,10 +301,12 @@ Grok-CLI now ships with a comprehensive, mandatory safety system that protects a
 - `tool_health_monitor.rs` — Tracks per-tool success/failure/hallucination rates and can disable unhealthy tools.
 
 **Wiring**:
+
 - `write_file()` and `replace()` now run the full safety pipeline (pre-write hook → suspicious guard → dry-run support).
 - All 7 hooks are exported via `crate::safety::*`.
 
 **Tests**:
+
 - 6 new unit tests in `src/safety/tests.rs` covering binary blocking, large-rewrite rejection, ambiguous intent, empty overwrite, DNA safe-mode trigger, and tool health degradation.
 
 This change dramatically reduces the chance of the agent destroying user files through over-confident or hallucinated edits.
@@ -283,15 +316,18 @@ This change dramatically reduces the chance of the agent destroying user files t
 The DNA system has been deeply integrated into the core reasoning engine:
 
 ### Task 151 — DNA-Driven Skill Arbitration 2.0
+
 - `EngineBeliefs::tool_score()` and `score_plan()` now accept an optional `dna_tool_weight` parameter.
 - `ArbitrationEngine::rank_tools()` now accepts `dna_tool_weight` and applies it to every tool's final score.
 - DNA tool preferences directly boost or reduce tool rankings during arbitration.
 
 ### Task 152 — DNA-Conditioned Planning
+
 - `SessionDna::shape_plan()` and `get_mode()` are available for any planner to use.
 - Plans can now be shaped differently based on the active DNA profile (tone, verbosity, risk tolerance, past failures).
 
 ### Task 153 — DNA-Based Mode Switching
+
 - `SessionDna::get_mode()` returns one of: `coder`, `research`, `shell`, or `creative`.
 - The current mode is injected into the system prompt at session start.
 - Mode selection is driven by `risk_tolerance`, `verbosity`, `tool_preferences`, and `tone`.
@@ -301,7 +337,9 @@ All three behaviors are now live and influence real tool selection, planning, an
 The Session DNA system has been extended with three powerful new capabilities that make the agent feel truly personalized:
 
 ### 1. DNA-Driven Skill Arbitration 2.0
+
 DNA now directly influences:
+
 - **Skill scoring** via `get_skill_weight(skill_name)`
 - **Tool scoring** via `get_tool_weight(tool_name)`
 - **Model routing** hints via `get_model_preference()`
@@ -310,7 +348,9 @@ DNA now directly influences:
 Weight multipliers are applied based on `risk_tolerance`, `coding_style`, and `tool_preferences`.
 
 ### 2. DNA-Conditioned Planning
+
 The planner can now generate different plan structures depending on:
+
 - Past tool failures (via the feedback loop)
 - Preferred coding patterns (`coding_style`)
 - User communication style (`tone` + `verbosity`)
@@ -318,7 +358,9 @@ The planner can now generate different plan structures depending on:
 Example output modes: `shell`, `research`, `creative`, or `coder`.
 
 ### 3. DNA-Based Mode Switching
+
 The agent automatically selects an operating mode at session start:
+
 - `coder` (default)
 - `shell` (when shell tools are preferred or risk is high)
 - `research` (when verbosity is high)
@@ -327,6 +369,7 @@ The agent automatically selects an operating mode at session start:
 The current mode is injected into the system prompt and logged.
 
 All three behaviors are fully wired:
+
 - DNA is loaded and applied in `initialize_session`
 - Mode is computed and injected into the prompt
 - Feedback loop continues to evolve DNA during tool execution
@@ -444,36 +487,36 @@ This lays the foundation for true multi-agent workflows inside the reasoning eng
   Zed was logging `"skipped malformed list entry … unknown variant text"` and
   silently dropping every tool-call content block sent to the editor.
   Fixed by changing `#[serde(rename = "text")]` → `#[serde(rename = "content")]`.
-  *(Source: human observation / AI fix)*
+  _(Source: human observation / AI fix)_
 
 - **Slash commands blocked / `PromptResponse` delayed** (`src/acp/mod.rs`, `src/cli/commands/acp.rs`)
   `handle_chat_completion` held the `sessions` write lock for its **entire duration**,
-  including all async API calls (which can take 10–300 s).  Any slash command that
+  including all async API calls (which can take 10–300 s). Any slash command that
   needed even a read lock (`/context`) or a write lock (`/clear`, `/model`, `/think`)
-  was blocked for that entire duration.  Additionally, `save_session_to_disk` was
-  called *before* `responder.respond(EndTurn)` in all three paths of
+  was blocked for that entire duration. Additionally, `save_session_to_disk` was
+  called _before_ `responder.respond(EndTurn)` in all three paths of
   `handle_session_prompt_v2`; if the read lock inside `save_session_to_disk` was
   contested, Zed never received the `PromptResponse` and the turn appeared to hang.
 
   Two fixes applied:
   1. **Lock-window reduction** — the write lock is now held only for the brief setup
-     phase (user-message push, trimming, compression).  The session state is cloned
+     phase (user-message push, trimming, compression). The session state is cloned
      out before the lock is released, the API call loop runs with no lock held, and a
      brief write lock is re-acquired only for per-iteration and final state syncs.
   2. **`PromptResponse`-before-save ordering** — `responder.respond(EndTurn)` is now
-     called *before* `save_session_to_disk` in all three response paths so Zed always
+     called _before_ `save_session_to_disk` in all three response paths so Zed always
      closes the turn immediately, regardless of lock contention on the disk save.
-  *(Source: human report / AI analysis & fix)*
+     _(Source: human report / AI analysis & fix)_
 
 - **Context-window overflow in multi-turn tool loops** (`src/acp/acp.rs`)
   The token-budget trimming (steps 1-4) ran only **once**, before the tool
   loop, but each loop iteration appends an assistant message plus one or more
-  tool-result messages.  After many iterations of large file reads the context
+  tool-result messages. After many iterations of large file reads the context
   could balloon to 12 M tokens, triggering a 400 from the API.
   Fixed by re-running `truncate_tool_results`, the count guard, and
   `trim_to_token_budget` at the **top of every loop iteration** before the API
-  call.  A `WARN` log is emitted whenever mid-loop trimming fires.
-  *(Source: human log report / AI fix)*
+  call. A `WARN` log is emitted whenever mid-loop trimming fires.
+  _(Source: human log report / AI fix)_
 
 ### Highlights
 

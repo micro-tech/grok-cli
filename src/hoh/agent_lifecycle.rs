@@ -20,17 +20,14 @@ pub type AgentId = String;
 
 /// Current lifecycle status of an agent.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Default)]
 pub enum AgentLifecycleStatus {
+    #[default]
     Active,
     Hibernating { since: u64 },
     Retired { reason: String, at: u64 },
 }
 
-impl Default for AgentLifecycleStatus {
-    fn default() -> Self {
-        AgentLifecycleStatus::Active
-    }
-}
 
 /// Performance and contribution metrics for an individual agent.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

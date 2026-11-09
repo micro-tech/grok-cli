@@ -227,7 +227,7 @@ impl ChatTurn {
                         // We keep only one active memory block to avoid duplication.
                         if let Some(existing_idx) = self.messages.iter().position(|m| {
                             m.get("role") == Some(&json!("system"))
-                                && m.get("content").and_then(|c| c.as_str()).map_or(false, |s| s.contains("## Memory Slots"))
+                                && m.get("content").and_then(|c| c.as_str()).is_some_and(|s| s.contains("## Memory Slots"))
                         }) {
                             self.messages.remove(existing_idx);
                         }

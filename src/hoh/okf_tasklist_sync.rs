@@ -307,11 +307,10 @@ impl OkfTaskListSyncer {
 
         for task in tasks {
             let score = Self::relevance(concept, task);
-            if score >= MATCH_THRESHOLD {
-                if best.map_or(true, |(_, s)| score > s) {
+            if score >= MATCH_THRESHOLD
+                && best.is_none_or(|(_, s)| score > s) {
                     best = Some((task, score));
                 }
-            }
         }
 
         best
@@ -331,7 +330,7 @@ impl OkfTaskListSyncer {
         );
 
         // Concept ID match (strongest signal)
-        let concept_id_slug = concept.id.replace('/', " ").replace('_', " ").to_lowercase();
+        let concept_id_slug = concept.id.replace(['/', '_'], " ").to_lowercase();
         for word in concept_id_slug.split_whitespace().filter(|w| w.len() > 3) {
             if task_text.contains(word) {
                 score += 1.2;
