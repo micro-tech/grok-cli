@@ -184,12 +184,34 @@ impl AppRouter {
         // This is the single enforcement point for the modern router path (ACP + CLI).
         if let Some(ref cfg) = self.rate_limit_config {
             let prompt_chars: usize = messages.iter().map(|v| v.to_string().len()).sum();
-            // Rough but conservative estimate: ~1 token per 3 chars + headroom for response
-            let estimated_tokens: u32 = ((prompt_chars / 3) as u32).saturating_add(800);
+            // ~1 token per 4 chars (matches the ACP estimator in
+            // acp::context_trim::estimate_tokens); +800 headroom for the response.
+            // The old /3 divisor over-estimated by ~33%, which tripped the
+            // limiter early on long conversations (H2 fix).
+            let estimated_tokens: u32 = ((prompt_chars / 4) as u32).saturating_add(800);
 
+            // Fail soft (H2): when the limit would be exceeded, wait for the
+            // window to roll over and re-check once instead of erroring
+            // outright. The old code returned "Rate limit exceeded: Tokens
+            // per minute" here, which is the error John saw on long
+            // conversations — the call died before route(), so no retry ran.
             let mut stats = crate::utils::rate_limiter::UsageStats::load().unwrap_or_default();
-            if let Err(msg) = stats.check_limit(cfg, estimated_tokens) {
-                return Err(anyhow::anyhow!("Rate limit exceeded: {}", msg));
+            if let Err(exceeded) = stats.check_limit(cfg, estimated_tokens) {
+                let wait = exceeded.retry_after.min(std::time::Duration::from_secs(60));
+                if !wait.is_zero() {
+                    tracing::warn!(
+                        "Rate limit ({}) — waiting {}s for the window to roll over",
+                        exceeded.message,
+                        wait.as_secs()
+                    );
+                    tokio::time::sleep(wait).await;
+                    stats = crate::utils::rate_limiter::UsageStats::load().unwrap_or_default();
+                    if let Err(exceeded) = stats.check_limit(cfg, estimated_tokens) {
+                        return Err(anyhow::anyhow!("Rate limit exceeded: {}", exceeded.message));
+                    }
+                } else {
+                    return Err(anyhow::anyhow!("Rate limit exceeded: {}", exceeded.message));
+                }
             }
         }
 

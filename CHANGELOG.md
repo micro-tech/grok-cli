@@ -11,6 +11,46 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Triple-review fixes, batch 1: context windows, rate limiting, retry (H1–H5, 2026-11-09)
+
+Fixes the five Nov 6 must-fixes (M1–M5), all still open at the triple-review
+base (master fa0f047). Verified against xAI docs 2026-11-09; toolchain
+`rust-toolchain.toml` moved from 1.97.1 to the 1.99 line (1.99.1 current
+stable; 1.100.0 due 2026-11-12).
+
+- **H1 — Per-model context windows.** `get_context_window`/`get_context_budget`
+  no longer return 1,048,576 for every `grok-4*` model: grok-4 = 256k,
+  grok-4.5/4.6/4.7 = 500k, grok-4.3/4.20 = 1M, grok-4-fast = 2M,
+  grok-build-0.1 = 256k, with a soft budget below each window.
+  `LEGACY_CONTEXT_BUDGET` fixed from 220,000 (above the 131,072 legacy
+  window) to 100,000. `src/acp/context_trim.rs` now delegates to the same
+  per-model helpers (the duplicate 1M-for-all table is gone) and
+  `model_context_budget` clamps the configured budget to the model's real
+  budget, so a stale 950k grok-4 config can never exceed a 500k window.
+- **H2 — TPM limiter fails soft, counts accurately.** The estimate is now
+  ~1 token per 4 chars (was /3, ~33% over). When the limit would be
+  exceeded, the router waits for the window to roll over (`retry_after`
+  from the oldest entry, capped at 60s) and re-checks once instead of
+  erroring with "Tokens per minute" before `route()`. Fixed in both the
+  `AppRouter` path and the legacy `GrokClient` path.
+- **H3 — CLI history is trimmed before sending.** `handle_interactive_chat`
+  now caps `conversation_history` at `MAX_HISTORY_MESSAGES` (40) and trims
+  to the model's context budget (H1) before each call, reusing the ACP
+  trimmer. The system message and the last user turn are never dropped.
+- **H4 — Context overflow is a recoverable error.** New
+  `RouterError::ContextOverflow` for HTTP 400 `context_length_exceeded` /
+  "maximum context length". `GrokBackend::send` trims the request history
+  and retries once instead of failing with a fatal `BackendError`.
+  `Retry-After` is parsed from 429 error text when present (best-effort)
+  and honored on the next attempt instead of the policy delay (capped 60s).
+- **H5 — grok_api 429 body preserved (vendored).** `grok_api` 0.2.4
+  discarded the 429 body and the `Retry-After` header. 0.3.1 is NOT on
+  crates.io and the sibling path dep does not exist in this checkout, so
+  0.2.4 is vendored under `vendor/grok_api/` with the minimal 429 fix
+  (`RateLimit` now carries `body` + `retry_after_secs`) behind a
+  `[patch.crates-io]` entry. See `vendor/grok_api/README.md`. Temporary:
+  remove the vendor + patch when grok_api 0.3.1 is published.
+
 ### HOH patch-apply safety & correctness fixes (code review follow-up, 2026-11-09)
 
 - Fix critical multi-file patch bug in `hoh::patch_applier::apply_patch`: it

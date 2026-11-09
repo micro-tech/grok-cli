@@ -1,0 +1,52 @@
+# Vendored grok_api 0.2.4 — see README.md in this directory.
+# This is a temporary vendor of the published grok_api 0.2.4 crate with ONE
+# backported fix (H5): the 429 error preserves the response body and the
+# Retry-After header. Remove this vendor + the [patch.crates-io] entry in the
+# workspace Cargo.toml once grok_api 0.3.1 is published to crates.io.
+# Examples and dev-dependencies from the published crate are intentionally
+# omitted (only the library is vendored).
+
+[package]
+name = "grok_api"
+version = "0.2.4"
+edition = "2024"
+rust-version = "1.85"
+authors = ["john mcconnell <john.microtech@gmail.com>"]
+license-file = "LICENSE.txt"
+description = "Rust client library for the Grok AI API (xAI)"
+homepage = "https://github.com/micro-tech/grok-api"
+repository = "https://github.com/micro-tech/grok-api"
+documentation = "https://docs.rs/grok_api"
+keywords = ["grok", "ai", "xai", "llm", "api"]
+categories = ["api-bindings", "web-programming::http-client"]
+
+[dependencies]
+# HTTP client
+reqwest = { version = "0.13", features = ["json"] }
+tokio = { version = "1.53.1", features = ["full"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# Error handling
+anyhow = "1"
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+
+# Utilities
+rand = "0.10"
+
+# Real-time Voice (WebSocket)
+tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-native-roots"] }
+futures-util = "0.3"
+
+# URL building (percent-encoding for WebSocket query params)
+url = "2"
+
+[features]
+default = ["retry"]
+retry = []          # Enable automatic retry logic for network errors
+starlink = []       # Optimize for Starlink satellite connections

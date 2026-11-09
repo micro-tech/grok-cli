@@ -29,6 +29,13 @@ pub enum RouterError {
     #[error("Rate limit exceeded")]
     RateLimit,
 
+    /// The request exceeded the model's context window (HTTP 400 with
+    /// `context_length_exceeded` / "maximum context length").
+    /// Unlike other backend errors this is recoverable: the caller can trim
+    /// history and retry once. (H4 fix.)
+    #[error("Context overflow: {0}")]
+    ContextOverflow(String),
+
     /// A tool execution failed during the tool loop.
     ///
     /// The inner string contains the tool name and the underlying error message.

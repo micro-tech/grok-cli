@@ -6,6 +6,29 @@ use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tracing::warn;
 
+/// Returned when a request would exceed the configured rate limit.
+///
+/// Carries the time until the oldest entry in the current window expires,
+/// so the caller can wait for the window to roll over instead of failing
+/// hard (H2 fix — the old code returned a bare string and the caller
+/// errored immediately, producing the "Tokens per minute" failure).
+#[derive(Debug, Clone)]
+pub struct RateLimitExceeded {
+    /// Human-readable reason ("Requests per minute" / "Tokens per minute").
+    pub message: String,
+    /// Time until the oldest entry in the current window expires.
+    /// Zero when no entries are recorded (nothing to wait for).
+    pub retry_after: Duration,
+}
+
+impl std::fmt::Display for RateLimitExceeded {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.message)
+    }
+}
+
+impl std::error::Error for RateLimitExceeded {}
+
 #[derive(Debug, Serialize, Deserialize, Default, Clone)]
 pub struct UsageStats {
     pub total_input_tokens: u64,
@@ -45,19 +68,26 @@ impl UsageStats {
         Ok(())
     }
 
-    /// Checks if the next request of estimated `tokens` size is allowed
+    /// Checks if the next request of estimated `tokens` size is allowed.
+    ///
+    /// On failure returns [`RateLimitExceeded`] with a `retry_after` of the
+    /// time until the oldest entry in the current window expires, so the
+    /// caller can wait for the window to roll over instead of failing hard.
     pub fn check_limit(
         &mut self,
         config: &RateLimitConfig,
         estimated_tokens: u32,
-    ) -> Result<(), String> {
+    ) -> Result<(), RateLimitExceeded> {
         self.clean_old_history(Duration::from_secs(60));
 
         let current_tokens: u32 = self.request_history.iter().map(|(_, tokens)| *tokens).sum();
         let current_requests = self.request_history.len() as u32;
 
         if current_requests >= config.max_requests_per_minute {
-            return Err("Requests per minute".to_string());
+            return Err(RateLimitExceeded {
+                message: "Requests per minute".to_string(),
+                retry_after: self.time_until_oldest_expires(Duration::from_secs(60)),
+            });
         }
 
         // Only enforce the token budget when there are already requests recorded in
@@ -67,10 +97,29 @@ impl UsageStats {
         if current_requests > 0
             && current_tokens.saturating_add(estimated_tokens) > config.max_tokens_per_minute
         {
-            return Err("Tokens per minute".to_string());
+            return Err(RateLimitExceeded {
+                message: "Tokens per minute".to_string(),
+                retry_after: self.time_until_oldest_expires(Duration::from_secs(60)),
+            });
         }
 
         Ok(())
+    }
+
+    /// Time until the oldest recorded request leaves the window.
+    /// Returns zero when no requests are recorded.
+    fn time_until_oldest_expires(&self, window: Duration) -> Duration {
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_secs();
+        match self.request_history.iter().map(|(t, _)| *t).min() {
+            Some(oldest) => {
+                let expires_at = oldest.saturating_add(window.as_secs());
+                Duration::from_secs(expires_at.saturating_sub(now))
+            }
+            None => Duration::ZERO,
+        }
     }
 
     /// Call this AFTER a successful API call to record actual usage
@@ -169,6 +218,24 @@ mod tests {
 
         // 101st token should fail
         assert!(stats.check_limit(&config, 1).is_err());
+    }
+
+    #[test]
+    fn test_check_limit_reports_retry_after() {
+        let config = RateLimitConfig {
+            max_requests_per_minute: 10,
+            max_tokens_per_minute: 100,
+        };
+        let mut stats = UsageStats::default();
+
+        stats.record_usage(50, 0);
+        stats.record_usage(50, 0);
+
+        // 101st token should fail, with a retry_after within the 60s window.
+        let err = stats.check_limit(&config, 1).expect_err("should exceed");
+        assert_eq!(err.message, "Tokens per minute");
+        assert!(err.retry_after <= Duration::from_secs(60));
+        assert!(err.retry_after > Duration::ZERO);
     }
 
     #[test]

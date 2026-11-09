@@ -563,6 +563,140 @@
     }
    ],
    "results": "grok-cli retargeted to OKF v1 (bot-repo PROTOCOL.md is the single contract, nothing invented). 480.1: trace forwarder default endpoint now /okf/traces; OkfConfig::trace_endpoint_path() translates a configured legacy /api/traces with a deprecation warn. 480.2: push_concept_to_remote posts to /okf/bundles/{bundle}/concepts. 480.3: load_okf_from_config fetches remote v1 manifest (GET {remote_url}/okf/manifest.json, ETag/304 cached) + per-entry GET /okf/knowledge/{kid}, mapped into OkfBundle/OkfConcept; any failure falls back to local knowledge_bundles dirs (remote first, local always loaded as offline fallback). Thread-spawn-with-runtime pattern used (okf_lookup is sync). Tests: 11 new mockito contract tests green; full lib suite 1112 passed, 0 failed; zero new warnings. Cross-repo grep: no remaining /api/traces targets (only legacy-translation code + deprecation docs) and no unprefixed /bundles/ POSTs in either repo."
+  },
+  {
+   "id": 481,
+   "title": "Fix per-model context windows for grok-4* (review H1 / Nov 6 M2)",
+   "description": "get_context_window returns 1,048,576 for every grok-4* model, but base grok-4 is 256,000 and grok-4.5/4.6/4.7 are 500,000. LEGACY_CONTEXT_BUDGET (220,000) exceeds LEGACY_CONTEXT_WINDOW (131,072). Give each variant its real window and a budget below it.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Verified against xAI docs 2026-11-09: grok-4 = 256,000 (retired from API 2026-05-15); grok-4.5/4.6/4.7 = 500,000; grok-4.3/4.20 = 1,048,576; grok-4-fast = 2,000,000; grok-build-0.1 = 256,000. Update src/constants.rs get_context_window/get_context_budget with per-model constants and budgets (grok-4 200k, 4.5/4.6/4.7 450k, 4.3/4.20 950k, legacy 100k). Update src/acp/context_trim.rs MODEL_CONTEXT_TABLE to the same per-model windows. Keep the grok-4 alias at 256,000 (conservative; alias may resolve to a newer checkpoint). Toolchain: rustc 1.99.0 (current stable in sandbox; 1.99.1 released 2026-10-15, 1.100.0 due 2026-11-12).",
+   "testStrategy": "cargo test --lib constants:: + acp::context_trim:: — per-model window/budget assertions for grok-4, grok-4.5, grok-4.6, grok-4.7, grok-4.3, grok-4.20, legacy. Verify LEGACY_CONTEXT_BUDGET < LEGACY_CONTEXT_WINDOW and every budget < its window.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. Per-model windows/budgets in src/constants.rs (grok-4 256k/200k, 4.5/4.6/4.7 500k/450k, 4.3/4.20 1M/950k, grok-4-fast 2M/1.9M, legacy 131k/100k); context_trim.rs delegates to the same helpers (duplicate table removed) and clamps the configured budget. Toolchain rustc 1.99.1 (rust-toolchain.toml set to 1.99). Tests: cargo test --lib constants:: 1 passed, context_trim 8 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings; cargo check --bins exit 0 (4 pre-existing installer warnings, untouched)."
+  },
+  {
+   "id": 482,
+   "title": "TPM limiter double-counts history; fail soft instead of hard (review H2 / Nov 6 M3)",
+   "description": "The local TPM limiter estimates the full prompt (chars/3 + 800) and adds recorded prior usage that already includes the same history (~33% over-count), then fails hard with 'Tokens per minute' before route(), so no retry runs. Most likely cause of John's 'too many tokens per minute' error.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "src/router/app_router.rs:190-192 and src/utils/rate_limiter.rs:49-73. Make the estimate accurate (chars/4, matching the ACP estimator) and fail soft: when the limit would be exceeded, wait until the window rolls over (retry_after from the oldest entry, capped at 60s), re-check once, and only then error. Return a structured retry_after so the caller can wait intelligently.",
+   "testStrategy": "cargo test --lib utils::rate_limiter:: + router::app_router:: — check_limit allows a first large request; over-limit returns a retry_after <= window; estimate uses chars/4. Verify the AppRouter waits and proceeds instead of erroring when the window rolls over.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. Estimate now chars/4 (was /3); check_limit returns RateLimitExceeded with retry_after; AppRouter + GrokClient wait for the window rollover (capped 60s) and re-check once, then error only if still over. Tests: cargo test --lib rate_limiter 5 passed (incl. new test_check_limit_reports_retry_after); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings."
+  },
+  {
+   "id": 483,
+   "title": "Trim CLI conversation_history before sending (review H3 / Nov 6 M1)",
+   "description": "CLI conversation_history in src/cli/commands/chat.rs grows without bound (pushes at 379/493/508/548, no trim anywhere). Only the ACP path trims. Long sessions overflow the context window.",
+   "status": "done",
+   "dependencies": [
+    481
+   ],
+   "priority": "high",
+   "details": "Apply the same trimming the ACP path already has: cap at MAX_HISTORY_MESSAGES (40) and trim to the model's context budget from H1 (get_context_budget) before each chat_completion_with_history call. Reuse crate::acp::context_trim::trim_to_token_budget. Never drop the system message or the last user turn.",
+   "testStrategy": "cargo test --lib cli::commands::chat:: — history capped at 40 messages after many turns; estimated tokens stay within get_context_budget(model) before send. Manual: long CLI session no longer grows history unboundedly.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. trim_conversation_history caps at MAX_HISTORY_MESSAGES (40) and trims to get_context_budget(model) before both chat_completion_with_history calls; system message + last turn never dropped. Tests: cargo test --lib cli::commands::chat 3 passed (incl. 2 new trim tests); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings."
+  },
+  {
+   "id": 484,
+   "title": "classify_error: 400/context_length_exceeded path + Retry-After (review H4 / Nov 6 M4)",
+   "description": "classify_error in src/router/backends/grok.rs has no 400 / context_length_exceeded path and no Retry-After handling. Overflow falls through to fatal BackendError with no trim-and-retry.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Add RouterError::ContextOverflow. Map 400 / context_length_exceeded / maximum context length to it. In GrokBackend::send, on ContextOverflow trim the request messages (drop oldest non-system) and retry once. Parse Retry-After from the 429 error string when present (best-effort until H5 lands the body) and sleep that long (capped 60s) before retrying.",
+   "testStrategy": "cargo test --lib router::backends::grok:: — classify 400 context_length_exceeded as ContextOverflow; classify 429 with Retry-After parses the delay; ContextOverflow is not retried blindly (single trim-and-retry). Verify send() retries once with trimmed messages on overflow.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. New RouterError::ContextOverflow; classify_error maps 400 context_length_exceeded / maximum context length; GrokBackend::send trims and retries once on overflow; parse_retry_after (rfind, 60s cap) honors Retry-After on 429. Tests: cargo test --lib router::backends::grok 13 passed (incl. new classify/parse/trim tests); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings."
+  },
+  {
+   "id": 485,
+   "title": "Preserve the 429 body + Retry-After from grok_api (review H5 / Nov 6 M5)",
+   "description": "grok_api 0.2.4 maps 429 to a bare Error::RateLimit unit variant, discarding the response body and the Retry-After header. 0.3.1 is NOT on crates.io (only a commented-out local path dep). The Retry-After plumbing in H4 cannot work until the body is preserved.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "0.3.1 is not published (crates.io latest is 0.2.4, 2026-09-23); publishing is John's call. The sibling path dep ../grok_crate/grok_api does not exist in this checkout and would break the build. Backport: vendor grok_api 0.2.4 under vendor/grok_api/ (src + Cargo.toml.orig + LICENSE), apply the minimal 429 fix (RateLimit carries body + retry_after_secs; client.rs reads the Retry-After header), and add [patch.crates-io] grok_api = { path = \"vendor/grok_api\" }. Add vendor/grok_api/README.md stating it is temporary until grok_api 0.3.1 is published, then the patch is removed. Do NOT publish anything.",
+   "testStrategy": "cargo test --lib router::backends::grok:: — a 429 error string now contains the body and retry-after value; classify_error parses it. cargo check + cargo test --lib green with the patch active. Verify Cargo.lock points grok_api at the vendored source.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. grok_api 0.2.4 vendored under vendor/grok_api/ with the minimal 429 fix (RateLimit now carries body + retry_after_secs; client.rs reads the Retry-After header before consuming the body). [patch.crates-io] in Cargo.toml; Cargo.lock confirms grok_api has no registry source (vendored). Temporary until grok_api 0.3.1 is published — then remove vendor + patch. Tests: cargo check --lib compiles the vendored grok_api; grok backend tests 13 passed; cargo clippy --lib 0 warnings. Nothing published."
+  },
+  {
+   "id": 486,
+   "title": "content_for must never return diff_summary as file content (review H6)",
+   "description": "PatchSet::content_for in src/hoh/state.rs:157-166 falls back to returning diff_summary (prose) as file content when intended_content is None. Latent file corruption; both producers are dead code today, so one wiring change arms it.",
+   "status": "pending",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Return None when intended_content is None (let apply_patch skip with an error, as it already does for multi-file patches). Add a regression test: a PatchSet with only diff_summary set returns None from content_for.",
+   "testStrategy": "cargo test --lib hoh::patch_applier:: hoh::state:: — content_for returns None when intended_content is None even if diff_summary is set; existing multi-file tests still pass.",
+   "subtasks": []
+  },
+  {
+   "id": 487,
+   "title": "Route HOH writes through SecurityPolicy / jail under .grok/hoh/ (review H9)",
+   "description": "HOH writes bypass SecurityPolicy entirely. apply_patch uses raw fs::write and never calls SecurityPolicy::validate_path_access. Defense in depth matters most in the autonomous path.",
+   "status": "pending",
+   "dependencies": [
+    486
+   ],
+   "priority": "high",
+   "details": "Route all HOH writes through SecurityPolicy, or jail them under <project_root>/.grok/hoh/. Enforce at the apply_patch entry point so every autonomous write is validated. Add tests: a write outside the jail is rejected; a write inside .grok/hoh/ succeeds.",
+   "testStrategy": "cargo test --lib hoh::patch_applier:: — writes outside the allowed jail are rejected; writes under .grok/hoh/ succeed; existing patch_applier tests still pass.",
+   "subtasks": []
+  },
+  {
+   "id": 488,
+   "title": "Meta score must measure outcomes, not activity (review H7)",
+   "description": "The HOH meta score starts at 0.68 with the apply gate at >0.70, so any single activity bonus (+0.04 to +0.08) pushes it over. It counts activity, not improvement — a participation trophy and a rubber-stamp gate.",
+   "status": "pending",
+   "dependencies": [],
+   "priority": "high",
+   "details": "src/hoh/outer_loop.rs:708-774 evaluate_phase; gate at :355. Start at a neutral base well below the threshold (e.g. 0.50), require evidence of improvement to cross it (a previously-failing test now passes, clippy warning count went down, a real bug from the task list was closed), and do not award points for merely producing artifacts. Prefer a small set of explicit, auditable pass/fail criteria over the hand-tuned additive formula.",
+   "testStrategy": "cargo test --lib hoh:: — an iteration that only produces scratch artifacts scores below the apply gate; an iteration with a real improvement (failing test now passes) scores above it. Verify the gate does not open on activity alone.",
+   "subtasks": []
+  },
+  {
+   "id": 489,
+   "title": "evaluate_with_helix must actually call Helix or be renamed (review H8)",
+   "description": "evaluate_with_helix in src/hoh/helix.rs:10-40 never calls Helix. It computes a local heuristic that rewards patch volume (+0.05 for any patches, +0.05 more for >=3), despite the name, the Doc/HOH.md:102 claim, and the 'independent cross-check' log message. There is no independent evaluation.",
+   "status": "pending",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Either actually call Helix (or a configured reviewer model) to judge the patches and use that judgment, or rename the function and fix Doc/HOH.md:102 to say what it is — a local patch-shape heuristic — and stop presenting it as an independent evaluation. Do not leave a function named evaluate_with_helix that does not evaluate with Helix. Remove the patch-volume reward either way. Note: actually calling Helix requires a live Helix/LLM backend, which is not available in the sandbox; the honest fix here is to rename it to a local heuristic, fix the doc, and remove the volume reward. Wiring a real Helix call is a follow-up for John.",
+   "testStrategy": "cargo test --lib hoh:: — no function named evaluate_with_helix remains and Doc/HOH.md no longer claims a Helix cross-check. Verify the volume bonus (+0.05 per patch count) is gone. Grep: no remaining 'evaluate_with_helix' or 'Helix evaluation' claims.",
+   "subtasks": []
+  },
+  {
+   "id": 490,
+   "title": "One canonical meta-score function (review H11)",
+   "description": "Two different meta-score computations exist: inline in evaluate_phase (src/hoh/outer_loop.rs:708-774) vs compute_meta_improvement_score (src/hoh/architecture_evolution.rs:308). Unclear which governs.",
+   "status": "pending",
+   "dependencies": [
+    488
+   ],
+   "priority": "high",
+   "details": "Have one canonical meta-score function, called from one place, with its formula and inputs documented. Delete or delegate the duplicate. Do this after H7 (task 488) reworks the scoring so the canonical function is the new outcome-based one.",
+   "testStrategy": "cargo test --lib hoh:: — exactly one meta-score computation exists (grep for the formula in one place); both call sites use it; scores agree between the evaluate path and the architecture-evolution path.",
+   "subtasks": []
+  },
+  {
+   "id": 491,
+   "title": "Decouple the FullAuto nudge threshold from the apply gate (review H10)",
+   "description": "The FullAuto suggestion fires when the score is consistently > 0.7 (src/hoh/architecture_evolution.rs:288) — the same 0.70 threshold as the apply gate (src/hoh/outer_loop.rs:355). The system can talk itself into unguarded auto-apply.",
+   "status": "pending",
+   "dependencies": [
+    488
+   ],
+   "priority": "high",
+   "details": "The FullAuto suggestion should require a different, stronger signal than the apply gate (e.g. N consecutive iterations in which a real, independently-verified improvement landed, with no rollbacks), and it should require an explicit human approval — never an automatic consequence of the same score that gates the apply.",
+   "testStrategy": "cargo test --lib hoh:: — a score above the apply gate alone does not trigger a FullAuto suggestion; the suggestion requires N consecutive verified improvements plus an explicit human approval flag.",
+   "subtasks": []
   }
  ]
 }

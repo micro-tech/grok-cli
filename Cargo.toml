@@ -160,3 +160,11 @@ incremental = true
 [features]
 default = []
 tgs-rag = ["tree-sitter", "tree-sitter-rust", "syn", "quote", "proc-macro2"]
+
+# H5 (review fix, Nov 6 M5): grok_api 0.2.4 discards the 429 body and the
+# Retry-After header. 0.3.1 is NOT on crates.io, and the sibling path dep
+# (../grok_crate/grok_api) does not exist in this checkout. Until 0.3.1 is
+# published, use the vendored 0.2.4 + 429 fix in vendor/grok_api/.
+# See vendor/grok_api/README.md. Remove this patch when 0.3.1 is published.
+[patch.crates-io]
+grok_api = { path = "vendor/grok_api" }
