@@ -50,6 +50,17 @@ stable; 1.100.0 due 2026-11-12).
   (`RateLimit` now carries `body` + `retry_after_secs`) behind a
   `[patch.crates-io]` entry. See `vendor/grok_api/README.md`. Temporary:
   remove the vendor + patch when grok_api 0.3.1 is published.
+- **CI follow-up (same day).** CI went red on this branch: two tests in
+  `src/acp/mod.rs` still asserted the pre-H1 budgets (grok-4-latest 950k,
+  grok-4 950k, legacy 220k); updated to the H1 values (450k / 200k /
+  100k). Also removed the broken `router_route_simple` bench and its
+  orphan `impl Router` from `benches/perf_bench.rs` (E0116/E0599/E0616 —
+  the impl was never valid Rust; `Router::route()` is async and `bayes`
+  is private). The Bayesian update + `best_intent` path it exercised is
+  already covered by the `bayesian_update_from_text` bench. Full suite
+  after the fix: 1325 passed / 0 failed (lib 1123, integration 176,
+  doctests 26); `cargo check --benches` clean; `cargo clippy --lib` 0
+  warnings.
 
 ### HOH patch-apply safety & correctness fixes (code review follow-up, 2026-11-09)
 

@@ -2744,26 +2744,29 @@ mod tests {
 
     #[test]
     fn test_model_context_budget_grok4_uses_grok4_budget() {
+        // H1: per-model budgets — grok-4.3/4.20 = 950k, grok-4-latest = 450k
+        // (500k flagship), bare grok-4 = 200k (256k window).
         assert_eq!(model_context_budget("grok-4.3", 220_000, 950_000), 950_000);
         assert_eq!(
             model_context_budget("grok-4-latest", 220_000, 950_000),
-            950_000
+            450_000
         );
-        assert_eq!(model_context_budget("grok-4", 220_000, 950_000), 950_000);
+        assert_eq!(model_context_budget("grok-4", 220_000, 950_000), 200_000);
     }
 
     #[test]
     fn test_model_context_budget_legacy_models_use_legacy_budget() {
-        assert_eq!(model_context_budget("grok-3", 220_000, 950_000), 220_000);
+        // H1: legacy budget deliberately cut 220k -> 100k (below the 131k window).
+        assert_eq!(model_context_budget("grok-3", 220_000, 950_000), 100_000);
         assert_eq!(
             model_context_budget("grok-3-mini", 220_000, 950_000),
-            220_000
+            100_000
         );
         assert_eq!(
             model_context_budget("grok-2-latest", 220_000, 950_000),
-            220_000
+            100_000
         );
-        assert_eq!(model_context_budget("grok-beta", 220_000, 950_000), 220_000);
+        assert_eq!(model_context_budget("grok-beta", 220_000, 950_000), 100_000);
     }
 
     #[test]
