@@ -1,15 +1,14 @@
 # grok-cli — Overview
 
 ## Router (src/router)
-- message_bus.rs — typed inter-agent message passing
-- employer.rs — dry-run simulation before destructive ops
-- employer.rs — repository structure exploration queries
-- cpu_router.rs — core tool loop call API — execute tools → append result → repeat
 - app_router.rs — application-level routing (chain vs code vs plan)
 - backend.rs — backend async trait (send + stream + health)
-- backends/grok.rs — AI Grok backend, think-reason handling
+- backends/grok.rs — Grok backend, think/reason handling
+- backends/mod.rs
+- cpu_router.rs — core tool loop call API — execute tools → append result → repeat
+- mod.rs
 - request.rs / response.rs — RouterRequest / RouterResponse
-- router_errors.rs — MaxRouterItems, ApiError, Timeout variants
+- router_error.rs — MaxRouterItems, ApiError, Timeout variants
 
 ## Context & Prompt (src/context)
 - engine.rs — orchestrates all context subsystems per turn
@@ -20,53 +19,66 @@
 - session_manager.rs — session context lifecycle cleanup
 - session_summarizer.rs — LLM-driven compression of old turns into summary
 - token_counter.rs / token_cache.rs — fast char-token estimation + cache
-- context_targets.rs — per-model token budgets
-- belief_states.rs — tracks context-level belief state
+- context_budget.rs — per-model token budgets
+- belief_state.rs — tracks context-level belief state
 - tool_optimizer.rs — prunes tool list to minimum needed per turn
+- agent_rules.rs, session_rules.rs — global + project agent rules
+- error.rs, prelude.rs, mod.rs
 
 ## Bayesian Engine (src/bayes)
 - engine.rs — BayesianEngine: posterior inference
 - belief_graph.rs — DAG of beliefs with conditional dependencies
 - priors.rs — compiled probability priors per intent category
 - likelihoods.rs — evidence likelihood tables
-- bayes_update.rs — Bayes update logic
-- profiles.rs — per-session user + task profile
+- updater.rs — Bayes update logic
+- profile.rs — per-session user + task profile
+- mod.rs
 
 ## RAG / Knowledge (src/rag)
 - api.rs — public retrieval API
 - compression.rs — chunk compression
 - persistence.rs — index serialization/deserialization
-- api_integrations.rs — ACP session hooks
-- integration.rs — DNA-shaped retrieval weighting
+- acp_integration.rs — ACP session hooks
+- dna_integration.rs — DNA-shaped retrieval weighting
+- config.rs, debug.rs, tests.rs, mod.rs
 - graph/ — code graph builder, node, edge, project_graph
-- index/ — chunk indexing, vector store, lookup
-- parser/ — lexer, symbol extraction
-- retrieval/ — cosine similarity, BM25, hybrid search
+- index/ — BM25 index + chunk indexing, vector store, lookup
+- parser/ — tree-sitter scanner, syn extractor
+- retrieval/ — hybrid search, graph expansion, reranker
 
 ## Memory (src/memory)
-- loader.rs — loads knowledge and session init
+- memory_manager.rs — central memory manager
+- short_term.rs — active scratchpad
 - long_term.rs — persistent knowledge
-- working.rs — active scratchpad
+- working.rs — working memory
 - episodic.rs — immediate past event log
-- context_archives.rs — context chunks / recall restore
+- context_archive.rs — context chunks / recall restore
 - context_compressor.rs — LLM-driven compression pass
+- compaction.rs — memory compaction
+- replace_slot.rs — slot replacement
 - skill_memory.rs — skill-scoped subspace
 - tool_memory.rs — tool result cache
 - types.rs — shared memory types
+- mod.rs
 
 ## Tools (src/tools)
-- File I/O tools
-- Shell tools
-- Web tools
-- Memory tools
-- MCP bridge tools
-- LSP tools
-- Discovery tools
-- Planning tools
-- Skills tools
-- System tools
-- Registry tools
-- Arbitration tools
+- registry.rs — central tool registry + dispatch
+- tool_context.rs, tool_error.rs
+- file_tools.rs — File I/O tools
+- shell_tools.rs — Shell tools
+- web_tools.rs — Web tools
+- memory_tools.rs — Memory tools
+- mcp_tools.rs — MCP bridge tools
+- lsp_tools.rs — LSP tools
+- discovery_tools.rs — Discovery tools
+- plan_tools.rs — Planning tools
+- skill_tools.rs — Skills tools
+- system_tools.rs — System tools
+- agent_tools.rs — Agent coordination tools
+- ai_tools.rs, vision.rs, vision_api.rs, image.rs — AI / vision tools
+- notebook_tools.rs, okf_tools.rs — Notebook / OKF tools
+- task_tools.rs, task_graph_tools.rs — Task management tools
+- sandbox.rs, tool_arbitration.rs, init.rs, mod.rs
 
 ## Engine (src/engine)
 - arbitration.rs — conflict resolution
@@ -77,32 +89,38 @@
 - memory_bridge.rs — memory integration
 - observability.rs — logs + traces
 - state.rs — agent state machine
+- mod.rs
 
 ## Safety & Security (src/safety, src/security)
 ### Safety
 - intent_validator.rs — validate intent before action
-- pre_write_hooks.rs — pre-write safety checks
+- pre_write_hook.rs — pre-write safety checks
 - suspicious_write_guard.rs — detect dangerous writes
 - dry_run.rs — simulate destructive ops
 - dna_safety.rs — DNA-level safety rules
 - tool_health_monitor.rs — tool health checks
+- diff_validator.rs, error.rs, tests.rs, mod.rs
 
 ### Security
+- audit.rs — security audit
 - mod.rs — security boundaries
 
 ## MCP Integration (src/mcp)
 - client.rs — MCP client
 - protocol.rs — MCP wire protocol
-- cod.rs — MCP code operations
+- config.rs — MCP server configuration
+- mod.rs
 
 ## Session DNA (src/session)
 - dna.rs — session DNA definition
-- cost_router.rs — cost routing logic
+- mod.rs
 
 ## Optimizer (src/optimizer)
+- cost_router.rs — cost routing logic
 - delta_prompt.rs — delta prompt generation
 - semantic_compression.rs — semantic compression
 - token_cache.rs — token cache
+- mod.rs
 
 ## RPL — Reasoning Prompt Layer (src/rpl)
 - layer.rs — RPL layer
@@ -110,62 +128,96 @@
 - validation.rs — RPL validation
 - logging.rs — RPL logging
 - suppression.rs — RPL suppression
-- manager.rs — RPL manager
+- mod.rs
 
 ## Skills System (src/skills)
 - manager.rs — load, activate, execute skills
 - auto_activate.rs — auto skill activation
 - rules.rs — skill rules
 - config.rs — skill config
+- catalog.rs, registry.rs, security.rs, mod.rs
 
 ## Display & Terminal (src/display, src/terminal)
 ### Display
-- banner
-- progress
-- RPL display
+- banner.rs, ascii_art.rs, terminal.rs, tips.rs, interactive.rs
+- components/ — input, settings_list, workflow_viewer
+- mod.rs
 
 ### Terminal
-- terminal UI components
+- display.rs, input.rs, progress.rs, mod.rs
 
 ## Utilities (src/utils)
 - auth.rs — auth helpers
 - chat_logger.rs — chat logging
-- net_linkers.rs — network helpers
+- client.rs, http.rs, network.rs — network / HTTP helpers
 - tool_logger.rs — tool logging
 - telemetry.rs — telemetry loop
 - history_compressor.rs — history compression
 - shell_permissions.rs — shell permission checks
+- context.rs, cot_guard.rs, messages.rs, perf.rs, rate_limiter.rs
+- self_update.rs, session.rs, version.rs, mod.rs
+
+## HOH — Harness of Harnesses (src/hoh)
+- ~97 modules; the scaffold / simulation loop that evaluates patches
+- Core: mod.rs, simulation.rs, evolution_engine.rs, outer_loop.rs, state.rs
+- Agents: agent_lifecycle.rs, agent_birth.rs, agent_evolution.rs, agent_personality.rs, agent_skill_evolution.rs, multi_agent.rs, multi_agent_orchestrator.rs, multi_agent_collaboration.rs, multi_agent_simulation.rs, specialized_agents.rs, research_agent.rs
+- Patches: patch_applier.rs, patch_arbitration.rs, patch_capture.rs, patch_fusion.rs, patch_optimizer.rs, patch_quality.rs, patch_risk.rs, patch_semantic_validation.rs
+- Tasks: task_selection.rs, task_prioritization.rs, task_dependency_graph.rs, task_difficulty.rs, task_impact.rs, task_quality.rs, task_risk.rs, task_reward.rs, task_progress.rs, task_completion_tracker.rs, task_completion_validator.rs, task_agent_assignment.rs, task_conflict_detector.rs, task_mutation.rs, task_recovery_planner.rs, task_semantic.rs
+- Knowledge: knowledge_compression.rs, knowledge_expansion.rs, knowledge_injection.rs, knowledge_rewriting.rs, cross_project_knowledge.rs, okf_tasklist_sync.rs
+- Safety & governance: safety.rs, governance.rs, ethics.rs, risk_planning.rs, failure_prediction.rs, regression_recovery.rs, recovery.rs, conflict_resolver.rs
+- Execution: scheduler.rs, resource_budget.rs, tool_control.rs, helix.rs, llm_backend.rs, multi_domain.rs, multi_project_orchestrator.rs, long_term_strategy.rs, meta_planning.rs, meta_evaluation.rs, continual_improvement.rs, self_improvement.rs, self_optimizer.rs
+- Testing & quality: testing.rs, test_generation.rs, architecture_simulation.rs, architecture_evolution.rs, architecture_stability.rs, codebase_health.rs, design_review.rs, generative_designer.rs, creativity.rs, autonomous_debugger.rs, autonomous_refactoring.rs, api_evolution.rs
+- Persistence & misc: persistence.rs, snapshot.rs, summary.rs, timeline.rs, visualizer.rs, doc_generator.rs, memory_consolidation.rs, memory_integration.rs, patch_capture.rs, skill.rs, planner.rs, tasklist_adapter.rs, tasklist_exporter.rs, tasklist_importer.rs, tasklist_telemetry.rs, cli.rs, agent_negotiation.rs, semantic_code.rs
+- generated/ — refactor/task progress stubs (scratch output)
+
+## Hooks (src/hooks)
+- loader.rs — hook loader
+- mod.rs
+
+## Knowledge (src/knowledge)
+- loader.rs — knowledge loader
+- okf.rs — OKF knowledge integration
+- mod.rs
+
+## Task Graph (src/task_graph)
+- mod.rs — task graph execution
+
+## Workflow (src/workflow)
+- runner.rs — workflow runner
+- trace.rs, trace_command.rs — workflow tracing
+- persistence.rs, okf.rs, mod.rs
 
 ## Build & Tooling
 - build.rs
-- scripts/build-markmap.ps1
-- scripts/test.ps1
-- scripts/telemetry_loop.ps1
+- scripts/build-markmaps.ps1
 - Makefile
 - package.json
 
 ## Entry Points
 - src/main.rs — tracing setup → cli::app::run()
 - src/visualizer.rs — exports pipeline as DOT/Graphviz
+- src/constants.rs, src/grok_client_ext.rs, src/lib.rs
+- src/bin/ — grok, installer, generate_markmaps, docgen, github_mcp, banner_demo, mcp_test_echo
 
 ## CLI Layer (src/cli)
-### Commands (command.rs)
-- chat.rs — interactive shell
-- code.rs — explain / review / generate
-- config.rs — runtime configuration UI
-
-### Config
-- config.rs — config loader
-
-### Wizard
-- wizard.rs — interactive API key wizard
+- app.rs — main CLI router + command dispatch
+- mod.rs, approval.rs, deprecated_io.rs, display_data.rs
+- commands/ — acp, audit, bayes, chat, code, config, health, history, init, sandbox, settings, setup, skills, tools, update
 
 ## ACP Server (src/acp)
 - mod.rs — GrokAdapter, sessions, BacklocksMap
 - protocol.rs — SessionUpdateAction, ContextBlock
 - tools.rs — LLM-related definitions
+- slash_commands.rs, elicitation.rs, handlers.rs, handoff.rs
+- mcp_bridge.rs, security.rs, status_bar.rs
+- chat_turn.rs, context_trim.rs, cancellation_test.rs
 
 ## Agent Core (src/agent)
-- manager.rs — user permission elicitation
+- manager.rs — agent manager, session lifecycle
 - planner.rs — task decomposition
-- simulator.rs — world simulation types
+- router.rs — agent routing
+- cost_router.rs, activity.rs, config.rs, loader.rs, simulator.rs
+- message_bus.rs — typed inter-agent message passing
+- mode.rs, mod.rs
+- explorer/ — evidence, json, runner, tools
+- prompts/ — explorer_prompt, shared prompts

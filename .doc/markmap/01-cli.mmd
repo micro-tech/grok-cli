@@ -17,6 +17,7 @@
 ## App Entry
 - `cli/app.rs` — main CLI router + command dispatch
 - `cli/mod.rs`
+- `cli/approval.rs`, `cli/display_data.rs`, `cli/deprecated_io.rs` — approval flow, display data, legacy I/O
 
 ## Commands
 - `cli/commands/`
@@ -25,7 +26,7 @@
   - `config.rs`, `setup.rs`, `skills.rs`, `tools.rs`
   - `init.rs` — interactive project initialization
   - `bayes.rs`, `audit.rs`, `history.rs`, `health.rs`, `sandbox.rs`
-  - `acp.rs`, `settings.rs`
+  - `acp.rs`, `settings.rs`, `update.rs` — ACP server mode, settings, self-update
 
 ## Interactive UI
 - `display/` — banner, progress, workflow_viewer, interactive components

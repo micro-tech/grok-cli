@@ -22,7 +22,10 @@
 - `rag/graph/` — builder, node, edge, project_graph
 
 ## Retrieval
-- `rag/retrieval/` — hybrid, graph_expansion, reranker, bm25
+- `rag/retrieval/` — hybrid, graph_expansion, reranker
+
+## Index
+- `rag/index/` — BM25 index + chunk indexing, vector store, lookup
 
 ## Parser
 - `rag/parser/` — tree_sitter_scanner, syn_extractor
@@ -31,6 +34,7 @@
 - `rag/acp_integration.rs`
 - `rag/dna_integration.rs`
 - `rag/compression.rs`, `rag/persistence.rs`
+- `rag/config.rs`, `rag/debug.rs`, `rag/tests.rs`
 
 ## Recent Changes
 - Graph-based RAG

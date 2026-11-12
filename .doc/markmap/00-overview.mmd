@@ -15,7 +15,7 @@
 - [Utils & Display](11-utils-display.html)
 
 ## Version
-- 0.2.5 — 2026-07-04
+- 0.3.1
 - Author: John McConnell
 - Repo: github.com/micro-tech/grok-cli
 
@@ -24,7 +24,8 @@
   - Only `cargo:rerun-if-changed=.doc/markmap` remains.
   - **Manual regeneration required**: `.\scripts\build-markmaps.ps1`
   - Script prefers global `markmap` / `markmap-cli`, falls back to `npx`.
-- New subsystems: `bayes/`, `rpl/`, `optimizer/`, `hooks/`, `workflow/`, `skills/`, `task_graph/`
+- New subsystems: `bayes/`, `rpl/`, `optimizer/`, `hooks/`, `workflow/`, `skills/`, `task_graph/`, `hoh/`, `knowledge/`
+- `hoh/` (Harness-of-Harnesses, ~97 modules) — scaffold / simulation loop that evaluates patches; see [1.mmd](1.html)
 - Expanded agent coordination, multi-agent tools, DNA-driven behavior, and safety layers.
 
 ## Entry Points

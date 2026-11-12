@@ -16,6 +16,7 @@
 
 ## Config
 - `config/mod.rs` — priority loading (env → CLI → files → defaults)
+- `config/` — accessors, acp, bayesian, context, defaults, env, experimental, general, logging, memory, model, network, okf, security_cfg, thinking, tools, ui
 
 ## Context Engine
 - `context/engine.rs`
@@ -23,6 +24,8 @@
 - `context/prompt_builder.rs`
 - `context/prompt_applicator.rs`
 - `context/tool_optimizer.rs`
+- `context/agent_rules.rs`, `context/session_rules.rs`, `context/belief_state.rs`
+- `context/error.rs`, `context/prelude.rs`, `context/mod.rs`
 
 ## Advanced Context Features
 - `context/prompt_cache.rs`, `prompt_delta.rs`, `prompt_diff.rs`
