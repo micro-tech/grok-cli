@@ -61,7 +61,7 @@ pub struct SelectionConfig {
     pub completed_ids: HashSet<u64>,
     /// Goal keywords forwarded to the prioritization model's `goals` signal.
     pub goal_keywords: Vec<String>,
-    /// Optional Helix evaluation score (0.0–1.0) for the evaluation-feedback
+    /// Optional patch-shape score (0.0–1.0) for the evaluation-feedback
     /// signal in the prioritization model.
     pub helix_score: Option<f32>,
     /// OKF terms forwarded to the prioritization model's OKF-relevance signal.
