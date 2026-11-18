@@ -718,6 +718,39 @@
    "details": "The FullAuto suggestion should require a different, stronger signal than the apply gate (e.g. N consecutive iterations in which a real, independently-verified improvement landed, with no rollbacks), and it should require an explicit human approval — never an automatic consequence of the same score that gates the apply.",
    "testStrategy": "cargo test --lib hoh:: — a score above the apply gate alone does not trigger a FullAuto suggestion; the suggestion requires N consecutive verified improvements plus an explicit human approval flag.",
    "subtasks": [],
-   "results": "Done 2026-11-09. The FullAuto self-refinement proposal (same 0.70 threshold as the apply gate) is deleted. Replacement: should_suggest_full_auto gate — streak >= 3 consecutive verified improvements AND no rollback AND explicit human approval; the meta score is not an input. Tests: hoh::architecture_evolution 3 passed (incl. new gate test covering all four combinations); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings. No caller wires the streak + approval through the gate yet, so no FullAuto suggestion is generated until that wiring lands."  }
+   "results": "Done 2026-11-09. The FullAuto self-refinement proposal (same 0.70 threshold as the apply gate) is deleted. Replacement: should_suggest_full_auto gate — streak >= 3 consecutive verified improvements AND no rollback AND explicit human approval; the meta score is not an input. Tests: hoh::architecture_evolution 3 passed (incl. new gate test covering all four combinations); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings. No caller wires the streak + approval through the gate yet, so no FullAuto suggestion is generated until that wiring lands."  },
+  {
+   "id": 494,
+   "title": "Warning-free bar: clean up 20 warnings on PreRelese (bench black_box deprecation + installer dead code)",
+   "description": "Nightly Quartermaster 2026-11-18 found `cargo check --all-targets` and `cargo build` passing but NOT warning-free on PreRelese 49b3bf1: 16x deprecated `criterion::black_box` in benches/perf_bench.rs (import line 11 + 15 use sites; use `std::hint::black_box()` instead) and 4x in src/bin/installer.rs (unused imports `std::io::{self, Write}` line 4 and `std::process::Command` line 6; fns `find_project_root` line 13 and `get_version` line 26 flagged never-used on Linux). Surveyor 1 verified 2026-11-18 by re-running `cargo check --all-targets` (16 + 4 warnings, exact match) and reading the code.",
+   "status": "pending",
+   "dependencies": [],
+   "priority": "low",
+   "details": "CORRECTION to the Quartermaster finding (verified by Surveyor 1, 2026-11-18): `find_project_root` and `get_version` are NOT dead code to delete. `find_project_root` IS called at installer.rs:52 and `get_version` at :53 and :202 \u2014 but every call site sits inside `#[cfg(windows)]` code, so on Linux rustc flags the fns as never-used. Deleting them would break the Windows installer build. The correct fix is `#[cfg(windows)]` gating, matching the pattern already used for every other fn in this file.\n\nCASCADE WARNING (verified by code reading): gating only the two fns is NOT enough. `use std::env` (line 2), `use std::fs` (line 3) and `use std::path::{Path, PathBuf}` (line 5) are used only inside Windows-gated fns or inside the two fns themselves, so once the fns are gated those three imports become unused on Linux too and will raise 3 NEW warnings. Gate all six Windows-only imports AND the two fns with `#[cfg(windows)]`: env, fs, io::{self, Write}, path::{Path, PathBuf}, process::Command, find_project_root, get_version. `use colored::*` stays ungated (main() uses it on all platforms); the winreg imports are already gated.\n\nBench fix: criterion 0.8.2 (Cargo.toml:133) deprecated `criterion::black_box` in favour of `std::hint::black_box` \u2014 same signature, drop-in. Change only the import (line 11: drop `black_box` from the criterion import, add `use std::hint::black_box;`); the 15 use sites are unchanged.\n\nRuled out: NOT a build or test failure \u2014 `cargo test --all-targets` is green (lib 1134 passed / 0 failed / 11 ignored; all targets 0 failed). Bench warnings are newly visible because PR #20 (task 481) repaired the bench so it compiles again; the black_box usage itself is old code. Installer warnings trace to commit e1e2c2b (2026-09-22), present in the Nov 17 HEAD too. Do not touch anything else.",
+   "testStrategy": "`cargo check --all-targets` emits 0 warnings; `cargo build` emits 0 warnings; `cargo test --all-targets` stays green (0 failures). Confirm no NEW warnings appear after gating (the env/fs/Path cascade). If the x86_64-pc-windows-gnu target is installed, also run `cargo check --target x86_64-pc-windows-gnu --bin installer` to prove the Windows build still compiles; otherwise note it as unverified in the task (Windows CI covers it).",
+   "subtasks": [
+    {
+     "id": 494.1,
+     "title": "Bench: swap criterion::black_box for std::hint::black_box (benches/perf_bench.rs:11)",
+     "status": "pending",
+     "dependencies": []
+    },
+    {
+     "id": 494.2,
+     "title": "Installer: #[cfg(windows)]-gate the 2 fns + 6 Windows-only imports (src/bin/installer.rs)",
+     "status": "pending",
+     "dependencies": []
+    },
+    {
+     "id": 494.3,
+     "title": "Verify: check/build 0 warnings (incl. no cascade warnings), tests green",
+     "status": "pending",
+     "dependencies": [
+      494.1,
+      494.2
+     ]
+    }
+   ]
+  }
  ]
 }
