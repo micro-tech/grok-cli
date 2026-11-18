@@ -1531,8 +1531,6 @@ dependencies = [
 [[package]]
 name = "grok_api"
 version = "0.2.4"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "97e47d2fa16b3ffd38b0ae05c29da1b42bc59efbbdf75c137ec8894dd63e80c5"
 dependencies = [
  "anyhow",
  "futures-util",

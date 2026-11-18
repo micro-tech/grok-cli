@@ -11,7 +11,6 @@
 use criterion::{Criterion, black_box, criterion_group, criterion_main};
 use std::time::Duration;
 
-use grok_cli::agent::router::Router;
 use grok_cli::bayes::BayesianEngine;
 use grok_cli::utils::messages;
 use grok_cli::utils::perf;
@@ -84,17 +83,14 @@ fn bench_bayesian_and_router(c: &mut Criterion) {
             black_box(engine.best_intent())
         })
     });
-
-    c.bench_function("router_route_simple", |b| {
-        // Use default_priors variant for deterministic cheap benchmark
-        let mut router = Router::new_with_default_priors();
-        b.iter(|| {
-            // We can't easily await in criterion sync bench, so we just exercise
-            // the update path that route() calls. Full async route is harder.
-            // This still exercises the hot Bayesian + intent logic.
-            let _ = black_box(router.route_sync_for_bench(black_box("run a shell command")));
-        })
-    });
+    // NOTE (2026-11-09, triple-review fix): the old `router_route_simple`
+    // bench is gone. It called `Router::route_sync_for_bench`, which was an
+    // orphan `impl Router` in this bench crate — invalid Rust (E0116) since
+    // Router lives in the lib, and it touched the private `bayes` field
+    // (E0616). Router::route() is async, so there is no public sync entry
+    // point to benchmark from here. The Bayesian update + best_intent path
+    // that bench exercised is already covered by `bayesian_update_from_text`
+    // above on the same engine, so nothing measurable is lost.
 }
 
 // ---------------------------------------------------------------------------
@@ -132,17 +128,3 @@ criterion_group! {
 }
 
 criterion_main!(perf);
-
-// ---------------------------------------------------------------------------
-// Small sync helper so we can benchmark the Bayesian part of routing without
-// pulling in full async machinery in the bench.
-// This is intentionally not part of the public Router API.
-// ---------------------------------------------------------------------------
-impl Router {
-    #[doc(hidden)]
-    pub fn route_sync_for_bench(&mut self, input: &str) -> Option<String> {
-        // Mirror the sync parts of the real route() method
-        self.bayes.update_from_text(input);
-        self.bayes.best_intent()
-    }
-}
