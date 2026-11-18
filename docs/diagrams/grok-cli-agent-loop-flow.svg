@@ -1,0 +1,159 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="grok-cli-agent-loop-flow-title grok-cli-agent-loop-flow-desc" id="grok-cli-agent-loop-flow-root">
+      <title id="grok-cli-agent-loop-flow-title">grok-cli agent loop flow</title>
+      <desc id="grok-cli-agent-loop-flow-desc">Agent loop in grok-cli: plan, trim history to the model budget, send via the router, execute tools and observe results, spawning sub-agents as needed; the HOH gate runs a local patch-shape evaluation with an outcome-based meta score, base 0.50, before suggesting FullAuto.</desc>
+      <defs>
+      <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;family=Noto+Serif:ital@0;1&amp;family=Noto+Sans+KR:wght@400;500;600&amp;family=Noto+Serif+KR:wght@400&amp;family=Noto+Sans+TC:wght@400;500;600&amp;family=Noto+Serif+TC:wght@400&amp;display=swap');
+      #grok-cli-agent-loop-flow-root { --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace; }
+      #grok-cli-agent-loop-flow-root { font-family: var(--font-sans); color: var(--color-ink); }
+      #grok-cli-agent-loop-flow-root .back { font-family: var(--font-mono);
+      font-size: 0.75rem;
+      margin-bottom: 1.5rem; }
+      #grok-cli-agent-loop-flow-root .back a { color: var(--color-muted); text-decoration: none; }
+      #grok-cli-agent-loop-flow-root .back a:hover { color: var(--color-accent); text-decoration: underline; }
+      #grok-cli-agent-loop-flow-root .diagram-container { overflow-x: auto; }</style>
+        <marker id="grok-cli-agent-loop-flow-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="grok-cli-agent-loop-flow-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+        <marker id="grok-cli-agent-loop-flow-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- ============ Arrows (behind boxes) ============ -->
+      <!-- 1. Start -> Plan -->
+      <line x1="340" y1="100" x2="340" y2="124" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+
+      <!-- 2. Plan -> Trim history -->
+      <line x1="340" y1="184" x2="340" y2="208" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+
+      <!-- 3. Trim history -> Send via router -->
+      <line x1="340" y1="268" x2="340" y2="292" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+
+      <!-- 4. Send via router -> tool_calls? diamond -->
+      <line x1="340" y1="352" x2="340" y2="372" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+
+      <!-- 5. Diamond -> Execute tools : YES -->
+      <line x1="450" y1="416" x2="600" y2="416" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+      <rect x="511" y="396" width="28" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="525" y="405" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">YES</text>
+
+      <!-- 6. Execute tools -> Observe results : RESULTS -->
+      <line x1="700" y1="448" x2="700" y2="516" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+      <rect x="708" y="476" width="64" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="740" y="485" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RESULTS</text>
+
+      <!-- 7. Observe results -> Trim history : NEXT TURN (dashed loop-back) -->
+      <path d="M 700,580 V 628 Q 700,636 692,636 H 168 Q 160,636 160,628 V 264 Q 160,256 168,256 H 240"
+            fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+      <rect x="100" y="430" width="52" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="126" y="439" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">NEXT TURN</text>
+
+      <!-- 8. Diamond -> Final answer : NO -->
+      <line x1="340" y1="460" x2="340" y2="570" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+      <rect x="348" y="510" width="28" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="362" y="519" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">NO</text>
+
+      <!-- 9. Execute tools -> Spawn sub-agent : SPAWN -->
+      <line x1="800" y1="416" x2="1020" y2="416" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+      <rect x="896" y="396" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="918" y="405" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SPAWN</text>
+
+      <!-- 10. Spawn sub-agent -> Observe results : RETURN (dashed) -->
+      <path d="M 1120,448 V 540 Q 1120,548 1112,548 H 800"
+            fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+      <rect x="936" y="528" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="958" y="537" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RETURN</text>
+
+      <!-- ============ Nodes ============ -->
+      <!-- Start -->
+      <ellipse cx="340" cy="76" rx="110" ry="24" fill="#4f5d75" stroke="#5a6580" stroke-width="1" fill-opacity="0.10"/>
+      <text x="340" y="80" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">User prompt</text>
+
+      <!-- Plan (backend) -->
+      <rect x="240" y="124" width="200" height="60" rx="6" fill="#f5f5f5"/>
+      <rect x="240" y="124" width="200" height="60" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="248" y="130" width="36" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="266" y="139" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PLAN</text>
+      <text x="340" y="150" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Plan</text>
+      <text x="340" y="166" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">planner &#183; PlanStep</text>
+
+      <!-- Trim history (focal) -->
+      <rect x="240" y="208" width="200" height="60" rx="6" fill="#f5f5f5"/>
+      <rect x="240" y="208" width="200" height="60" rx="6" fill="#bf4520" stroke="#bf4520" stroke-width="1" fill-opacity="0.08"/>
+      <rect x="248" y="214" width="36" height="12" rx="2" fill="none" stroke="#bf4520" stroke-width="0.8" stroke-opacity="0.50"/>
+      <text x="266" y="223" fill="#bf4520" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TRIM</text>
+      <text x="340" y="234" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Trim history</text>
+      <text x="340" y="250" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">cap 40 &#183; per-model budget</text>
+
+      <!-- Send via router (backend) -->
+      <rect x="240" y="292" width="200" height="60" rx="6" fill="#f5f5f5"/>
+      <rect x="240" y="292" width="200" height="60" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="248" y="298" width="36" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="266" y="307" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">SEND</text>
+      <text x="340" y="318" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Send via router</text>
+      <text x="340" y="334" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">prompt + tool definitions</text>
+
+      <!-- tool_calls? decision -->
+      <polygon points="340,372 450,416 340,460 230,416" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="340" y="420" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">tool_calls?</text>
+
+      <!-- Execute tools (backend) -->
+      <rect x="600" y="384" width="200" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="600" y="384" width="200" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="608" y="390" width="36" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="626" y="399" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">EXEC</text>
+      <text x="700" y="410" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Execute tools</text>
+      <text x="700" y="426" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">registry dispatch</text>
+
+      <!-- Observe results (store) -->
+      <rect x="600" y="516" width="200" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="600" y="516" width="200" height="64" rx="6" fill="#2d3142" stroke="#4f5d75" stroke-width="1" fill-opacity="0.05"/>
+      <rect x="608" y="522" width="52" height="12" rx="2" fill="none" stroke="#4f5d75" stroke-width="0.8" stroke-opacity="0.50"/>
+      <text x="634" y="531" fill="#4f5d75" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">OBSERVE</text>
+      <text x="700" y="542" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Observe results</text>
+      <text x="700" y="558" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">feed back into loop</text>
+
+      <!-- Spawn sub-agent (backend) -->
+      <rect x="1020" y="384" width="200" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="1020" y="384" width="200" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="1028" y="390" width="40" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="1048" y="399" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">AGENT</text>
+      <text x="1120" y="410" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Spawn sub-agent</text>
+      <text x="1120" y="426" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">spawn_agent &#183; parallel</text>
+
+      <!-- End: final answer + HOH gate note -->
+      <ellipse cx="340" cy="600" rx="130" ry="30" fill="#4f5d75" stroke="#5a6580" stroke-width="1" fill-opacity="0.10"/>
+      <text x="340" y="598" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Final answer</text>
+      <text x="340" y="614" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">HOH: local eval &#183; base 0.50</text>
+
+      <!-- Legend strip -->
+      <line x1="40" y1="664" x2="1240" y2="664" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.10"/>
+      <text x="40" y="680" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <ellipse cx="52" cy="692" rx="12" ry="7" fill="#4f5d75" stroke="#5a6580" stroke-width="1" fill-opacity="0.10"/>
+      <text x="70" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Start / end</text>
+
+      <rect x="150" y="686" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="170" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Step</text>
+
+      <polygon points="232,684 244,692 232,700 220,692" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="250" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Decision</text>
+
+      <rect x="322" y="686" width="14" height="10" rx="2" fill="#bf4520" stroke="#bf4520" stroke-width="1" fill-opacity="0.08"/>
+      <text x="342" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal (new trim)</text>
+
+      <rect x="452" y="686" width="14" height="10" rx="2" fill="#2d3142" stroke="#4f5d75" stroke-width="1" fill-opacity="0.05"/>
+      <text x="472" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Store / state</text>
+
+      <line x1="580" y1="692" x2="608" y2="692" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+      <text x="616" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Flow</text>
+
+      <line x1="668" y1="692" x2="696" y2="692" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#grok-cli-agent-loop-flow-arrow)"/>
+      <text x="704" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Loop-back</text>
+    </svg>
