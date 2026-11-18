@@ -654,47 +654,51 @@
    "id": 488,
    "title": "content_for must never return diff_summary as file content (review H6)",
    "description": "PatchSet::content_for in src/hoh/state.rs:157-166 falls back to returning diff_summary (prose) as file content when intended_content is None. Latent file corruption; both producers are dead code today, so one wiring change arms it.",
-   "status": "pending",
+   "status": "done",
    "dependencies": [],
    "priority": "high",
    "details": "Return None when intended_content is None (let apply_patch skip with an error, as it already does for multi-file patches). Add a regression test: a PatchSet with only diff_summary set returns None from content_for.",
    "testStrategy": "cargo test --lib hoh::patch_applier:: hoh::state:: — content_for returns None when intended_content is None even if diff_summary is set; existing multi-file tests still pass.",
-   "subtasks": []
+   "subtasks": [],
+   "results": "Done 2026-11-09. content_for returns None when intended_content is None (diff_summary fallback removed); content_to_apply returns empty string instead of diff_summary. Regression test content_for_never_returns_diff_summary added. Tests: hoh::patch_applier 6 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings; cargo check --bins exit 0 (4 pre-existing installer warnings, untouched)."
   },
   {
    "id": 489,
    "title": "Route HOH writes through SecurityPolicy / jail under .grok/hoh/ (review H9)",
    "description": "HOH writes bypass SecurityPolicy entirely. apply_patch uses raw fs::write and never calls SecurityPolicy::validate_path_access. Defense in depth matters most in the autonomous path.",
-   "status": "pending",
+   "status": "done",
    "dependencies": [
     488
    ],
    "priority": "high",
    "details": "Route all HOH writes through SecurityPolicy, or jail them under <project_root>/.grok/hoh/. Enforce at the apply_patch entry point so every autonomous write is validated. Add tests: a write outside the jail is rejected; a write inside .grok/hoh/ succeeds.",
    "testStrategy": "cargo test --lib hoh::patch_applier:: — writes outside the allowed jail are rejected; writes under .grok/hoh/ succeed; existing patch_applier tests still pass.",
-   "subtasks": []
+   "subtasks": [],
+   "results": "Done 2026-11-09. ApplyConfig gains a jail path; HOHManager sets it to <project_root>/.grok/hoh (data_dir). apply_patch refuses any target outside the jail (absolute, relative, or .. escape, lexically normalized) before mkdir/write, and skips backing up out-of-jail files. Regression tests write_outside_jail_is_rejected + dotdot_escape_out_of_jail_is_rejected added; real_config now jails to the test temp dir. Tests: hoh::patch_applier 6 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings (one needless-borrow warning fixed); cargo check --bins exit 0."
   },
   {
    "id": 490,
    "title": "Meta score must measure outcomes, not activity (review H7)",
    "description": "The HOH meta score starts at 0.68 with the apply gate at >0.70, so any single activity bonus (+0.04 to +0.08) pushes it over. It counts activity, not improvement — a participation trophy and a rubber-stamp gate.",
-   "status": "pending",
+   "status": "done",
    "dependencies": [],
    "priority": "high",
    "details": "src/hoh/outer_loop.rs:708-774 evaluate_phase; gate at :355. Start at a neutral base well below the threshold (e.g. 0.50), require evidence of improvement to cross it (a previously-failing test now passes, clippy warning count went down, a real bug from the task list was closed), and do not award points for merely producing artifacts. Prefer a small set of explicit, auditable pass/fail criteria over the hand-tuned additive formula.",
    "testStrategy": "cargo test --lib hoh:: — an iteration that only produces scratch artifacts scores below the apply gate; an iteration with a real improvement (failing test now passes) scores above it. Verify the gate does not open on activity alone.",
-   "subtasks": []
+   "subtasks": [],
+   "results": "Done 2026-11-17. evaluate_phase rewritten to outcome-based scoring via new pure function outcome_meta_score: neutral base 0.50 (was 0.68); explicit criteria only - tests pass +0.10, regression fixed (previously-failing tests now pass) +0.15, tests fail -0.10; no points for activity (materialized tasks, patch stubs, routes, actions) or patch shape/volume. Gate (0.70) opens only at 0.75 (tests pass + regression fixed). 5 new unit tests. Full suite 1309 passed / 0 failed (lib 1133, integration 150, doctests 26); cargo check --all-targets clean."
   },
   {
    "id": 491,
    "title": "evaluate_with_helix must actually call Helix or be renamed (review H8)",
    "description": "evaluate_with_helix in src/hoh/helix.rs:10-40 never calls Helix. It computes a local heuristic that rewards patch volume (+0.05 for any patches, +0.05 more for >=3), despite the name, the Doc/HOH.md:102 claim, and the 'independent cross-check' log message. There is no independent evaluation.",
-   "status": "pending",
+   "status": "done",
    "dependencies": [],
    "priority": "high",
    "details": "Either actually call Helix (or a configured reviewer model) to judge the patches and use that judgment, or rename the function and fix Doc/HOH.md:102 to say what it is — a local patch-shape heuristic — and stop presenting it as an independent evaluation. Do not leave a function named evaluate_with_helix that does not evaluate with Helix. Remove the patch-volume reward either way. Note: actually calling Helix requires a live Helix/LLM backend, which is not available in the sandbox; the honest fix here is to rename it to a local heuristic, fix the doc, and remove the volume reward. Wiring a real Helix call is a follow-up for John.",
    "testStrategy": "cargo test --lib hoh:: — no function named evaluate_with_helix remains and Doc/HOH.md no longer claims a Helix cross-check. Verify the volume bonus (+0.05 per patch count) is gone. Grep: no remaining 'evaluate_with_helix' or 'Helix evaluation' claims.",
-   "subtasks": []
+   "subtasks": [],
+   "results": "Done 2026-11-17. Renamed evaluate_with_helix to evaluate_patch_shape (local patch-shape heuristic); removed the patch-volume reward (+0.05 for any patches, +0.05 for >=3); fixed Doc/HOH.md (no longer claims a Helix evaluation or independent scoring); updated the call site and log message to 'local patch-shape evaluation'. Wiring a real Helix call is a follow-up for John. 2 new tests (volume not rewarded, focused diffs beat sprawling ones). Full suite 1309 passed / 0 failed."
   },
   {
    "id": 492,

@@ -75,7 +75,10 @@ pub async fn generate_improvements(state: &IterationState) -> Vec<String> {
     // === Evaluation signals (E loop) ===
     if let Some(last_eval) = state.evaluations.last() {
         if let Some(meta) = last_eval.meta_improvement_score {
-            if meta >= 0.82 {
+            // H7 (task 490) rescaled the meta score: it now tops out at
+            // 0.75 (tests pass + regression fixed), so the "strong score"
+            // threshold tracks the 0.70 apply gate instead of 0.82.
+            if meta >= 0.70 {
                 improvements.push("Increase autonomy_level or planner batch size — recent meta-improvement score is strong".to_string());
             } else if meta < 0.6 {
                 improvements.push("Slow down autonomous refactoring confidence threshold; meta score is low".to_string());

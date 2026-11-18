@@ -62,6 +62,37 @@ stable; 1.100.0 due 2026-11-12).
   doctests 26); `cargo check --benches` clean; `cargo clippy --lib` 0
   warnings.
 
+### Triple-review fixes, batch 2: HOH apply-path safety (H6–H9, 2026-11-09)
+
+- **H6 — `content_for` never returns `diff_summary` as file content.**
+  `PatchSet::content_for` no longer falls back to `diff_summary` (prose)
+  when `intended_content` is absent — it returns `None`, so `apply_patch`
+  skips the file with an error instead of writing a human-readable summary
+  into it. `content_to_apply` (preview-only helper) likewise returns an
+  empty string instead of `diff_summary` when there is no intended content.
+- **H7 — Meta score measures outcomes, not activity.** `evaluate_phase`
+  now scores from a neutral base of 0.50 (was 0.68) with explicit,
+  auditable criteria only: tests pass +0.10, regression fixed
+  (previously-failing tests now pass) +0.15, tests fail −0.10. No points
+  for producing artifacts (materialized tasks, patch stubs, routed
+  actions, refactoring actions) or for patch shape/volume. The 0.70 apply
+  gate now opens only at 0.75 (tests pass + regression fixed). New pure
+  function `outcome_meta_score` with 5 unit tests. (Continual-improvement
+  "strong score" threshold rescaled 0.82 → 0.70 to match the gate.)
+- **H8 — `evaluate_with_helix` renamed to `evaluate_patch_shape`.** The
+  function never called Helix; it is a local patch-shape heuristic, and
+  the patch-volume reward (+0.05 for any patches, +0.05 for >=3) is
+  removed. Doc/HOH.md no longer claims a Helix evaluation or independent
+  scoring, and the call site/log message say "local patch-shape
+  evaluation". Wiring a real Helix call is a follow-up.
+- **H9 — HOH writes are jailed under `.grok/hoh/`.** `ApplyConfig` gains a
+  `jail` path (the HOH manager sets it to `<project_root>/.grok/hoh`, its
+  data dir). `apply_patch` refuses any target outside the jail — absolute
+  paths, relative paths, and `..` escapes (lexically normalized before the
+  check) — before creating directories or writing, and out-of-jail files are
+  not even backed up. A patch may still *name* a real src/ path as an
+  "intended target", but the applier will not write it.
+
 ### OKF v1 protocol alignment (task 480, 2026-10-05)
 
 - Trace forwarder retargeted to the v1 canonical path `POST /okf/traces`
