@@ -99,7 +99,7 @@ All commands work **without an API key** because they are local orchestration + 
    - Execute scheduled work (real or simulated)
 
 3. **Evaluate + Improve**
-   - Run tests + Helix evaluation
+   - Run tests + local patch-shape evaluation
    - Meta-evaluation (410)
    - Continual improvement suggestions (361.5)
    - Feed signals (including rich test failures) back into the next cycle
@@ -159,7 +159,7 @@ All commands work **without an API key** because they are local orchestration + 
 - Resource allocation and shared goal planning
 
 ### 9. Evaluation & Continual Improvement Layer
-- Helix independent scoring
+- Local patch-shape scoring
 - Rich test output + failure hint capture
 - Continual improvement suggestions injected into next cycle
 - Patch metrics (count, files changed, avg diff length) influencing scores
