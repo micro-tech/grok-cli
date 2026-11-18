@@ -1,0 +1,155 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg viewBox="0 0 1280 720" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="grok-cli-router-flow-title grok-cli-router-flow-desc" id="grok-cli-router-flow-root">
+      <title id="grok-cli-router-flow-title">grok-cli router flow</title>
+      <desc id="grok-cli-router-flow-desc">Inference routing in grok-cli: the AppRouter TPM gate fails soft, CpuRouter dispatches by model-name prefix to GrokBackend over the vendored grok_api client, with 429 Retry-After waits and context-overflow trim-and-retry loops.</desc>
+      <defs>
+      <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;family=Noto+Serif:ital@0;1&amp;family=Noto+Sans+KR:wght@400;500;600&amp;family=Noto+Serif+KR:wght@400&amp;family=Noto+Sans+TC:wght@400;500;600&amp;family=Noto+Serif+TC:wght@400&amp;display=swap');
+      #grok-cli-router-flow-root { --color-paper:   #f5f5f5;
+      --color-ink:     #2d3142;
+      --color-muted:   #4f5d75;
+      --color-accent:  #bf4520;
+      --font-sans:     'Geist', system-ui, sans-serif;
+      --font-serif:    'Instrument Serif', serif;
+      --font-mono:     'Geist Mono', ui-monospace, monospace; }
+      #grok-cli-router-flow-root { font-family: var(--font-sans); color: var(--color-ink); }
+      #grok-cli-router-flow-root .back { font-family: var(--font-mono);
+      font-size: 0.75rem;
+      margin-bottom: 1.5rem; }
+      #grok-cli-router-flow-root .back a { color: var(--color-muted); text-decoration: none; }
+      #grok-cli-router-flow-root .back a:hover { color: var(--color-accent); text-decoration: underline; }
+      #grok-cli-router-flow-root .diagram-container { overflow-x: auto; }</style>
+        <marker id="grok-cli-router-flow-arrow" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#4f5d75"/></marker>
+        <marker id="grok-cli-router-flow-arrow-accent" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#bf4520"/></marker>
+        <marker id="grok-cli-router-flow-arrow-link" markerWidth="8" markerHeight="6" refX="7" refY="3" orient="auto"><polygon points="0 0, 8 3, 0 6" fill="#2e5aa8"/></marker>
+      </defs>
+
+      <rect width="100%" height="100%" fill="#f5f5f5"/>
+
+      <!-- ============ Arrows (behind boxes) ============ -->
+      <!-- 1. Start -> AppRouter + CpuRouter : REQUEST -->
+      <line x1="400" y1="100" x2="400" y2="124" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-router-flow-arrow)"/>
+      <rect x="408" y="106" width="64" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="440" y="115" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">REQUEST</text>
+
+      <!-- 2. Router -> GrokBackend -->
+      <line x1="400" y1="184" x2="400" y2="208" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-router-flow-arrow)"/>
+
+      <!-- 3. GrokBackend -> HTTPS request -->
+      <line x1="400" y1="268" x2="400" y2="292" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-router-flow-arrow)"/>
+
+      <!-- 4. HTTPS request -> Status diamond -->
+      <line x1="400" y1="352" x2="400" y2="372" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-router-flow-arrow)"/>
+
+      <!-- 5. Status -> Parse : 200 OK -->
+      <line x1="400" y1="460" x2="400" y2="484" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-router-flow-arrow)"/>
+      <rect x="408" y="466" width="48" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="432" y="475" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">200 OK</text>
+
+      <!-- 6. Parse -> End -->
+      <line x1="400" y1="544" x2="400" y2="576" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-router-flow-arrow)"/>
+
+      <!-- 7. Status -> Retry-After wait : 429 -->
+      <line x1="510" y1="416" x2="640" y2="416" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-router-flow-arrow)"/>
+      <rect x="561" y="396" width="28" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="575" y="405" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">429</text>
+
+      <!-- 8. Retry-After wait -> HTTPS request : RETRY (dashed loop-back) -->
+      <path d="M 750,448 V 576 Q 750,584 742,584 H 568 Q 560,584 560,576 V 330 Q 560,322 568,322 H 510"
+            fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#grok-cli-router-flow-arrow)"/>
+      <rect x="568" y="430" width="44" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="590" y="439" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RETRY</text>
+
+      <!-- 9. Status -> Trim + retry once : 400 -->
+      <line x1="290" y1="416" x2="260" y2="416" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-router-flow-arrow)"/>
+      <rect x="261" y="396" width="28" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="275" y="405" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">400</text>
+
+      <!-- 10. Trim + retry once -> HTTPS request : RETRY ONCE (dashed loop-back) -->
+      <path d="M 150,384 V 330 Q 150,322 158,322 H 290"
+            fill="none" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#grok-cli-router-flow-arrow)"/>
+      <rect x="86" y="340" width="56" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="114" y="349" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RETRY ONCE</text>
+
+      <!-- ============ Nodes ============ -->
+      <!-- Start -->
+      <ellipse cx="400" cy="76" rx="110" ry="24" fill="#4f5d75" stroke="#5a6580" stroke-width="1" fill-opacity="0.10"/>
+      <text x="400" y="80" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Inference request</text>
+
+      <!-- AppRouter + CpuRouter (backend) -->
+      <rect x="290" y="124" width="220" height="60" rx="6" fill="#f5f5f5"/>
+      <rect x="290" y="124" width="220" height="60" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="298" y="130" width="44" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="320" y="139" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ROUTE</text>
+      <text x="400" y="150" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">AppRouter &#183; CpuRouter</text>
+      <text x="400" y="166" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">TPM fail-soft &#183; prefix dispatch</text>
+
+      <!-- GrokBackend (focal) -->
+      <rect x="290" y="208" width="220" height="60" rx="6" fill="#f5f5f5"/>
+      <rect x="290" y="208" width="220" height="60" rx="6" fill="#bf4520" stroke="#bf4520" stroke-width="1" fill-opacity="0.08"/>
+      <rect x="298" y="214" width="52" height="12" rx="2" fill="none" stroke="#bf4520" stroke-width="0.8" stroke-opacity="0.50"/>
+      <text x="324" y="223" fill="#bf4520" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">BACKEND</text>
+      <text x="400" y="234" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">GrokBackend</text>
+      <text x="400" y="250" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">vendored grok_api 0.2.4</text>
+
+      <!-- HTTPS request (backend) -->
+      <rect x="290" y="292" width="220" height="60" rx="6" fill="#f5f5f5"/>
+      <rect x="290" y="292" width="220" height="60" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="298" y="298" width="40" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="318" y="307" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">HTTPS</text>
+      <text x="400" y="318" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">HTTPS request</text>
+      <text x="400" y="334" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">api.x.ai &#183; GROK_API_KEY</text>
+
+      <!-- Status decision -->
+      <polygon points="400,372 510,416 400,460 290,416" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="400" y="420" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">HTTP status?</text>
+
+      <!-- Parse response (backend) -->
+      <rect x="290" y="484" width="220" height="60" rx="6" fill="#f5f5f5"/>
+      <rect x="290" y="484" width="220" height="60" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="298" y="490" width="40" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="318" y="499" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">PARSE</text>
+      <text x="400" y="510" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Parse response</text>
+      <text x="400" y="526" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">extract tool_calls</text>
+
+      <!-- End -->
+      <ellipse cx="400" cy="600" rx="110" ry="24" fill="#4f5d75" stroke="#5a6580" stroke-width="1" fill-opacity="0.10"/>
+      <text x="400" y="604" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">tool_calls out</text>
+
+      <!-- Retry-After wait (backend) -->
+      <rect x="640" y="384" width="220" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="640" y="384" width="220" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="648" y="390" width="40" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="668" y="399" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RETRY</text>
+      <text x="750" y="410" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Retry-After wait</text>
+      <text x="750" y="426" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">429 &#183; wait up to 60 s</text>
+
+      <!-- Trim + retry once (backend) -->
+      <rect x="40" y="384" width="220" height="64" rx="6" fill="#f5f5f5"/>
+      <rect x="40" y="384" width="220" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <rect x="48" y="390" width="40" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
+      <text x="68" y="399" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RETRY</text>
+      <text x="150" y="410" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Trim + retry once</text>
+      <text x="150" y="426" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">never system &#183; never last turn</text>
+
+      <!-- Legend strip -->
+      <line x1="40" y1="664" x2="1240" y2="664" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.10"/>
+      <text x="40" y="680" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" letter-spacing="0.18em">LEGEND</text>
+
+      <ellipse cx="52" cy="692" rx="12" ry="7" fill="#4f5d75" stroke="#5a6580" stroke-width="1" fill-opacity="0.10"/>
+      <text x="70" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Start / end</text>
+
+      <rect x="150" y="686" width="14" height="10" rx="2" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="170" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Step</text>
+
+      <polygon points="232,684 244,692 232,700 220,692" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <text x="250" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Decision</text>
+
+      <rect x="322" y="686" width="14" height="10" rx="2" fill="#bf4520" stroke="#bf4520" stroke-width="1" fill-opacity="0.08"/>
+      <text x="342" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Focal (vendored)</text>
+
+      <line x1="452" y1="692" x2="480" y2="692" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-router-flow-arrow)"/>
+      <text x="488" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Flow</text>
+
+      <line x1="540" y1="692" x2="568" y2="692" stroke="#4f5d75" stroke-width="1" stroke-dasharray="4,3" marker-end="url(#grok-cli-router-flow-arrow)"/>
+      <text x="576" y="695" fill="#4f5d75" font-size="8.5" font-family="'Geist', sans-serif">Retry loop</text>
+    </svg>

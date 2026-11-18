@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <svg viewBox="0 0 1040 600" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="grok-cli-architecture-title grok-cli-architecture-desc" id="grok-cli-architecture-root">
       <title id="grok-cli-architecture-title">grok-cli architecture and data flow</title>
-      <desc id="grok-cli-architecture-desc">Agentic loop in grok-cli: the CLI feeds the agent loop, the router calls the xAI API, tool calls dispatch through the registry to local tools and MCP servers, with context and memory feeding the loop.</desc>
+      <desc id="grok-cli-architecture-desc">Agentic loop in grok-cli: the CLI feeds the agent loop, which trims history to the model budget before each send; the router calls the xAI API through the vendored grok_api client with overflow trim-and-retry; tool calls dispatch through the registry to local tools and MCP servers, with context and memory feeding the loop.</desc>
       <defs>
       <style>@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&amp;family=Geist:wght@400;500;600&amp;family=Geist+Mono:wght@400;500;600&amp;family=Noto+Serif:ital@0;1&amp;family=Noto+Sans+KR:wght@400;500;600&amp;family=Noto+Serif+KR:wght@400&amp;family=Noto+Sans+TC:wght@400;500;600&amp;family=Noto+Serif+TC:wght@400&amp;display=swap');
       #grok-cli-architecture-root { --color-paper:   #f5f5f5;
@@ -54,9 +54,9 @@
       <text x="465" y="127" fill="#2e5aa8" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">RESPONSE</text>
 
       <!-- 6. Agent loop -> Tool registry : TOOL CALLS -->
-      <line x1="330" y1="254" x2="330" y2="310" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-architecture-arrow)"/>
-      <rect x="338" y="274" width="92" height="12" rx="2" fill="#f5f5f5"/>
-      <text x="384" y="283" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TOOL CALLS</text>
+      <line x1="330" y1="278" x2="330" y2="310" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-architecture-arrow)"/>
+      <rect x="338" y="288" width="92" height="12" rx="2" fill="#f5f5f5"/>
+      <text x="384" y="297" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">TOOL CALLS</text>
 
       <!-- 7. Registry -> Local tools : EXECUTE -->
       <line x1="216" y1="342" x2="180" y2="342" stroke="#4f5d75" stroke-width="1.2" marker-end="url(#grok-cli-architecture-arrow)"/>
@@ -94,21 +94,29 @@
       <text x="110" y="226" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">CLI &amp; display</text>
       <text x="110" y="242" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">clap &#183; REPL &#183; terminal UI</text>
 
-      <!-- Agent loop (backend) -->
-      <rect x="216" y="190" width="150" height="64" rx="6" fill="#f5f5f5"/>
-      <rect x="216" y="190" width="150" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <!-- Agent loop (backend) — click through to grok-cli-agent-loop-flow.html -->
+      <a href="grok-cli-agent-loop-flow.html">
+      <rect x="216" y="190" width="150" height="88" rx="6" fill="#f5f5f5"/>
+      <rect x="216" y="190" width="150" height="88" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
       <rect x="224" y="198" width="34" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
       <text x="241" y="207" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">LOOP</text>
-      <text x="291" y="226" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Agent loop</text>
-      <text x="291" y="242" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">agentic loop &#183; planner</text>
+      <text x="291" y="222" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Agent loop</text>
+      <text x="291" y="236" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">trim history to budget</text>
+      <text x="291" y="250" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">planner &#183; sub-agents</text>
+      <text x="291" y="264" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">HOH: local patch-shape eval</text>
+      </a>
 
-      <!-- Router (backend) -->
-      <rect x="402" y="190" width="140" height="64" rx="6" fill="#f5f5f5"/>
-      <rect x="402" y="190" width="140" height="64" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
+      <!-- Router (backend) — click through to grok-cli-router-flow.html -->
+      <a href="grok-cli-router-flow.html">
+      <rect x="402" y="190" width="140" height="88" rx="6" fill="#f5f5f5"/>
+      <rect x="402" y="190" width="140" height="88" rx="6" fill="#ffffff" stroke="#2d3142" stroke-width="1"/>
       <rect x="410" y="198" width="40" height="12" rx="2" fill="none" stroke="#2d3142" stroke-width="0.8" stroke-opacity="0.40"/>
       <text x="430" y="207" fill="#2d3142" font-size="7" font-family="'Geist Mono', monospace" text-anchor="middle" letter-spacing="0.08em">ROUTE</text>
-      <text x="472" y="226" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Router</text>
-      <text x="472" y="242" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">CpuRouter &#183; GrokBackend</text>
+      <text x="472" y="222" fill="#2d3142" font-size="12" font-weight="600" font-family="'Geist', sans-serif" text-anchor="middle">Router</text>
+      <text x="472" y="236" fill="#4f5d75" font-size="9" font-family="'Geist Mono', monospace" text-anchor="middle">CpuRouter &#183; GrokBackend</text>
+      <text x="472" y="250" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">vendored grok_api 0.2.4</text>
+      <text x="472" y="264" fill="#4f5d75" font-size="8" font-family="'Geist Mono', monospace" text-anchor="middle">overflow trim &#183; TPM soft</text>
+      </a>
 
       <!-- xAI API (external) -->
       <rect x="578" y="190" width="150" height="64" rx="6" fill="#f5f5f5"/>
