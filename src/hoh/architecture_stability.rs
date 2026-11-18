@@ -41,7 +41,7 @@ pub fn analyze_stability(project_root: &Path) -> StabilityReport {
             (rel, *l)
         })
         .collect();
-    large_files.sort_by(|a, b| b.1.cmp(&a.1));
+    large_files.sort_by_key(|b| std::cmp::Reverse(b.1));
     large_files.truncate(10);
 
     // High coupling: modules with many `use crate::` imports (rough proxy)

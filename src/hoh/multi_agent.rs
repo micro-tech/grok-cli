@@ -60,7 +60,7 @@ impl MultiAgentRunner {
     /// Run all roles and collect their contributions.
     pub async fn run(&mut self, state: &mut IterationState) -> Vec<AgentContribution> {
         // Sort by priority descending
-        self.roles.sort_by(|a, b| b.priority.cmp(&a.priority));
+        self.roles.sort_by_key(|r| std::cmp::Reverse(r.priority));
 
         let mut contributions = Vec::new();
         for role in &self.roles {
@@ -135,7 +135,7 @@ impl MultiAgentRunner {
 }
 
 /// Assign tasks from a flat list to roles in round-robin fashion.
-pub fn assign_tasks_to_roles(roles: &mut Vec<AgentRole>, tasks: &[String]) {
+pub fn assign_tasks_to_roles(roles: &mut [AgentRole], tasks: &[String]) {
     if roles.is_empty() || tasks.is_empty() {
         return;
     }

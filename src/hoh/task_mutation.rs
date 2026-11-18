@@ -352,7 +352,7 @@ impl TaskMutationRules {
     }
 }
 
-fn find_task_mut<'a>(id: u64, tasks: &'a mut [Task]) -> Option<&'a mut Task> {
+fn find_task_mut(id: u64, tasks: &mut [Task]) -> Option<&mut Task> {
     for t in tasks {
         if t.id == id {
             return Some(t);
@@ -364,7 +364,7 @@ fn find_task_mut<'a>(id: u64, tasks: &'a mut [Task]) -> Option<&'a mut Task> {
     None
 }
 
-fn find_task<'a>(id: u64, tasks: &'a [Task]) -> Option<&'a Task> {
+fn find_task(id: u64, tasks: &[Task]) -> Option<&Task> {
     for t in tasks {
         if t.id == id {
             return Some(t);

@@ -114,7 +114,7 @@ impl SnapshotManager {
         };
 
         let json = serde_json::to_string_pretty(&snapshot)
-            .map_err(|e| io::Error::new(io::ErrorKind::Other, e))?;
+            .map_err(io::Error::other)?;
         tokio::fs::write(self.meta_path(&id), json).await?;
 
         tracing::info!(
@@ -173,7 +173,7 @@ impl SnapshotManager {
                     .and_then(|s| serde_json::from_str(&s).ok())
             })
             .collect();
-        snaps.sort_by(|a, b| b.timestamp.cmp(&a.timestamp));
+        snaps.sort_by_key(|b| std::cmp::Reverse(b.timestamp));
         snaps
     }
 

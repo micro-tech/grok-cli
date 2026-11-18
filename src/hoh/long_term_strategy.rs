@@ -74,8 +74,8 @@ impl LongTermStrategyEngine {
         // === Heuristic strategy generation / evolution ===
 
         // 1. Core self-improvement strategy (meta)
-        if goal_text.contains("self") || goal_text.contains("meta") || goal_text.contains("improve") {
-            if !self.strategies.iter().any(|s| s.description.contains("self-improvement") && s.status == StrategyStatus::Active) {
+        if (goal_text.contains("self") || goal_text.contains("meta") || goal_text.contains("improve"))
+            && !self.strategies.iter().any(|s| s.description.contains("self-improvement") && s.status == StrategyStatus::Active) {
                 let strat = StrategicGoal {
                     id: format!("strat-self-improve-{}", current_iteration),
                     description: "Drive continuous, measurable self-improvement of the HOH system itself".to_string(),
@@ -101,11 +101,10 @@ impl LongTermStrategyEngine {
                 self.strategies.push(strat.clone());
                 new_or_updated.push(strat);
             }
-        }
 
         // 2. Multi-agent / Harness-of-Harness maturity
-        if goal_text.contains("agent") || goal_text.contains("multi") || goal_text.contains("harness") || goal_text.contains("orchestrat") {
-            if !self.strategies.iter().any(|s| s.description.contains("multi-agent harness")) {
+        if (goal_text.contains("agent") || goal_text.contains("multi") || goal_text.contains("harness") || goal_text.contains("orchestrat"))
+            && !self.strategies.iter().any(|s| s.description.contains("multi-agent harness")) {
                 let strat = StrategicGoal {
                     id: format!("strat-multi-agent-{}", current_iteration),
                     description: "Evolve HOH into a mature Harness-of-Harnesses with effective multi-agent collaboration and skill evolution".to_string(),
@@ -125,11 +124,10 @@ impl LongTermStrategyEngine {
                 self.strategies.push(strat.clone());
                 new_or_updated.push(strat);
             }
-        }
 
         // 3. Innovation & creativity acceleration
-        if goal_text.contains("creativ") || goal_text.contains("novel") || goal_text.contains("idea") {
-            if !self.strategies.iter().any(|s| s.description.contains("innovation")) {
+        if (goal_text.contains("creativ") || goal_text.contains("novel") || goal_text.contains("idea"))
+            && !self.strategies.iter().any(|s| s.description.contains("innovation")) {
                 let strat = StrategicGoal {
                     id: format!("strat-innovation-{}", current_iteration),
                     description: "Accelerate generation and successful integration of novel, high-value ideas".to_string(),
@@ -148,11 +146,10 @@ impl LongTermStrategyEngine {
                 self.strategies.push(strat.clone());
                 new_or_updated.push(strat);
             }
-        }
 
         // 4. Long-term knowledge & memory (cross-iteration learning)
-        if goal_text.contains("memory") || goal_text.contains("knowledge") || goal_text.contains("okf") {
-            if !self.strategies.iter().any(|s| s.description.contains("long-term knowledge")) {
+        if (goal_text.contains("memory") || goal_text.contains("knowledge") || goal_text.contains("okf"))
+            && !self.strategies.iter().any(|s| s.description.contains("long-term knowledge")) {
                 let strat = StrategicGoal {
                     id: format!("strat-knowledge-{}", current_iteration),
                     description: "Build robust long-term knowledge consolidation and retrieval across iterations".to_string(),
@@ -169,7 +166,6 @@ impl LongTermStrategyEngine {
                 self.strategies.push(strat.clone());
                 new_or_updated.push(strat);
             }
-        }
 
         // Review & update existing strategies
         for strat in &mut self.strategies {

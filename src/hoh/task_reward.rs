@@ -76,7 +76,7 @@ pub fn compute_reward(
 }
 
 /// Rank a batch of completed tasks by reward.
-pub fn rank_by_reward(signals: &mut Vec<RewardSignal>) {
+pub fn rank_by_reward(signals: &mut [RewardSignal]) {
     signals.sort_by(|a, b| b.reward.partial_cmp(&a.reward).unwrap_or(std::cmp::Ordering::Equal));
 }
 

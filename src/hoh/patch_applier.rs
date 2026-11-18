@@ -9,23 +9,12 @@ use std::fs;
 use std::path::{Path, PathBuf};
 use tracing::{info, warn};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct ApplyResult {
     pub applied: bool,
     pub files_written: Vec<String>,
     pub errors: Vec<String>,
     pub backup_dir: Option<PathBuf>,
-}
-
-impl Default for ApplyResult {
-    fn default() -> Self {
-        Self {
-            applied: false,
-            files_written: vec![],
-            errors: vec![],
-            backup_dir: None,
-        }
-    }
 }
 
 /// Configuration for patch application.
@@ -220,7 +209,7 @@ pub async fn apply_patch(
 fn create_backup_dir(root: &Path, patch_id: &str) -> Result<PathBuf, HOHError> {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap()
+        .unwrap_or_default()
         .as_secs();
     let dir = root.join(format!("{}-{}", patch_id, now));
     fs::create_dir_all(&dir)?;

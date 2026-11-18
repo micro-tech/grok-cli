@@ -162,7 +162,7 @@ impl TaskDependencyGraph {
                 }
                 self.edges
                     .get(&id)
-                    .map_or(true, |deps| deps.iter().all(|d| completed.contains(d)))
+                    .is_none_or(|deps| deps.iter().all(|d| completed.contains(d)))
             })
             .copied()
             .collect()

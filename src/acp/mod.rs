@@ -504,7 +504,7 @@ impl GrokAcpAgent {
         {
             let mut router = AppRouter::new(api_key, self.config.timeout_secs)?;
             // Attach rate limiting so enforcement happens on every chat_completion_with_history
-            router = router.with_rate_limits(self.config.rate_limits.clone());
+            router = router.with_rate_limits(self.config.rate_limits);
             // Prompt-cache affinity: one ACP process serves one session, so a
             // process-stable key routes the session's turns to the same xAI
             // server and the automatic prefix cache hits across turns.

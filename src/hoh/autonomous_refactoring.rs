@@ -372,7 +372,7 @@ impl AutonomousRefactoringEngine {
     ) -> crate::hoh::state::PatchSet {
         let scratch = crate::hoh::persistence::scratch_dir(&self.project_root);
         let target_files = if action.target_files.is_empty() {
-            vec![scratch.join(format!("refactor_{}.rs", action.id.split('-').last().unwrap_or("refactor"))).to_string_lossy().to_string()]
+            vec![scratch.join(format!("refactor_{}.rs", action.id.split('-').next_back().unwrap_or("refactor"))).to_string_lossy().to_string()]
         } else {
             // Force everything diagnostic into scratch for safety
             action.target_files.iter().map(|f| {
@@ -401,7 +401,7 @@ impl AutonomousRefactoringEngine {
             "autonomous_refactoring_3613",
         );
 
-        patch.id = format!("refactor-{}-{}", action.id.split('-').last().unwrap_or("x"), action.action_type.clone() as u8);
+        patch.id = format!("refactor-{}-{}", action.id.split('-').next_back().unwrap_or("x"), action.action_type.clone() as u8);
         patch
     }
 
@@ -413,7 +413,7 @@ impl AutonomousRefactoringEngine {
     fn build_intended_content_for_action(&self, action: &RefactoringAction) -> String {
         let mut content = String::new();
 
-        content.push_str(&format!("//! HOH 361.3 Auto-generated from refactoring action\n"));
+        content.push_str("//! HOH 361.3 Auto-generated from refactoring action\n");
         content.push_str(&format!("//! Title: {}\n", action.title));
         content.push_str(&format!("//! Confidence: {:.2}  Effort: {:.1}\n", action.confidence, action.estimated_effort));
         content.push_str(&format!("//! Source proposal: {}\n\n", action.source_proposal_id));
@@ -424,7 +424,7 @@ impl AutonomousRefactoringEngine {
         for change in &action.suggested_changes {
             content.push_str(&format!("//! - {}\n", change));
         }
-        content.push_str("\n");
+        content.push('\n');
 
         // === Tiny, safe, real patches (user request) ===
         // These are deliberately small, focused, and safe to apply.
@@ -489,7 +489,7 @@ impl AutonomousRefactoringEngine {
 
         // Always append a small safe "task metadata" footer for traceability
         content.push_str("\n// --- 361.3 Patch Metadata ---\n");
-        content.push_str(&format!("// Generated at: real-time HOH cycle\n"));
+        content.push_str("// Generated at: real-time HOH cycle\n");
         content.push_str(&format!("// Action ID: {}\n", action.id));
 
         content
@@ -522,7 +522,7 @@ impl AutonomousRefactoringEngine {
                 Some(meta_content),
                 "3613_tiny_safe_metadata",
             );
-            p.id = format!("tiny-meta-{}", action.id.split('-').last().unwrap_or("x"));
+            p.id = format!("tiny-meta-{}", action.id.split('-').next_back().unwrap_or("x"));
             patches.push(p);
         }
 

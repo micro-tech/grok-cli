@@ -80,7 +80,7 @@ pub fn split_patch(patch: &PatchSet, max_files: usize) -> Vec<PatchSet> {
             id: format!("{}-split-{}", patch.id, i),
             files_changed: chunk.to_vec(),
             diff_summary: format!("[Part {}/{}] {}", i + 1,
-                (patch.files_changed.len() + max_files - 1) / max_files,
+                patch.files_changed.len().div_ceil(max_files),
                 patch.diff_summary),
             source: patch.source.clone(),
             timestamp: patch.timestamp,

@@ -54,7 +54,7 @@ pub async fn handle_chat(options: ChatOptions<'_>) -> Result<()> {
         crate::utils::client::initialize_router_with_limits(
             options.api_key,
             options.timeout_secs,
-            options.rate_limit_config.clone(),
+            options.rate_limit_config,
         )?
     } else {
         initialize_router(options.api_key, options.timeout_secs)?

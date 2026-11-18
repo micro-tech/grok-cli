@@ -240,13 +240,11 @@ impl CreativityEngine {
 
         let combined = format!("{} {}", goals.join(" "), recent_tasks.join(" ")).to_lowercase();
 
-        let candidates = vec![
-            ("Autonomous Tool Synthesis Layer", "HOH learns to design and register new tools at runtime when it detects repeated workarounds."),
+        let candidates = [("Autonomous Tool Synthesis Layer", "HOH learns to design and register new tools at runtime when it detects repeated workarounds."),
             ("Cross-Iteration Memory Weaving", "Weave short-term memories from many iterations into a single queryable 'project soul' concept store."),
             ("Predictive Stagnation Detector", "Use trajectory simulation to predict when the project is about to stop improving and trigger creative diversification."),
             ("Self-Modifying Governance Constitution", "The governance rules themselves become evolvable code that HOH can propose amendments to (with extreme safeguards)."),
-            ("Idea Marketplace Between Agents", "Agents can publish, bid on, and trade creative ideas as first-class artifacts."),
-        ];
+            ("Idea Marketplace Between Agents", "Agents can publish, bid on, and trade creative ideas as first-class artifacts.")];
 
         for (i, (title, desc)) in candidates.iter().enumerate().take(count) {
             if combined.contains("agent") || combined.contains("creative") || i < 2 {
@@ -383,12 +381,10 @@ impl CreativityEngine {
                         ),
                         priority: "high".to_string(),
                         status: "pending".to_string(),
-                        test_strategy: format!(
-                            "1. Implement the core idea described above.\n\
+                        test_strategy: "1. Implement the core idea described above.\n\
                              2. Add unit tests in the appropriate module.\n\
                              3. Wire any new behavior into HOHPlanner or outer_loop if applicable.\n\
-                             4. Verify the idea produces measurable improvement (use simulation mode first)."
-                        ),
+                             4. Verify the idea produces measurable improvement (use simulation mode first).".to_string(),
                         ..Default::default()
                     },
                 }
