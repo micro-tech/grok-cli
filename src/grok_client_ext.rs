@@ -200,14 +200,35 @@ impl GrokClient {
 
         // === Rate limit enforcement (COR-5) ===
         // If RateLimitConfig was provided via with_rate_limits(), enforce before the call.
-        // We use a conservative token estimate based on prompt size.
+        // We use a token estimate based on prompt size (~1 token per 4 chars,
+        // matching the ACP estimator); +600 headroom for the response.
+        // The old /3 divisor over-estimated by ~33%, which tripped the
+        // limiter early on long conversations (H2 fix).
         if let Some(ref cfg) = self.rate_limit_config {
             let prompt_chars: usize = messages.iter().map(|v| v.to_string().len()).sum();
-            let estimated_tokens: u32 = ((prompt_chars / 3) as u32).saturating_add(600); // rough prompt + response headroom
+            let estimated_tokens: u32 = ((prompt_chars / 4) as u32).saturating_add(600); // rough prompt + response headroom
 
+            // Fail soft (H2): when the limit would be exceeded, wait for the
+            // window to roll over and re-check once instead of erroring
+            // outright. The old code returned "Rate limit exceeded" here and
+            // the call died before any retry could run.
             let mut stats = UsageStats::load().unwrap_or_default();
-            if let Err(msg) = stats.check_limit(cfg, estimated_tokens) {
-                return Err(anyhow::anyhow!("Rate limit exceeded: {}", msg));
+            if let Err(exceeded) = stats.check_limit(cfg, estimated_tokens) {
+                let wait = exceeded.retry_after.min(std::time::Duration::from_secs(60));
+                if !wait.is_zero() {
+                    tracing::warn!(
+                        "Rate limit ({}) — waiting {}s for the window to roll over",
+                        exceeded.message,
+                        wait.as_secs()
+                    );
+                    tokio::time::sleep(wait).await;
+                    stats = UsageStats::load().unwrap_or_default();
+                    if let Err(exceeded) = stats.check_limit(cfg, estimated_tokens) {
+                        return Err(anyhow::anyhow!("Rate limit exceeded: {}", exceeded.message));
+                    }
+                } else {
+                    return Err(anyhow::anyhow!("Rate limit exceeded: {}", exceeded.message));
+                }
             }
         }
 

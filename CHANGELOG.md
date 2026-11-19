@@ -11,6 +11,93 @@ Versioning: [Semantic Versioning](https://semver.org/spec/v2.0.0.html)
 
 ## [Unreleased]
 
+### Triple-review fixes, batch 1: context windows, rate limiting, retry (H1–H5, 2026-11-09)
+
+Fixes the five Nov 6 must-fixes (M1–M5), all still open at the triple-review
+base (master fa0f047). Verified against xAI docs 2026-11-09; toolchain
+`rust-toolchain.toml` moved from 1.97.1 to the 1.99 line (1.99.1 current
+stable; 1.100.0 due 2026-11-12).
+
+- **H1 — Per-model context windows.** `get_context_window`/`get_context_budget`
+  no longer return 1,048,576 for every `grok-4*` model: grok-4 = 256k,
+  grok-4.5/4.6/4.7 = 500k, grok-4.3/4.20 = 1M, grok-4-fast = 2M,
+  grok-build-0.1 = 256k, with a soft budget below each window.
+  `LEGACY_CONTEXT_BUDGET` fixed from 220,000 (above the 131,072 legacy
+  window) to 100,000. `src/acp/context_trim.rs` now delegates to the same
+  per-model helpers (the duplicate 1M-for-all table is gone) and
+  `model_context_budget` clamps the configured budget to the model's real
+  budget, so a stale 950k grok-4 config can never exceed a 500k window.
+- **H2 — TPM limiter fails soft, counts accurately.** The estimate is now
+  ~1 token per 4 chars (was /3, ~33% over). When the limit would be
+  exceeded, the router waits for the window to roll over (`retry_after`
+  from the oldest entry, capped at 60s) and re-checks once instead of
+  erroring with "Tokens per minute" before `route()`. Fixed in both the
+  `AppRouter` path and the legacy `GrokClient` path.
+- **H3 — CLI history is trimmed before sending.** `handle_interactive_chat`
+  now caps `conversation_history` at `MAX_HISTORY_MESSAGES` (40) and trims
+  to the model's context budget (H1) before each call, reusing the ACP
+  trimmer. The system message and the last user turn are never dropped.
+- **H4 — Context overflow is a recoverable error.** New
+  `RouterError::ContextOverflow` for HTTP 400 `context_length_exceeded` /
+  "maximum context length". `GrokBackend::send` trims the request history
+  and retries once instead of failing with a fatal `BackendError`.
+  `Retry-After` is parsed from 429 error text when present (best-effort)
+  and honored on the next attempt instead of the policy delay (capped 60s).
+- **H5 — grok_api 429 body preserved (vendored).** `grok_api` 0.2.4
+  discarded the 429 body and the `Retry-After` header. 0.3.1 is NOT on
+  crates.io and the sibling path dep does not exist in this checkout, so
+  0.2.4 is vendored under `vendor/grok_api/` with the minimal 429 fix
+  (`RateLimit` now carries `body` + `retry_after_secs`) behind a
+  `[patch.crates-io]` entry. See `vendor/grok_api/README.md`. Temporary:
+  remove the vendor + patch when grok_api 0.3.1 is published.
+- **CI follow-up (same day).** CI went red on this branch: two tests in
+  `src/acp/mod.rs` still asserted the pre-H1 budgets (grok-4-latest 950k,
+  grok-4 950k, legacy 220k); updated to the H1 values (450k / 200k /
+  100k). Also removed the broken `router_route_simple` bench and its
+  orphan `impl Router` from `benches/perf_bench.rs` (E0116/E0599/E0616 —
+  the impl was never valid Rust; `Router::route()` is async and `bayes`
+  is private). The Bayesian update + `best_intent` path it exercised is
+  already covered by the `bayesian_update_from_text` bench. Full suite
+  after the fix: 1325 passed / 0 failed (lib 1123, integration 176,
+  doctests 26); `cargo check --benches` clean; `cargo clippy --lib` 0
+  warnings.
+
+### Triple-review fixes, batch 2: HOH apply-path safety (H6–H9, 2026-11-09)
+
+- **H6 — `content_for` never returns `diff_summary` as file content.**
+  `PatchSet::content_for` no longer falls back to `diff_summary` (prose)
+  when `intended_content` is absent — it returns `None`, so `apply_patch`
+  skips the file with an error instead of writing a human-readable summary
+  into it. `content_to_apply` (preview-only helper) likewise returns an
+  empty string instead of `diff_summary` when there is no intended content.
+- **H7 — Meta score measures outcomes, not activity.** `evaluate_phase`
+  now scores from a neutral base of 0.50 (was 0.68) with explicit,
+  auditable criteria only: tests pass +0.10, regression fixed
+  (previously-failing tests now pass) +0.15, tests fail −0.10. No points
+  for producing artifacts (materialized tasks, patch stubs, routed
+  actions, refactoring actions) or for patch shape/volume. The 0.70 apply
+  gate now opens only at 0.75 (tests pass + regression fixed). New pure
+  function `outcome_meta_score` with 5 unit tests. (Continual-improvement
+  "strong score" threshold rescaled 0.82 → 0.70 to match the gate.)
+- **H8 — `evaluate_with_helix` renamed to `evaluate_patch_shape`.** The
+  function never called Helix; it is a local patch-shape heuristic, and
+  the patch-volume reward (+0.05 for any patches, +0.05 for >=3) is
+  removed. Doc/HOH.md no longer claims a Helix evaluation or independent
+  scoring, and the call site/log message say "local patch-shape
+  evaluation". Wiring a real Helix call is a follow-up.
+- **H9 — HOH writes are jailed under `.grok/hoh/`.** `ApplyConfig` gains a
+  `jail` path (the HOH manager sets it to `<project_root>/.grok/hoh`, its
+  data dir). `apply_patch` refuses any target outside the jail — absolute
+  paths, relative paths, and `..` escapes (lexically normalized before the
+  check) — before creating directories or writing, and out-of-jail files are
+  not even backed up. A patch may still *name* a real src/ path as an
+  "intended target", but the applier will not write it.
+### Triple-review fixes, batch 3: HOH evaluation consolidation (H11/H10, 2026-11-09)
+
+- **H11 — One canonical meta-score function.** The outcome-based scoring from batch 2 (H7) now lives in a single function, `hoh::state::compute_meta_score`, with named constants (`META_SCORE_BASE` 0.50, `META_SCORE_TEST_PASS_BONUS` 0.10, `META_SCORE_IMPROVEMENT_BONUS` 0.15, `META_SCORE_TEST_FAIL_PENALTY` 0.10, `META_SCORE_APPLY_GATE` 0.70). The inline `outcome_meta_score` in `outer_loop.rs` is gone, and the duplicate `ArchitectureEvolutionEngine::compute_meta_improvement_score` (a proposal-count/success-rate composite, no callers) is deleted. The apply gate uses the named `META_SCORE_APPLY_GATE` constant instead of a hardcoded 0.70.
+- **H10 — FullAuto nudge decoupled from the apply gate.** The self-refinement proposal that suggested raising autonomy toward FullAuto when "consistently > 0.7" is deleted — its trigger was the same 0.70 threshold as the apply gate, so the system could talk itself into unguarded auto-apply. The replacement is the `should_suggest_full_auto` gate: it requires N>=3 consecutive verified improvements, no rollbacks, AND an explicit human approval flag (never set by the HOH itself). The meta score is deliberately not an input. No caller wires the streak + approval through the gate yet, so no FullAuto suggestion is generated until that wiring lands.
+- **H8 refinements (from the rebase).** The hardcoded `helix_score: Some(0.78)` in `evaluate_phase` is gone (the merge fills the score from the patch-shape evaluation). The patch-shape base is a neutral 0.50. Doc/HOH.md no longer claims a Helix cross-check anywhere, including the prioritization line.
+
 ### HOH patch-apply safety & correctness fixes (code review follow-up, 2026-11-09)
 
 - Fix critical multi-file patch bug in `hoh::patch_applier::apply_patch`: it

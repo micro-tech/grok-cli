@@ -215,6 +215,41 @@ async fn execute_tool_call(tool_call: &ToolCall, security: &SecurityPolicy) -> R
     }
 }
 
+/// Trim the CLI conversation history before sending (H3 fix / Nov 6 M1).
+///
+/// The CLI history grew without bound — only the ACP path trimmed. This
+/// applies the same two trims ACP uses: a count cap (`MAX_HISTORY_MESSAGES`)
+/// and a token-budget trim to the model's context budget (H1). The system
+/// message (index 0, if present) and the last user turn are never dropped.
+fn trim_conversation_history(history: &mut Vec<Value>, model: &str) {
+    // 1. Count-based trim: keep the most recent MAX_HISTORY_MESSAGES.
+    // Never drop the system message at index 0.
+    if history.len() > crate::constants::MAX_HISTORY_MESSAGES {
+        let excess = history.len() - crate::constants::MAX_HISTORY_MESSAGES;
+        let start = if history
+            .first()
+            .and_then(|m| m.get("role"))
+            .and_then(|r| r.as_str())
+            == Some("system")
+        {
+            1
+        } else {
+            0
+        };
+        // Drop `excess` messages starting after the system message.
+        let drop_end = (start + excess).min(history.len());
+        if drop_end > start {
+            history.drain(start..drop_end);
+        }
+    }
+
+    // 2. Token-budget trim: drop oldest messages until the estimated tokens
+    // fit the model's context budget. Reuses the ACP trimmer, which keeps
+    // the system message and the last user turn.
+    let budget = crate::constants::get_context_budget(model);
+    crate::acp::context_trim::trim_to_token_budget(history, budget);
+}
+
 async fn handle_interactive_chat(
     client: AppRouter,
     system_prompt: Option<String>,
@@ -398,6 +433,9 @@ async fn handle_interactive_chat(
                 // On transient network failure we keep the last user message in history
                 // so the user can simply type "retry", "/retry", "repush" or "/repush"
                 // to re-send the exact same request + full conversation context.
+                // Trim before sending (H3): the history grows every turn and
+                // would otherwise overflow the model's context window.
+                trim_conversation_history(&mut conversation_history, model);
                 let response_with_finish = match client
                     .chat_completion_with_history(
                         &conversation_history,
@@ -514,6 +552,8 @@ async fn handle_interactive_chat(
 
                     // 3. Call the model again with the tool results
                     let follow_spinner = create_spinner("Grok is processing results...");
+                    // Trim before sending (H3): tool results bloat the history.
+                    trim_conversation_history(&mut conversation_history, model);
                     let follow_up = match client
                         .chat_completion_with_history(
                             &conversation_history,
@@ -973,12 +1013,67 @@ fn print_conversation_history(history: &[Value]) {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use serde_json::json;
+
     // super::* intentionally not used — placeholder test only verifies compilation
     #[tokio::test]
     async fn test_chat_command_structure() {
         // Test that the chat command structure is properly defined
         // This is a placeholder test - in a real implementation you'd mock the API
         // The test passes as long as the module compiles correctly
+    }
+
+    fn user_msg(content: &str) -> Value {
+        json!({"role": "user", "content": content})
+    }
+
+    fn assistant_msg(content: &str) -> Value {
+        json!({"role": "assistant", "content": content})
+    }
+
+    #[test]
+    fn trim_caps_history_at_max_messages_and_keeps_system() {
+        let mut history = vec![json!({"role": "system", "content": "sys"})];
+        // 50 user/assistant turns on top of the system message.
+        for i in 0..50 {
+            if i % 2 == 0 {
+                history.push(user_msg(&format!("user turn {i}")));
+            } else {
+                history.push(assistant_msg(&format!("assistant turn {i}")));
+            }
+        }
+        assert_eq!(history.len(), 51);
+
+        trim_conversation_history(&mut history, "grok-4.7");
+
+        assert_eq!(history.len(), crate::constants::MAX_HISTORY_MESSAGES);
+        // System message is never dropped.
+        assert_eq!(history[0]["role"], "system");
+        // The most recent turn survives.
+        assert_eq!(history.last().unwrap()["content"], "assistant turn 49");
+    }
+
+    #[test]
+    fn trim_enforces_token_budget_for_small_window_model() {
+        // grok-3 has a 100k budget. Fill the history with large messages
+        // (~40k chars each ≈ 10k tokens) so the budget trim must engage.
+        let mut history = vec![json!({"role": "system", "content": "sys"})];
+        for i in 0..15 {
+            history.push(user_msg(&"x".repeat(40_000)));
+            history.push(assistant_msg(&format!("reply {i}")));
+        }
+
+        trim_conversation_history(&mut history, "grok-3");
+
+        let estimated = crate::acp::context_trim::estimate_tokens(&history);
+        assert!(
+            estimated <= crate::constants::get_context_budget("grok-3"),
+            "estimated {estimated} exceeds grok-3 budget"
+        );
+        // System message and the last turn survive the budget trim.
+        assert_eq!(history[0]["role"], "system");
+        assert_eq!(history.last().unwrap()["content"], "reply 14");
     }
 }
 

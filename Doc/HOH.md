@@ -99,7 +99,7 @@ All commands work **without an API key** because they are local orchestration + 
    - Execute scheduled work (real or simulated)
 
 3. **Evaluate + Improve**
-   - Run tests + Helix evaluation
+   - Run tests + local patch-shape scoring (no live Helix call — H8)
    - Meta-evaluation (410)
    - Continual improvement suggestions (361.5)
    - Feed signals (including rich test failures) back into the next cycle
@@ -116,7 +116,7 @@ All commands work **without an API key** because they are local orchestration + 
 
 ### 2. Task Intelligence Layer (327)
 - Real dependency graph + topological ordering
-- Multi-signal prioritization (completion history, helix scores, OKF terms, refactoring signals)
+- Multi-signal prioritization (completion history, patch-shape scores, OKF terms, refactoring signals)
 - Live scheduling (`TaskSelectionEngine::schedule()` / `select_with_history()`)
 - Autonomous task list evolution + mutation (327.34)
 - Consistency checking and conflict detection (327.33 / 327.18)
@@ -159,7 +159,7 @@ All commands work **without an API key** because they are local orchestration + 
 - Resource allocation and shared goal planning
 
 ### 9. Evaluation & Continual Improvement Layer
-- Helix independent scoring
+- Local patch-shape scoring (heuristic over diff size / file diversity; no live Helix call — H8)
 - Rich test output + failure hint capture
 - Continual improvement suggestions injected into next cycle
 - Patch metrics (count, files changed, avg diff length) influencing scores

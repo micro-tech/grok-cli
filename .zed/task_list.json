@@ -563,6 +563,194 @@
     }
    ],
    "results": "grok-cli retargeted to OKF v1 (bot-repo PROTOCOL.md is the single contract, nothing invented). 480.1: trace forwarder default endpoint now /okf/traces; OkfConfig::trace_endpoint_path() translates a configured legacy /api/traces with a deprecation warn. 480.2: push_concept_to_remote posts to /okf/bundles/{bundle}/concepts. 480.3: load_okf_from_config fetches remote v1 manifest (GET {remote_url}/okf/manifest.json, ETag/304 cached) + per-entry GET /okf/knowledge/{kid}, mapped into OkfBundle/OkfConcept; any failure falls back to local knowledge_bundles dirs (remote first, local always loaded as offline fallback). Thread-spawn-with-runtime pattern used (okf_lookup is sync). Tests: 11 new mockito contract tests green; full lib suite 1112 passed, 0 failed; zero new warnings. Cross-repo grep: no remaining /api/traces targets (only legacy-translation code + deprecation docs) and no unprefixed /bundles/ POSTs in either repo."
+  },
+  {
+   "id": 481,
+   "title": "Repair benches/perf_bench.rs: inherent impl Router on foreign type (E0116) + private-field access (E0616) break cargo check --all-targets / cargo bench",
+   "description": "benches/perf_bench.rs fails to compile: the trailing impl Router { route_sync_for_bench(..) } block is an inherent impl on grok_cli::Router written from outside the crate (E0116 - can never compile), and it reads the private field self.bayes (E0616). The bench was broken by the grok-4.7 model commit e1e2c2b (a master->PreRelese merge already present in 8fb7696) and rotted silently because the nightly only ever ran cargo check --lib --bins --tests, and cargo test never builds bench targets. cargo build and cargo test are unaffected (green), so this did not stop the line, but cargo bench and any --all-targets gate are red.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "medium",
+   "details": "FILED BY QUARTERMASTER 2026-10-07 ~05:00 EDT. METHOD: cargo check --all-targets on PreRelese tip 0b8b0ac surfaced 4 errors in the perf_bench target. RULED OUT: not caused by the task-480 or docs-refresh merges - git merge-base proves e1e2c2b (grok-4.7 model work) is an ancestor of last night's green baseline 8fb7696, and the -S pickaxe traces both the impl block and pub struct Router to e1e2c2b; the bench has been broken since then. RULED OUT: no effect on cargo build/cargo test (empirically green at 8fb7696 and on tonight's tip) - bench targets are only compiled by cargo bench / --benches / --all-targets. SUGGESTED START: either delete the foreign impl block and benchmark only public API (Router::new_with_default_priors + public methods), or add a #[doc(hidden)] helper method inside src/ next to Router's own impl (optionally #[cfg(any(test, bench))]-gated) that the bench can call; keep the bayes field private. The 18 criterion::black_box deprecation warnings (use std::hint::black_box instead) can ride along as cleanup.\nRE-VERIFIED 2026-11-16 (Quartermaster, PreRelese 39bc650): cargo check --all-targets still fails with the same 4 errors (E0116/E0599/E0616) + 18 criterion black_box warnings; cargo check/build/test unaffected (green).",
+   "testStrategy": "cargo check --all-targets and cargo bench --no-run both exit 0 with zero errors; cargo test still green (lib ~1112/0).",
+   "subtasks": [],
+   "results": "",
+   "results": "Done 2026-11-17. The perf_bench breakage (inherent impl Router on foreign type + private-field access) was fixed by PR #18 (h1h5, H1-H5 batch), now merged into PreRelese. Verified: cargo check --all-targets exits 0 on the rebased branch (the 4 bench errors are gone). Marked done as part of the PR #20 rebase."
+  },
+  {
+   "id": 482,
+   "title": "URGENT: PreRelese red - corrupt Cargo.lock (franken-merged entries) + syntax error in src/acp/mod.rs - CI red on final run",
+   "description": "PreRelese HEAD ceb55a8 (Merge PR #8 prompt-cache-affinity) ships a structurally corrupt Cargo.lock: cargo check/build/test all fail with TOML parse errors, and GitHub Actions CI run 39099882286 failed all 3 jobs (exit 101). Root cause: John's db5d926 'Resolve merge conflicts' commit hand-resolved the ba21973 conflict markers but dropped '[[package]]' + 'name = ...' header lines at 10 merge sites, gluing two package versions into franken entries (cc 1.8.0+1.5.1, mac_address 1.2.1+1.2.0, nix 0.31.3+0.30.1, pest/pest_derive/pest_generator/pest_meta 2.9.4+2.9.2, smallvec 1.16.3+1.16.2, zerocopy/zerocopy-derive 0.8.63+0.8.59). Quartermaster 2026-10-18 repaired all 10 sites (re-inserted the dropped headers; mac_address 1.2.1 restored as deps [nix 0.31.3, windows-sys 0.61.2]) - structural validator now clean. cargo check was re-run to confirm the graph is consistent; see task details for the verification result.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "FILED BY QUARTERMASTER 2026-10-18 ~04:30 EDT. SYMPTOM: 'error: failed to parse lock file ... TOML parse error' then 'duplicate key' at successive lines. DIAGNOSIS: git log -S traces every mangled site to db5d926 (single-parent commit, ba21973^ - John's manual marker cleanup of the ba21973 ':/' conflict-marker commit); ba21973's own mac_address region was clean (1.1.8), so the damage was introduced by the hand edit, not the conflict. RULED OUT: not conflict markers (grep for <<<<<<</=======/>>>>>>> clean); not a single bad hunk (structural validator found 28 issues at 10 sites, all the same dropped-header pattern); the many other Cargo.lock version bumps in ceb55a8 (schemars 1.2.3, syn 3.0.9, aws-lc-rs 1.18.2, etc.) are legitimate and were left untouched. REPAIR: python script re-inserted the 9 dropped '[[package]]/name' headers bottom-up + manual mac_address 1.2.1 deps restore; /tmp/Cargo.lock.repaired snapshot kept for diffing. VERIFY: re-ran cargo check --lib --bins --tests and diffed the lock before/after to confirm cargo itself made no further changes (see qm-20261018-grok-fixverify2.log). Also repaired two source breaks from the same merge: src/acp/mod.rs:1601 duplicated 'let old_role = {' line (unclosed delimiter) and src/cli/commands/chat.rs:383-391 duplicated persona/low-confidence block after the push (E0382 borrow of moved actual_input). Full verification: cargo check --lib --bins --tests passes, cargo test all green (lib 1113/0/11, doctests 26/0/13, warnings at baseline). Repair committed as cc4bec9 on branch fix-qm-20261018-prerelese-red, NOT pushed (awaiting John's tap); PR draft in hidden_files/pr-draft-20261019-grok-fix-qm-20261018.md. NOTE 2026-11-16 (Quartermaster): this entry was restored from run-2026-10-18.md after an accidental checkout discarded the local-only filing; wording above the NOTE is verbatim from the original filing where recoverable. The fix branch cc4bec9 was never merged; PreRelese has since moved on (39bc650, CI green on final run) and the Oct 18 red was resolved by later merges - the branch is obsolete, do not push.",
+   "testStrategy": "cargo check --lib --bins --tests passes; cargo test all green (lib 1113/0/11, doctests 26/0/13); GitHub Actions CI all 3 jobs green on the final full-tree run.",
+   "subtasks": [],
+   "results": ""
+  },
+  {
+   "id": 483,
+   "title": "Fix per-model context windows for grok-4* (review H1 / Nov 6 M2)",
+   "description": "get_context_window returns 1,048,576 for every grok-4* model, but base grok-4 is 256,000 and grok-4.5/4.6/4.7 are 500,000. LEGACY_CONTEXT_BUDGET (220,000) exceeds LEGACY_CONTEXT_WINDOW (131,072). Give each variant its real window and a budget below it.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Verified against xAI docs 2026-11-09: grok-4 = 256,000 (retired from API 2026-05-15); grok-4.5/4.6/4.7 = 500,000; grok-4.3/4.20 = 1,048,576; grok-4-fast = 2,000,000; grok-build-0.1 = 256,000. Update src/constants.rs get_context_window/get_context_budget with per-model constants and budgets (grok-4 200k, 4.5/4.6/4.7 450k, 4.3/4.20 950k, legacy 100k). Update src/acp/context_trim.rs MODEL_CONTEXT_TABLE to the same per-model windows. Keep the grok-4 alias at 256,000 (conservative; alias may resolve to a newer checkpoint). Toolchain: rustc 1.99.0 (current stable in sandbox; 1.99.1 released 2026-10-15, 1.100.0 due 2026-11-12).",
+   "testStrategy": "cargo test --lib constants:: + acp::context_trim:: — per-model window/budget assertions for grok-4, grok-4.5, grok-4.6, grok-4.7, grok-4.3, grok-4.20, legacy. Verify LEGACY_CONTEXT_BUDGET < LEGACY_CONTEXT_WINDOW and every budget < its window.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. Per-model windows/budgets in src/constants.rs (grok-4 256k/200k, 4.5/4.6/4.7 500k/450k, 4.3/4.20 1M/950k, grok-4-fast 2M/1.9M, legacy 131k/100k); context_trim.rs delegates to the same helpers (duplicate table removed) and clamps the configured budget. Toolchain rustc 1.99.1 (rust-toolchain.toml set to 1.99). Tests: cargo test --lib constants:: 1 passed, context_trim 8 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings; cargo check --bins exit 0 (4 pre-existing installer warnings, untouched). CI FOLLOW-UP 2026-11-09: CI went red because two tests in src/acp/mod.rs still asserted the OLD budgets (grok-4-latest 950k, grok-4 950k, legacy 220k); updated to H1 values (450k / 200k / 100k). Also removed the broken `router_route_simple` bench + orphan `impl Router` in benches/perf_bench.rs (E0116/E0599/E0616 — the impl was never valid Rust; the Bayesian path it exercised is already covered by `bayesian_update_from_text`). Full suite after fix: cargo test 1325 passed / 0 failed (lib 1123/0/11, integration 176/0/21, doctests 26/0/13); cargo check --benches clean; cargo clippy --lib 0 warnings."
+  },
+  {
+   "id": 484,
+   "title": "TPM limiter double-counts history; fail soft instead of hard (review H2 / Nov 6 M3)",
+   "description": "The local TPM limiter estimates the full prompt (chars/3 + 800) and adds recorded prior usage that already includes the same history (~33% over-count), then fails hard with 'Tokens per minute' before route(), so no retry runs. Most likely cause of John's 'too many tokens per minute' error.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "src/router/app_router.rs:190-192 and src/utils/rate_limiter.rs:49-73. Make the estimate accurate (chars/4, matching the ACP estimator) and fail soft: when the limit would be exceeded, wait until the window rolls over (retry_after from the oldest entry, capped at 60s), re-check once, and only then error. Return a structured retry_after so the caller can wait intelligently.",
+   "testStrategy": "cargo test --lib utils::rate_limiter:: + router::app_router:: — check_limit allows a first large request; over-limit returns a retry_after <= window; estimate uses chars/4. Verify the AppRouter waits and proceeds instead of erroring when the window rolls over.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. Estimate now chars/4 (was /3); check_limit returns RateLimitExceeded with retry_after; AppRouter + GrokClient wait for the window rollover (capped 60s) and re-check once, then error only if still over. Tests: cargo test --lib rate_limiter 5 passed (incl. new test_check_limit_reports_retry_after); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings."
+  },
+  {
+   "id": 485,
+   "title": "Trim CLI conversation_history before sending (review H3 / Nov 6 M1)",
+   "description": "CLI conversation_history in src/cli/commands/chat.rs grows without bound (pushes at 379/493/508/548, no trim anywhere). Only the ACP path trims. Long sessions overflow the context window.",
+   "status": "done",
+   "dependencies": [
+    483
+   ],
+   "priority": "high",
+   "details": "Apply the same trimming the ACP path already has: cap at MAX_HISTORY_MESSAGES (40) and trim to the model's context budget from H1 (get_context_budget) before each chat_completion_with_history call. Reuse crate::acp::context_trim::trim_to_token_budget. Never drop the system message or the last user turn.",
+   "testStrategy": "cargo test --lib cli::commands::chat:: — history capped at 40 messages after many turns; estimated tokens stay within get_context_budget(model) before send. Manual: long CLI session no longer grows history unboundedly.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. trim_conversation_history caps at MAX_HISTORY_MESSAGES (40) and trims to get_context_budget(model) before both chat_completion_with_history calls; system message + last turn never dropped. Tests: cargo test --lib cli::commands::chat 3 passed (incl. 2 new trim tests); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings."
+  },
+  {
+   "id": 486,
+   "title": "classify_error: 400/context_length_exceeded path + Retry-After (review H4 / Nov 6 M4)",
+   "description": "classify_error in src/router/backends/grok.rs has no 400 / context_length_exceeded path and no Retry-After handling. Overflow falls through to fatal BackendError with no trim-and-retry.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Add RouterError::ContextOverflow. Map 400 / context_length_exceeded / maximum context length to it. In GrokBackend::send, on ContextOverflow trim the request messages (drop oldest non-system) and retry once. Parse Retry-After from the 429 error string when present (best-effort until H5 lands the body) and sleep that long (capped 60s) before retrying.",
+   "testStrategy": "cargo test --lib router::backends::grok:: — classify 400 context_length_exceeded as ContextOverflow; classify 429 with Retry-After parses the delay; ContextOverflow is not retried blindly (single trim-and-retry). Verify send() retries once with trimmed messages on overflow.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. New RouterError::ContextOverflow; classify_error maps 400 context_length_exceeded / maximum context length; GrokBackend::send trims and retries once on overflow; parse_retry_after (rfind, 60s cap) honors Retry-After on 429. Tests: cargo test --lib router::backends::grok 13 passed (incl. new classify/parse/trim tests); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings."
+  },
+  {
+   "id": 487,
+   "title": "Preserve the 429 body + Retry-After from grok_api (review H5 / Nov 6 M5)",
+   "description": "grok_api 0.2.4 maps 429 to a bare Error::RateLimit unit variant, discarding the response body and the Retry-After header. 0.3.1 is NOT on crates.io (only a commented-out local path dep). The Retry-After plumbing in H4 cannot work until the body is preserved.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "0.3.1 is not published (crates.io latest is 0.2.4, 2026-09-23); publishing is John's call. The sibling path dep ../grok_crate/grok_api does not exist in this checkout and would break the build. Backport: vendor grok_api 0.2.4 under vendor/grok_api/ (src + Cargo.toml.orig + LICENSE), apply the minimal 429 fix (RateLimit carries body + retry_after_secs; client.rs reads the Retry-After header), and add [patch.crates-io] grok_api = { path = \"vendor/grok_api\" }. Add vendor/grok_api/README.md stating it is temporary until grok_api 0.3.1 is published, then the patch is removed. Do NOT publish anything.",
+   "testStrategy": "cargo test --lib router::backends::grok:: — a 429 error string now contains the body and retry-after value; classify_error parses it. cargo check + cargo test --lib green with the patch active. Verify Cargo.lock points grok_api at the vendored source.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. grok_api 0.2.4 vendored under vendor/grok_api/ with the minimal 429 fix (RateLimit now carries body + retry_after_secs; client.rs reads the Retry-After header before consuming the body). [patch.crates-io] in Cargo.toml; Cargo.lock confirms grok_api has no registry source (vendored). Temporary until grok_api 0.3.1 is published — then remove vendor + patch. Tests: cargo check --lib compiles the vendored grok_api; grok backend tests 13 passed; cargo clippy --lib 0 warnings. Nothing published."
+  },
+  {
+   "id": 488,
+   "title": "content_for must never return diff_summary as file content (review H6)",
+   "description": "PatchSet::content_for in src/hoh/state.rs:157-166 falls back to returning diff_summary (prose) as file content when intended_content is None. Latent file corruption; both producers are dead code today, so one wiring change arms it.",
+   "status": "done",   "dependencies": [],
+   "priority": "high",
+   "details": "Return None when intended_content is None (let apply_patch skip with an error, as it already does for multi-file patches). Add a regression test: a PatchSet with only diff_summary set returns None from content_for.",
+   "testStrategy": "cargo test --lib hoh::patch_applier:: hoh::state:: — content_for returns None when intended_content is None even if diff_summary is set; existing multi-file tests still pass.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. content_for returns None when intended_content is None (diff_summary fallback removed); content_to_apply returns empty string instead of diff_summary. Regression test content_for_never_returns_diff_summary added. Tests: hoh::patch_applier 6 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings; cargo check --bins exit 0 (4 pre-existing installer warnings, untouched)."  },
+  {
+   "id": 489,
+   "title": "Route HOH writes through SecurityPolicy / jail under .grok/hoh/ (review H9)",
+   "description": "HOH writes bypass SecurityPolicy entirely. apply_patch uses raw fs::write and never calls SecurityPolicy::validate_path_access. Defense in depth matters most in the autonomous path.",
+   "status": "done",   "dependencies": [
+    488
+   ],
+   "priority": "high",
+   "details": "Route all HOH writes through SecurityPolicy, or jail them under <project_root>/.grok/hoh/. Enforce at the apply_patch entry point so every autonomous write is validated. Add tests: a write outside the jail is rejected; a write inside .grok/hoh/ succeeds.",
+   "testStrategy": "cargo test --lib hoh::patch_applier:: — writes outside the allowed jail are rejected; writes under .grok/hoh/ succeed; existing patch_applier tests still pass.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. ApplyConfig gains a jail path; HOHManager sets it to <project_root>/.grok/hoh (data_dir). apply_patch refuses any target outside the jail (absolute, relative, or .. escape, lexically normalized) before mkdir/write, and skips backing up out-of-jail files. Regression tests write_outside_jail_is_rejected + dotdot_escape_out_of_jail_is_rejected added; real_config now jails to the test temp dir. Tests: hoh::patch_applier 6 passed; cargo check --lib 0 warnings; cargo clippy --lib 0 warnings (one needless-borrow warning fixed); cargo check --bins exit 0."  },
+  {
+   "id": 490,
+   "title": "Meta score must measure outcomes, not activity (review H7)",
+   "description": "The HOH meta score starts at 0.68 with the apply gate at >0.70, so any single activity bonus (+0.04 to +0.08) pushes it over. It counts activity, not improvement — a participation trophy and a rubber-stamp gate.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "src/hoh/outer_loop.rs:708-774 evaluate_phase; gate at :355. Start at a neutral base well below the threshold (e.g. 0.50), require evidence of improvement to cross it (a previously-failing test now passes, clippy warning count went down, a real bug from the task list was closed), and do not award points for merely producing artifacts. Prefer a small set of explicit, auditable pass/fail criteria over the hand-tuned additive formula.",
+   "testStrategy": "cargo test --lib hoh:: — an iteration that only produces scratch artifacts scores below the apply gate; an iteration with a real improvement (failing test now passes) scores above it. Verify the gate does not open on activity alone.",
+   "subtasks": [],
+   "results": "Done 2026-11-17 (rebase consolidation). The meta score is outcome-based via the single canonical scorer hoh::state::compute_meta_score: neutral base 0.50 (was 0.68); explicit criteria only - tests pass +0.10, regression fixed (previously-failing tests now pass) +0.15, tests fail -0.10; no points for activity or patch shape/volume. Gate (0.70, named META_SCORE_APPLY_GATE) opens only at 0.75 (tests pass + regression fixed). The inline outcome_meta_score is removed (H11 consolidation). 5 unit tests in state.rs. Full suite green; cargo check --all-targets clean."  },
+  {
+   "id": 491,
+   "title": "evaluate_with_helix must actually call Helix or be renamed (review H8)",
+   "description": "evaluate_with_helix in src/hoh/helix.rs:10-40 never calls Helix. It computes a local heuristic that rewards patch volume (+0.05 for any patches, +0.05 more for >=3), despite the name, the Doc/HOH.md:102 claim, and the 'independent cross-check' log message. There is no independent evaluation.",
+   "status": "done",
+   "dependencies": [],
+   "priority": "high",
+   "details": "Either actually call Helix (or a configured reviewer model) to judge the patches and use that judgment, or rename the function and fix Doc/HOH.md:102 to say what it is — a local patch-shape heuristic — and stop presenting it as an independent evaluation. Do not leave a function named evaluate_with_helix that does not evaluate with Helix. Remove the patch-volume reward either way. Note: actually calling Helix requires a live Helix/LLM backend, which is not available in the sandbox; the honest fix here is to rename it to a local heuristic, fix the doc, and remove the volume reward. Wiring a real Helix call is a follow-up for John.",
+   "testStrategy": "cargo test --lib hoh:: — no function named evaluate_with_helix remains and Doc/HOH.md no longer claims a Helix cross-check. Verify the volume bonus (+0.05 per patch count) is gone. Grep: no remaining 'evaluate_with_helix' or 'Helix evaluation' claims.",
+   "subtasks": [],
+   "results": "Done 2026-11-17 (rebase consolidation). Renamed evaluate_with_helix to evaluate_patch_shape (local patch-shape heuristic, neutral base 0.50, no volume reward, focus/diversity only); removed the patch-volume reward (+0.05 for any patches, +0.05 for >=3); removed the hardcoded helix_score: Some(0.78) from evaluate_phase; fixed Doc/HOH.md (no longer claims a Helix evaluation or independent scoring, including :102/:119/:162); updated the call site and log message to local patch-shape evaluation. Wiring a real Helix call is a follow-up for John. 2 new tests (volume not rewarded, focused diffs beat sprawling ones). Full suite green."  },
+  {
+   "id": 492,
+   "title": "One canonical meta-score function (review H11)",
+   "description": "Two different meta-score computations exist: inline in evaluate_phase (src/hoh/outer_loop.rs:708-774) vs compute_meta_improvement_score (src/hoh/architecture_evolution.rs:308). Unclear which governs.",
+   "status": "done",   "dependencies": [
+    490
+   ],
+   "priority": "high",
+   "details": "Have one canonical meta-score function, called from one place, with its formula and inputs documented. Delete or delegate the duplicate. Do this after H7 (task 490) reworks the scoring so the canonical function is the new outcome-based one.",
+   "testStrategy": "cargo test --lib hoh:: — exactly one meta-score computation exists (grep for the formula in one place); both call sites use it; scores agree between the evaluate path and the architecture-evolution path.",
+   "subtasks": [],
+   "results": "Done 2026-11-09, consolidated 2026-11-17. Single canonical compute_meta_score in state.rs (called by evaluate_phase), implementing the outcome-based H7 scoring (base 0.50, pass +0.10, improvement +0.15, fail -0.10) with named constants; the duplicate compute_meta_improvement_score deleted (it had no callers); the inline outcome_meta_score removed; apply gate uses named META_SCORE_APPLY_GATE. Grep confirms exactly one scorer. Tests: hoh::state 5 passed."  },
+  {
+   "id": 493,
+   "title": "Decouple the FullAuto nudge threshold from the apply gate (review H10)",
+   "description": "The FullAuto suggestion fires when the score is consistently > 0.7 (src/hoh/architecture_evolution.rs:288) — the same 0.70 threshold as the apply gate (src/hoh/outer_loop.rs:355). The system can talk itself into unguarded auto-apply.",
+   "status": "done",   "dependencies": [
+    490
+   ],
+   "priority": "high",
+   "details": "The FullAuto suggestion should require a different, stronger signal than the apply gate (e.g. N consecutive iterations in which a real, independently-verified improvement landed, with no rollbacks), and it should require an explicit human approval — never an automatic consequence of the same score that gates the apply.",
+   "testStrategy": "cargo test --lib hoh:: — a score above the apply gate alone does not trigger a FullAuto suggestion; the suggestion requires N consecutive verified improvements plus an explicit human approval flag.",
+   "subtasks": [],
+   "results": "Done 2026-11-09. The FullAuto self-refinement proposal (same 0.70 threshold as the apply gate) is deleted. Replacement: should_suggest_full_auto gate — streak >= 3 consecutive verified improvements AND no rollback AND explicit human approval; the meta score is not an input. Tests: hoh::architecture_evolution 3 passed (incl. new gate test covering all four combinations); cargo check --lib 0 warnings; cargo clippy --lib 0 warnings. No caller wires the streak + approval through the gate yet, so no FullAuto suggestion is generated until that wiring lands."  },
+  {
+   "id": 494,
+   "title": "Warning-free bar: clean up 20 warnings on PreRelese (bench black_box deprecation + installer dead code)",
+   "description": "Nightly Quartermaster 2026-11-18 found `cargo check --all-targets` and `cargo build` passing but NOT warning-free on PreRelese 49b3bf1: 16x deprecated `criterion::black_box` in benches/perf_bench.rs (import line 11 + 15 use sites; use `std::hint::black_box()` instead) and 4x in src/bin/installer.rs (unused imports `std::io::{self, Write}` line 4 and `std::process::Command` line 6; fns `find_project_root` line 13 and `get_version` line 26 flagged never-used on Linux). Surveyor 1 verified 2026-11-18 by re-running `cargo check --all-targets` (16 + 4 warnings, exact match) and reading the code.",
+   "status": "pending",
+   "dependencies": [],
+   "priority": "low",
+   "details": "CORRECTION to the Quartermaster finding (verified by Surveyor 1, 2026-11-18): `find_project_root` and `get_version` are NOT dead code to delete. `find_project_root` IS called at installer.rs:52 and `get_version` at :53 and :202 \u2014 but every call site sits inside `#[cfg(windows)]` code, so on Linux rustc flags the fns as never-used. Deleting them would break the Windows installer build. The correct fix is `#[cfg(windows)]` gating, matching the pattern already used for every other fn in this file.\n\nCASCADE WARNING (verified by code reading): gating only the two fns is NOT enough. `use std::env` (line 2), `use std::fs` (line 3) and `use std::path::{Path, PathBuf}` (line 5) are used only inside Windows-gated fns or inside the two fns themselves, so once the fns are gated those three imports become unused on Linux too and will raise 3 NEW warnings. Gate all six Windows-only imports AND the two fns with `#[cfg(windows)]`: env, fs, io::{self, Write}, path::{Path, PathBuf}, process::Command, find_project_root, get_version. `use colored::*` stays ungated (main() uses it on all platforms); the winreg imports are already gated.\n\nBench fix: criterion 0.8.2 (Cargo.toml:133) deprecated `criterion::black_box` in favour of `std::hint::black_box` \u2014 same signature, drop-in. Change only the import (line 11: drop `black_box` from the criterion import, add `use std::hint::black_box;`); the 15 use sites are unchanged.\n\nRuled out: NOT a build or test failure \u2014 `cargo test --all-targets` is green (lib 1134 passed / 0 failed / 11 ignored; all targets 0 failed). Bench warnings are newly visible because PR #20 (task 481) repaired the bench so it compiles again; the black_box usage itself is old code. Installer warnings trace to commit e1e2c2b (2026-09-22), present in the Nov 17 HEAD too. Do not touch anything else.",
+   "testStrategy": "`cargo check --all-targets` emits 0 warnings; `cargo build` emits 0 warnings; `cargo test --all-targets` stays green (0 failures). Confirm no NEW warnings appear after gating (the env/fs/Path cascade). If the x86_64-pc-windows-gnu target is installed, also run `cargo check --target x86_64-pc-windows-gnu --bin installer` to prove the Windows build still compiles; otherwise note it as unverified in the task (Windows CI covers it).",
+   "subtasks": [
+    {
+     "id": 494.1,
+     "title": "Bench: swap criterion::black_box for std::hint::black_box (benches/perf_bench.rs:11)",
+     "status": "pending",
+     "dependencies": []
+    },
+    {
+     "id": 494.2,
+     "title": "Installer: #[cfg(windows)]-gate the 2 fns + 6 Windows-only imports (src/bin/installer.rs)",
+     "status": "pending",
+     "dependencies": []
+    },
+    {
+     "id": 494.3,
+     "title": "Verify: check/build 0 warnings (incl. no cascade warnings), tests green",
+     "status": "pending",
+     "dependencies": [
+      494.1,
+      494.2
+     ]
+    }
+   ]
   }
  ]
 }

@@ -15,19 +15,40 @@
 // Context windows and token budgets (model-aware)
 // ---------------------------------------------------------------------------
 
-/// Full context window for Grok-4 family models.
+/// Full context window for Grok-4.3 / Grok-4.20 (1M-token models).
 pub const GROK4_CONTEXT_WINDOW: usize = 1_048_576;
+
+/// Context window for Grok-4.5 / Grok-4.6 / Grok-4.7 (500k-token models).
+pub const GROK4_500K_CONTEXT_WINDOW: usize = 500_000;
+
+/// Context window for base Grok-4 and Grok Build 0.1 (256k-token models).
+pub const GROK4_256K_CONTEXT_WINDOW: usize = 256_000;
+
+/// Context window for Grok-4 Fast (2M-token model).
+pub const GROK4_2M_CONTEXT_WINDOW: usize = 2_000_000;
 
 /// Legacy context window for Grok-3 / Grok-2 family (and unknown models).
 pub const LEGACY_CONTEXT_WINDOW: usize = 131_072;
 
 /// Soft token budget for legacy models (grok-3, grok-2, etc.).
-/// Leaves headroom for response + tool definitions.
-pub const LEGACY_CONTEXT_BUDGET: usize = 220_000;
+/// Must stay below LEGACY_CONTEXT_WINDOW; leaves headroom for response + tool definitions.
+pub const LEGACY_CONTEXT_BUDGET: usize = 100_000;
 
-/// Soft token budget for Grok-4.x models.
-/// Leaves ~50k headroom for response + tools.
+/// Soft token budget for Grok-4.3 / Grok-4.20 (1M-token models).
+/// Leaves ~98k headroom for response + tools.
 pub const GROK4_CONTEXT_BUDGET: usize = 950_000;
+
+/// Soft token budget for Grok-4.5 / Grok-4.6 / Grok-4.7 (500k-token models).
+/// Leaves ~50k headroom for response + tools.
+pub const GROK4_500K_CONTEXT_BUDGET: usize = 450_000;
+
+/// Soft token budget for base Grok-4 / Grok Build 0.1 (256k-token models).
+/// Leaves ~56k headroom for response + tools.
+pub const GROK4_256K_CONTEXT_BUDGET: usize = 200_000;
+
+/// Soft token budget for Grok-4 Fast (2M-token model).
+/// Leaves ~100k headroom for response + tools.
+pub const GROK4_2M_CONTEXT_BUDGET: usize = 1_900_000;
 
 // ---------------------------------------------------------------------------
 // Default maximum output tokens (per model family)
@@ -107,24 +128,63 @@ pub const MAX_TOOL_LOOP_ITERATIONS: u32 = 25;
 // (These replace scattered if/else logic in context_trim, acp/mod, etc.)
 // ---------------------------------------------------------------------------
 
+/// Per-model (context window, soft token budget) pair.
+///
+/// Windows verified against xAI docs 2026-11-09:
+/// grok-4 = 256k (retired from the API 2026-05-15); grok-4.5/4.6/4.7 = 500k;
+/// grok-4.3/4.20 = 1M; grok-4-fast = 2M; grok-build-0.1 = 256k.
+/// The bare `grok-4` alias is treated as 256k (conservative — the alias may
+/// resolve to a newer checkpoint, but 256k is the documented window for that
+/// model ID). `grok-4-latest` tracks the current flagship (500k).
+/// Unrecognized grok-4.x names fall back to the 500k flagship window; the
+/// trim-and-retry in the router is the safety net if one turns out smaller.
+/// Every budget is below its window.
+fn model_window_and_budget(model: &str) -> (usize, usize) {
+    let m = model.to_ascii_lowercase();
+    if m.starts_with("grok-4.3") || m.starts_with("grok-4.20") {
+        (GROK4_CONTEXT_WINDOW, GROK4_CONTEXT_BUDGET)
+    } else if m.starts_with("grok-4.5") || m.starts_with("grok-4.6") || m.starts_with("grok-4.7") {
+        (
+            GROK4_500K_CONTEXT_WINDOW,
+            GROK4_500K_CONTEXT_BUDGET,
+        )
+    } else if m.starts_with("grok-4-fast") {
+        (GROK4_2M_CONTEXT_WINDOW, GROK4_2M_CONTEXT_BUDGET)
+    } else if m.starts_with("grok-4-latest") {
+        (
+            GROK4_500K_CONTEXT_WINDOW,
+            GROK4_500K_CONTEXT_BUDGET,
+        )
+    } else if m.starts_with("grok-build") {
+        (
+            GROK4_256K_CONTEXT_WINDOW,
+            GROK4_256K_CONTEXT_BUDGET,
+        )
+    } else if m == "grok-4" || m.starts_with("grok-4-") {
+        // Base grok-4 and its dated variants (e.g. grok-4-0709): 256k.
+        (
+            GROK4_256K_CONTEXT_WINDOW,
+            GROK4_256K_CONTEXT_BUDGET,
+        )
+    } else if m.starts_with("grok-4") {
+        // Unrecognized grok-4.x: current flagship family standard.
+        (
+            GROK4_500K_CONTEXT_WINDOW,
+            GROK4_500K_CONTEXT_BUDGET,
+        )
+    } else {
+        (LEGACY_CONTEXT_WINDOW, LEGACY_CONTEXT_BUDGET)
+    }
+}
+
 /// Returns the full context window for a model.
 pub fn get_context_window(model: &str) -> usize {
-    let m = model.to_ascii_lowercase();
-    if m.starts_with("grok-4") {
-        GROK4_CONTEXT_WINDOW
-    } else {
-        LEGACY_CONTEXT_WINDOW
-    }
+    model_window_and_budget(model).0
 }
 
 /// Returns the appropriate soft token budget for the model.
 pub fn get_context_budget(model: &str) -> usize {
-    let m = model.to_ascii_lowercase();
-    if m.starts_with("grok-4") {
-        GROK4_CONTEXT_BUDGET
-    } else {
-        LEGACY_CONTEXT_BUDGET
-    }
+    model_window_and_budget(model).1
 }
 
 /// Returns the default maximum output tokens for a model.
@@ -158,13 +218,47 @@ mod tests {
 
     #[test]
     fn model_aware_helpers_work() {
-        assert_eq!(get_context_window("grok-4"), GROK4_CONTEXT_WINDOW);
+        // Per-model windows (verified vs xAI docs 2026-11-09).
+        assert_eq!(get_context_window("grok-4"), GROK4_256K_CONTEXT_WINDOW);
         assert_eq!(get_context_window("grok-4.3"), GROK4_CONTEXT_WINDOW);
+        assert_eq!(get_context_window("grok-4.20"), GROK4_CONTEXT_WINDOW);
+        assert_eq!(get_context_window("grok-4.5"), GROK4_500K_CONTEXT_WINDOW);
+        assert_eq!(get_context_window("grok-4.6"), GROK4_500K_CONTEXT_WINDOW);
+        assert_eq!(get_context_window("grok-4.7"), GROK4_500K_CONTEXT_WINDOW);
+        assert_eq!(get_context_window("grok-4-fast"), GROK4_2M_CONTEXT_WINDOW);
+        assert_eq!(
+            get_context_window("grok-build-0.1"),
+            GROK4_256K_CONTEXT_WINDOW
+        );
         assert_eq!(get_context_window("grok-3"), LEGACY_CONTEXT_WINDOW);
         assert_eq!(get_context_window("unknown"), LEGACY_CONTEXT_WINDOW);
 
-        assert_eq!(get_context_budget("grok-4"), GROK4_CONTEXT_BUDGET);
+        // Per-model budgets.
+        assert_eq!(get_context_budget("grok-4"), GROK4_256K_CONTEXT_BUDGET);
+        assert_eq!(get_context_budget("grok-4.3"), GROK4_CONTEXT_BUDGET);
+        assert_eq!(get_context_budget("grok-4.5"), GROK4_500K_CONTEXT_BUDGET);
+        assert_eq!(get_context_budget("grok-4.7"), GROK4_500K_CONTEXT_BUDGET);
         assert_eq!(get_context_budget("grok-3"), LEGACY_CONTEXT_BUDGET);
+
+        // Every budget is below its window (the old LEGACY_CONTEXT_BUDGET
+        // bug: it was 220,000, above the 131,072 legacy window).
+        for model in [
+            "grok-4",
+            "grok-4.3",
+            "grok-4.5",
+            "grok-4.6",
+            "grok-4.7",
+            "grok-4.20",
+            "grok-4-fast",
+            "grok-build-0.1",
+            "grok-3",
+            "unknown",
+        ] {
+            assert!(
+                get_context_budget(model) < get_context_window(model),
+                "budget must be below window for {model}"
+            );
+        }
 
         assert_eq!(get_default_max_output_tokens("grok-4.20"), DEFAULT_MAX_OUTPUT_TOKENS_GROK4);
         assert_eq!(get_default_max_output_tokens("grok-4.3"), DEFAULT_MAX_OUTPUT_TOKENS_GROK4);

@@ -46,7 +46,8 @@ impl TaskEvolutionEngine {
             }
         }
 
-        // 327.9: Sync TaskList with Helix Evaluations
+        // 327.9: Sync TaskList with patch-shape evaluations (H8: local
+        // patch-shape score, not a Helix evaluation)
         // Map evaluation results back to affected tasks: adjust priorities/status based on helix_score.
         // High score → modest promotion of well-defined / high-impact pending work (momentum).
         // Low score → elevate remediation-focused tasks (test, fix, debug, quality).
