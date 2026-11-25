@@ -232,6 +232,42 @@ mod tests {
         );
     }
 
+    /// Locate the `mcp_test_echo` test binary.
+    ///
+    /// Cargo 1.100 no longer sets `CARGO_BIN_EXE_<name>` for lib unit tests
+    /// (assert_cmd's `cargo_bin` panics there), so fall back to resolving the
+    /// binary from `CARGO_MANIFEST_DIR` / `CARGO_TARGET_DIR` and building it
+    /// on demand if it is not there yet.
+    fn mcp_test_echo_exe() -> std::path::PathBuf {
+        if std::env::var_os("CARGO_BIN_EXE_mcp_test_echo").is_some() {
+            return cargo_bin("mcp_test_echo");
+        }
+        let manifest = std::env::var("CARGO_MANIFEST_DIR").unwrap_or_else(|_| ".".to_string());
+        let target_dir = std::env::var("CARGO_TARGET_DIR")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|_| std::path::PathBuf::from(&manifest).join("target"));
+        let profile = std::env::var("CARGO_PROFILE").unwrap_or_else(|_| "debug".to_string());
+        let exe_name = if cfg!(windows) {
+            "mcp_test_echo.exe"
+        } else {
+            "mcp_test_echo"
+        };
+        let exe_path = target_dir.join(profile).join(exe_name);
+        if exe_path.exists() {
+            return exe_path;
+        }
+        let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".to_string());
+        let status = std::process::Command::new(cargo)
+            .args(["build", "--bin", "mcp_test_echo"])
+            .status()
+            .expect("failed to run cargo build for mcp_test_echo");
+        assert!(
+            status.success(),
+            "could not build mcp_test_echo test server; run `cargo build --bin mcp_test_echo` manually"
+        );
+        exe_path
+    }
+
     /// Real-process stateless MCP test.
     ///
     /// Spawns the `mcp_test_echo` binary (built from src/bin/mcp_test_echo.rs)
@@ -243,10 +279,7 @@ mod tests {
     /// - call_tool works via _meta (the echo tool returns what we sent)
     #[tokio::test]
     async fn stateless_mcp_echo_works_with_real_process() {
-        // Use assert_cmd's cargo_bin — this reliably finds (and triggers build of)
-        // the binary declared in [[bin]] in Cargo.toml. Handles debug/release,
-        // Windows .exe suffix, CARGO_TARGET_DIR, etc.
-        let exe_path = cargo_bin("mcp_test_echo");
+        let exe_path = mcp_test_echo_exe();
         let exe = exe_path.to_string_lossy().to_string();
 
         let policy = SecurityPolicy::new();
