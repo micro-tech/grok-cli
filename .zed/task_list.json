@@ -751,6 +751,40 @@
      ]
     }
    ]
+  },
+  {
+   "id": 495,
+   "title": "Warning-free bar: remove 2 unused dependencies surfaced by the Rust 1.100 pin (config, is-terminal)",
+   "description": "Nightly Quartermaster 2026-11-25 found `cargo check --all-targets` passing but NOT warning-free on PreRelese 0723efe (PR #23, Rust 1.100 pin): 2 NEW manifest warnings vs the 2026-11-24 baseline of 20 - `warning: unused dependency 'config'` (Cargo.toml:69, config 0.15) and `warning: unused dependency 'is-terminal'` (Cargo.toml:110, is-terminal 0.4). Total is now 22 warnings (16 bench black_box + 4 installer + 2 manifest). Both deps are genuinely unused: every `config::` use in the tree is the internal `crate::config` module (src/config/mod.rs defines ConfigSource/RateLimitConfig; lib.rs:41 `pub mod config`), and every `is_terminal` use is `std::io::IsTerminal` or a local variable. No [features] entry pulls either crate, and no `extern crate` reference exists. The warnings only surfaced now because cargo 1.100 reports the unused_dependencies lint - the deps were dead before PR #23, the pin just exposed them. Fix: delete both dep lines from Cargo.toml and commit the Cargo.lock change.",
+   "status": "pending",
+   "dependencies": [],
+   "priority": "low",
+   "details": "495.1 DIAGNOSED 2026-11-25 (Quartermaster nightly run): full `cargo check --all-targets` log at goal hidden_files/2026-11-25/grok-cli-check.log - 22 diagnostics: 16x criterion::black_box (bench, known task 494), 4x installer (known task 494), 2x manifest unused deps (NEW). Verified unused by grep: `config::` hits are all `crate::config` (src/agent/mod.rs, src/mcp/mod.rs, src/rag/mod.rs, src/skills/mod.rs, src/lib.rs:314 all re-export from the internal module); `is_terminal` hits are std::io::IsTerminal (src/cli/commands/health.rs:383, src/workflow/trace_command.rs:141-142) or a local `is_terminal` bool (src/engine/correction.rs:464). Ruled out: NOT a code regression from PR #23 (it touched only rust-toolchain.toml + src/tools/mcp_tools.rs) and NOT a false positive (cargo's unused_dependencies lint only fires when no `use` path resolves to the crate; the internal module shadows the name). Companion task 494 (the other 20 warnings) stays separate - this one is a 2-line Cargo.toml deletion. 495.2 FIX: delete `config = \"0.15\"` (Cargo.toml:69) and `is-terminal = \"0.4\"` (Cargo.toml:110), run `cargo check` so Cargo.lock drops them, commit both files. 495.3 VERIFY: `cargo check --all-targets` shows 20 warnings (back to the 2026-11-24 baseline, all in task 494 scope) and `cargo test` green.",
+   "testStrategy": "Red loop first: `cargo check --all-targets` on the unmodified tree must show the 2 unused-dependency warnings; after the fix they must be gone (20 warnings left, all task-494 scope) and `cargo test` must stay green (baseline 1310 passed / 0 failed / 32 ignored).",
+   "subtasks": [
+    {
+     "id": 495.1,
+     "title": "Verify unused: confirm no code path references the external config/is-terminal crates",
+     "status": "pending",
+     "dependencies": []
+    },
+    {
+     "id": 495.2,
+     "title": "Remove both dep lines from Cargo.toml; cargo check to drop them from Cargo.lock",
+     "status": "pending",
+     "dependencies": [
+      495.1
+     ]
+    },
+    {
+     "id": 495.3,
+     "title": "Verify: check shows 20 warnings (494 scope only), tests green",
+     "status": "pending",
+     "dependencies": [
+      495.2
+     ]
+    }
+   ]
   }
  ]
 }
